@@ -151,7 +151,8 @@ export default function PersonDetailPage({
   // Fetch related AsyaMag magazine news & gossip for actor
   useEffect(() => {
     if (!person?.name) return;
-    fetch(`/api/magazin/actor?name=${encodeURIComponent(person.name)}&id=${person.id}`)
+    const actorSlug = person.slug ? encodeURIComponent(person.slug) : '';
+    fetch(`/api/magazin/actor?name=${encodeURIComponent(person.name)}&id=${person.id}&slug=${actorSlug}`)
       .then((r) => r.json())
       .then((data) => {
         if (Array.isArray(data?.posts)) {
@@ -159,7 +160,7 @@ export default function PersonDetailPage({
         }
       })
       .catch(() => {});
-  }, [person?.id, person?.name]);
+  }, [person?.id, person?.name, person?.slug]);
 
   if (isLoading) {
     return (

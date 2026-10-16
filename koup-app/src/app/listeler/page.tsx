@@ -66,11 +66,12 @@ export default function PublicListsPage() {
   const [newListVisibility, setNewListVisibility] = useState<'public' | 'private'>('public');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Initial load
   useEffect(() => {
     async function fetchLists() {
       setIsLoading(true);
       try {
-        const res = await fetch(`/api/lists?sort=${sortBy}`);
+        const res = await fetch('/api/lists');
         const data = await res.json();
         if (data.success && Array.isArray(data.lists)) {
           setLists(data.lists);
@@ -82,20 +83,35 @@ export default function PublicListsPage() {
       }
     }
     fetchLists();
-  }, [sortBy]);
+  }, []);
 
-  // Client-side quick filter
+  // Instant Client-side filtering & sorting
   const filteredLists = useMemo(() => {
-    if (!searchQuery.trim()) return lists;
-    const q = searchQuery.toLowerCase().trim();
-    return lists.filter((item) => {
-      const t = (item.title || '').toLowerCase();
-      const d = (item.description || '').toLowerCase();
-      const u = (item.creator?.username || '').toLowerCase();
-      const dn = (item.creator?.display_name || '').toLowerCase();
-      return t.includes(q) || d.includes(q) || u.includes(q) || dn.includes(q);
-    });
-  }, [lists, searchQuery]);
+    let result = [...lists];
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      result = result.filter((item) => {
+        const t = (item.title || '').toLowerCase();
+        const d = (item.description || '').toLowerCase();
+        const u = (item.creator?.username || '').toLowerCase();
+        const dn = (item.creator?.display_name || '').toLowerCase();
+        return t.includes(q) || d.includes(q) || u.includes(q) || dn.includes(q);
+      });
+    }
+
+    if (sortBy === 'popular') {
+      result.sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0));
+    } else if (sortBy === 'items') {
+      result.sort((a, b) => (b.item_count || 0) - (a.item_count || 0));
+    } else if (sortBy === 'newest') {
+      result.sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+    }
+
+    return result;
+  }, [lists, searchQuery, sortBy]);
 
   const handleOpenCreateModal = () => {
     if (!user) {
@@ -235,52 +251,44 @@ export default function PublicListsPage() {
         </div>
 
         {/* Sort Controls */}
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-          <span className="text-xs font-mono text-white/40 mr-1 hidden sm:inline">Sırala:</span>
-          <button
-            onClick={() => {
-              triggerSound('click');
-              setSortBy('popular');
-            }}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer transition-all ${
-              sortBy === 'popular'
-                ? 'bg-white text-black font-bold shadow-md'
-                : 'glass-pill text-white/70 hover:text-white'
-            }`}
-          >
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>En Popüler</span>
-          </button>
-
-          <button
-            onClick={() => {
-              triggerSound('click');
-              setSortBy('items');
-            }}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer transition-all ${
-              sortBy === 'items'
-                ? 'bg-white text-black font-bold shadow-md'
-                : 'glass-pill text-white/70 hover:text-white'
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span>En Çok İçerik</span>
-          </button>
-
-          <button
-            onClick={() => {
-              triggerSound('click');
-              setSortBy('newest');
-            }}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer transition-all ${
-              sortBy === 'newest'
-                ? 'bg-white text-black font-bold shadow-md'
-                : 'glass-pill text-white/70 hover:text-white'
-            }`}
-          >
-            <Clock className="w-3.5 h-3.5" />
-            <span>En Yeni</span>
-          </button>
+        <div className="flex items-center gap-1.5 p-1 rounded-full glass-pill-dark overflow-x-auto no-scrollbar">
+          <span className="text-xs font-mono text-white/40 ml-3 mr-1 hidden sm:inline">Sırala:</span>
+          {(
+            [
+              { id: 'popular', label: 'En Popüler', icon: TrendingUp },
+              { id: 'items', label: 'En Çok İçerik', icon: Layers },
+              { id: 'newest', label: 'En Yeni', icon: Clock },
+            ] as const
+          ).map((opt) => {
+            const Icon = opt.icon;
+            const active = sortBy === opt.id;
+            return (
+              <button
+                key={opt.id}
+                onClick={() => {
+                  triggerSound('click');
+                  setSortBy(opt.id);
+                }}
+                className={`relative flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors duration-200 select-none ${
+                  active ? 'text-black' : 'text-white/70 hover:text-white'
+                }`}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="listeler-sort-pill"
+                    transition={{
+                      type: 'spring',
+                      stiffness: 420,
+                      damping: 32,
+                    }}
+                    className="absolute inset-0 rounded-full bg-white shadow-[0_0_20px_rgba(255,255,255,0.4)]"
+                  />
+                )}
+                <Icon className="w-3.5 h-3.5 relative z-10" />
+                <span className="relative z-10 font-bold">{opt.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
