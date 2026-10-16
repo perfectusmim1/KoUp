@@ -218,7 +218,7 @@ export function getProxiedImageUrl(url?: string | null, fallback?: string | null
 }
 
 export const COUNTRY_LABELS: Record<string, string> = {
-  KR: 'KORE',
+  KR: 'GÜNEY KORE',
   CN: 'ÇİN',
   JP: 'JAPONYA',
   TH: 'TAYLAND',
@@ -231,7 +231,27 @@ export const COUNTRY_LABELS: Record<string, string> = {
   GL: 'GLOBAL',
 };
 
-export const COUNTRY_FLAGS: Record<string, string> = COUNTRY_LABELS;
+export const COUNTRY_FLAG_EMOJIS: Record<string, string> = {
+  KR: '🇰🇷',
+  CN: '🇨🇳',
+  JP: '🇯🇵',
+  TH: '🇹🇭',
+  TW: '🇹🇼',
+  HK: '🇭🇰',
+  PH: '🇵🇭',
+  US: '🇺🇸',
+  GB: '🇬🇧',
+  TR: '🇹🇷',
+  GL: '🌐',
+};
+
+export function getCountryFlag(countryCode?: string | null): string {
+  if (!countryCode) return '🌐';
+  const code = countryCode.toUpperCase().trim();
+  return COUNTRY_FLAG_EMOJIS[code] || '🌐';
+}
+
+export const COUNTRY_FLAGS: Record<string, string> = COUNTRY_FLAG_EMOJIS;
 
 export function formatContentTypeTR(contentType?: string | null, country?: string | null): string {
   const c = (country || '').toUpperCase();

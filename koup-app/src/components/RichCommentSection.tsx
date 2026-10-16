@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Bold,
   Italic,
@@ -13,8 +13,10 @@ import {
   Heart,
   Reply,
   Send,
-  AlertCircle,
   User,
+  Pencil,
+  Check,
+  X,
 } from 'lucide-react';
 import { supabase, getProxiedImageUrl } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
@@ -40,6 +42,7 @@ interface CommentRow {
   image_url?: string | null;
   likes_count: number;
   created_at: string;
+  is_edited?: boolean;
 }
 
 const APPLE_DARK_PALETTE = [
@@ -47,8 +50,8 @@ const APPLE_DARK_PALETTE = [
   { name: 'Lumina Mavi', hex: '#38BDF8' },
   { name: 'Sinema Kehribar', hex: '#E5A93C' },
   { name: 'Kore Mercan', hex: '#FB7185' },
-  { name: 'Zümrüt', hex: '#34D399' },
-  { name: 'Lavanta', hex: '#C084FC' },
+  { name: 'Zümrüt Yeşili', hex: '#34D399' },
+  { name: 'Lavanta Mor', hex: '#C084FC' },
   { name: 'Turkuaz', hex: '#2DD4BF' },
   { name: 'Gümüş', hex: '#A1A1AA' },
 ];
@@ -91,6 +94,39 @@ interface RichCommentSectionProps {
   targetTitle: string;
 }
 
+function parseCommentTextToHtml(
+  rawText: string,
+  baseColor: string,
+  isBold: boolean,
+  isItalic: boolean,
+  isHeading: boolean
+): string {
+  // 1. Sanitize raw HTML tags to prevent XSS
+  let escaped = rawText
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // 2. Parse [color=#hex]text[/color] tags (enables coloring individual words/selections!)
+  escaped = escaped.replace(
+    /\[color=(#[0-9a-fA-F]{3,8}|[a-zA-Z]+)\]([\s\S]*?)\[\/color\]/g,
+    '<span style="color:$1;font-weight:inherit;">$2</span>'
+  );
+
+  // 3. Parse [b]...[/b] and [i]...[/i]
+  escaped = escaped.replace(/\[b\]([\s\S]*?)\[\/b\]/g, '<strong>$1</strong>');
+  escaped = escaped.replace(/\[i\]([\s\S]*?)\[\/i\]/g, '<em>$1</em>');
+
+  // 4. Preserve line breaks
+  escaped = escaped.replace(/\n/g, '<br/>');
+
+  return `<div style="color:${baseColor};font-weight:${
+    isBold || isHeading ? '700' : '400'
+  };font-style:${isItalic ? 'italic' : 'normal'};font-size:${
+    isHeading ? '1.1rem' : '0.92rem'
+  };line-height:1.6;">${escaped}</div>`;
+}
+
 export default function RichCommentSection({
   targetType,
   mediaId,
@@ -120,6 +156,13 @@ export default function RichCommentSection({
   const [replyTo, setReplyTo] = useState<CommentRow | null>(null);
   const [revealedSpoilers, setRevealedSpoilers] = useState<Record<string, boolean>>({});
   const [likedIds, setLikedIds] = useState<Record<string, boolean>>({});
+
+  // 10-Minute Edit Window State
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editBodyText, setEditBodyText] = useState('');
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const storageKey = `koup_comments_${targetType}_${mediaId || personId || magazineId}_${seasonNumber || 0}_${episodeNumber || 0}`;
 
@@ -153,6 +196,73 @@ export default function RichCommentSection({
     loadComments();
   }, [loadComments]);
 
+  // Color selection logic:
+  // If text is selected in textarea, wraps selected text in [color=#hex]...[/color]
+  // If no text is selected, changes the default overall text color
+  const handleColorSelect = (hex: string) => {
+    const el = textareaRef.current;
+    if (!el) {
+      setSelectedColor(hex);
+      return;
+    }
+
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+
+    if (start !== end) {
+      const before = bodyText.substring(0, start);
+      const selected = bodyText.substring(start, end);
+      const after = bodyText.substring(end);
+      const wrapped = `[color=${hex}]${selected}[/color]`;
+      setBodyText(before + wrapped + after);
+      setTimeout(() => {
+        el.focus();
+        el.setSelectionRange(start, start + wrapped.length);
+      }, 10);
+      pushNotification('Metin Rengi Uygulandı', 'Seçili metin renklendirildi.', 'info');
+    } else {
+      setSelectedColor(hex);
+    }
+  };
+
+  const handleBoldToggle = () => {
+    const el = textareaRef.current;
+    if (el && el.selectionStart !== el.selectionEnd) {
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      const before = bodyText.substring(0, start);
+      const selected = bodyText.substring(start, end);
+      const after = bodyText.substring(end);
+      const wrapped = `[b]${selected}[/b]`;
+      setBodyText(before + wrapped + after);
+      setTimeout(() => {
+        el.focus();
+        el.setSelectionRange(start, start + wrapped.length);
+      }, 10);
+    } else {
+      setIsBold((v) => !v);
+    }
+  };
+
+  const handleItalicToggle = () => {
+    const el = textareaRef.current;
+    if (el && el.selectionStart !== el.selectionEnd) {
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      const before = bodyText.substring(0, start);
+      const selected = bodyText.substring(start, end);
+      const after = bodyText.substring(end);
+      const wrapped = `[i]${selected}[/i]`;
+      setBodyText(before + wrapped + after);
+      setTimeout(() => {
+        el.focus();
+        el.setSelectionRange(start, start + wrapped.length);
+      }, 10);
+    } else {
+      setIsItalic((v) => !v);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!bodyText.trim() && !selectedGif && !selectedSticker) return;
@@ -178,14 +288,13 @@ export default function RichCommentSection({
       }
     }
 
-    const formattedHtml = `<div style="color:${selectedColor};font-weight:${
-      isBold || isHeading ? '700' : '400'
-    };font-style:${isItalic ? 'italic' : 'normal'};font-size:${
-      isHeading ? '1.1rem' : '0.92rem'
-    }">${bodyText
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/\n/g, '<br/>')}</div>`;
+    const formattedHtml = parseCommentTextToHtml(
+      bodyText,
+      selectedColor,
+      isBold,
+      isItalic,
+      isHeading
+    );
 
     const newComment: CommentRow = {
       id: `c-${Date.now()}`,
@@ -205,7 +314,7 @@ export default function RichCommentSection({
       gif_url: selectedGif,
       sticker_id: selectedSticker,
       image_url: safeImageUrl,
-      likes_count: 1,
+      likes_count: 0,
       created_at: new Date().toISOString(),
     };
 
@@ -235,6 +344,76 @@ export default function RichCommentSection({
     );
   };
 
+  const handleStartEdit = (c: CommentRow) => {
+    const ageMs = Date.now() - new Date(c.created_at).getTime();
+    if (ageMs > 10 * 60 * 1000) {
+      pushNotification(
+        'Düzenleme Süresi Doldu',
+        'Yorumlar yalnızca gönderildikten sonraki ilk 10 dakika içinde düzenlenebilir.',
+        'info'
+      );
+      return;
+    }
+
+    setEditingCommentId(c.id);
+    setEditTitle(c.title || '');
+    // Extract plain editable text from HTML
+    const plain = c.content_html
+      .replace(/<br\s*[\/]?>/gi, '\n')
+      .replace(/<span style="color:(#[0-9a-fA-F]{3,8}|[a-zA-Z]+);[^"]*">([\s\S]*?)<\/span>/gi, '[color=$1]$2[/color]')
+      .replace(/<strong>([\s\S]*?)<\/strong>/gi, '[b]$1[/b]')
+      .replace(/<em>([\s\S]*?)<\/em>/gi, '[i]$1[/i]')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&');
+    setEditBodyText(plain);
+  };
+
+  const handleSaveEdit = (commentId: string) => {
+    const target = comments.find((c) => c.id === commentId);
+    if (!target) return;
+
+    // Strict 10-minute security verification
+    const ageMs = Date.now() - new Date(target.created_at).getTime();
+    if (ageMs > 10 * 60 * 1000) {
+      pushNotification(
+        'Düzenleme İzni Kapandı',
+        '10 dakikalık düzenleme penceresi aşıldı. Yorum sabitlendi.',
+        'info'
+      );
+      setEditingCommentId(null);
+      return;
+    }
+
+    const updatedHtml = parseCommentTextToHtml(
+      editBodyText,
+      selectedColor,
+      isBold,
+      isItalic,
+      isHeading
+    );
+
+    const updatedComments = comments.map((c) =>
+      c.id === commentId
+        ? {
+            ...c,
+            title: editTitle.trim() || null,
+            content_html: updatedHtml,
+            is_edited: true,
+          }
+        : c
+    );
+
+    setComments(updatedComments);
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(updatedComments));
+    } catch {}
+
+    setEditingCommentId(null);
+    pushNotification('Yorum Güncellendi', 'Değişikliklerin kaydedildi.', 'success');
+  };
+
   const toggleLike = (id: string) => {
     const already = likedIds[id];
     setLikedIds((prev) => ({ ...prev, [id]: !already }));
@@ -247,6 +426,19 @@ export default function RichCommentSection({
     );
   };
 
+  const handleSeekScene = (sec: number) => {
+    window.dispatchEvent(
+      new CustomEvent('koup-seek-player', {
+        detail: { time: sec },
+      })
+    );
+    pushNotification(
+      'Sahneye Atlandı',
+      `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')} sahnesine gidildi.`,
+      'info'
+    );
+  };
+
   return (
     <section className="mt-10 rounded-3xl apple-glass p-6 sm:p-8 border border-white/10">
       <div className="flex flex-wrap items-center justify-between gap-3 pb-5 mb-6 border-b border-white/10">
@@ -256,7 +448,7 @@ export default function RichCommentSection({
             <span>Topluluk Yorumları & Tartışma ({comments.length})</span>
           </h3>
           <p className="text-xs text-white/55 mt-0.5">
-            {targetTitle} hakkında başlık, renkli yazı, GIF, etiket veya görsel URL ile yorum bırak
+            {targetTitle} hakkında başlık, seçili kelime renkleri, sahne zamanı (örn. 14:20), GIF veya görsel URL ile yorum bırak
           </p>
         </div>
       </div>
@@ -303,39 +495,39 @@ export default function RichCommentSection({
 
           <button
             type="button"
-            onClick={() => setIsBold((v) => !v)}
+            onClick={handleBoldToggle}
             className={`p-1.5 rounded-lg text-xs cursor-pointer ${
               isBold ? 'bg-white text-black' : 'text-white/70 hover:bg-white/10'
             }`}
-            title="Kalın Yazı"
+            title="Kalın Yazı (Seçili metne veya tümüne)"
           >
             <Bold className="w-4 h-4" />
           </button>
 
           <button
             type="button"
-            onClick={() => setIsItalic((v) => !v)}
+            onClick={handleItalicToggle}
             className={`p-1.5 rounded-lg text-xs cursor-pointer ${
               isItalic ? 'bg-white text-black' : 'text-white/70 hover:bg-white/10'
             }`}
-            title="İtalik Yazı"
+            title="İtalik Yazı (Seçili metne veya tümüne)"
           >
             <Italic className="w-4 h-4" />
           </button>
 
           <div className="h-4 w-px bg-white/15 mx-1" />
 
-          {/* 8-Color Apple Dark Theme Palette */}
-          <div className="flex items-center gap-1">
+          {/* 8-Color Apple Dark Theme Palette with Selection Support */}
+          <div className="flex items-center gap-1.5" title="Metin seçip tıklarsan sadece o kısım, seçmeden tıklarsan tüm yazı bu renkte olur">
             {APPLE_DARK_PALETTE.map((c) => (
               <button
                 key={c.hex}
                 type="button"
-                onClick={() => setSelectedColor(c.hex)}
-                title={`Yazı Rengi: ${c.name}`}
+                onClick={() => handleColorSelect(c.hex)}
+                title={`Renk: ${c.name} (Seçili kelimeyi veya tümünü renklendir)`}
                 style={{ backgroundColor: c.hex }}
                 className={`w-4 h-4 rounded-full cursor-pointer transition-transform ${
-                  selectedColor === c.hex ? 'scale-125 ring-2 ring-white' : 'opacity-75 hover:opacity-100'
+                  selectedColor === c.hex ? 'scale-125 ring-2 ring-white shadow-sm' : 'opacity-75 hover:opacity-100 hover:scale-110'
                 }`}
               />
             ))}
@@ -400,15 +592,18 @@ export default function RichCommentSection({
             <span>Görsel URL</span>
           </button>
 
-          {/* Timestamp Input */}
-          <div className="flex items-center gap-1 ml-auto bg-white/[0.05] px-2 py-0.5 rounded-lg border border-white/10">
-            <Clock className="w-3 h-3 text-white/60" />
+          {/* Timestamp Input (Functional seek trigger) */}
+          <div
+            className="flex items-center gap-1.5 ml-auto bg-white/[0.06] hover:bg-white/10 px-2.5 py-1 rounded-lg border border-white/15 transition-all"
+            title="Bahsettiğin sahnenin dakikasını yaz (örn: 14:20). Yorumuna tıklayanlar doğrudan o saniyeye atlar!"
+          >
+            <Clock className="w-3 h-3 text-emerald-400" />
             <input
               type="text"
               value={timestampInput}
               onChange={(e) => setTimestampInput(e.target.value)}
               placeholder="14:20"
-              className="w-12 bg-transparent text-[11px] font-mono text-white placeholder-white/35 focus:outline-none"
+              className="w-12 bg-transparent text-[11px] font-mono text-white placeholder-white/40 focus:outline-none"
             />
           </div>
         </div>
@@ -463,13 +658,14 @@ export default function RichCommentSection({
             type="url"
             value={imageUrlInput}
             onChange={(e) => setImageUrlInput(e.target.value)}
-            placeholder="https://... (Görsel URL'si yapıştırın — Cloudflare Proxy ile gösterilir)"
+            placeholder="https://... (Görsel URL'si yapıştırın — Cloudflare Proxy ile güvenle gösterilir)"
             className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 text-xs text-white placeholder-white/40 focus:outline-none focus:border-white/35"
           />
         )}
 
         {/* Main Textarea with Live Color & Style Preview */}
         <textarea
+          ref={textareaRef}
           rows={3}
           value={bodyText}
           onChange={(e) => setBodyText(e.target.value)}
@@ -478,7 +674,7 @@ export default function RichCommentSection({
             fontWeight: isBold || isHeading ? 700 : 400,
             fontStyle: isItalic ? 'italic' : 'normal',
           }}
-          placeholder="Düşüncelerini, teorilerini veya sahne analizini yaz..."
+          placeholder="Düşüncelerini, teorilerini veya sahne analizini yaz... (İpucu: Bir kelimeyi fareyle seçip yukarıdaki renk paletine basarak sadece o kelimeyi renklendirebilirsin!)"
           className="w-full px-4 py-3 rounded-xl bg-black/50 border border-white/10 text-sm placeholder-white/35 focus:outline-none focus:border-white/35"
         />
 
@@ -512,14 +708,11 @@ export default function RichCommentSection({
           </div>
         )}
 
-        <div className="flex items-center justify-between pt-1">
-          <span className="text-[11px] text-white/45 flex items-center gap-1">
-            <AlertCircle className="w-3.5 h-3.5 text-white/60" />
-            DOMPurify XSS & SSRF Koruması Aktif
-          </span>
+        {/* Send Button */}
+        <div className="flex items-center justify-end pt-1">
           <button
             type="submit"
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-black font-bold text-xs hover:scale-105 transition-all cursor-pointer"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-black font-bold text-xs hover:scale-105 active:scale-95 transition-all cursor-pointer shadow-lg"
           >
             <Send className="w-3.5 h-3.5" />
             <span>Yorumu Gönder</span>
@@ -528,7 +721,7 @@ export default function RichCommentSection({
       </form>
 
       {/* COMMENTS LIST */}
-      <div className="space-y-3.5">
+      <div className="space-y-4">
         {comments.length === 0 ? (
           <div className="py-10 text-center text-sm text-white/45">
             Henüz yorum yapılmamış. İlk yorumu sen bırak!
@@ -536,10 +729,26 @@ export default function RichCommentSection({
         ) : (
           comments.map((c) => {
             const isSpoilerHidden = c.has_spoiler && !revealedSpoilers[c.id];
+
+            // 10-Minute Security Window Check
+            const createdTime = new Date(c.created_at).getTime();
+            const ageMs = Date.now() - createdTime;
+            const isWithin10Min = ageMs <= 10 * 60 * 1000;
+            const isAuthor =
+              (user?.display_name && c.author_username === user.display_name) ||
+              (user?.username && c.author_username === user.username) ||
+              (user?.id && c.user_id === user.id) ||
+              c.author_username === 'KoUp İzleyici';
+
+            const canEdit = isAuthor && isWithin10Min;
+            const remainingMins = Math.max(1, Math.ceil((10 * 60 * 1000 - ageMs) / 60000));
+
+            const isEditingThis = editingCommentId === c.id;
+
             return (
               <div
                 key={c.id}
-                className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] space-y-2"
+                className="p-4 sm:p-5 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-3"
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2.5">
@@ -555,20 +764,34 @@ export default function RichCommentSection({
                       </div>
                     )}
                     <div>
-                      <div className="text-xs font-bold text-white flex items-center gap-2">
+                      <div className="text-xs font-bold text-white flex items-center gap-2 flex-wrap">
                         <span>{c.author_username}</span>
-                        {c.timestamp_sec && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white/10 text-white/80 font-mono text-[10px]">
-                            <Clock className="w-2.5 h-2.5" />
+
+                        {/* Functional Timestamp Badge: Clickable Seek to Video! */}
+                        {c.timestamp_sec !== undefined && c.timestamp_sec !== null && (
+                          <button
+                            type="button"
+                            onClick={() => handleSeekScene(c.timestamp_sec!)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-300 border border-emerald-400/35 font-mono text-[10px] cursor-pointer transition-all hover:scale-105 active:scale-95"
+                            title="Tıklayarak doğrudan bu sahneye atla"
+                          >
+                            <Clock className="w-2.5 h-2.5 text-emerald-400" />
                             <span>
                               {Math.floor(c.timestamp_sec / 60)}:
-                              {String(c.timestamp_sec % 60).padStart(2, '0')}
+                              {String(c.timestamp_sec % 60).padStart(2, '0')} (Sahneye Git)
                             </span>
-                          </span>
+                          </button>
                         )}
+
                         {c.sticker_id && (
                           <span className="px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-200 text-[10px] font-mono">
                             {c.sticker_id}
+                          </span>
+                        )}
+
+                        {c.is_edited && (
+                          <span className="text-[10px] text-white/40 italic">
+                            (düzenlendi)
                           </span>
                         )}
                       </div>
@@ -579,6 +802,19 @@ export default function RichCommentSection({
                   </div>
 
                   <div className="flex items-center gap-2">
+                    {/* 10-Minute Edit Button (Only visible within 10 minutes to the author!) */}
+                    {canEdit && !isEditingThis && (
+                      <button
+                        type="button"
+                        onClick={() => handleStartEdit(c)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/[0.05] hover:bg-white/15 border border-white/10 text-xs text-amber-300 hover:text-amber-200 cursor-pointer transition-all"
+                        title="Yorumu düzenle (İlk 10 dakika izin verilir)"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        <span>Düzenle ({remainingMins} dk)</span>
+                      </button>
+                    )}
+
                     <button
                       onClick={() => toggleLike(c.id)}
                       className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border transition-all cursor-pointer ${
@@ -603,41 +839,85 @@ export default function RichCommentSection({
                   </div>
                 </div>
 
-                {c.title && (
-                  <h4 className="text-sm font-bold text-white pt-1">{c.title}</h4>
-                )}
-
-                {isSpoilerHidden ? (
-                  <button
-                    onClick={() =>
-                      setRevealedSpoilers((prev) => ({ ...prev, [c.id]: true }))
-                    }
-                    className="w-full py-3 px-4 rounded-xl bg-red-950/30 border border-red-400/30 text-xs text-red-200 flex items-center justify-center gap-2 cursor-pointer hover:bg-red-950/50 transition-all"
-                  >
-                    <EyeOff className="w-4 h-4" />
-                    <span>Bu yorum Spoiler içeriyor · Görmek için tıkla</span>
-                  </button>
-                ) : (
-                  <div className="space-y-2">
-                    <div
-                      className="text-sm leading-relaxed"
-                      dangerouslySetInnerHTML={{ __html: c.content_html }}
+                {/* Inline Editing Form */}
+                {isEditingThis ? (
+                  <div className="p-3.5 rounded-xl bg-black/60 border border-amber-400/30 space-y-2.5">
+                    <input
+                      type="text"
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      placeholder="Başlık (Opsiyonel)"
+                      className="w-full px-3 py-1.5 rounded-lg bg-black border border-white/15 text-xs text-white focus:outline-none"
                     />
-                    {c.gif_url && (
-                      <img
-                        src={c.gif_url}
-                        alt="Yorum GIF"
-                        className="max-h-44 rounded-xl border border-white/10"
-                      />
-                    )}
-                    {c.image_url && (
-                      <img
-                        src={getProxiedImageUrl(c.image_url)}
-                        alt="Yorum Görseli"
-                        className="max-h-60 rounded-xl border border-white/10"
-                      />
-                    )}
+                    <textarea
+                      rows={3}
+                      value={editBodyText}
+                      onChange={(e) => setEditBodyText(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-black border border-white/15 text-xs text-white focus:outline-none"
+                    />
+                    <div className="flex items-center justify-between text-xs pt-1">
+                      <span className="text-[11px] text-amber-300/80">
+                        ⏱ Kalan düzenleme süresi: ~{remainingMins} dakika
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingCommentId(null)}
+                          className="flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 text-white/70 hover:text-white"
+                        >
+                          <X className="w-3 h-3" />
+                          <span>Vazgeç</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSaveEdit(c.id)}
+                          className="flex items-center gap-1 px-3 py-1 rounded-full bg-amber-400 text-black font-bold hover:scale-105 transition-all"
+                        >
+                          <Check className="w-3 h-3" />
+                          <span>Kaydet</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
+                ) : (
+                  <>
+                    {c.title && (
+                      <h4 className="text-sm font-bold text-white pt-1">{c.title}</h4>
+                    )}
+
+                    {isSpoilerHidden ? (
+                      <button
+                        onClick={() =>
+                          setRevealedSpoilers((prev) => ({ ...prev, [c.id]: true }))
+                        }
+                        className="w-full py-3 px-4 rounded-xl bg-red-950/30 border border-red-400/30 text-xs text-red-200 flex items-center justify-center gap-2 cursor-pointer hover:bg-red-950/50 transition-all"
+                      >
+                        <EyeOff className="w-4 h-4" />
+                        <span>Bu yorum Spoiler içeriyor · Görmek için tıkla</span>
+                      </button>
+                    ) : (
+                      <div className="space-y-2">
+                        <div
+                          className="text-sm leading-relaxed"
+                          dangerouslySetInnerHTML={{ __html: c.content_html }}
+                        />
+                        {c.gif_url && (
+                          <img
+                            src={c.gif_url}
+                            alt="Yorum GIF"
+                            className="max-h-44 rounded-xl border border-white/10"
+                          />
+                        )}
+                        {c.image_url && (
+                          <img
+                            src={getProxiedImageUrl(c.image_url)}
+                            alt="Yorum Görseli"
+                            className="max-h-60 rounded-xl border border-white/10"
+                          />
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             );

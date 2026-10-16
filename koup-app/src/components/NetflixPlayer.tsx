@@ -63,6 +63,7 @@ export default function NetflixPlayer({
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const hideControlsTimer = useRef<NodeJS.Timeout | null>(null);
 
@@ -249,6 +250,31 @@ export default function NetflixPlayer({
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, [autoNextEnabled, currentSeason, currentEpisode]);
+
+  // Listen to koup-seek-player custom event from comment timestamps
+  useEffect(() => {
+    const handleSeekEvent = (e: Event) => {
+      const custom = e as CustomEvent<{ time: number }>;
+      const sec = custom.detail?.time;
+      if (typeof sec === 'number' && !Number.isNaN(sec)) {
+        if (videoRef.current) {
+          videoRef.current.currentTime = sec;
+          videoRef.current.play().catch(() => {});
+        } else if (iframeRef.current) {
+          try {
+            iframeRef.current.contentWindow?.postMessage(
+              JSON.stringify({ event: 'seek', time: sec }),
+              '*'
+            );
+          } catch {}
+        }
+        containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    };
+
+    window.addEventListener('koup-seek-player', handleSeekEvent);
+    return () => window.removeEventListener('koup-seek-player', handleSeekEvent);
+  }, []);
 
   // Scheduled Episode Live Countdown Timer
   useEffect(() => {
@@ -577,7 +603,7 @@ export default function NetflixPlayer({
                     }}
                     className={`shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-mono transition-all cursor-pointer border ${
                       active
-                        ? 'bg-white text-black font-bold border-white shadow-[0_0_16px_rgba(255,255,255,0.4)]'
+                        ? 'bg-emerald-500 text-black font-bold border-emerald-400 shadow-[0_0_18px_rgba(16,185,129,0.55)] scale-105'
                         : 'bg-black/65 text-white/75 border-white/15 hover:text-white hover:border-white/35'
                     }`}
                   >
@@ -674,7 +700,7 @@ export default function NetflixPlayer({
                     }}
                     className={`w-full flex items-center justify-between p-3 rounded-2xl border text-left transition-all cursor-pointer ${
                       idx === selectedSourceIdx
-                        ? 'bg-white/15 border-sky-400 text-white'
+                        ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.3)]'
                         : 'bg-white/[0.04] border-white/10 text-white/80 hover:bg-white/10'
                     }`}
                   >
@@ -762,7 +788,7 @@ export default function NetflixPlayer({
                       }}
                       className={`w-full flex items-center justify-between p-2.5 rounded-2xl border text-left transition-all cursor-pointer ${
                         isCurrent
-                          ? 'bg-sky-400/20 border-sky-400 text-white'
+                          ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.3)]'
                           : 'bg-white/[0.04] border-white/[0.06] text-white/80 hover:bg-white/10'
                       }`}
                     >
@@ -1167,6 +1193,7 @@ export default function NetflixPlayer({
             )}
             {streamUrl ? (
               <iframe
+                ref={iframeRef}
                 key={streamUrl}
                 src={streamUrl}
                 allowFullScreen

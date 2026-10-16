@@ -8,7 +8,6 @@ import {
   ExternalLink,
   Film,
   Users,
-  Newspaper,
   Sparkles,
   Award,
 } from 'lucide-react';
@@ -16,7 +15,6 @@ import {
   supabase,
   PersonItem,
   CastMember,
-  MagazinePost,
   getProxiedImageUrl,
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
@@ -39,7 +37,6 @@ export default function PersonDetailPage({
   const [person, setPerson] = useState<PersonItem | null>(null);
   const [credits, setCredits] = useState<CastMember[]>([]);
   const [coStars, setCoStars] = useState<PersonItem[]>([]);
-  const [relatedNews, setRelatedNews] = useState<MagazinePost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -100,14 +97,6 @@ export default function PersonDetailPage({
         }
         setCoStars(Array.from(uniquePeers.values()).slice(0, 8));
       }
-
-      // Fetch related AsyaMag news/gossip
-      const { data: magRows } = await supabase
-        .from('magazine_posts')
-        .select('*')
-        .order('published_at', { ascending: false })
-        .limit(3);
-      setRelatedNews((magRows as MagazinePost[]) || []);
 
       setIsLoading(false);
     }
@@ -320,39 +309,7 @@ export default function PersonDetailPage({
         </section>
       )}
 
-      {/* 4. RELATED ASYAMAG NEWS & GOSSIP */}
-      {relatedNews.length > 0 && (
-        <section>
-          <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-            <Newspaper className="w-5 h-5 text-white/80" />
-            <span>İlgili Haberler & Magazin Gündemi</span>
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {relatedNews.map((post) => (
-              <Link
-                key={post.id}
-                href={`/magazin/${post.slug}`}
-                className="p-4 rounded-2xl bg-[#121216] border border-white/10 hover:border-amber-400/40 transition-all flex gap-3.5 items-center"
-              >
-                <img
-                  src={getProxiedImageUrl(post.featured_image)}
-                  alt={post.title}
-                  loading="lazy"
-                  className="w-20 h-20 rounded-xl object-cover shrink-0"
-                />
-                <div className="min-w-0">
-                  <span className="text-[10px] font-mono text-amber-300">
-                    {(post.categories || ['Dedikodu'])[0]}
-                  </span>
-                  <h4 className="text-xs font-bold text-white line-clamp-2 mt-0.5">
-                    {post.title}
-                  </h4>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
+
 
       {/* 5. ACTOR & ANIME CHARACTER RICH COMMENTS */}
       <RichCommentSection
