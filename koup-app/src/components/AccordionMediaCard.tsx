@@ -81,13 +81,14 @@ function AccordionMediaCard({
     }
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
 
-    hoverTimerRef.current = setTimeout(() => {
-      if (!prefetchRef.current) {
-        prefetchRef.current = true;
-        router.prefetch(`/seri/${item.slug}`);
-        router.prefetch(`/seri/${item.slug}/1`);
-      }
+    // Instant prefetch on mouse enter
+    if (!prefetchRef.current) {
+      prefetchRef.current = true;
+      router.prefetch(`/seri/${item.slug}`);
+      router.prefetch(`/seri/${item.slug}/1`);
+    }
 
+    hoverTimerRef.current = setTimeout(() => {
       if (cardRef.current && typeof window !== 'undefined') {
         const rect = cardRef.current.getBoundingClientRect();
         setIsNearRight(rect.right + 190 > window.innerWidth);
@@ -95,7 +96,7 @@ function AccordionMediaCard({
 
       setIsExpanded(true);
       triggerSound('expand');
-    }, 180);
+    }, 45);
   };
 
   const handleMouseLeave = () => {
@@ -107,7 +108,7 @@ function AccordionMediaCard({
 
     leaveTimerRef.current = setTimeout(() => {
       setIsExpanded(false);
-    }, 100);
+    }, 50);
   };
 
   const posterSrc = getProxiedImageUrl(item.cover_image, item.title);
@@ -128,6 +129,9 @@ function AccordionMediaCard({
       ref={cardRef}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      onFocus={handleMouseEnter}
+      onBlur={handleMouseLeave}
+      tabIndex={0}
       onClick={(e) => {
         // Navigate to series page if not clicking interactive action buttons
         if ((e.target as HTMLElement).closest('button, a')) return;
@@ -147,7 +151,7 @@ function AccordionMediaCard({
         maxWidth: isExpanded ? 'calc(100vw - 32px)' : undefined,
         transformOrigin: isNearRight ? 'right center' : 'left center',
         transition:
-          'width 0.48s cubic-bezier(0.16, 1, 0.3, 1), min-width 0.48s cubic-bezier(0.16, 1, 0.3, 1), max-width 0.48s cubic-bezier(0.16, 1, 0.3, 1), transform 0.48s cubic-bezier(0.16, 1, 0.3, 1)',
+          'width 0.32s cubic-bezier(0.2, 0.9, 0.3, 1), min-width 0.32s cubic-bezier(0.2, 0.9, 0.3, 1), max-width 0.32s cubic-bezier(0.2, 0.9, 0.3, 1), transform 0.32s cubic-bezier(0.2, 0.9, 0.3, 1)',
         willChange: 'width, min-width, transform',
       }}
       className={`koup-accordion-card relative shrink-0 rounded-2xl overflow-hidden cursor-pointer select-none h-[306px] group ${
