@@ -333,7 +333,7 @@ export default function HomePage() {
                         triggerSound('click');
                         router.push(`/seri/${activeHero.slug}?play=1`);
                       }}
-                      className="flex items-center gap-2.5 px-8 py-3.5 rounded-full bg-white text-black font-bold text-[14px] hover:bg-white/90 hover:scale-[1.03] active:scale-[0.98] transition-all duration-300 shadow-[0_0_30px_rgba(255,255,255,0.35)] cursor-pointer"
+                      className="flex items-center gap-2.5 px-8 py-3.5 rounded-full bg-white text-black font-bold text-[14px] hover:bg-white/90 active:scale-[0.98] transition-all duration-200 transform-gpu backface-hidden shadow-[0_4px_24px_rgba(255,255,255,0.25)] cursor-pointer"
                     >
                       <Play className="w-5 h-5 fill-black" />
                       <span>Hemen İzle</span>
@@ -343,7 +343,7 @@ export default function HomePage() {
                       onClick={() =>
                         updateWatchStatus(activeHero.id, 'watching', 1, 1)
                       }
-                      className="flex items-center gap-2 px-6 py-3.5 rounded-full glass-pill hover:bg-white/15 text-white font-semibold text-[14px] hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 cursor-pointer"
+                      className="flex items-center gap-2 px-6 py-3.5 rounded-full glass-pill hover:bg-white/15 text-white font-semibold text-[14px] active:scale-[0.98] transition-all duration-200 transform-gpu backface-hidden cursor-pointer"
                     >
                       {progressMap[activeHero.id] ? (
                         <>

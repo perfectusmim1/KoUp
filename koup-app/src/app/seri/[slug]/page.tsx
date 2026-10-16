@@ -32,6 +32,7 @@ import {
   formatContentTypeTR,
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
+import CountryFlag from '@/components/CountryFlag';
 import RichCommentSection from '@/components/RichCommentSection';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 import CustomSelect from '@/components/CustomSelect';
@@ -238,12 +239,12 @@ export default function SeriesDetailPage({
             {/* Top Badges Row: Flag & Country, Content Type, Year, Episodes */}
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/80 backdrop-blur-md border border-white/15 text-xs text-white font-bold">
-                <span>{getCountryFlag(media.country)}</span>
-                <span>{COUNTRY_LABELS[media.country || ''] || media.country || 'ASYA'}</span>
+                <CountryFlag code={media.country_code || media.country} size="sm" />
+                <span>{COUNTRY_LABELS[((media.country_code || media.country) || '').toUpperCase()] || media.country_name || media.country || 'ASYA'}</span>
               </span>
 
               <span className="px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-xs font-bold uppercase tracking-wider text-white/90">
-                {formatContentTypeTR(media.content_type, media.country)}
+                {formatContentTypeTR(media.content_type, media.country_code || media.country)}
               </span>
 
               {media.release_year && (
@@ -318,7 +319,7 @@ export default function SeriesDetailPage({
               {/* Primary Watch Button */}
               <Link
                 href={`/seri/${media.slug}/${resumeEp}`}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs transition-all shadow-[0_0_25px_rgba(16,185,129,0.5)] hover:scale-105 active:scale-95 cursor-pointer"
+                className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs transition-all shadow-[0_0_25px_rgba(16,185,129,0.5)] active:scale-[0.98] transform-gpu backface-hidden cursor-pointer"
               >
                 <Play className="w-4 h-4 fill-black" />
                 <span>
@@ -380,7 +381,7 @@ export default function SeriesDetailPage({
               <button
                 type="button"
                 onClick={() => toggleMediaFavorite(media)}
-                className={`flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold border transition-all cursor-pointer hover:scale-105 active:scale-95 ${
+                className={`flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold border transition-all cursor-pointer active:scale-[0.98] transform-gpu backface-hidden ${
                   isFavorited
                     ? 'bg-rose-500/20 border-rose-400 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.3)]'
                     : 'apple-glass-pill text-white hover:bg-white/15'
@@ -396,7 +397,7 @@ export default function SeriesDetailPage({
               <button
                 type="button"
                 onClick={() => toggleMediaFollow(media)}
-                className={`flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold border transition-all cursor-pointer hover:scale-105 active:scale-95 ${
+                className={`flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold border transition-all cursor-pointer active:scale-[0.98] transform-gpu backface-hidden ${
                   isFollowed
                     ? 'bg-amber-400 text-black border-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.35)]'
                     : 'apple-glass-pill text-white hover:bg-white/15'

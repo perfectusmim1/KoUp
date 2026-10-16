@@ -21,6 +21,7 @@ interface CustomSelectProps {
   menuClassName?: string;
   variant?: 'pill' | 'glass' | 'white' | 'dark';
   size?: 'sm' | 'md';
+  direction?: 'up' | 'down' | 'auto';
 }
 
 export default function CustomSelect({
@@ -34,11 +35,29 @@ export default function CustomSelect({
   menuClassName = '',
   variant = 'glass',
   size = 'md',
+  direction = 'auto',
 }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [openUpwards, setOpenUpwards] = useState(direction === 'up');
+  const [alignRight, setAlignRight] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const selectedOption = options.find((o) => o.value === value);
+
+  useEffect(() => {
+    if (isOpen && containerRef.current && typeof window !== 'undefined') {
+      const rect = containerRef.current.getBoundingClientRect();
+      if (direction === 'up') {
+        setOpenUpwards(true);
+      } else if (direction === 'down') {
+        setOpenUpwards(false);
+      } else {
+        const spaceBelow = window.innerHeight - rect.bottom;
+        setOpenUpwards(spaceBelow < 260 && rect.top > 200);
+      }
+      setAlignRight(rect.right + 220 > window.innerWidth);
+    }
+  }, [isOpen, direction]);
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -92,7 +111,7 @@ export default function CustomSelect({
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
-        className={`flex items-center justify-between cursor-pointer transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:scale-[1.03] active:scale-[0.97] select-none ${getVariantStyles()} ${getSizeStyles()} ${triggerClassName}`}
+        className={`flex items-center justify-between cursor-pointer transition-all duration-200 ease-out hover:brightness-110 active:scale-[0.98] transform-gpu backface-hidden select-none ${getVariantStyles()} ${getSizeStyles()} ${triggerClassName}`}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
       >
@@ -115,11 +134,13 @@ export default function CustomSelect({
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, y: -6, scale: 0.96 }}
+            initial={{ opacity: 0, y: openUpwards ? 6 : -6, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -6, scale: 0.96 }}
+            exit={{ opacity: 0, y: openUpwards ? 6 : -6, scale: 0.96 }}
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-            className={`absolute left-0 mt-2 z-50 min-w-[200px] max-w-[290px] w-max p-0 rounded-2xl bg-[#141418]/95 backdrop-blur-3xl border border-white/20 shadow-[0_25px_60px_rgba(0,0,0,0.95)] ring-1 ring-white/10 flex flex-col overflow-hidden ${menuClassName}`}
+            className={`absolute ${alignRight ? 'right-0' : 'left-0'} ${
+              openUpwards ? 'bottom-full mb-2' : 'top-full mt-2'
+            } z-50 min-w-[200px] max-w-[290px] w-max p-0 rounded-2xl bg-[#141418]/95 backdrop-blur-3xl border border-white/20 shadow-[0_25px_60px_rgba(0,0,0,0.95)] ring-1 ring-white/10 flex flex-col overflow-hidden ${menuClassName}`}
             role="listbox"
           >
             {options.map((opt) => {

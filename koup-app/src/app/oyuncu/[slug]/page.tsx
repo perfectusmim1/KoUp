@@ -192,8 +192,8 @@ export default function PersonDetailPage({
               onClick={() => togglePersonFavorite(person.id, person.name)}
               className={`flex items-center gap-2 px-6 py-3 rounded-full text-xs font-bold transition-all cursor-pointer ${
                 isFav
-                  ? 'bg-pink-500 text-white shadow-[0_0_25px_rgba(236,72,153,0.5)]'
-                  : 'bg-white text-black hover:scale-105'
+                  ? 'bg-pink-500 text-white shadow-[0_0_25px_rgba(236,72,153,0.5)] active:scale-[0.98]'
+                  : 'bg-white text-black hover:bg-white/90 active:scale-[0.98] transform-gpu backface-hidden'
               }`}
             >
               <Heart className={`w-4 h-4 ${isFav ? 'fill-white' : 'fill-black'}`} />

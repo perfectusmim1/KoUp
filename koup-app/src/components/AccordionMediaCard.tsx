@@ -10,6 +10,7 @@ import {
   getCountryFlag,
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
+import CountryFlag from '@/components/CountryFlag';
 
 interface AccordionMediaCardProps {
   item: MediaItem;
@@ -155,8 +156,8 @@ export default function AccordionMediaCard({
         {/* Top-Left: National Flag */}
         <div>
           {countryCode ? (
-            <span className="inline-flex items-center justify-center w-7 h-6 rounded-md text-sm bg-black/80 backdrop-blur-md border border-white/15 shadow-sm">
-              {getCountryFlag(countryCode)}
+            <span className="inline-flex items-center justify-center p-1 rounded-md bg-black/80 backdrop-blur-md border border-white/15 shadow-sm">
+              <CountryFlag code={countryCode} size="md" />
             </span>
           ) : null}
         </div>
@@ -264,7 +265,7 @@ export default function AccordionMediaCard({
                 router.push(`/seri/${item.slug}/1`);
               }}
               onPointerDown={(e) => e.stopPropagation()}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-white text-black font-bold text-xs hover:scale-105 active:scale-95 transition-transform shadow-[0_0_20px_rgba(255,255,255,0.35)] cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 active:scale-[0.97] transition-all shadow-[0_2px_12px_rgba(0,0,0,0.6)] border border-white/20 cursor-pointer"
             >
               <Play className="w-3.5 h-3.5 fill-black" />
               <span>Hemen İzle</span>

@@ -28,6 +28,7 @@ import {
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
 import NetflixPlayer from '@/components/NetflixPlayer';
+import CountryFlag from '@/components/CountryFlag';
 import RichCommentSection from '@/components/RichCommentSection';
 import CustomSelect from '@/components/CustomSelect';
 
@@ -271,8 +272,8 @@ export default function EpisodeWatchPage({
 
           <div className="flex items-center gap-2.5">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.06] border border-white/10 text-xs text-white/80">
-              <span>{getCountryFlag(media.country)}</span>
-              <span className="font-semibold">{COUNTRY_LABELS[media.country || ''] || 'ASYA'}</span>
+              <CountryFlag code={media.country_code || media.country} size="sm" />
+              <span className="font-semibold">{COUNTRY_LABELS[((media.country_code || media.country) || '').toUpperCase()] || media.country_name || 'ASYA'}</span>
             </span>
 
             <span className="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 font-mono text-xs font-bold">
@@ -372,21 +373,30 @@ export default function EpisodeWatchPage({
                 onClick={() => setCinemaLightsOff((v) => !v)}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all cursor-pointer ${
                   cinemaLightsOff
-                    ? 'bg-amber-400 text-black border-amber-300'
+                    ? 'bg-amber-400 text-black border-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.4)]'
                     : 'bg-white/[0.05] hover:bg-white/[0.12] text-white/80 border-white/10 hover:text-white'
                 }`}
-                title="Işıkları Kapat (Sinema Modu)"
+                title="Sinema Modu (Tüm Sayfayı Kapla)"
               >
                 <Lightbulb className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{cinemaLightsOff ? 'Işıkları Aç' : 'Sinema Modu'}</span>
+                <span className="hidden sm:inline">{cinemaLightsOff ? 'Normal Mod' : 'Sinema Modu'}</span>
               </button>
 
               <button
                 onClick={() => {
-                  window.dispatchEvent(new CustomEvent('koup-toggle-fullscreen'));
+                  const el = document.getElementById('koup-player-container');
+                  if (!document.fullscreenElement) {
+                    if (el?.requestFullscreen) {
+                      el.requestFullscreen().catch(() => {});
+                    } else {
+                      document.documentElement.requestFullscreen().catch(() => {});
+                    }
+                  } else {
+                    document.exitFullscreen().catch(() => {});
+                  }
                 }}
                 className="w-8 h-8 rounded-full bg-white/[0.05] hover:bg-white/[0.12] border border-white/10 flex items-center justify-center text-white/80 hover:text-white transition-all cursor-pointer"
-                title="Tam Ekran"
+                title="Tam Ekran (F)"
               >
                 <Maximize className="w-3.5 h-3.5" />
               </button>

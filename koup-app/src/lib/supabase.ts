@@ -245,10 +245,21 @@ export const COUNTRY_FLAG_EMOJIS: Record<string, string> = {
   GL: '🌐',
 };
 
-export function getCountryFlag(countryCode?: string | null): string {
-  if (!countryCode) return '🌐';
-  const code = countryCode.toUpperCase().trim();
-  return COUNTRY_FLAG_EMOJIS[code] || '🌐';
+export function getCountryFlag(countryCodeOrName?: string | null): string {
+  if (!countryCodeOrName) return '🌐';
+  const c = countryCodeOrName.toUpperCase().trim();
+  if (COUNTRY_FLAG_EMOJIS[c]) return COUNTRY_FLAG_EMOJIS[c];
+  if (c.includes('KOR')) return '🇰🇷';
+  if (c.includes('ÇIN') || c.includes('CIN') || c.includes('CHINA')) return '🇨🇳';
+  if (c.includes('JAP')) return '🇯🇵';
+  if (c.includes('THAI') || c.includes('TAYL')) return '🇹🇭';
+  if (c.includes('TAIW') || c.includes('TAYV')) return '🇹🇼';
+  if (c.includes('ABD') || c.includes('USA') || c.includes('AMERICA') || c.includes('UNITED STATES')) return '🇺🇸';
+  if (c.includes('TURK') || c.includes('TÜRK')) return '🇹🇷';
+  if (c.includes('UK') || c.includes('BRIT') || c.includes('INGIL')) return '🇬🇧';
+  if (c.includes('PHILIP') || c.includes('FILIP')) return '🇵🇭';
+  if (c.includes('HONG')) return '🇭🇰';
+  return '🌐';
 }
 
 export const COUNTRY_FLAGS: Record<string, string> = COUNTRY_FLAG_EMOJIS;

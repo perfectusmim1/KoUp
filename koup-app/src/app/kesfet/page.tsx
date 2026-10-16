@@ -14,8 +14,9 @@ import {
   Layers,
   MapPin,
 } from 'lucide-react';
-import { supabase, MediaItem } from '@/lib/supabase';
+import { supabase, MediaItem, getCountryFlag } from '@/lib/supabase';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
+import CountryFlag from '@/components/CountryFlag';
 import { useKoUp } from '@/context/KoUpContext';
 import CustomSelect from '@/components/CustomSelect';
 
@@ -205,8 +206,8 @@ function DiscoverContent() {
                   />
                 )}
                 {c.code ? (
-                  <span className="relative z-10 text-[10px] font-mono opacity-65">
-                    {c.code}
+                  <span className="relative z-10 flex items-center mr-0.5">
+                    <CountryFlag code={c.code} size="sm" />
                   </span>
                 ) : (
                   <Globe className="w-3.5 h-3.5 relative z-10" />

@@ -313,11 +313,12 @@ export default function ProfilePage() {
           >
             {/* Stats Bento Row */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="rounded-3xl bg-[#0f0f11] p-6 border border-white/[0.08]">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-white/50">
+              <div className="rounded-3xl bg-[#0f0f11] p-6 border border-white/[0.08] relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
+                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400/80">
                   Toplam İzlenen Bölüm
                 </span>
-                <div className="text-3xl font-extrabold text-white mt-2">
+                <div className="text-3xl font-extrabold text-emerald-400 mt-2">
                   {Object.values(progressMap).reduce((acc, p) => acc + (p.watched_episodes?.length || 0), 0)} Bölüm
                 </div>
                 <span className="text-xs text-white/45 mt-1 block">
@@ -325,11 +326,12 @@ export default function ProfilePage() {
                 </span>
               </div>
 
-              <div className="rounded-3xl bg-[#0f0f11] p-6 border border-white/[0.08]">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-white/50">
+              <div className="rounded-3xl bg-[#0f0f11] p-6 border border-white/[0.08] relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-sky-500/10 rounded-full blur-2xl pointer-events-none" />
+                <span className="text-[11px] font-bold uppercase tracking-wider text-sky-400/80">
                   Toplam Ekran Süresi
                 </span>
-                <div className="text-3xl font-extrabold text-white mt-2">
+                <div className="text-3xl font-extrabold text-sky-400 mt-2">
                   {(Object.values(progressMap).reduce((acc, p) => acc + (p.watched_episodes?.length || 0), 0) * 0.75).toFixed(1)} Saat
                 </div>
                 <span className="text-xs text-white/45 mt-1 block">
@@ -337,11 +339,12 @@ export default function ProfilePage() {
                 </span>
               </div>
 
-              <div className="rounded-3xl bg-[#0f0f11] p-6 border border-white/[0.08]">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-white/50">
+              <div className="rounded-3xl bg-[#0f0f11] p-6 border border-white/[0.08] relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
+                <span className="text-[11px] font-bold uppercase tracking-wider text-purple-400/80">
                   Tamamlanan Yapım
                 </span>
-                <div className="text-3xl font-extrabold text-white mt-2">
+                <div className="text-3xl font-extrabold text-purple-400 mt-2">
                   {Object.values(progressMap).filter((p) => p.status === 'completed').length}
                 </div>
                 <span className="text-xs text-white/45 mt-1 block">
@@ -349,11 +352,12 @@ export default function ProfilePage() {
                 </span>
               </div>
 
-              <div className="rounded-3xl bg-[#0f0f11] p-6 border border-white/[0.08]">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-white/50">
+              <div className="rounded-3xl bg-[#0f0f11] p-6 border border-white/[0.08] relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-rose-500/10 rounded-full blur-2xl pointer-events-none" />
+                <span className="text-[11px] font-bold uppercase tracking-wider text-rose-400/80">
                   Favori Oyuncu & Karakter
                 </span>
-                <div className="text-3xl font-extrabold text-white mt-2">
+                <div className="text-3xl font-extrabold text-rose-400 mt-2">
                   {personFavorites.length} Yıldız
                 </div>
                 <span className="text-xs text-white/45 mt-1 block">
@@ -465,16 +469,16 @@ export default function ProfilePage() {
                     {week.map((lvl, dIdx) => (
                       <div
                         key={dIdx}
-                        className={`w-3.5 h-3.5 rounded-sm ${
+                        className={`w-3.5 h-3.5 rounded-sm transition-colors ${
                           lvl === 0
                             ? 'bg-white/[0.05]'
                             : lvl === 1
-                              ? 'bg-white/20'
+                              ? 'bg-emerald-500/25'
                               : lvl === 2
-                                ? 'bg-white/40'
+                                ? 'bg-emerald-500/50'
                                 : lvl === 3
-                                  ? 'bg-white/70'
-                                  : 'bg-white'
+                                  ? 'bg-emerald-400/80 shadow-[0_0_6px_rgba(52,211,153,0.3)]'
+                                  : 'bg-emerald-300 shadow-[0_0_10px_rgba(52,211,153,0.6)]'
                         }`}
                       />
                     ))}
@@ -497,25 +501,69 @@ export default function ProfilePage() {
           >
             <div className="flex flex-wrap items-center gap-2">
               {[
-                { id: 'ALL', label: 'Tümü', icon: Sparkles },
-                { id: 'watching', label: 'İzleniyor', icon: Clock },
-                { id: 'completed', label: 'Tamamlandı', icon: CheckCircle2 },
-                { id: 'plan_to_watch', label: 'Planlanan', icon: Bookmark },
-                { id: 'on_hold', label: 'Beklemede', icon: PauseCircle },
-                { id: 'dropped', label: 'Bırakıldı', icon: XCircle },
+                {
+                  id: 'ALL',
+                  label: 'Tümü',
+                  icon: Sparkles,
+                  iconColor: 'text-white',
+                  activeClass: 'bg-white text-black font-bold shadow-[0_0_15px_rgba(255,255,255,0.3)]',
+                  inactiveClass: 'glass-pill text-white/80 hover:text-white',
+                },
+                {
+                  id: 'watching',
+                  label: 'İzleniyor',
+                  icon: Clock,
+                  iconColor: 'text-emerald-400',
+                  activeClass: 'bg-emerald-500 text-black font-bold shadow-[0_0_18px_rgba(16,185,129,0.45)]',
+                  inactiveClass: 'glass-pill text-emerald-300/80 hover:text-emerald-200 border-emerald-500/20 hover:border-emerald-500/40',
+                },
+                {
+                  id: 'completed',
+                  label: 'Tamamlandı',
+                  icon: CheckCircle2,
+                  iconColor: 'text-sky-400',
+                  activeClass: 'bg-sky-500 text-black font-bold shadow-[0_0_18px_rgba(14,165,233,0.45)]',
+                  inactiveClass: 'glass-pill text-sky-300/80 hover:text-sky-200 border-sky-500/20 hover:border-sky-500/40',
+                },
+                {
+                  id: 'plan_to_watch',
+                  label: 'Planlanan',
+                  icon: Bookmark,
+                  iconColor: 'text-amber-400',
+                  activeClass: 'bg-amber-400 text-black font-bold shadow-[0_0_18px_rgba(251,191,36,0.45)]',
+                  inactiveClass: 'glass-pill text-amber-300/80 hover:text-amber-200 border-amber-500/20 hover:border-amber-500/40',
+                },
+                {
+                  id: 'on_hold',
+                  label: 'Beklemede',
+                  icon: PauseCircle,
+                  iconColor: 'text-purple-400',
+                  activeClass: 'bg-purple-500 text-white font-bold shadow-[0_0_18px_rgba(168,85,247,0.45)]',
+                  inactiveClass: 'glass-pill text-purple-300/80 hover:text-purple-200 border-purple-500/20 hover:border-purple-500/40',
+                },
+                {
+                  id: 'dropped',
+                  label: 'Bıraktım',
+                  icon: XCircle,
+                  iconColor: 'text-rose-400',
+                  activeClass: 'bg-rose-500 text-white font-bold shadow-[0_0_18px_rgba(244,63,94,0.45)]',
+                  inactiveClass: 'glass-pill text-rose-300/80 hover:text-rose-200 border-rose-500/20 hover:border-rose-500/40',
+                },
               ].map((st) => {
                 const Icon = st.icon;
+                const active = libraryFilter === st.id;
                 return (
                   <button
                     key={st.id}
-                    onClick={() => setLibraryFilter(st.id)}
-                    className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold cursor-pointer transition-all ${
-                      libraryFilter === st.id
-                        ? 'bg-white text-black'
-                        : 'glass-pill text-white/75 hover:text-white'
+                    onClick={() => {
+                      triggerSound('click');
+                      setLibraryFilter(st.id);
+                    }}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold cursor-pointer transition-all active:scale-[0.98] ${
+                      active ? st.activeClass : st.inactiveClass
                     }`}
                   >
-                    <Icon className="w-3.5 h-3.5" />
+                    <Icon className={`w-3.5 h-3.5 ${active ? '' : st.iconColor}`} />
                     <span>{st.label}</span>
                   </button>
                 );

@@ -412,45 +412,54 @@ export default function NetflixPlayer({
 
       {/* MAIN UNIFIED KOUP NETFLIX PLAYER CONTAINER */}
       <div
+        id="koup-player-container"
         ref={containerRef}
         onMouseMove={triggerControlsVisibility}
         onClick={triggerControlsVisibility}
         style={
-          !isFullscreen
-            ? {
-                maxWidth: cinemaLightsOff
-                  ? 'min(1240px, calc(82vh * 16 / 9))'
-                  : 'min(1040px, calc(68vh * 16 / 9))',
-              }
-            : undefined
+          isFullscreen || cinemaLightsOff
+            ? undefined
+            : { maxWidth: 'min(1040px, calc(68vh * 16 / 9))' }
         }
-        className={`relative mx-auto w-full aspect-video rounded-3xl overflow-hidden bg-black border border-white/15 shadow-[0_30px_90px_rgba(0,0,0,0.95)] select-none transition-all duration-300 ${
-          isFullscreen
-            ? 'max-w-none rounded-none border-none'
-            : cinemaLightsOff
-            ? 'z-50 ring-2 ring-white/30'
-            : 'z-20'
+        className={`relative mx-auto w-full select-none transition-all duration-300 bg-black overflow-hidden ${
+          isFullscreen || cinemaLightsOff
+            ? 'fixed inset-0 z-50 w-screen h-screen max-w-none rounded-none border-none aspect-auto flex flex-col justify-center items-center'
+            : 'aspect-video rounded-3xl border border-white/15 shadow-[0_30px_90px_rgba(0,0,0,0.95)] z-20'
         }`}
       >
-        {/* Sleek Minimal HUD (ONLY in Fullscreen mode when mouse is moving) */}
-        {isFullscreen && (
+        {/* Sleek Minimal HUD (In Fullscreen OR Cinema Theater Mode when mouse is moving) */}
+        {(isFullscreen || cinemaLightsOff) && (
           <div
-            className={`absolute top-0 left-0 right-0 z-30 p-4 sm:p-6 bg-gradient-to-b from-black/90 via-black/40 to-transparent transition-opacity duration-300 ${
+            className={`absolute top-0 left-0 right-0 z-40 p-4 sm:p-6 bg-gradient-to-b from-black/90 via-black/40 to-transparent transition-opacity duration-300 ${
               showOverlay ? 'opacity-100' : 'opacity-0 pointer-events-none'
             }`}
           >
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleFullscreen();
-                  }}
-                  className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all cursor-pointer"
-                  title="Tam Ekrandan Çık (Esc)"
-                >
-                  <Minimize className="w-4 h-4" />
-                </button>
+                {cinemaLightsOff && !isFullscreen ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleCinemaLights?.();
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white text-xs font-semibold backdrop-blur-md transition-all cursor-pointer shadow-lg"
+                    title="Sinema Modundan Çık (Esc)"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Sinema Modundan Çık (ESC)</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFullscreen();
+                    }}
+                    className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all cursor-pointer"
+                    title="Tam Ekrandan Çık (Esc)"
+                  >
+                    <Minimize className="w-4 h-4" />
+                  </button>
+                )}
                 <div>
                   <div className="text-sm sm:text-base font-bold text-white">
                     {media.title}
@@ -465,16 +474,30 @@ export default function NetflixPlayer({
                 <span className="px-3 py-1 rounded-full bg-white/10 text-white/80 font-mono text-xs border border-white/15">
                   {activeSource?.source_name || 'KoUp Stream'}
                 </span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleFullscreen();
-                  }}
-                  className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all cursor-pointer"
-                  title="Tam Ekran"
-                >
-                  <Minimize className="w-4 h-4" />
-                </button>
+                {!isFullscreen ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFullscreen();
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-md transition-all cursor-pointer"
+                    title="Tam Ekran"
+                  >
+                    <Maximize className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Tam Ekran</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFullscreen();
+                    }}
+                    className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all cursor-pointer"
+                    title="Tam Ekrandan Çık"
+                  >
+                    <Minimize className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -706,6 +729,7 @@ export default function NetflixPlayer({
                       }}
                       variant="dark"
                       size="sm"
+                      direction="up"
                       options={qualities.map((q) => ({ value: q.label, label: q.label }))}
                     />
                   )}
@@ -719,6 +743,7 @@ export default function NetflixPlayer({
                     }}
                     variant="dark"
                     size="sm"
+                    direction="up"
                     options={[0.75, 1, 1.25, 1.5, 2].map((r) => ({
                       value: String(r),
                       label: `${r}x Hız`,

@@ -124,22 +124,31 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
   const [followedPersonIds, setFollowedPersonIds] = useState<number[]>([]);
   const [notifications, setNotifications] = useState<ToastNotification[]>([
     {
-      id: 'welcome-1',
-      title: 'KoUp Sinema Evrenine Hoş Geldin',
-      body: '17.509 dizi, film, anime ve 21.814 oyuncu/karakter Frankfurt Edge sunucusuyla aktif.',
-      type: 'episode',
-      linkUrl: '/kesfet',
-      createdAt: 'Şimdi',
+      id: 'notif-comment-1',
+      title: 'Yorumuna Yeni Yanıt Geldi',
+      body: '@elif_kdrama: "Kesinlikle katılıyorum, 1. bölüm son sahnesi efsaneydi!"',
+      type: 'reply',
+      linkUrl: '/seri/reply-izle/1',
+      createdAt: '10 dk önce',
       isRead: false,
     },
     {
-      id: 'sched-2',
-      title: 'Yeni Bölüm Takvimi Güncellendi',
-      body: 'Takip ettiğin dizilerin bu haftaki yayın saatleri ve geri sayımları hazır.',
-      type: 'info',
-      linkUrl: '/takvim',
-      createdAt: '12 dk önce',
+      id: 'notif-ep-1',
+      title: 'Takip Ettiğin Dizide Yeni Bölüm!',
+      body: '"Reply 1988" dizisinin 2. bölümü arşive yüklendi.',
+      type: 'episode',
+      linkUrl: '/seri/reply-izle/2',
+      createdAt: '25 dk önce',
       isRead: false,
+    },
+    {
+      id: 'notif-actor-1',
+      title: 'Takip Ettiğin Oyuncudan Yeni Yapım!',
+      body: 'Yoo In Na kadrosunda yer aldığı "Touch Your Heart" yayına girdi.',
+      type: 'actor',
+      linkUrl: '/seri/reply-izle/1',
+      createdAt: '2 saat önce',
+      isRead: true,
     },
   ]);
   const [activeToast, setActiveToast] = useState<ToastNotification | null>(null);
@@ -364,20 +373,8 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         media,
       };
       saveProgressMap({ ...progressMap, [media.id]: updated });
-      const labels: Record<string, string> = {
-        watching: 'İzliyorum',
-        completed: 'Tamamladım',
-        plan_to_watch: 'İzleyeceğim',
-        on_hold: 'Beklemede',
-        dropped: 'Bıraktım',
-      };
-      pushNotification(
-        'Kütüphane Güncellendi',
-        `${media.title} "${labels[status] || status}" listene eklendi.`,
-        'success'
-      );
     },
-    [progressMap, saveProgressMap, pushNotification]
+    [progressMap, saveProgressMap]
   );
 
   const toggleMediaFavorite = useCallback(
@@ -398,13 +395,8 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         media,
       };
       saveProgressMap({ ...progressMap, [media.id]: updated });
-      pushNotification(
-        nextFav ? 'Favorilere Eklendi' : 'Favorilerden Çıkarıldı',
-        `${media.title} favori listende güncellendi.`,
-        'success'
-      );
     },
-    [progressMap, saveProgressMap, pushNotification]
+    [progressMap, saveProgressMap]
   );
 
   const toggleMediaFollow = useCallback(
@@ -417,17 +409,10 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         } catch {
           // ignore
         }
-        pushNotification(
-          exists ? 'Takip Bırakıldı' : 'Seri Takibe Alındı',
-          exists
-            ? `${media.title} bildirimleri kapatıldı.`
-            : `${media.title} için yeni bölüm yüklendiğinde anında sesli bildirim alacaksın.`,
-          'episode'
-        );
         return next;
       });
     },
-    [pushNotification]
+    []
   );
 
   const togglePersonFavorite = useCallback(
@@ -444,27 +429,19 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       }
 
       const delta = isFav ? -1 : 1;
-      let newCount = isFav ? 0 : 1;
-      try {
-        const { data: countRes } = await supabase.rpc('increment_person_favorite', {
+      const expectedCount = isFav ? Math.max(0, favPersonIds.length - 1) : favPersonIds.length + 1;
+
+      // Non-blocking fire-and-forget sync to Supabase (zero UI lag)
+      void Promise.resolve(
+        supabase.rpc('increment_person_favorite', {
           p_person_id: personId,
           p_delta: delta,
-        });
-        if (typeof countRes === 'number') newCount = countRes;
-      } catch {
-        // local state fallback
-      }
+        })
+      ).catch(() => {});
 
-      pushNotification(
-        isFav ? 'Favoriden Çıkarıldı' : 'Oyuncu / Karakter Favorilendi',
-        personName
-          ? `${personName} favori listene ${isFav ? 'çıkarıldı' : 'eklendi'}!`
-          : 'Favori tercihin kaydedildi.',
-        'actor'
-      );
-      return newCount;
+      return expectedCount;
     },
-    [favPersonIds, pushNotification]
+    [favPersonIds]
   );
 
   const togglePersonFollow = useCallback(
@@ -477,17 +454,10 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         } catch {
           // ignore
         }
-        pushNotification(
-          exists ? 'Oyuncu Takibi Bırakıldı' : 'Oyuncu Takibe Alındı',
-          personName
-            ? `${personName} yeni bir diziye veya AsyaMag haberine konu olduğunda bildirim alacaksın.`
-            : 'Takip listen güncellendi.',
-          'actor'
-        );
         return next;
       });
     },
-    [pushNotification]
+    []
   );
 
   const markAllNotificationsRead = useCallback(() => {
