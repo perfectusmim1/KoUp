@@ -14,11 +14,15 @@ import {
   Play,
   Film,
   Sparkles,
+  Layers,
+  Lightbulb,
+  Maximize,
 } from 'lucide-react';
 import {
   supabase,
   MediaItem,
   EpisodeData,
+  EpisodeSource,
   COUNTRY_LABELS,
   getCountryFlag,
 } from '@/lib/supabase';
@@ -48,6 +52,12 @@ export default function EpisodeWatchPage({
   const [currentSeason, setCurrentSeason] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Source & Control Deck State
+  const [selectedSourceIdx, setSelectedSourceIdx] = useState(0);
+  const [selectedFansub, setSelectedFansub] = useState('all');
+  const [cinemaLightsOff, setCinemaLightsOff] = useState(false);
+  const [showEpisodeDrawer, setShowEpisodeDrawer] = useState(false);
+
   // Single-vote reaction per episode per user
   const [userReaction, setUserReaction] = useState<'fire' | 'cry' | 'shock' | null>(null);
   const [reactionCounts, setReactionCounts] = useState<{
@@ -60,6 +70,13 @@ export default function EpisodeWatchPage({
   const [showReport, setShowReport] = useState(false);
   const [reportCategory, setReportCategory] = useState('Kaynak Açılmıyor / Kırık');
   const [reportNote, setReportNote] = useState('');
+
+  // Reset source selection on episode change
+  useEffect(() => {
+    setSelectedSourceIdx(0);
+    setSelectedFansub('all');
+    setShowEpisodeDrawer(false);
+  }, [currentEpNum]);
 
   useEffect(() => {
     async function loadEpisodeData() {
@@ -229,6 +246,16 @@ export default function EpisodeWatchPage({
     (e) => (e.season_number || 1) === currentSeason
   );
 
+  const availableSources: EpisodeSource[] = currentEpObj?.sources || [];
+  const uniqueFansubs = Array.from(
+    new Set(availableSources.map((s) => s.fansub).filter(Boolean))
+  ) as string[];
+
+  const filteredSources =
+    selectedFansub === 'all'
+      ? availableSources
+      : availableSources.filter((s) => s.fansub === selectedFansub);
+
   return (
     <div className="min-h-screen pb-32 bg-[#080808] text-white pt-20">
       {/* Top Header Breadcrumb & Back Navigation */}
@@ -265,63 +292,234 @@ export default function EpisodeWatchPage({
           onSelectEpisode={(s, e) => {
             router.push(`/seri/${media.slug}/${e}`);
           }}
+          selectedSourceIdx={selectedSourceIdx}
+          onSelectSourceIdx={(idx) => setSelectedSourceIdx(idx)}
+          selectedFansub={selectedFansub}
+          cinemaLightsOff={cinemaLightsOff}
+          onToggleCinemaLights={() => setCinemaLightsOff((v) => !v)}
         />
 
-        {/* Quick Episode Navigation & Control Bar */}
-        <div className="mt-5 p-4 rounded-3xl bg-[#0f0f11] border border-white/[0.08] flex flex-wrap items-center justify-between gap-3 shadow-xl">
-          <div className="flex items-center gap-2">
-            {prevEp ? (
-              <button
-                onClick={() => router.push(`/seri/${media.slug}/${prevEp.episode_number}`)}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-all cursor-pointer"
-              >
-                <ChevronLeft className="w-4 h-4" />
-                <span>Önceki Bölüm</span>
-              </button>
-            ) : (
-              <span className="px-4 py-2 rounded-full bg-white/[0.03] text-xs font-semibold text-white/30 border border-white/[0.05]">
-                İlk Bölüm
+        {/* Sleek External Cinema Control & Source Deck */}
+        <div className="mt-4 p-4 sm:p-5 rounded-3xl bg-[#0f0f11] border border-white/[0.08] shadow-2xl space-y-3.5">
+          {/* Row 1: Source & Server Switcher Pills */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/[0.06]">
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+              <span className="text-[11px] font-mono uppercase tracking-wider text-white/50 shrink-0 mr-1 flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-sky-400" />
+                <span>Kaynaklar ({filteredSources.length}):</span>
               </span>
-            )}
 
-            {nextEp ? (
+              {filteredSources.length === 0 ? (
+                <span className="text-xs text-white/40">Kaynak hazırlanıyor...</span>
+              ) : (
+                filteredSources.map((src, idx) => {
+                  const active = idx === selectedSourceIdx;
+                  const isNative =
+                    src.stream_type === 'hls' ||
+                    src.stream_type === 'tau' ||
+                    src.stream_type === 'mp4';
+                  return (
+                    <button
+                      key={`${src.embed_id || idx}-${idx}`}
+                      onClick={() => setSelectedSourceIdx(idx)}
+                      className={`shrink-0 flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-mono font-medium transition-all cursor-pointer border ${
+                        active
+                          ? 'bg-emerald-500 text-black font-bold border-emerald-400 shadow-[0_0_18px_rgba(16,185,129,0.45)] scale-[1.03]'
+                          : 'bg-white/[0.05] hover:bg-white/[0.12] text-white/80 border-white/10 hover:text-white'
+                      }`}
+                    >
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          isNative ? 'bg-emerald-400' : 'bg-sky-400'
+                        } ${active ? 'bg-black' : ''}`}
+                      />
+                      <span>{src.source_name || `Kaynak ${idx + 1}`}</span>
+                      {src.fansub && src.fansub !== 'Varsayılan' && (
+                        <span className={`text-[10px] ${active ? 'text-black/75' : 'text-white/50'}`}>
+                          ({src.fansub})
+                        </span>
+                      )}
+                      {src.quality_label && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${active ? 'bg-black/20 text-black font-bold' : 'bg-white/10 text-white/60'}`}>
+                          {src.quality_label}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Fansub Selector + Cinema Mode + Fullscreen */}
+            <div className="flex items-center gap-2 shrink-0">
+              {uniqueFansubs.length > 1 && (
+                <CustomSelect
+                  value={selectedFansub}
+                  onChange={(val) => {
+                    setSelectedFansub(val);
+                    setSelectedSourceIdx(0);
+                  }}
+                  variant="dark"
+                  size="sm"
+                  options={[
+                    { value: 'all', label: 'Tüm Çeviriler' },
+                    ...uniqueFansubs.map((f) => ({ value: f, label: f })),
+                  ]}
+                />
+              )}
+
               <button
-                onClick={() => router.push(`/seri/${media.slug}/${nextEp.episode_number}`)}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold transition-all shadow-[0_0_15px_rgba(16,185,129,0.35)] cursor-pointer"
+                onClick={() => setCinemaLightsOff((v) => !v)}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all cursor-pointer ${
+                  cinemaLightsOff
+                    ? 'bg-amber-400 text-black border-amber-300'
+                    : 'bg-white/[0.05] hover:bg-white/[0.12] text-white/80 border-white/10 hover:text-white'
+                }`}
+                title="Işıkları Kapat (Sinema Modu)"
               >
-                <span>Sonraki Bölüm</span>
-                <ChevronRight className="w-4 h-4" />
+                <Lightbulb className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{cinemaLightsOff ? 'Işıkları Aç' : 'Sinema Modu'}</span>
               </button>
-            ) : (
-              <span className="px-4 py-2 rounded-full bg-white/[0.03] text-xs font-semibold text-white/30 border border-white/[0.05]">
-                Son Bölüm
-              </span>
-            )}
+
+              <button
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('koup-toggle-fullscreen'));
+                }}
+                className="w-8 h-8 rounded-full bg-white/[0.05] hover:bg-white/[0.12] border border-white/10 flex items-center justify-center text-white/80 hover:text-white transition-all cursor-pointer"
+                title="Tam Ekran"
+              >
+                <Maximize className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => toggleEpisodeWatched(media, currentEpNum)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold border transition-all cursor-pointer ${
-                isWatched
-                  ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
-                  : 'bg-white/10 border-white/15 text-white/80 hover:text-white hover:bg-white/20'
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>{isWatched ? 'İzlendi' : 'İzlendi İşaretle'}</span>
-            </button>
+          {/* Row 2: Episode Navigation & Actions */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              {prevEp ? (
+                <button
+                  onClick={() => router.push(`/seri/${media.slug}/${prevEp.episode_number}`)}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-all cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>Önceki Bölüm</span>
+                </button>
+              ) : (
+                <span className="px-4 py-2 rounded-full bg-white/[0.03] text-xs font-semibold text-white/30 border border-white/[0.05]">
+                  İlk Bölüm
+                </span>
+              )}
 
-            <button
-              onClick={() => setShowReport((v) => !v)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/[0.05] hover:bg-amber-400/20 text-amber-300 border border-white/10 text-xs transition-all cursor-pointer"
-              title="Bölümle ilgili hata bildir"
-            >
-              <AlertTriangle className="w-3.5 h-3.5" />
-              <span>Sorun Bildir</span>
-            </button>
+              {nextEp ? (
+                <button
+                  onClick={() => router.push(`/seri/${media.slug}/${nextEp.episode_number}`)}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold transition-all shadow-[0_0_15px_rgba(16,185,129,0.35)] cursor-pointer"
+                >
+                  <span>Sonraki Bölüm (B{nextEp.episode_number})</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              ) : (
+                <span className="px-4 py-2 rounded-full bg-white/[0.03] text-xs font-semibold text-white/30 border border-white/[0.05]">
+                  Final Bölümü
+                </span>
+              )}
+
+              <button
+                onClick={() => setShowEpisodeDrawer((v) => !v)}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold border transition-all cursor-pointer ${
+                  showEpisodeDrawer
+                    ? 'bg-white text-black border-white'
+                    : 'bg-white/[0.05] hover:bg-white/10 text-white/80 border-white/10'
+                }`}
+              >
+                <Film className="w-3.5 h-3.5" />
+                <span>Bölüm Listesi ({currentSeasonEpisodes.length})</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => toggleEpisodeWatched(media, currentEpNum)}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold border transition-all cursor-pointer ${
+                  isWatched
+                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
+                    : 'bg-white/10 border-white/15 text-white/80 hover:text-white hover:bg-white/20'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>{isWatched ? 'İzlendi' : 'İzlendi İşaretle'}</span>
+              </button>
+
+              <button
+                onClick={() => setShowReport((v) => !v)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-full border text-xs transition-all cursor-pointer ${
+                  showReport
+                    ? 'bg-amber-400 text-black border-amber-300 font-bold'
+                    : 'bg-white/[0.05] hover:bg-amber-400/20 text-amber-300 border-white/10'
+                }`}
+                title="Bölümle ilgili hata bildir"
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>Sorun Bildir</span>
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Expandable Episode List Tray */}
+        {showEpisodeDrawer && (
+          <div className="mt-3 p-4 sm:p-5 rounded-3xl bg-[#141418] border border-white/15 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 mb-3 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <Film className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-bold text-white">
+                  {currentSeason}. Sezon Bölümleri ({currentSeasonEpisodes.length})
+                </span>
+              </div>
+              <button
+                onClick={() => setShowEpisodeDrawer(false)}
+                className="text-xs text-white/50 hover:text-white cursor-pointer"
+              >
+                Gizle
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5 max-h-64 overflow-y-auto pr-1">
+              {currentSeasonEpisodes.map((ep) => {
+                const isCurrent = ep.episode_number === currentEpNum;
+                const watched = (
+                  progressMap[media.id]?.watched_episodes || []
+                ).includes(ep.episode_number);
+                return (
+                  <button
+                    key={`${ep.season_number}-${ep.episode_number}`}
+                    onClick={() => {
+                      router.push(`/seri/${media.slug}/${ep.episode_number}`);
+                      setShowEpisodeDrawer(false);
+                    }}
+                    className={`p-3 rounded-2xl border text-left transition-all cursor-pointer relative ${
+                      isCurrent
+                        ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.35)]'
+                        : 'bg-white/[0.03] border-white/[0.08] text-white/80 hover:bg-white/[0.08] hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs font-bold">
+                        B{ep.episode_number}
+                      </span>
+                      {watched && (
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                      )}
+                    </div>
+                    <div className="text-[10px] text-white/50 truncate mt-1">
+                      {ep.episode_name || `${ep.episode_number}. Bölüm`}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Issue Report Form Drawer */}
         {showReport && (

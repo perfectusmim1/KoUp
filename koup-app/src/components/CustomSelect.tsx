@@ -119,7 +119,7 @@ export default function CustomSelect({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.96 }}
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-            className={`absolute left-0 mt-2 z-50 min-w-[200px] max-w-[290px] w-max p-1.5 rounded-2xl bg-[#141418]/95 backdrop-blur-3xl border border-white/20 shadow-[0_25px_60px_rgba(0,0,0,0.95)] ring-1 ring-white/10 flex flex-col gap-1 overflow-hidden ${menuClassName}`}
+            className={`absolute left-0 mt-2 z-50 min-w-[200px] max-w-[290px] w-max p-0 rounded-2xl bg-[#141418]/95 backdrop-blur-3xl border border-white/20 shadow-[0_25px_60px_rgba(0,0,0,0.95)] ring-1 ring-white/10 flex flex-col overflow-hidden ${menuClassName}`}
             role="listbox"
           >
             {options.map((opt) => {
@@ -132,7 +132,7 @@ export default function CustomSelect({
                     onChange(opt.value);
                     setIsOpen(false);
                   }}
-                  className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs text-left transition-all duration-200 cursor-pointer ${
+                  className={`w-full flex items-center justify-between px-4 py-2.5 text-xs text-left transition-all duration-150 cursor-pointer first:rounded-t-2xl last:rounded-b-2xl border-b border-white/[0.04] last:border-b-0 ${
                     isSelected
                       ? 'bg-white/20 text-white font-bold shadow-sm'
                       : 'text-white/80 hover:bg-white/10 hover:text-white'

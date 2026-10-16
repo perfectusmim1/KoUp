@@ -86,9 +86,11 @@ export default function AccordionMediaCard({
     item.title
   );
 
+  const countryCode = item.country_code || item.country;
   const countryLabel =
-    COUNTRY_SHORT_TR[(item.country || '').toUpperCase()] ||
-    item.country ||
+    COUNTRY_SHORT_TR[(countryCode || '').toUpperCase()] ||
+    item.country_name ||
+    countryCode ||
     'ASYA';
 
   return (
@@ -148,48 +150,67 @@ export default function AccordionMediaCard({
         }`}
       />
 
-      {/* Top Badges Row with National Flag */}
+      {/* Top Badges Row: Left = Country Flag, Right = Exactly ONE Score */}
       <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-1.5 z-10 pointer-events-none">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {item.rating && item.rating > 0 ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-black/80 backdrop-blur-md text-white border border-white/15 shadow-sm">
-              <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
-              <span>{Number(item.rating).toFixed(1)}</span>
-            </span>
-          ) : null}
-
-          {item.mdl_rating ? (
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-black/80 backdrop-blur-md text-amber-300 border border-amber-400/30">
-              MDL {item.mdl_rating}
-            </span>
-          ) : null}
-
-          {item.anilist_rating ? (
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-black/80 backdrop-blur-md text-sky-300 border border-sky-400/30">
-              AL {item.anilist_rating}%
-            </span>
-          ) : null}
-
-          {isExpanded && item.imdb_rating ? (
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-black/80 backdrop-blur-md text-yellow-300 border border-yellow-400/35">
-              IMDb {item.imdb_rating}
+        {/* Top-Left: National Flag */}
+        <div>
+          {countryCode ? (
+            <span className="inline-flex items-center justify-center w-7 h-6 rounded-md text-sm bg-black/80 backdrop-blur-md border border-white/15 shadow-sm">
+              {getCountryFlag(countryCode)}
             </span>
           ) : null}
         </div>
 
-        {item.country && (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wider bg-black/80 backdrop-blur-md text-white/90 border border-white/15 shrink-0 shadow-sm">
-            <span>{getCountryFlag(item.country)}</span>
-            <span>{countryLabel}</span>
-          </span>
-        )}
+        {/* Top-Right: Exactly ONE Rating Badge (IMDb > MDL > AniList > Rating) */}
+        <div>
+          {(() => {
+            const singleRating = item.imdb_rating
+              ? {
+                  label: `IMDb ${item.imdb_rating}`,
+                  cls: 'text-yellow-300 border-yellow-400/35',
+                  hasStar: false,
+                }
+              : item.mdl_rating
+              ? {
+                  label: `MDL ${item.mdl_rating}`,
+                  cls: 'text-amber-300 border-amber-400/30',
+                  hasStar: false,
+                }
+              : item.anilist_rating
+              ? {
+                  label: `AL ${item.anilist_rating}%`,
+                  cls: 'text-sky-300 border-sky-400/30',
+                  hasStar: false,
+                }
+              : item.rating && item.rating > 0
+              ? {
+                  label: Number(item.rating).toFixed(1),
+                  cls: 'text-white border-white/15',
+                  hasStar: true,
+                }
+              : null;
+
+            if (!singleRating) return null;
+
+            return (
+              <span
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-black/80 backdrop-blur-md border shadow-sm ${singleRating.cls}`}
+              >
+                {singleRating.hasStar && (
+                  <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400 shrink-0" />
+                )}
+                <span>{singleRating.label}</span>
+              </span>
+            );
+          })()}
+        </div>
       </div>
 
       {/* Bottom Info Content */}
       <div className="absolute bottom-0 left-0 right-0 p-4 z-10 flex flex-col justify-end">
         <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 mb-1">
-          <span>{getCountryFlag(item.country)}</span>
-          <span>{formatContentTypeTR(item.content_type, item.country)}</span>
+          <span>{getCountryFlag(countryCode)}</span>
+          <span>{formatContentTypeTR(item.content_type, countryCode)}</span>
           {item.release_year && <span>• {item.release_year}</span>}
           {item.episode_count > 0 && <span>• {item.episode_count} Bölüm</span>}
         </div>

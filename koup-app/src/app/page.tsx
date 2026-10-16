@@ -405,7 +405,7 @@ export default function HomePage() {
                             {hItem.title}
                           </span>
                           <span className="text-[10px] text-white/50 tracking-wider truncate">
-                            {formatContentTypeTR(hItem.content_type, hItem.country)}
+                            {formatContentTypeTR(hItem.content_type, hItem.country_code || hItem.country)}
                           </span>
                         </div>
                         {active && (
@@ -498,13 +498,6 @@ export default function HomePage() {
                           style={{ width: `${pct}%` }}
                         />
                       </div>
-
-                      {/* Centered Minimal Play Glyph on Hover */}
-                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                        <div className="w-11 h-11 rounded-full glass-pill flex items-center justify-center text-white border border-white/30 shadow-2xl group-hover:scale-105 transition-transform">
-                          <Play className="w-4 h-4 fill-white ml-0.5" />
-                        </div>
-                      </div>
                     </div>
 
                     <div className="p-4 flex items-center justify-between">
@@ -580,7 +573,7 @@ export default function HomePage() {
                   {/* Bottom Meta & Sleek Controls */}
                   <div className="relative z-10 flex flex-col gap-2.5">
                     <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-white/50">
-                      {formatContentTypeTR(item.content_type, item.country)}
+                      {formatContentTypeTR(item.content_type, item.country_code || item.country)}
                     </span>
                     <h3 className="text-2xl font-bold text-white tracking-tight leading-tight line-clamp-1">
                       {item.title}
@@ -664,7 +657,7 @@ export default function HomePage() {
                   <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-black/40 to-transparent" />
                   <div className="relative z-10 flex flex-col">
                     <span className="text-[10px] font-bold tracking-widest uppercase text-white/60">
-                      {formatContentTypeTR(item.content_type, item.country)}
+                      {formatContentTypeTR(item.content_type, item.country_code || item.country)}
                     </span>
                     <span className="text-[15px] font-bold text-white truncate mt-0.5">
                       {item.title}
