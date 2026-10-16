@@ -100,6 +100,23 @@ interface KoUpContextValue {
   clearAllNotifications: () => void;
   dismissToast: () => void;
   updateProfileSettings: (patch: Partial<UserProfile>) => Promise<void>;
+  blockedUsers: Array<{
+    id: string;
+    username: string;
+    display_name: string;
+    avatar_url: string | null;
+    created_at?: string;
+  }>;
+  blockedByUserIds: string[];
+  blockUser: (
+    targetUserId: string,
+    targetUsername?: string,
+    targetDisplayName?: string,
+    targetAvatar?: string
+  ) => Promise<boolean>;
+  unblockUser: (targetUserId: string) => Promise<boolean>;
+  isUserBlocked: (userId?: string | null) => boolean;
+  isBlockedBy: (userId?: string | null) => boolean;
   loginWithEmail: (email: string, password: string) => Promise<string | null>;
   registerWithEmail: (
     email: string,
@@ -138,6 +155,16 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
   const [isHardBanned, setIsHardBanned] = useState(false);
   const [hardBanReason, setHardBanReason] = useState<string | null>(null);
   const [isRouletteOpen, setIsRouletteOpen] = useState(false);
+  const [blockedUsers, setBlockedUsers] = useState<
+    Array<{
+      id: string;
+      username: string;
+      display_name: string;
+      avatar_url: string | null;
+      created_at?: string;
+    }>
+  >([]);
+  const [blockedByUserIds, setBlockedByUserIds] = useState<string[]>([]);
 
   const openAuthModal = useCallback((message?: string) => {
     setAuthModalMessage(message || 'İşlem yapabilmek için lütfen giriş yapın.');
@@ -1144,6 +1171,143 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     [user, isSoftBanned, openAuthModal, pushNotification]
   );
 
+  // Load blocks from DB or localStorage
+  useEffect(() => {
+    if (!user?.id) {
+      try {
+        const local = localStorage.getItem('koup_blocked_v1');
+        if (local) setBlockedUsers(JSON.parse(local));
+      } catch {}
+      return;
+    }
+
+    async function loadBlocks() {
+      try {
+        const res = await fetch(`/api/users/block?user_id=${user!.id}`);
+        const data = await res.json();
+        if (data.success) {
+          setBlockedUsers(data.blocked_users || []);
+          setBlockedByUserIds(data.blocked_by_ids || []);
+          try {
+            localStorage.setItem('koup_blocked_v1', JSON.stringify(data.blocked_users || []));
+          } catch {}
+        }
+      } catch (err) {
+        console.error('Failed to load blocks:', err);
+      }
+    }
+    loadBlocks();
+  }, [user?.id]);
+
+  const blockUser = useCallback(
+    async (
+      targetUserId: string,
+      targetUsername?: string,
+      targetDisplayName?: string,
+      targetAvatar?: string
+    ) => {
+      if (!user) {
+        setIsAuthModalOpen(true);
+        setAuthModalMessage('Kullanıcı engellemek için lütfen giriş yapın.');
+        return false;
+      }
+      if (user.id === targetUserId) {
+        pushNotification('Geçersiz İşlem', 'Kendinizi engelleyemezsiniz.', 'info');
+        return false;
+      }
+
+      const newBlockedUser = {
+        id: targetUserId,
+        username: targetUsername || 'kullanici',
+        display_name: targetDisplayName || targetUsername || 'Kullanıcı',
+        avatar_url: targetAvatar || null,
+        created_at: new Date().toISOString(),
+      };
+
+      setBlockedUsers((prev) => {
+        if (prev.some((u) => u.id === targetUserId)) return prev;
+        const updated = [newBlockedUser, ...prev];
+        try {
+          localStorage.setItem('koup_blocked_v1', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
+
+      triggerSound('click');
+      pushNotification(
+        'Kullanıcı Engellendi',
+        `@${targetUsername || 'kullanici'} engellendi. Karşılıklı yorumlarınız ve profil erişimi gizlendi.`,
+        'info'
+      );
+
+      try {
+        await fetch('/api/users/block', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            blocker_id: user.id,
+            blocked_id: targetUserId,
+            action: 'block',
+          }),
+        });
+        return true;
+      } catch (err) {
+        console.error('Failed to persist block:', err);
+        return true;
+      }
+    },
+    [user, triggerSound, pushNotification]
+  );
+
+  const unblockUser = useCallback(
+    async (targetUserId: string) => {
+      setBlockedUsers((prev) => {
+        const updated = prev.filter((u) => u.id !== targetUserId);
+        try {
+          localStorage.setItem('koup_blocked_v1', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
+
+      triggerSound('click');
+      pushNotification('Engel Kaldırıldı', 'Kullanıcının engeli kaldırıldı.', 'success');
+
+      if (user?.id) {
+        try {
+          await fetch('/api/users/block', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              blocker_id: user.id,
+              blocked_id: targetUserId,
+              action: 'unblock',
+            }),
+          });
+        } catch (err) {
+          console.error('Failed to unblock on server:', err);
+        }
+      }
+      return true;
+    },
+    [user, triggerSound, pushNotification]
+  );
+
+  const isUserBlocked = useCallback(
+    (userId?: string | null) => {
+      if (!userId) return false;
+      return blockedUsers.some((u) => u.id === userId);
+    },
+    [blockedUsers]
+  );
+
+  const isBlockedBy = useCallback(
+    (userId?: string | null) => {
+      if (!userId) return false;
+      return blockedByUserIds.includes(userId);
+    },
+    [blockedByUserIds]
+  );
+
   // Memoize context value to prevent wasteful whole-app re-renders
   const contextValue = useMemo<KoUpContextValue>(() => {
     return {
@@ -1192,6 +1356,12 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       clearAllNotifications,
       dismissToast,
       updateProfileSettings,
+      blockedUsers,
+      blockedByUserIds,
+      blockUser,
+      unblockUser,
+      isUserBlocked,
+      isBlockedBy,
       loginWithEmail,
       registerWithEmail,
       logout,
@@ -1235,6 +1405,12 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     clearAllNotifications,
     dismissToast,
     updateProfileSettings,
+    blockedUsers,
+    blockedByUserIds,
+    blockUser,
+    unblockUser,
+    isUserBlocked,
+    isBlockedBy,
     loginWithEmail,
     registerWithEmail,
     logout,

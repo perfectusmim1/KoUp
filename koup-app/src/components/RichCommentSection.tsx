@@ -234,7 +234,15 @@ export default function RichCommentSection({
   magazineId,
   targetTitle,
 }: RichCommentSectionProps) {
-  const { user, setIsAuthModalOpen, openAuthModal, pushNotification, isSoftBanned } = useKoUp();
+  const {
+    user,
+    setIsAuthModalOpen,
+    openAuthModal,
+    pushNotification,
+    isSoftBanned,
+    isUserBlocked,
+    isBlockedBy,
+  } = useKoUp();
 
   const [comments, setComments] = useState<CommentRow[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
@@ -1370,6 +1378,13 @@ export default function RichCommentSection({
 
             // If comment is moderated and viewer is neither owner nor admin, do not render
             if (isHiddenByModeration && !isAuthor && !isAdmin) {
+              return null;
+            }
+
+            // Bidirectional Block Filter:
+            // 1. If the viewer has blocked this comment's author -> hide
+            // 2. If this comment's author has blocked the viewer -> hide
+            if (isUserBlocked(c.user_id) || isBlockedBy(c.user_id)) {
               return null;
             }
 

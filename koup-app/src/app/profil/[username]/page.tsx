@@ -32,6 +32,9 @@ import {
   Share2,
   Sliders,
   ExternalLink,
+  UserX,
+  ShieldAlert,
+  Search,
 } from 'lucide-react';
 import {
   supabase,
@@ -67,10 +70,17 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
     logout,
     setIsAuthModalOpen,
     updateProfileSettings,
+    blockedUsers,
+    blockUser,
+    unblockUser,
+    isUserBlocked,
+    isBlockedBy,
+    pushNotification,
   } = useKoUp();
 
   const [profileData, setProfileData] = useState<UserProfile | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [blockedSearchQuery, setBlockedSearchQuery] = useState('');
 
   // Determine ownership
   const isOwner = Boolean(
@@ -330,22 +340,90 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
     }
   };
 
+  // Load custom lists from Supabase
+  useEffect(() => {
+    async function loadUserLists() {
+      if (!profileData?.id) return;
+      try {
+        let q = supabase
+          .from('custom_lists')
+          .select('id, slug, title, description, visibility, media_ids, likes_count')
+          .eq('user_id', profileData.id);
+
+        if (!isOwner) {
+          q = q.eq('visibility', 'public');
+        }
+
+        const { data } = await q.order('created_at', { ascending: false });
+        if (data && data.length > 0) {
+          setCustomLists(
+            data.map((l: any) => ({
+              id: l.id,
+              title: l.title,
+              description: l.description || 'Özel Koleksiyon',
+              count: Array.isArray(l.media_ids) ? l.media_ids.length : 0,
+            }))
+          );
+        }
+      } catch (err) {
+        console.error('Failed to load user custom lists:', err);
+      }
+    }
+    loadUserLists();
+  }, [profileData?.id, isOwner]);
+
   // Custom List Creator
-  const handleCreateList = (e: React.FormEvent) => {
+  const handleCreateList = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newListTitle.trim()) return;
     triggerSound('success');
+    const titleVal = newListTitle.trim();
+    const descVal = newListDesc.trim() || 'Özel Koleksiyon';
+
+    setNewListTitle('');
+    setNewListDesc('');
+
+    if (user?.id) {
+      try {
+        const res = await fetch('/api/lists', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: titleVal,
+            description: descVal,
+            visibility: 'public',
+            user_id: user.id,
+            media_ids: [],
+          }),
+        });
+        const d = await res.json();
+        if (d.success && d.list) {
+          setCustomLists((prev) => [
+            {
+              id: d.list.id,
+              title: d.list.title,
+              description: d.list.description || '',
+              count: 0,
+            },
+            ...prev,
+          ]);
+          pushNotification('Liste Oluşturuldu', 'Yeni listeniz kaydedildi.', 'success');
+          return;
+        }
+      } catch (err) {
+        console.error('Error creating list:', err);
+      }
+    }
+
     setCustomLists((prev) => [
       ...prev,
       {
         id: Date.now(),
-        title: newListTitle.trim(),
-        description: newListDesc.trim() || 'Özel Koleksiyon',
+        title: titleVal,
+        description: descVal,
         count: 0,
       },
     ]);
-    setNewListTitle('');
-    setNewListDesc('');
   };
 
   const currentDisplayProfile = isOwner && user ? user : profileData;
@@ -403,6 +481,37 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
           <p className="text-xs text-white/50 font-mono tracking-wider">Profil Yükleniyor...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Access Denial Gate: If this profile's owner has blocked the current user
+  const isBlockedByTarget = Boolean(!isOwner && profileData?.id && isBlockedBy(profileData.id));
+  if (isBlockedByTarget) {
+    return (
+      <div className="pt-36 pb-24 max-w-xl mx-auto px-5 text-center">
+        <div className="rounded-3xl bg-[#0f0f13] p-10 sm:p-14 border border-rose-500/30 space-y-5 shadow-2xl">
+          <div className="w-20 h-20 rounded-3xl bg-rose-500/15 border-2 border-rose-500/40 text-rose-400 flex items-center justify-center mx-auto shadow-[0_0_40px_rgba(244,63,94,0.3)]">
+            <ShieldAlert className="w-10 h-10" />
+          </div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 font-mono text-xs uppercase tracking-wider font-bold">
+            Erişim Engellendi
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            Bu kullanıcı tarafından engellendin
+          </h2>
+          <p className="text-sm text-white/60 leading-relaxed max-w-md mx-auto">
+            Bu profilin içerikleri ve kütüphanesi görüntülenemez.
+          </p>
+          <div className="pt-3">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all shadow-lg"
+            >
+              <span>Ana Sayfaya Dön</span>
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -505,7 +614,32 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                 <LogIn className="w-3.5 h-3.5" />
                 <span>Giriş Yap / Takip Et</span>
               </button>
-            ) : null}
+            ) : (
+              <button
+                onClick={async () => {
+                  if (!profileData?.id) return;
+                  triggerSound('click');
+                  if (isUserBlocked(profileData.id)) {
+                    await unblockUser(profileData.id);
+                  } else {
+                    await blockUser(
+                      profileData.id,
+                      profileData.username,
+                      profileData.display_name || undefined,
+                      profileData.avatar_url || undefined
+                    );
+                  }
+                }}
+                className={`flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold cursor-pointer transition-all ${
+                  isUserBlocked(profileData?.id)
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30'
+                    : 'bg-white/[0.06] text-white/70 border border-white/10 hover:bg-rose-500/15 hover:text-rose-300 hover:border-rose-500/30'
+                }`}
+              >
+                <UserX className="w-3.5 h-3.5" />
+                <span>{isUserBlocked(profileData?.id) ? 'Engeli Kaldır' : 'Engelle'}</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -1040,29 +1174,31 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                 } grid grid-cols-1 sm:grid-cols-2 gap-4`}
               >
                 {customLists.map((lst) => (
-                  <div
+                  <Link
                     key={lst.id}
-                    className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-6 flex flex-col justify-between hover:border-white/20 transition-all group"
+                    href={`/listeler/${lst.id}`}
+                    onClick={() => triggerSound('click')}
+                    className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-6 flex flex-col justify-between hover:border-sky-400/40 hover:bg-white/[0.03] transition-all group cursor-pointer"
                   >
                     <div>
                       <span className="text-[10px] font-mono text-sky-400 uppercase tracking-wider font-semibold">
-                        Herkese Açık Koleksiyon
+                        Özel Koleksiyon
                       </span>
                       <h4 className="text-lg font-bold text-white mt-1 group-hover:text-sky-300 transition-colors">
                         {lst.title}
                       </h4>
-                      <p className="text-xs text-white/60 mt-1">
+                      <p className="text-xs text-white/60 mt-1 line-clamp-2">
                         {lst.description}
                       </p>
                     </div>
                     <div className="mt-5 pt-3 border-t border-white/10 flex items-center justify-between text-xs font-mono text-white/50">
                       <span>{lst.count} Yapım</span>
-                      <span className="text-sky-400 group-hover:translate-x-1 transition-transform inline-flex items-center gap-1">
-                        <span>Görüntüle</span>
+                      <span className="text-sky-400 group-hover:translate-x-1 transition-transform inline-flex items-center gap-1 font-semibold">
+                        <span>İncele</span>
                         <span>→</span>
                       </span>
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             </motion.div>
@@ -1309,6 +1445,82 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                       className="w-5 h-5 accent-sky-400 cursor-pointer"
                     />
                   </label>
+                </div>
+
+                {/* Blocked Users Section */}
+                <div className="space-y-4 pt-4 border-t border-white/[0.08]">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h4 className="text-xs font-bold font-mono uppercase tracking-wider text-white/40 flex items-center gap-1.5">
+                        <UserX className="w-4 h-4 text-rose-400" />
+                        <span>Engellenen Kullanıcılar ({blockedUsers.length})</span>
+                      </h4>
+                      <p className="text-xs text-white/55 mt-0.5">
+                        Engellediğiniz kullanıcılar sizin yorumlarınızı göremez, siz de onların yorumlarını görmezsiniz. Profilinize erişimleri kısıtlanır.
+                      </p>
+                    </div>
+
+                    {blockedUsers.length > 0 && (
+                      <div className="relative w-full sm:w-60">
+                        <Search className="w-3.5 h-3.5 text-white/40 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={blockedSearchQuery}
+                          onChange={(e) => setBlockedSearchQuery(e.target.value)}
+                          placeholder="Engellenen ara..."
+                          className="w-full pl-8 pr-3 py-1.5 rounded-full bg-black/60 border border-white/15 text-xs text-white placeholder-white/40 focus:outline-none focus:border-sky-400"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {blockedUsers.length === 0 ? (
+                    <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] text-xs text-white/40 text-center font-mono">
+                      Henüz engellediğiniz bir kullanıcı bulunmuyor.
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                      {blockedUsers
+                        .filter(
+                          (u) =>
+                            !blockedSearchQuery.trim() ||
+                            u.username.toLowerCase().includes(blockedSearchQuery.toLowerCase()) ||
+                            (u.display_name && u.display_name.toLowerCase().includes(blockedSearchQuery.toLowerCase()))
+                        )
+                        .map((u) => (
+                          <div
+                            key={u.id}
+                            className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.04] border border-white/10 hover:border-white/20 transition-all"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-9 h-9 rounded-full overflow-hidden bg-white/10 border border-white/15 flex items-center justify-center shrink-0">
+                                {u.avatar_url ? (
+                                  <img
+                                    src={getProxiedImageUrl(u.avatar_url, u.username)}
+                                    alt={u.username}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <User className="w-4 h-4 text-white/60" />
+                                )}
+                              </div>
+                              <div className="min-w-0 truncate">
+                                <div className="text-xs font-bold text-white truncate">{u.display_name || u.username}</div>
+                                <div className="text-[10px] font-mono text-white/40 truncate">@{u.username}</div>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => unblockUser(u.id)}
+                              className="px-3.5 py-1.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 text-xs font-semibold cursor-pointer transition-all shrink-0 ml-2"
+                            >
+                              Engeli Kaldır
+                            </button>
+                          </div>
+                        ))}
+                    </div>
+                  )}
                 </div>
 
                 {settingsStatus && (

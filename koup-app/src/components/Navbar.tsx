@@ -29,6 +29,7 @@ import {
   Settings,
   LogOut,
   Library,
+  ListOrdered,
 } from 'lucide-react';
 import {
   supabase,
@@ -44,6 +45,7 @@ import { cachedQuery } from '@/lib/cache';
 const NAV_LINKS = [
   { href: '/', label: 'Ana Sayfa', icon: Home },
   { href: '/kesfet', label: 'Keşfet', icon: Compass },
+  { href: '/listeler', label: 'Listeler', icon: ListOrdered },
   { href: '/oyuncular', label: 'Oyuncular', icon: Users },
   { href: '/magazin', label: 'Magazin', icon: Newspaper },
   { href: '/takvim', label: 'Takvim', icon: Calendar },
