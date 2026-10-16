@@ -17,6 +17,7 @@ import {
   SlidersHorizontal,
   Home,
   Menu,
+  LogIn,
 } from 'lucide-react';
 import {
   supabase,
@@ -26,6 +27,7 @@ import {
   formatContentTypeTR,
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
+import AuthModal from '@/components/AuthModal';
 
 const NAV_LINKS = [
   { href: '/', label: 'Ana Sayfa', icon: Home },
@@ -39,11 +41,13 @@ export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const {
+    user,
     profile,
     notifications,
     unreadCount,
     markNotificationsRead,
     triggerSound,
+    setIsAuthModalOpen,
   } = useKoUp();
 
   const [query, setQuery] = useState('');
@@ -432,28 +436,40 @@ export default function Navbar() {
           </AnimatePresence>
         </div>
 
-        {/* Admin Control Center Link */}
-        <Link
-          href="/admin"
-          title="Admin Kontrol Merkezi"
-          className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-full glass-pill text-xs font-medium text-white/80 hover:text-white transition-all"
-        >
-          <ShieldCheck className="w-3.5 h-3.5 text-white/70" />
-          <span>Admin</span>
-        </Link>
+        {/* Admin Control Center Link - Only visible to admins */}
+        {user?.role === 'admin' && (
+          <Link
+            href="/admin"
+            title="Admin Kontrol Merkezi"
+            className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-full glass-pill text-xs font-medium text-amber-300 border-amber-400/30 hover:border-amber-400/60 transition-all shadow-[0_0_12px_rgba(245,158,11,0.2)]"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+            <span>Admin</span>
+          </Link>
+        )}
 
-        {/* User Profile Pill (No Broken Image Icon) */}
-        <Link
-          href="/profil"
-          className="flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 rounded-full glass-pill hover:border-white/30 transition-all"
-        >
-          <div className="w-7 h-7 rounded-full bg-white/15 border border-white/20 flex items-center justify-center text-white text-xs font-bold shrink-0">
-            <User className="w-3.5 h-3.5 text-white" />
-          </div>
-          <span className="hidden md:inline text-xs font-semibold text-white max-w-[110px] truncate">
-            {profile?.display_name || 'Profilim'}
-          </span>
-        </Link>
+        {/* User Profile Pill or Login Button */}
+        {user ? (
+          <Link
+            href="/profil"
+            className="flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 rounded-full glass-pill hover:border-white/30 transition-all"
+          >
+            <div className="w-7 h-7 rounded-full bg-white/15 border border-white/20 flex items-center justify-center text-white text-xs font-bold shrink-0">
+              <User className="w-3.5 h-3.5 text-white" />
+            </div>
+            <span className="hidden md:inline text-xs font-semibold text-white max-w-[110px] truncate">
+              {user.display_name || user.username || 'Profilim'}
+            </span>
+          </Link>
+        ) : (
+          <button
+            onClick={() => setIsAuthModalOpen(true)}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-full glass-pill text-xs font-semibold text-white hover:bg-white/15 cursor-pointer transition-all"
+          >
+            <LogIn className="w-3.5 h-3.5 text-white/70" />
+            <span>Giriş Yap</span>
+          </button>
+        )}
       </div>
 
       {/* Mobile Navigation Drawer */}
@@ -488,6 +504,9 @@ export default function Navbar() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Global Glass Auth Modal */}
+      <AuthModal />
     </header>
   );
 }

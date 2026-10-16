@@ -84,40 +84,21 @@ interface KoUpContextValue {
   logout: () => Promise<void>;
 }
 
-const DEFAULT_PROFILE: UserProfile = {
-  id: 'local-cinema-member',
-  username: 'koup_sinema',
-  display_name: 'KoUp VIP Üye',
-  avatar_url: null,
-  banner_url: 'https://image.tmdb.org/t/p/original/rAOjnEFTuNysY7bot8zonhImGMh.jpg',
-  bio: 'K-Drama, C-Drama ve Anime tutkunu · KoUp Sinema Koleksiyoneri',
-  role: 'admin',
-  is_private: false,
-  hide_watch_history: false,
-  notification_settings: {
-    sound_enabled: true,
-    sound_tone: 'apple_glass',
-    sound_volume: 0.7,
-    mute_during_fullscreen: true,
-    notify_new_episode: true,
-    notify_followed_actor: true,
-    notify_comment_reply: true,
-    notify_list_activity: true,
-  },
-  stats_episodes_watched: 0,
-  stats_series_completed: 0,
-  stats_movies_completed: 0,
-  stats_anime_completed: 0,
-  stats_total_minutes: 0,
-  mdl_username: '',
-  anilist_username: '',
-  anilist_auto_sync: true,
+const DEFAULT_NOTIFICATION_SETTINGS = {
+  sound_enabled: true,
+  sound_tone: 'apple_glass' as const,
+  sound_volume: 0.7,
+  mute_during_fullscreen: true,
+  notify_new_episode: true,
+  notify_followed_actor: true,
+  notify_comment_reply: true,
+  notify_list_activity: true,
 };
 
 const KoUpContext = createContext<KoUpContextValue | null>(null);
 
 export function KoUpProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<UserProfile | null>(DEFAULT_PROFILE);
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [progressMap, setProgressMap] = useState<Record<number, UserMediaProgress>>({});
   const [favPersonIds, setFavPersonIds] = useState<number[]>([]);
   const [followedMediaIds, setFollowedMediaIds] = useState<number[]>([]);
@@ -168,13 +149,22 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       const savedFolP = localStorage.getItem('koup_fol_people_v1');
       if (savedFolP) setFollowedPersonIds(JSON.parse(savedFolP));
       const savedProf = localStorage.getItem('koup_profile_v1');
-      if (savedProf) setUser(JSON.parse(savedProf));
+      if (savedProf) {
+        const parsed = JSON.parse(savedProf);
+        // Discard any stale mock admin user
+        if (parsed && parsed.id !== 'local-cinema-member') {
+          setUser(parsed);
+        } else {
+          localStorage.removeItem('koup_profile_v1');
+        }
+      }
     } catch {
       // ignore storage errors
     }
 
-    // Check real Supabase session
-    supabase.auth.getSession().then(async ({ data }) => {
+    // Check real Supabase session & sync profile
+    const loadSession = async () => {
+      const { data } = await supabase.auth.getSession();
       if (data?.session?.user) {
         const uid = data.session.user.id;
         const { data: prof } = await supabase
@@ -183,8 +173,31 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           .eq('id', uid)
           .single();
         if (prof) {
-          setUser({ ...DEFAULT_PROFILE, ...prof, role: prof.role || 'admin' });
+          setUser(prof as UserProfile);
+          localStorage.setItem('koup_profile_v1', JSON.stringify(prof));
         }
+      } else {
+        setUser(null);
+        localStorage.removeItem('koup_profile_v1');
+      }
+    };
+    loadSession();
+
+    // Listen to real Supabase auth state transitions
+    const { data: authSub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        if (prof) {
+          setUser(prof as UserProfile);
+          localStorage.setItem('koup_profile_v1', JSON.stringify(prof));
+        }
+      } else {
+        setUser(null);
+        localStorage.removeItem('koup_profile_v1');
       }
     });
 
@@ -196,7 +209,10 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       }
     };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {
+      authSub.subscription.unsubscribe();
+      window.removeEventListener('keydown', onKeyDown);
+    };
   }, []);
 
   const pushNotification = useCallback(
@@ -218,7 +234,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       setNotifications((prev) => [item, ...prev.slice(0, 29)]);
       setActiveToast(item);
 
-      const settings = user?.notification_settings || DEFAULT_PROFILE.notification_settings;
+      const settings = user?.notification_settings || DEFAULT_NOTIFICATION_SETTINGS;
       if (settings.sound_enabled) {
         playNotificationChime(
           (settings.sound_tone as SoundTone) || 'apple_glass',
@@ -471,7 +487,8 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
   const updateProfileSettings = useCallback(
     async (patch: Partial<UserProfile>) => {
       setUser((prev) => {
-        const updated = { ...(prev || DEFAULT_PROFILE), ...patch };
+        if (!prev) return null;
+        const updated = { ...prev, ...patch };
         try {
           localStorage.setItem('koup_profile_v1', JSON.stringify(updated));
         } catch {
@@ -479,9 +496,12 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         }
         return updated;
       });
+      if (user?.id) {
+        await supabase.from('profiles').update(patch).eq('id', user.id);
+      }
       pushNotification('Ayarlar Kaydedildi', 'Profil ve bildirim tercihlerin güncellendi.', 'success');
     },
-    [pushNotification]
+    [user?.id, pushNotification]
   );
 
   const loginWithEmail = useCallback(
@@ -494,16 +514,11 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           .select('*')
           .eq('id', data.user.id)
           .single();
-        const merged: UserProfile = {
-          ...DEFAULT_PROFILE,
-          ...(prof || {}),
-          id: data.user.id,
-          username: prof?.username || email.split('@')[0],
-          display_name: prof?.display_name || email.split('@')[0],
-        };
-        setUser(merged);
-        localStorage.setItem('koup_profile_v1', JSON.stringify(merged));
-        pushNotification('Giriş Başarılı', `Tekrar hoş geldin, ${merged.display_name}!`, 'success');
+        if (prof) {
+          setUser(prof as UserProfile);
+          localStorage.setItem('koup_profile_v1', JSON.stringify(prof));
+          pushNotification('Giriş Başarılı', `Tekrar hoş geldin, ${prof.display_name || prof.username}!`, 'success');
+        }
       }
       return null;
     },
@@ -521,14 +536,35 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       });
       if (error) return error.message;
       if (data.user) {
-        const merged: UserProfile = {
-          ...DEFAULT_PROFILE,
-          id: data.user.id,
-          username,
-          display_name: username,
-        };
-        setUser(merged);
-        localStorage.setItem('koup_profile_v1', JSON.stringify(merged));
+        // Wait 600ms for Postgres handle_new_user trigger to populate profiles
+        await new Promise((r) => setTimeout(r, 600));
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', data.user.id)
+          .single();
+        if (prof) {
+          setUser(prof as UserProfile);
+          localStorage.setItem('koup_profile_v1', JSON.stringify(prof));
+        } else {
+          const fallback: UserProfile = {
+            id: data.user.id,
+            username,
+            display_name: username,
+            role: 'user',
+            is_private: false,
+            hide_watch_history: false,
+            notification_settings: DEFAULT_NOTIFICATION_SETTINGS,
+            stats_episodes_watched: 0,
+            stats_series_completed: 0,
+            stats_movies_completed: 0,
+            stats_anime_completed: 0,
+            stats_total_minutes: 0,
+            anilist_auto_sync: false,
+          };
+          setUser(fallback);
+          localStorage.setItem('koup_profile_v1', JSON.stringify(fallback));
+        }
         pushNotification('Hesap Oluşturuldu', `KoUp ailesine hoş geldin, ${username}!`, 'success');
       }
       return null;
@@ -538,7 +574,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     await supabase.auth.signOut();
-    setUser(DEFAULT_PROFILE);
+    setUser(null);
     localStorage.removeItem('koup_profile_v1');
     pushNotification('Oturum Kapatıldı', 'Misafir sinema moduna geçildi.', 'info');
   }, [pushNotification]);
@@ -549,12 +585,12 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
 
   const toggleSound = useCallback(() => {
     setUser((prev) => {
-      const base = prev || DEFAULT_PROFILE;
+      if (!prev) return null;
       const nextSettings = {
-        ...base.notification_settings,
-        sound_enabled: !base.notification_settings.sound_enabled,
+        ...prev.notification_settings,
+        sound_enabled: !prev.notification_settings?.sound_enabled,
       };
-      const updated = { ...base, notification_settings: nextSettings };
+      const updated = { ...prev, notification_settings: nextSettings };
       try {
         localStorage.setItem('koup_profile_v1', JSON.stringify(updated));
       } catch {
