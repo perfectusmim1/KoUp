@@ -91,7 +91,9 @@ function AccordionMediaCard({
     hoverTimerRef.current = setTimeout(() => {
       if (cardRef.current && typeof window !== 'undefined') {
         const rect = cardRef.current.getBoundingClientRect();
-        setIsNearRight(rect.right + 190 > window.innerWidth);
+        // If card's right edge + expansion width (190px) exceeds viewport or parent container right edge
+        const nearEdge = rect.right + 180 > window.innerWidth;
+        setIsNearRight(nearEdge);
       }
 
       setIsExpanded(true);
@@ -150,6 +152,8 @@ function AccordionMediaCard({
           : undefined,
         maxWidth: isExpanded ? 'calc(100vw - 32px)' : undefined,
         transformOrigin: isNearRight ? 'right center' : 'left center',
+        transform: isExpanded && isNearRight && fluidWidth ? 'translateX(-170px)' : undefined,
+        zIndex: isExpanded ? 40 : 1,
         transition:
           'width 0.32s cubic-bezier(0.2, 0.9, 0.3, 1), min-width 0.32s cubic-bezier(0.2, 0.9, 0.3, 1), max-width 0.32s cubic-bezier(0.2, 0.9, 0.3, 1), transform 0.32s cubic-bezier(0.2, 0.9, 0.3, 1)',
         willChange: 'width, min-width, transform',

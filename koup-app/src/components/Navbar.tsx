@@ -30,6 +30,7 @@ import {
   LogOut,
   Library,
   ListOrdered,
+  FolderHeart,
 } from 'lucide-react';
 import {
   supabase,
@@ -754,7 +755,7 @@ export default function Navbar() {
                   </Link>
 
                   <Link
-                    href={`/profil/${encodeURIComponent(user.username)}?tab=library`}
+                    href="/kutuphane"
                     prefetch={true}
                     onClick={() => {
                       triggerSound('click');
@@ -762,12 +763,12 @@ export default function Navbar() {
                     }}
                     className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.08] transition-colors"
                   >
-                    <Bookmark className="w-4 h-4 text-sky-400" />
+                    <Library className="w-4 h-4 text-sky-400" />
                     <span>Kütüphanem</span>
                   </Link>
 
                   <Link
-                    href={`/profil/${encodeURIComponent(user.username)}?tab=history`}
+                    href="/gecmis"
                     prefetch={true}
                     onClick={() => {
                       triggerSound('click');
@@ -780,7 +781,20 @@ export default function Navbar() {
                   </Link>
 
                   <Link
-                    href={`/profil/${encodeURIComponent(user.username)}?tab=settings`}
+                    href="/listelerim"
+                    prefetch={true}
+                    onClick={() => {
+                      triggerSound('click');
+                      setProfileDropdownOpen(false);
+                    }}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.08] transition-colors"
+                  >
+                    <FolderHeart className="w-4 h-4 text-sky-400" />
+                    <span>Özel Listelerim</span>
+                  </Link>
+
+                  <Link
+                    href="/ayarlar"
                     prefetch={true}
                     onClick={() => {
                       triggerSound('click');
@@ -943,6 +957,58 @@ export default function Navbar() {
                         </div>
                       </div>
                     </Link>
+
+                    {/* Quick Profile Navigation for Mobile */}
+                    <div className="grid grid-cols-2 gap-1.5 py-1">
+                      <Link
+                        href="/kutuphane"
+                        prefetch={true}
+                        onClick={() => {
+                          triggerSound('click');
+                          setMobileMenuOpen(false);
+                        }}
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.04] text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.08]"
+                      >
+                        <Library className="w-3.5 h-3.5 text-sky-400" />
+                        <span>Kütüphanem</span>
+                      </Link>
+                      <Link
+                        href="/gecmis"
+                        prefetch={true}
+                        onClick={() => {
+                          triggerSound('click');
+                          setMobileMenuOpen(false);
+                        }}
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.04] text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.08]"
+                      >
+                        <Clock className="w-3.5 h-3.5 text-sky-400" />
+                        <span>İzleme Geçmişi</span>
+                      </Link>
+                      <Link
+                        href="/listelerim"
+                        prefetch={true}
+                        onClick={() => {
+                          triggerSound('click');
+                          setMobileMenuOpen(false);
+                        }}
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.04] text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.08]"
+                      >
+                        <FolderHeart className="w-3.5 h-3.5 text-sky-400" />
+                        <span>Özel Listelerim</span>
+                      </Link>
+                      <Link
+                        href="/ayarlar"
+                        prefetch={true}
+                        onClick={() => {
+                          triggerSound('click');
+                          setMobileMenuOpen(false);
+                        }}
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.04] text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.08]"
+                      >
+                        <Settings className="w-3.5 h-3.5 text-sky-400" />
+                        <span>Ayarlar</span>
+                      </Link>
+                    </div>
 
                     <button
                       onClick={() => {

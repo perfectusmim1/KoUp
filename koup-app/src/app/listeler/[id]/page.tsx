@@ -474,10 +474,10 @@ export default function ListDetailPage({
             )}
           </div>
         ) : (
-          <div className="flex flex-wrap items-center gap-4 sm:gap-5 pb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5 pb-6">
             {list.items.map((item, idx) => (
               <div key={item.id} className="relative group">
-                <AccordionMediaCard item={item} priority={idx < 6} />
+                <AccordionMediaCard item={item} priority={idx < 6} fluidWidth={true} />
                 {isOwner && (
                   <button
                     onClick={(e) => {

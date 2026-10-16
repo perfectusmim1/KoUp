@@ -139,19 +139,33 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
   const [newListTitle, setNewListTitle] = useState('');
   const [newListDesc, setNewListDesc] = useState('');
 
-  // Sync tab with URL search parameter
+  // Sync tab with URL search parameter & redirect dedicated routes
   useEffect(() => {
-    if (tabParam && validTabs.includes(tabParam)) {
-      if (!isOwner && (tabParam === 'settings' || tabParam === 'import')) {
-        setActiveTab('overview');
-      } else {
+    if (tabParam) {
+      if (tabParam === 'settings' || tabParam === 'import') {
+        router.replace('/ayarlar');
+        return;
+      }
+      if (tabParam === 'history') {
+        router.replace('/gecmis');
+        return;
+      }
+      if (validTabs.includes(tabParam)) {
         setActiveTab(tabParam);
       }
     }
-  }, [tabParam, isOwner]);
+  }, [tabParam, router]);
 
   const switchTab = (tab: ProfileTab) => {
     triggerSound('click');
+    if (tab === 'settings' || tab === 'import') {
+      router.push('/ayarlar');
+      return;
+    }
+    if (tab === 'history') {
+      router.push('/gecmis');
+      return;
+    }
     setActiveTab(tab);
     const url = `/profil/${encodeURIComponent(targetUsername)}${tab === 'overview' ? '' : `?tab=${tab}`}`;
     router.push(url, { scroll: false });
@@ -455,20 +469,22 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
     Array.from({ length: 7 }, () => 0)
   );
 
-  // Drama & Anime Country DNA Breakdown
+  // Country DNA Breakdown
   const countryBreakdown = useMemo(() => {
     if (watchedMedia.length === 0) {
       return [
-        { label: 'Güney Kore (K-Drama)', code: 'KR', displayCode: 'KR', pct: 58 },
-        { label: 'Japonya (Anime & J-Drama)', code: 'JP', displayCode: 'JP', pct: 26 },
-        { label: 'Çin (C-Drama & Wuxia)', code: 'CN', displayCode: 'CN', pct: 12 },
-        { label: 'Tayland & Global', code: 'TH', displayCode: 'GL', pct: 4 },
+        { label: 'Güney Kore (K-Drama)', code: 'KR', displayCode: 'KR', pct: 45 },
+        { label: 'Japonya (Anime & J-Drama)', code: 'JP', displayCode: 'JP', pct: 25 },
+        { label: 'Çin (C-Drama & Wuxia)', code: 'CN', displayCode: 'CN', pct: 15 },
+        { label: 'Amerika Birleşik Devletleri (ABD)', code: 'US', displayCode: 'US', pct: 10 },
+        { label: 'Tayland & Global', code: 'TH', displayCode: 'GL', pct: 5 },
       ];
     }
 
     let kr = 0;
     let jp = 0;
     let cn = 0;
+    let us = 0;
     let gl = 0;
 
     watchedMedia.forEach((m) => {
@@ -477,6 +493,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
       if (cc === 'KR') kr++;
       else if (cc === 'JP' || ct === 'anime') jp++;
       else if (cc === 'CN') cn++;
+      else if (cc === 'US' || cc === 'USA') us++;
       else gl++;
     });
 
@@ -484,36 +501,28 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
     const krPct = Math.round((kr / total) * 100);
     const jpPct = Math.round((jp / total) * 100);
     const cnPct = Math.round((cn / total) * 100);
-    const glPct = Math.max(0, 100 - (krPct + jpPct + cnPct));
+    const usPct = Math.round((us / total) * 100);
+    const glPct = Math.max(0, 100 - (krPct + jpPct + cnPct + usPct));
 
     return [
       { label: 'Güney Kore (K-Drama)', code: 'KR', displayCode: 'KR', pct: krPct },
       { label: 'Japonya (Anime & J-Drama)', code: 'JP', displayCode: 'JP', pct: jpPct },
       { label: 'Çin (C-Drama & Wuxia)', code: 'CN', displayCode: 'CN', pct: cnPct },
+      { label: 'Amerika Birleşik Devletleri (ABD)', code: 'US', displayCode: 'US', pct: usPct },
       { label: 'Tayland & Global', code: 'TH', displayCode: 'GL', pct: glPct },
     ];
   }, [watchedMedia]);
 
-  // Tabs for owner vs visitor
+  // Tabs: Profile is strictly for public viewing/showcase ("profil görünüm için")
   const TABS: Array<{
     id: ProfileTab;
     label: string;
     icon: React.ComponentType<{ className?: string }>;
-  }> = isOwner
-    ? [
-        { id: 'overview', label: 'Genel Bakış & Drama DNA', icon: BarChart3 },
-        { id: 'library', label: `Kütüphanem (${watchedMedia.length})`, icon: Library },
-        { id: 'history', label: 'İzleme Geçmişim', icon: Clock },
-        { id: 'lists', label: `Özel Listelerim (${customLists.length})`, icon: FolderHeart },
-        { id: 'import', label: 'MDL & AniList Tek Tıkla Aktarım', icon: Zap },
-        { id: 'settings', label: 'Ayarlar & Gizlilik', icon: Settings },
-      ]
-    : [
-        { id: 'overview', label: 'Genel Bakış & Drama DNA', icon: BarChart3 },
-        { id: 'library', label: `Kütüphane (${watchedMedia.length})`, icon: Library },
-        { id: 'history', label: 'İzleme Geçmişi', icon: Clock },
-        { id: 'lists', label: `Listeler (${customLists.length})`, icon: FolderHeart },
-      ];
+  }> = [
+    { id: 'overview', label: 'Genel Bakış & Drama DNA', icon: BarChart3 },
+    { id: 'library', label: `Kütüphane (${watchedMedia.length})`, icon: Library },
+    { id: 'lists', label: `Özel Listeler (${customLists.length})`, icon: FolderHeart },
+  ];
 
   if (isLoadingProfile) {
     return (
@@ -631,13 +640,30 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
           <div className="flex flex-wrap items-center gap-2.5">
             {isOwner ? (
               <>
-                <button
-                  onClick={() => switchTab('settings')}
+                <Link
+                  href="/kutuphane"
+                  onClick={() => triggerSound('click')}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-full glass-pill text-xs font-semibold text-white hover:bg-white/15 cursor-pointer transition-all"
+                >
+                  <Library className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Kütüphanem</span>
+                </Link>
+                <Link
+                  href="/listelerim"
+                  onClick={() => triggerSound('click')}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-full glass-pill text-xs font-semibold text-white hover:bg-white/15 cursor-pointer transition-all"
+                >
+                  <FolderHeart className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Listelerim</span>
+                </Link>
+                <Link
+                  href="/ayarlar"
+                  onClick={() => triggerSound('click')}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-full glass-pill text-xs font-semibold text-white hover:bg-white/15 cursor-pointer transition-all"
                 >
                   <Settings className="w-3.5 h-3.5 text-sky-400" />
                   <span>Ayarlar</span>
-                </button>
+                </Link>
                 <button
                   onClick={() => logout()}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-400/30 text-xs font-semibold hover:bg-rose-500/30 cursor-pointer transition-all"
@@ -800,7 +826,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                   <div className="flex items-center gap-2">
                     <Activity className="w-4 h-4 text-sky-400" />
                     <h3 className="text-lg font-bold text-white">
-                      Drama & Anime DNA • Ülke Dağılımı
+                      Ülke Dağılımı
                     </h3>
                   </div>
                   <div className="space-y-4">
@@ -941,6 +967,24 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                 </div>
               ) : (
                 <>
+                  {isOwner && (
+                    <div className="p-4 rounded-3xl bg-sky-500/10 border border-sky-400/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                      <div className="flex items-center gap-2.5">
+                        <Library className="w-4 h-4 text-sky-400 shrink-0" />
+                        <span className="text-xs text-white/80">
+                          Kütüphanenizi tam ekran filtrelemek, aramak ve durumları toplu yönetmek için kütüphane sayfanızı kullanın.
+                        </span>
+                      </div>
+                      <Link
+                        href="/kutuphane"
+                        onClick={() => triggerSound('click')}
+                        className="px-4 py-1.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all shrink-0 text-center shadow-sm"
+                      >
+                        Kütüphanemi Yönet →
+                      </Link>
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap items-center gap-2">
                     {[
                       {
@@ -1174,6 +1218,24 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
               transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
               className="grid grid-cols-1 lg:grid-cols-12 gap-6"
             >
+              {isOwner && (
+                <div className="lg:col-span-12 p-4 rounded-3xl bg-sky-500/10 border border-sky-400/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <FolderHeart className="w-4 h-4 text-sky-400 shrink-0" />
+                    <span className="text-xs text-white/80">
+                      Özel koleksiyon oluşturmak, afişleri ve gizlilik ayarlarını tam ekran yönetmek için listeler yönetim sayfasını kullanın.
+                    </span>
+                  </div>
+                  <Link
+                    href="/listelerim"
+                    onClick={() => triggerSound('click')}
+                    className="px-4 py-1.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all shrink-0 text-center shadow-sm"
+                  >
+                    Özel Listelerimi Yönet →
+                  </Link>
+                </div>
+              )}
+
               {isOwner && (
                 <form
                   onSubmit={handleCreateList}
@@ -1483,6 +1545,83 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                       className="w-5 h-5 accent-sky-400 cursor-pointer"
                     />
                   </label>
+
+                {/* 1-Click MDL & AniList Watchlist Import */}
+                <div className="space-y-4 pt-4 border-t border-white/[0.08]">
+                  <div>
+                    <h4 className="text-xs font-bold font-mono uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
+                      <Zap className="w-4 h-4 text-sky-400" />
+                      <span>İzleme Listesi Aktarımı (MDL & AniList)</span>
+                    </h4>
+                    <p className="text-xs text-white/55 mt-0.5">
+                      Başka platformlardaki izleme geçmişinizi ve puanlarınızı tek tıkla KoUp arşivinize aktarın.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {/* MDL Box */}
+                    <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-amber-400" />
+                        <span className="text-xs font-bold text-amber-300">MyDramaList (MDL)</span>
+                      </div>
+                      <p className="text-[11px] text-white/50 leading-relaxed">
+                        K-Drama ve C-Drama listeni aktarmak için MDL kullanıcı adını gir:
+                      </p>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={mdlUsername}
+                          onChange={(e) => setMdlUsername(e.target.value)}
+                          placeholder="MDL kullanıcı adı..."
+                          className="flex-1 px-3 py-1.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white focus:outline-none focus:border-amber-400/50"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleImport('mdl')}
+                          disabled={isImporting}
+                          className="px-3.5 py-1.5 rounded-xl bg-amber-400 text-black font-bold text-xs hover:bg-amber-300 transition-all cursor-pointer shrink-0 disabled:opacity-50"
+                        >
+                          {isImporting ? '...' : 'Aktar'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* AniList Box */}
+                    <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 space-y-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-sky-400" />
+                        <span className="text-xs font-bold text-sky-300">AniList</span>
+                      </div>
+                      <p className="text-[11px] text-white/50 leading-relaxed">
+                        Anime kütüphaneni senkronize etmek için AniList kullanıcı adını gir:
+                      </p>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={anilistUsername}
+                          onChange={(e) => setAnilistUsername(e.target.value)}
+                          placeholder="AniList kullanıcı adı..."
+                          className="flex-1 px-3 py-1.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white focus:outline-none focus:border-sky-400/50"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleImport('anilist')}
+                          disabled={isImporting}
+                          className="px-3.5 py-1.5 rounded-xl bg-sky-400 text-black font-bold text-xs hover:bg-sky-300 transition-all cursor-pointer shrink-0 disabled:opacity-50"
+                        >
+                          {isImporting ? '...' : 'Aktar'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {importStatus && (
+                    <div className="p-3 rounded-xl bg-sky-500/10 border border-sky-400/30 text-xs font-mono text-sky-300 flex items-center gap-2">
+                      <Zap className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                      <span>{importStatus}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Blocked Users Section */}
