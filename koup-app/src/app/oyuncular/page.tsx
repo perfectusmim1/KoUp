@@ -59,7 +59,9 @@ export default function ActorsLeaderboardPage() {
         query = query.ilike('name', `%${searchQuery.trim()}%`);
       }
       if (sortBy === 'favs') {
-        query = query.order('favorites_count', { ascending: false });
+        query = query
+          .order('favorites_count', { ascending: false })
+          .order('drama_count', { ascending: false });
       } else {
         query = query.order('drama_count', { ascending: false });
       }
@@ -231,7 +233,7 @@ export default function ActorsLeaderboardPage() {
                     }`}
                   >
                     <Heart className={`w-3.5 h-3.5 ${isFav ? 'fill-white' : 'text-rose-400'}`} />
-                    <span>{displayFavs.toLocaleString('tr-TR')}</span>
+                    <span>{displayFavs > 0 ? displayFavs : 'Favorile'}</span>
                   </button>
 
                   <button

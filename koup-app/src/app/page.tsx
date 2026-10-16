@@ -95,7 +95,8 @@ export default function HomePage() {
           .from('media')
           .select('*')
           .not('backdrop_image', 'is', null)
-          .order('views_total', { ascending: false })
+          .order('mdl_rating', { ascending: false, nullsFirst: false })
+          .order('imdb_rating', { ascending: false, nullsFirst: false })
           .limit(12),
         supabase
           .from('media')
@@ -121,7 +122,8 @@ export default function HomePage() {
           .select('*')
           .in('country_code', ['US', 'TH', 'TW', 'JP'])
           .neq('content_type', 'anime')
-          .order('site_rating', { ascending: false, nullsFirst: false })
+          .order('imdb_rating', { ascending: false, nullsFirst: false })
+          .order('mdl_rating', { ascending: false, nullsFirst: false })
           .limit(16),
         supabase
           .from('episodes')
@@ -134,6 +136,7 @@ export default function HomePage() {
           .from('people')
           .select('*')
           .order('favorites_count', { ascending: false })
+          .order('drama_count', { ascending: false })
           .limit(12),
         supabase
           .from('magazine_posts')
@@ -274,19 +277,19 @@ export default function HomePage() {
                   transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
                   className="max-w-2xl flex flex-col gap-4"
                 >
-                  {/* Subtle Luxury Metadata */}
+                  {/* Genuine Metadata */}
                   <div className="flex items-center flex-wrap gap-2.5 text-[11px] font-semibold tracking-[0.14em] uppercase text-white/75">
                     <span className="px-2.5 py-1 rounded-md glass-pill text-white border border-white/20 tracking-[0.18em] font-bold">
-                      KoUp Original
+                      {formatContentTypeTR(activeHero.content_type, activeHero.country_code || activeHero.country)}
                     </span>
+                    {activeHero.release_year && (
+                      <>
+                        <span className="text-white/35">•</span>
+                        <span className="text-white/90">{activeHero.release_year}</span>
+                      </>
+                    )}
                     <span className="text-white/35">•</span>
-                    <span className="text-white/90">
-                      {formatContentTypeTR(activeHero.content_type, activeHero.country)}
-                    </span>
-                    <span className="text-white/35">•</span>
-                    <span className="text-white/90">4K HDR</span>
-                    <span className="text-white/35">•</span>
-                    <span className="text-white/90">Dolby Vision</span>
+                    <span className="text-white/90">FHD 1080p</span>
                     {activeHero.mdl_rating && (
                       <>
                         <span className="text-white/35">•</span>
@@ -295,11 +298,19 @@ export default function HomePage() {
                         </span>
                       </>
                     )}
+                    {activeHero.imdb_rating && (
+                      <>
+                        <span className="text-white/35">•</span>
+                        <span className="text-[#f5c518] font-bold tracking-normal text-[12px]">
+                          IMDb {activeHero.imdb_rating}
+                        </span>
+                      </>
+                    )}
                     {activeHero.anilist_rating && (
                       <>
                         <span className="text-white/35">•</span>
                         <span className="text-sky-300 font-bold tracking-normal text-[12px]">
-                          %{activeHero.anilist_rating} Eşleşme
+                          AniList {activeHero.anilist_rating}%
                         </span>
                       </>
                     )}

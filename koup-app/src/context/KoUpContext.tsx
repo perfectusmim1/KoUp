@@ -437,17 +437,21 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       }
 
       const delta = isFav ? -1 : 1;
-      const { data: curr } = await supabase
-        .from('people')
-        .select('favorites_count')
-        .eq('id', personId)
-        .single();
-      const newCount = Math.max(0, (curr?.favorites_count || 10) + delta);
+      let newCount = isFav ? 0 : 1;
+      try {
+        const { data: countRes } = await supabase.rpc('increment_person_favorite', {
+          p_person_id: personId,
+          p_delta: delta,
+        });
+        if (typeof countRes === 'number') newCount = countRes;
+      } catch {
+        // local state fallback
+      }
 
       pushNotification(
         isFav ? 'Favoriden Çıkarıldı' : 'Oyuncu / Karakter Favorilendi',
         personName
-          ? `${personName} favori sıralamasında ${isFav ? 'güncellendi' : 'yükseldi'}!`
+          ? `${personName} favori listene ${isFav ? 'çıkarıldı' : 'eklendi'}!`
           : 'Favori tercihin kaydedildi.',
         'actor'
       );

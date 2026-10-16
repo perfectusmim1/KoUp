@@ -170,14 +170,16 @@ export default function PersonDetailPage({
               </span>
             </span>
 
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold bg-rose-500/15 text-rose-300 border border-rose-400/30">
-              <Heart className="w-3.5 h-3.5 fill-rose-400 text-rose-400" />
-              <span>{totalFavs.toLocaleString('tr-TR')} Favori</span>
-            </span>
+            {totalFavs > 0 && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold bg-rose-500/15 text-rose-300 border border-rose-400/30">
+                <Heart className="w-3.5 h-3.5 fill-rose-400 text-rose-400" />
+                <span>{totalFavs} Favori</span>
+              </span>
+            )}
 
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono bg-amber-400/15 text-amber-300 border border-amber-400/30">
-              <Award className="w-3.5 h-3.5 text-amber-300" />
-              <span>Ortalama Puan: {person.avg_rating || 8.6}</span>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono bg-white/10 text-white/90 border border-white/15">
+              <Film className="w-3.5 h-3.5 text-white/70" />
+              <span>{credits.length} Yapımda Rol Aldı</span>
             </span>
           </div>
 
@@ -192,7 +194,7 @@ export default function PersonDetailPage({
 
           <p className="text-sm sm:text-base text-white/80 leading-relaxed max-w-3xl">
             {person.bio_tr ||
-              `${person.name}, KoUp arşivindeki yapımlarda öne çıkan ve izleyiciler tarafından en çok favorilenen isimlerden biridir.`}
+              `${person.name}, KoUp arşivindeki ${credits.length} yapımda yer almaktadır.`}
           </p>
 
           {/* Action Buttons: Favorite (Heart), Follow (Bell), External MDL / AniList Link */}
@@ -208,8 +210,10 @@ export default function PersonDetailPage({
               <Heart className={`w-4 h-4 ${isFav ? 'fill-white' : 'fill-black'}`} />
               <span>
                 {isFav
-                  ? `Favorilendi (${totalFavs.toLocaleString('tr-TR')})`
-                  : `Favorilere Ekle (${totalFavs.toLocaleString('tr-TR')})`}
+                  ? `Favorilerimde (${totalFavs})`
+                  : totalFavs > 0
+                  ? `Favorile (${totalFavs})`
+                  : 'Favorilere Ekle'}
               </span>
             </button>
 
