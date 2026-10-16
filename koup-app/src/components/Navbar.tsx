@@ -200,13 +200,14 @@ export default function Navbar() {
 
   return (
     <>
-      <header
-        className={`fixed left-0 right-0 z-50 flex items-center justify-between transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-          isScrolled
-            ? 'top-2 sm:top-3.5 mx-auto max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-full bg-[#08080a]/85 backdrop-blur-2xl border border-white/[0.14] shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_30px_-5px_rgba(41,151,255,0.12),inset_0_1px_0_rgba(255,255,255,0.18)] py-2 sm:py-2.5 px-3.5 sm:px-6'
-            : 'top-0 w-full rounded-none bg-gradient-to-b from-[#080808]/95 via-[#080808]/70 to-transparent backdrop-blur-[12px] border-b border-white/[0.06] py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
-        }`}
-      >
+      <div className="fixed top-0 left-0 right-0 z-50 flex justify-center pointer-events-none transition-all duration-300">
+        <header
+          className={`pointer-events-auto flex items-center justify-between transition-all duration-300 ease-out will-change-[width,transform,background-color,border-radius] ${
+            isScrolled
+              ? 'mt-2 sm:mt-3.5 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-full bg-[#08080a]/90 backdrop-blur-2xl border border-white/[0.14] shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_30px_-5px_rgba(41,151,255,0.12),inset_0_1px_0_rgba(255,255,255,0.18)] py-2 sm:py-2.5 px-4 sm:px-6'
+              : 'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-[#080808]/95 via-[#080808]/70 to-transparent backdrop-blur-[12px] border-b border-white/[0.06] py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+          }`}
+        >
       {/* LEFT: Brand Mark (Original KU Logo — No Circle or Box Wrapper) */}
       <div className="pointer-events-auto flex items-center gap-2 sm:gap-3">
         <button
@@ -243,7 +244,7 @@ export default function Navbar() {
       </div>
 
       {/* CENTER: Floating Glassy Pill Menu (Exact ui/code.html style + Fluid Spring Pill Slider) */}
-      <nav className="pointer-events-auto hidden lg:flex items-center p-1.5 rounded-full glass-pill-dark shadow-[0_16px_40px_rgba(0,0,0,0.75)]">
+      <nav className="pointer-events-auto hidden lg:flex items-center shrink-0 p-1.5 rounded-full glass-pill-dark shadow-[0_16px_40px_rgba(0,0,0,0.75)]">
         {NAV_LINKS.map((item) => {
           const active = isNavActive(item.href);
           return (
@@ -839,6 +840,7 @@ export default function Navbar() {
         )}
       </div>
       </header>
+      </div>
 
       {/* Mobile Navigation Drawer with Backdrop */}
       <AnimatePresence>

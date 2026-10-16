@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { MediaItem, getProxiedImageUrl, formatContentTypeTR } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
+import AccordionMediaCard from '@/components/AccordionMediaCard';
 
 interface ListDetail {
   id: number;
@@ -473,83 +474,23 @@ export default function ListDetailPage({
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
-            {list.items.map((item) => (
-              <div
-                key={item.id}
-                className="group relative rounded-2xl overflow-hidden bg-[#121217] border border-white/[0.08] hover:border-sky-500/40 transition-all duration-300 flex flex-col justify-between"
-              >
-                <Link
-                  href={`/seri/${item.slug}`}
-                  onClick={() => triggerSound('click')}
-                  className="block relative aspect-[2/3] w-full overflow-hidden bg-[#181820]"
-                >
-                  {item.cover_image ? (
-                    <img
-                      src={getProxiedImageUrl(item.cover_image, item.title)}
-                      alt={item.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center">
-                      <Film className="w-8 h-8 text-white/30 mb-2" />
-                      <span className="text-xs text-white/50 font-bold">{item.title}</span>
-                    </div>
-                  )}
-
-                  {/* Gradient overlay */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3">
-                    <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-sky-500 text-white font-bold text-xs shadow-lg">
-                      <Play className="w-3 h-3 fill-white" />
-                      <span>İzle</span>
-                    </span>
-                  </div>
-
-                  {/* Rating / Badges */}
-                  <div className="absolute top-2 left-2 flex flex-col gap-1">
-                    {item.content_type && (
-                      <span className="px-2 py-0.5 rounded-full bg-black/75 backdrop-blur-md border border-white/10 text-[9px] font-mono font-bold text-white uppercase">
-                        {formatContentTypeTR(item.content_type)}
-                      </span>
-                    )}
-                  </div>
-
-                  {item.site_rating && (
-                    <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/75 backdrop-blur-md border border-white/10 text-[10px] font-mono font-bold text-amber-300 flex items-center gap-1">
-                      <Star className="w-2.5 h-2.5 fill-amber-300 text-amber-300" />
-                      <span>{Number(item.site_rating).toFixed(1)}</span>
-                    </div>
-                  )}
-                </Link>
-
-                {/* Card Title & Meta */}
-                <div className="p-3">
-                  <Link
-                    href={`/seri/${item.slug}`}
-                    className="text-xs sm:text-sm font-bold text-white hover:text-sky-300 transition-colors line-clamp-1"
+          <div className="flex flex-wrap items-center gap-4 sm:gap-5 pb-6">
+            {list.items.map((item, idx) => (
+              <div key={item.id} className="relative group">
+                <AccordionMediaCard item={item} priority={idx < 6} />
+                {isOwner && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      handleRemoveMedia(item.id, item.title);
+                    }}
+                    title="Listeden Çıkar"
+                    className="absolute -top-2 -right-2 z-30 w-7 h-7 rounded-full bg-rose-600/90 hover:bg-rose-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-lg border border-white/20 cursor-pointer hover:scale-110"
                   >
-                    {item.title}
-                  </Link>
-
-                  <div className="mt-1 flex items-center justify-between text-[11px] font-mono text-white/45">
-                    <span>{item.release_year || '—'}</span>
-                    <span>{item.episode_count ? `${item.episode_count} Bölüm` : '—'}</span>
-                  </div>
-
-                  {/* Owner Remove Button */}
-                  {isOwner && (
-                    <div className="mt-2.5 pt-2 border-t border-white/[0.06] flex justify-end">
-                      <button
-                        onClick={() => handleRemoveMedia(item.id, item.title)}
-                        className="text-[10px] font-mono text-rose-400 hover:text-rose-300 flex items-center gap-1 transition-colors"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        <span>Listeden Çıkar</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             ))}
           </div>
