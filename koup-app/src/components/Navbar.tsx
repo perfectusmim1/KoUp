@@ -183,7 +183,8 @@ export default function Navbar() {
   };
 
   return (
-    <header className="fixed top-5 left-0 right-0 z-50 pointer-events-none px-5 lg:px-14 flex items-center justify-between">
+    <>
+      <header className="fixed top-5 left-0 right-0 z-50 pointer-events-none px-5 lg:px-14 flex items-center justify-between">
       {/* LEFT: Brand Mark (Original KU Logo — No Circle or Box Wrapper) */}
       <div className="pointer-events-auto flex items-center gap-3">
         <button
@@ -419,7 +420,16 @@ export default function Navbar() {
         {/* Notifications Bell */}
         <div ref={notifContainerRef} className="relative">
           <button
-            onClick={() => setNotifOpen((v) => !v)}
+            onClick={() => {
+              triggerSound('click');
+              const nextOpen = !notifOpen;
+              setNotifOpen(nextOpen);
+              if (nextOpen && unreadCount > 0) {
+                markAllNotificationsRead();
+              }
+              setProfileDropdownOpen(false);
+              setSearchOpen(false);
+            }}
             className="w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white/80 hover:text-white relative cursor-pointer transition-all hover:border-[var(--accent-blue)]/40 hover:shadow-[0_0_15px_rgba(41,151,255,0.2)]"
             aria-label="Bildirimler"
           >
@@ -801,10 +811,10 @@ export default function Navbar() {
         )}
       </AnimatePresence>
 
-      {/* Global Glass Auth Modal */}
-      <div className="pointer-events-auto">
-        <AuthModal />
-      </div>
-    </header>
+      </header>
+
+      {/* Global Glass Auth Modal (Portaled to document.body) */}
+      <AuthModal />
+    </>
   );
 }

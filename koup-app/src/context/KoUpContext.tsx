@@ -16,7 +16,7 @@ import {
   UserMediaProgress,
 } from '@/lib/supabase';
 import { playNotificationChime, SoundTone } from '@/lib/sound';
-import { cachedQuery, invalidateCache } from '@/lib/cache';
+import { invalidateCache } from '@/lib/cache';
 
 export interface ToastNotification {
   id: string;
@@ -31,6 +31,7 @@ export interface ToastNotification {
 interface KoUpContextValue {
   user: UserProfile | null;
   profile: UserProfile | null;
+  authLoading: boolean;
   progressMap: Record<number, UserMediaProgress>;
   continueWatchingList: UserMediaProgress[];
   favPersonIds: number[];
@@ -112,6 +113,7 @@ const KoUpContext = createContext<KoUpContextValue | null>(null);
 
 export function KoUpProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [progressMap, setProgressMap] = useState<Record<number, UserMediaProgress>>({});
   const [favPersonIds, setFavPersonIds] = useState<number[]>([]);
   const [followedMediaIds, setFollowedMediaIds] = useState<number[]>([]);
@@ -125,32 +127,37 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
   const isHydratedRef = useRef(false);
   const recentNotifsRef = useRef<Map<string, number>>(new Map());
   const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const inFlightProfileSyncRef = useRef<Map<string, Promise<UserProfile | null>>>(new Map());
 
-  // Sync user profile strictly from DB profiles table
+  // Sync user profile strictly fresh from DB profiles table (memory-only dedupe, NEVER sessionStorage)
   const syncUserProfile = useCallback(async (userId: string, authUser?: any) => {
     try {
-      const profile = await cachedQuery<UserProfile | null>(
-        `user_profile_${userId}`,
-        120_000,
-        async () => {
-          const { data: prof } = await supabase
+      let fetchPromise = inFlightProfileSyncRef.current.get(userId);
+      if (!fetchPromise) {
+        fetchPromise = (async () => {
+          const { data: prof, error } = await supabase
             .from('profiles')
             .select('*')
             .eq('id', userId)
             .single();
 
-          if (prof) {
+          if (prof && !error) {
             return prof as UserProfile;
           }
           return null;
-        }
-      );
+        })().finally(() => {
+          inFlightProfileSyncRef.current.delete(userId);
+        });
+        inFlightProfileSyncRef.current.set(userId, fetchPromise);
+      }
+
+      const profile = await fetchPromise;
 
       if (profile) {
         // Profile role comes ONLY from database verification
         setUser(profile);
         try {
-          // Cache locally but strip elevated role
+          // Cache locally for offline/instant basic UI but ALWAYS strip elevated role
           localStorage.setItem('koup_profile_v1', JSON.stringify({ ...profile, role: 'user' }));
         } catch {}
       } else if (authUser) {
@@ -176,6 +183,42 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           anilist_auto_sync: false,
         };
         setUser(fallback);
+      }
+
+      // Fetch user notifications from Supabase if table exists
+      const activeUserId = profile?.id || userId;
+      if (activeUserId) {
+        void supabase
+          .from('user_notifications')
+          .select('*')
+          .eq('user_id', activeUserId)
+          .order('created_at', { ascending: false })
+          .limit(40)
+          .then(({ data: dbNotifs }) => {
+            if (dbNotifs && dbNotifs.length > 0) {
+              const formatted: ToastNotification[] = dbNotifs.map((row: any) => ({
+                id: row.id,
+                title: row.title,
+                body: row.body,
+                type: (row.type === 'comment_reply' ? 'reply' : row.type === 'new_episode' ? 'episode' : row.type === 'actor_update' ? 'actor' : 'info') as ToastNotification['type'],
+                linkUrl: row.link_url || undefined,
+                createdAt: row.created_at ? new Date(row.created_at).toLocaleDateString('tr-TR') : 'Şimdi',
+                isRead: Boolean(row.is_read),
+              }));
+              setNotifications((prev) => {
+                const map = new Map<string, ToastNotification>();
+                formatted.forEach((n) => map.set(n.id, n));
+                prev.forEach((n) => {
+                  if (!map.has(n.id)) map.set(n.id, n);
+                });
+                const merged = Array.from(map.values()).slice(0, 50);
+                try {
+                  localStorage.setItem('koup_notifs_v1', JSON.stringify(merged));
+                } catch {}
+                return merged;
+              });
+            }
+          });
       }
     } catch (err) {
       console.error('Error syncing user profile:', err);
@@ -229,7 +272,23 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       if (savedNotifs) {
         const parsedN = JSON.parse(savedNotifs);
         if (Array.isArray(parsedN)) {
-          setNotifications(parsedN.slice(0, 50));
+          // Permanently clean and mark as read any legacy sample notifications
+          const cleaned = parsedN.map((n: any) => {
+            if (
+              n.id === 'notif-comment-1' ||
+              n.id === 'notif-ep-1' ||
+              n.id === 'notif-actor-1' ||
+              n.id === 'welcome-1' ||
+              n.id === 'sched-2'
+            ) {
+              return { ...n, isRead: true };
+            }
+            return n;
+          });
+          setNotifications(cleaned.slice(0, 50));
+          try {
+            localStorage.setItem('koup_notifs_v1', JSON.stringify(cleaned.slice(0, 50)));
+          } catch {}
         }
       }
     } catch {
@@ -238,16 +297,22 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       isHydratedRef.current = true;
     }
 
-    // Check real Supabase session & sync verified profile from DB
-    supabase.auth.getSession().then(({ data }) => {
+    // Check real Supabase session & sync verified profile fresh from DB
+    supabase.auth.getSession().then(async ({ data }) => {
       if (!isMounted) return;
-      if (data?.session?.user) {
-        syncUserProfile(data.session.user.id, data.session.user);
-      } else {
-        setUser(null);
-        try {
-          localStorage.removeItem('koup_profile_v1');
-        } catch {}
+      try {
+        if (data?.session?.user) {
+          await syncUserProfile(data.session.user.id, data.session.user);
+        } else {
+          setUser(null);
+          try {
+            localStorage.removeItem('koup_profile_v1');
+          } catch {}
+        }
+      } finally {
+        if (isMounted) {
+          setAuthLoading(false);
+        }
       }
     });
 
@@ -260,16 +325,19 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           localStorage.removeItem('koup_profile_v1');
         } catch {}
         invalidateCache();
+        setAuthLoading(false);
         return;
       }
 
       if (session?.user) {
         await syncUserProfile(session.user.id, session.user);
+        if (isMounted) setAuthLoading(false);
       } else if (event === 'INITIAL_SESSION' && !session) {
         setUser(null);
         try {
           localStorage.removeItem('koup_profile_v1');
         } catch {}
+        if (isMounted) setAuthLoading(false);
       }
     });
 
@@ -351,8 +419,27 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       toastTimerRef.current = setTimeout(() => {
         setActiveToast((curr) => (curr?.id === item.id ? null : curr));
       }, 4500);
+
+      // Persist to Supabase user_notifications table if authenticated
+      if (user?.id) {
+        let dbType: 'comment_reply' | 'mention' | 'new_episode' | 'actor_update' | 'report_resolved' | 'system' = 'system';
+        if (type === 'reply') dbType = 'comment_reply';
+        else if (type === 'episode') dbType = 'new_episode';
+        else if (type === 'actor') dbType = 'actor_update';
+
+        void Promise.resolve(
+          supabase.from('user_notifications').insert({
+            user_id: user.id,
+            title,
+            body,
+            type: dbType,
+            link_url: linkUrl || null,
+            is_read: false,
+          })
+        ).catch(() => {});
+      }
     },
-    [user?.notification_settings]
+    [user?.id, user?.notification_settings]
   );
 
   const updateEpisodeProgress = useCallback(
@@ -571,7 +658,13 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       } catch {}
       return next;
     });
-  }, []);
+
+    if (user?.id) {
+      void Promise.resolve(
+        supabase.from('user_notifications').update({ is_read: true }).eq('id', id)
+      ).catch(() => {});
+    }
+  }, [user?.id]);
 
   const markNotificationUnread = useCallback((id: string) => {
     setNotifications((prev) => {
@@ -581,7 +674,13 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       } catch {}
       return next;
     });
-  }, []);
+
+    if (user?.id) {
+      void Promise.resolve(
+        supabase.from('user_notifications').update({ is_read: false }).eq('id', id)
+      ).catch(() => {});
+    }
+  }, [user?.id]);
 
   const deleteNotification = useCallback((id: string) => {
     setNotifications((prev) => {
@@ -591,14 +690,26 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       } catch {}
       return next;
     });
-  }, []);
+
+    if (user?.id) {
+      void Promise.resolve(
+        supabase.from('user_notifications').delete().eq('id', id)
+      ).catch(() => {});
+    }
+  }, [user?.id]);
 
   const clearAllNotifications = useCallback(() => {
     setNotifications([]);
     try {
       localStorage.setItem('koup_notifs_v1', JSON.stringify([]));
     } catch {}
-  }, []);
+
+    if (user?.id) {
+      void Promise.resolve(
+        supabase.from('user_notifications').delete().eq('user_id', user.id)
+      ).catch(() => {});
+    }
+  }, [user?.id]);
 
   const markAllNotificationsRead = useCallback(() => {
     setNotifications((prev) => {
@@ -608,7 +719,17 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       } catch {}
       return next;
     });
-  }, []);
+
+    if (user?.id) {
+      void Promise.resolve(
+        supabase
+          .from('user_notifications')
+          .update({ is_read: true })
+          .eq('user_id', user.id)
+          .eq('is_read', false)
+      ).catch(() => {});
+    }
+  }, [user?.id]);
 
   const dismissToast = useCallback(() => {
     setActiveToast(null);
@@ -630,7 +751,6 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
 
       if (user?.id) {
         await supabase.from('profiles').update(safePatch).eq('id', user.id);
-        invalidateCache(`user_profile_${user.id}`);
       }
       pushNotification('Ayarlar Kaydedildi', 'Profil ve bildirim tercihlerin güncellendi.', 'success');
     },
@@ -642,7 +762,6 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) return error.message;
       if (data.user) {
-        invalidateCache(`user_profile_${data.user.id}`);
         await syncUserProfile(data.user.id, data.user);
         pushNotification('Giriş Başarılı', 'KoUp kütüphaneniz hazır.', 'success');
       }
@@ -757,6 +876,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     return {
       user,
       profile: user,
+      authLoading,
       progressMap,
       continueWatchingList,
       favPersonIds,
@@ -798,6 +918,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     };
   }, [
     user,
+    authLoading,
     progressMap,
     continueWatchingList,
     favPersonIds,

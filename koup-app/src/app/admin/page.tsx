@@ -105,6 +105,7 @@ interface AdminCommentRow {
   content_html?: string | null;
   content_json?: any;
   has_spoiler: boolean;
+  is_hidden?: boolean;
   likes_count: number;
   created_at: string;
   profiles?: {
@@ -312,6 +313,7 @@ function PaginationControls({
 export default function AdminDashboardPage() {
   const {
     user,
+    authLoading: isGlobalAuthLoading,
     setIsAuthModalOpen,
     pushNotification,
     loginWithEmail,
@@ -689,15 +691,14 @@ export default function AdminDashboardPage() {
           q = q.eq('has_spoiler', true);
         }
 
+        if (commentFilter === 'hidden') {
+          q = q.eq('is_hidden', true);
+        }
+
         const { data, count, error } = await q;
         if (error) throw error;
 
-        let results = (data as AdminCommentRow[]) || [];
-        if (commentFilter === 'hidden') {
-          results = results.filter((c) => Boolean(c.content_json?.is_hidden));
-        }
-
-        setCommentsList(results);
+        setCommentsList((data as AdminCommentRow[]) || []);
         if (typeof count === 'number') {
           setCommentsTotalCount(count);
           setStats((prev) => ({ ...prev, totalComments: count }));
@@ -1159,26 +1160,20 @@ export default function AdminDashboardPage() {
   };
 
   const handleToggleHide = async (comment: AdminCommentRow) => {
-    const isCurrentlyHidden = Boolean(comment.content_json?.is_hidden);
-    const nextHidden = !isCurrentlyHidden;
+    const nextHidden = !comment.is_hidden;
     const prevList = [...commentsList];
-
-    const updatedJson =
-      typeof comment.content_json === 'object' && comment.content_json !== null
-        ? { ...comment.content_json, is_hidden: nextHidden }
-        : { text: typeof comment.content_json === 'string' ? comment.content_json : '', is_hidden: nextHidden };
 
     // Optimistic update
     setCommentsList((prev) =>
       prev.map((c) =>
-        String(c.id) === String(comment.id) ? { ...c, content_json: updatedJson } : c
+        String(c.id) === String(comment.id) ? { ...c, is_hidden: nextHidden } : c
       )
     );
 
     try {
       const { error } = await supabase
         .from('comments')
-        .update({ content_json: updatedJson })
+        .update({ is_hidden: nextHidden })
         .eq('id', comment.id);
       if (error) throw error;
       pushNotification(
@@ -1237,6 +1232,18 @@ export default function AdminDashboardPage() {
       setAuthLoading(false);
     }
   };
+
+  // Loading state while auth is hydrating from Supabase
+  if (isGlobalAuthLoading) {
+    return (
+      <div className="w-full min-h-[calc(100vh-8rem)] pt-32 pb-24 flex flex-col items-center justify-center space-y-4 text-center">
+        <RefreshCw className="w-8 h-8 text-amber-300 animate-spin" />
+        <div className="text-sm text-white/60 font-mono tracking-wider">
+          Yönetici yetkileri doğrulanıyor...
+        </div>
+      </div>
+    );
+  }
 
   // UNAUTHORIZED / SECURITY GATE
   if (!isAdmin) {
@@ -2316,7 +2323,7 @@ export default function AdminDashboardPage() {
             ) : (
               <div className="space-y-3 min-h-[380px]">
                 {commentsList.map((c) => {
-                  const isHidden = Boolean(c.content_json?.is_hidden);
+                  const isHidden = Boolean(c.is_hidden);
                   const author = c.profiles?.display_name || c.profiles?.username || c.author_username || 'Kullanıcı';
                   const avatar = c.profiles?.avatar_url || c.author_avatar;
 
