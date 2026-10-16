@@ -32,7 +32,17 @@ const COUNTRY_SHORT_TR: Record<string, string> = {
   GL: 'GLOBAL',
 };
 
-function AccordionMediaCard({
+// Global active accordion card tracker to synchronize single-card expansion in rows
+// and eliminate ping-pong width oscillation when moving mouse between sibling cards
+let currentActiveCardId: number | null = null;
+const activeListeners = new Set<(activeId: number | null) => void>();
+
+function setActiveCard(id: number | null) {
+  currentActiveCardId = id;
+  activeListeners.forEach((listener) => listener(id));
+}
+
+export default function AccordionMediaCard({
   item,
   rank,
   priority = false,
@@ -48,19 +58,26 @@ function AccordionMediaCard({
     triggerSound,
   } = useKoUp();
 
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [isNearRight, setIsNearRight] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const prefetchRef = useRef(false);
   const hoverTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const leaveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Subscribe to global active card changes for accordion row mode
   useEffect(() => {
-    return () => {
-      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
-      if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+    if (fluidWidth) return;
+
+    const listener = (activeId: number | null) => {
+      if (activeId !== item.id) {
+        setIsHovered(false);
+      }
     };
-  }, []);
+    activeListeners.add(listener);
+    return () => {
+      activeListeners.delete(listener);
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    };
+  }, [item.id, fluidWidth]);
 
   const userProg = progressMap[item.id];
   const inWatchlist = Boolean(userProg);
@@ -68,37 +85,36 @@ function AccordionMediaCard({
   const isFollowed = Boolean(followedMediaIds.includes(item.id));
 
   const handleMouseEnter = () => {
-    // On mobile touch devices (hover: none or window width < 768px): cards should NOT expand width
+    // Touch/mobile check
     if (typeof window !== 'undefined') {
       const isTouchOrMobile =
         window.matchMedia('(hover: none)').matches || window.innerWidth < 768;
       if (isTouchOrMobile) return;
     }
 
-    if (leaveTimerRef.current) {
-      clearTimeout(leaveTimerRef.current);
-      leaveTimerRef.current = null;
-    }
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
 
-    // Instant prefetch on mouse enter
+    // Instant prefetch
     if (!prefetchRef.current) {
       prefetchRef.current = true;
       router.prefetch(`/seri/${item.slug}`);
       router.prefetch(`/seri/${item.slug}/1`);
     }
 
-    hoverTimerRef.current = setTimeout(() => {
-      if (cardRef.current && typeof window !== 'undefined') {
-        const rect = cardRef.current.getBoundingClientRect();
-        // If card's right edge + expansion width (190px) exceeds viewport or parent container right edge
-        const nearEdge = rect.right + 180 > window.innerWidth;
-        setIsNearRight(nearEdge);
-      }
-
-      setIsExpanded(true);
-      triggerSound('expand');
-    }, 45);
+    if (fluidWidth) {
+      // In grid view: smooth instantaneous scale without shifting grid siblings
+      setIsHovered(true);
+      triggerSound?.('hover');
+    } else {
+      // In accordion carousel row: coordinated single-card expansion
+      // If another card is already active, switch immediately (0ms delay) to avoid jump
+      const delay = currentActiveCardId !== null && currentActiveCardId !== item.id ? 0 : 35;
+      hoverTimerRef.current = setTimeout(() => {
+        setActiveCard(item.id);
+        setIsHovered(true);
+        triggerSound?.('expand');
+      }, delay);
+    }
   };
 
   const handleMouseLeave = () => {
@@ -106,11 +122,18 @@ function AccordionMediaCard({
       clearTimeout(hoverTimerRef.current);
       hoverTimerRef.current = null;
     }
-    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
 
-    leaveTimerRef.current = setTimeout(() => {
-      setIsExpanded(false);
-    }, 50);
+    if (fluidWidth) {
+      setIsHovered(false);
+    } else {
+      // Short delay when leaving entirely
+      hoverTimerRef.current = setTimeout(() => {
+        if (currentActiveCardId === item.id) {
+          setActiveCard(null);
+        }
+        setIsHovered(false);
+      }, 60);
+    }
   };
 
   const posterSrc = getProxiedImageUrl(item.cover_image, item.title);
@@ -126,43 +149,138 @@ function AccordionMediaCard({
     countryCode ||
     'ASYA';
 
+  // IN GRID MODE (fluidWidth = true):
+  // Stays 100% within its grid cell. Smooth cinema scale on hover without breaking or overlapping neighboring columns.
+  if (fluidWidth) {
+    return (
+      <div
+        ref={cardRef}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest('button, a')) return;
+          router.push(`/seri/${item.slug}`);
+        }}
+        tabIndex={0}
+        style={{
+          transform: isHovered ? 'scale(1.04) translateY(-3px)' : 'scale(1) translateY(0)',
+          zIndex: isHovered ? 30 : 1,
+          transition: 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s ease',
+          willChange: 'transform',
+        }}
+        className="relative w-full rounded-2xl overflow-hidden cursor-pointer select-none aspect-[2/3] group bg-[#0f0f11] border border-white/10 hover:border-white/30 shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.85)]"
+      >
+        <Link
+          href={`/seri/${item.slug}`}
+          prefetch={true}
+          className="absolute inset-0 z-0"
+          aria-label={item.title}
+          tabIndex={-1}
+        />
+
+        {/* Poster Image */}
+        <img
+          src={posterSrc}
+          alt={item.title}
+          loading={priority ? undefined : 'lazy'}
+          fetchPriority={priority ? 'high' : undefined}
+          decoding="async"
+          className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+        />
+
+        {/* Gradient Overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent opacity-90 group-hover:opacity-95 transition-opacity" />
+
+        {/* Top Badges */}
+        <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between z-10 pointer-events-none">
+          <div className="flex items-center gap-1.5">
+            {countryCode && (
+              <span className="w-5 h-3.5 rounded-xs overflow-hidden shadow-sm shrink-0 flex items-center justify-center">
+                <CountryFlag code={countryCode} size="sm" />
+              </span>
+            )}
+            <span className="px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md border border-white/15 text-[10px] font-mono font-bold text-white uppercase tracking-wider">
+              {item.content_type === 'anime' ? 'ANİME' : item.content_type === 'movie' ? 'FİLM' : 'DİZİ'}
+            </span>
+          </div>
+
+          {(item.rating || item.mdl_rating || item.imdb_rating) && (
+            <span className="px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md border border-amber-400/40 text-[10px] font-mono font-bold text-amber-300 flex items-center gap-1">
+              <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+              <span>{item.rating || item.mdl_rating || item.imdb_rating}</span>
+            </span>
+          )}
+        </div>
+
+        {/* Bottom Metadata & Quick Play Button */}
+        <div className="absolute bottom-0 left-0 right-0 p-3 z-10 flex flex-col justify-end">
+          <h4 className="text-xs sm:text-sm font-bold text-white group-hover:text-sky-300 transition-colors line-clamp-1">
+            {item.title}
+          </h4>
+
+          <div className="flex items-center justify-between mt-1 text-[10px] font-mono text-white/50">
+            <span>{item.release_year || ''}</span>
+            {item.episode_count ? <span>{item.episode_count} Bölüm</span> : null}
+          </div>
+
+          {/* Action Row on Hover */}
+          <div
+            className={`flex items-center gap-2 mt-2 pt-2 border-t border-white/10 transition-all duration-200 ${
+              isHovered ? 'opacity-100 max-h-10' : 'opacity-0 max-h-0 overflow-hidden'
+            }`}
+          >
+            <Link
+              href={`/seri/${item.slug}?play=1`}
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerSound?.('click');
+              }}
+              className="flex-1 py-1.5 px-3 rounded-full bg-white text-black text-[11px] font-bold flex items-center justify-center gap-1.5 hover:bg-white/90 transition-all shadow-md"
+            >
+              <Play className="w-3 h-3 fill-black" />
+              <span>İzle</span>
+            </Link>
+
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerSound?.('click');
+                updateWatchStatus(item.id, inWatchlist ? 'dropped' : 'watching', 1, 1);
+              }}
+              className="w-7 h-7 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center transition-all"
+              title="Kütüphaneme Ekle"
+            >
+              {inWatchlist ? <Check className="w-3.5 h-3.5 text-sky-400" /> : <Plus className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // IN ACCORDION CAROUSEL ROW MODE (fluidWidth = false):
+  // Expands horizontally with coordinated single-card switching to eliminate jitter
+  const isExpanded = isHovered;
+
   return (
     <div
       ref={cardRef}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      onFocus={handleMouseEnter}
-      onBlur={handleMouseLeave}
       tabIndex={0}
       onClick={(e) => {
-        // Navigate to series page if not clicking interactive action buttons
         if ((e.target as HTMLElement).closest('button, a')) return;
         router.push(`/seri/${item.slug}`);
       }}
       style={{
-        width: isExpanded
-          ? '390px'
-          : fluidWidth
-          ? '100%'
-          : undefined,
-        minWidth: isExpanded
-          ? '390px'
-          : fluidWidth
-          ? '0px'
-          : undefined,
-        maxWidth: isExpanded ? 'calc(100vw - 32px)' : undefined,
-        transformOrigin: isNearRight ? 'right center' : 'left center',
-        transform: isExpanded && isNearRight && fluidWidth ? 'translateX(-170px)' : undefined,
+        width: isExpanded ? '390px' : '204px',
+        minWidth: isExpanded ? '390px' : '204px',
+        maxWidth: isExpanded ? 'calc(100vw - 32px)' : '204px',
         zIndex: isExpanded ? 40 : 1,
-        transition:
-          'width 0.32s cubic-bezier(0.2, 0.9, 0.3, 1), min-width 0.32s cubic-bezier(0.2, 0.9, 0.3, 1), max-width 0.32s cubic-bezier(0.2, 0.9, 0.3, 1), transform 0.32s cubic-bezier(0.2, 0.9, 0.3, 1)',
-        willChange: 'width, min-width, transform',
+        transition: 'width 0.3s cubic-bezier(0.2, 0.9, 0.3, 1), min-width 0.3s cubic-bezier(0.2, 0.9, 0.3, 1)',
+        willChange: 'width, min-width',
       }}
-      className={`koup-accordion-card relative shrink-0 rounded-2xl overflow-hidden cursor-pointer select-none h-[306px] group ${
-        fluidWidth
-          ? 'w-full min-w-0'
-          : 'w-[160px] sm:w-[204px] min-w-[150px] sm:min-w-[204px]'
-      }`}
+      className="koup-accordion-card relative shrink-0 rounded-2xl overflow-hidden cursor-pointer select-none h-[306px] group"
     >
       {/* Background Instant Navigation Link with 0ms Prefetch */}
       <Link
@@ -205,211 +323,193 @@ function AccordionMediaCard({
         loading="lazy"
         decoding="async"
         className={`absolute inset-0 w-full h-full object-cover transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-          isExpanded ? 'opacity-100 scale-105' : 'opacity-0 scale-100'
+          isExpanded ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
         }`}
       />
 
-      {/* Smooth Dark Vignette Gradient */}
-      <div
-        className={`absolute inset-0 transition-opacity duration-400 ${
-          isExpanded
-            ? 'bg-gradient-to-t from-[#080808] via-[#080808]/80 to-black/30'
-            : 'bg-gradient-to-t from-[#080808] via-[#080808]/35 to-transparent'
-        }`}
-      />
+      {/* Deep Vignette Gradients */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent pointer-events-none" />
+      {isExpanded && (
+        <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/30 to-transparent pointer-events-none" />
+      )}
 
-      {/* Top Badges Row: Left = Country Flag, Right = Exactly ONE Score */}
-      <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-1.5 z-10 pointer-events-none">
-        {/* Top-Left: National Flag */}
-        <div>
-          {countryCode ? (
-            <span className="inline-flex items-center justify-center p-1 rounded-md bg-black/80 backdrop-blur-md border border-white/15 shadow-sm">
-              <CountryFlag code={countryCode} size="md" />
+      {/* Top Left Flag & Top Right Ratings */}
+      <div className="absolute top-3 left-3 right-3 z-30 flex items-center justify-between pointer-events-none">
+        {countryCode ? (
+          <div className="w-5 h-3.5 rounded-xs overflow-hidden shadow-[0_2px_8px_rgba(0,0,0,0.8)] border border-white/20 shrink-0 flex items-center justify-center">
+            <CountryFlag code={countryCode} size="sm" />
+          </div>
+        ) : (
+          <span />
+        )}
+
+        {/* Rating Badges */}
+        <div className="flex items-center gap-1.5">
+          {item.imdb_rating && (
+            <span className="badge-rating badge-rating-imdb shadow-md">
+              IMDb {item.imdb_rating}
             </span>
-          ) : null}
-        </div>
-
-        {/* Top-Right: Exactly ONE Rating Badge (IMDb > MDL > AniList > Rating) */}
-        <div>
-          {(() => {
-            const singleRating = item.imdb_rating
-              ? {
-                  label: `IMDb ${item.imdb_rating}`,
-                  cls: 'text-yellow-300 border-yellow-400/35',
-                  hasStar: false,
-                }
-              : item.mdl_rating
-              ? {
-                  label: `MDL ${item.mdl_rating}`,
-                  cls: 'text-amber-300 border-amber-400/30',
-                  hasStar: false,
-                }
-              : item.anilist_rating
-              ? {
-                  label: `AL ${item.anilist_rating}%`,
-                  cls: 'text-sky-300 border-sky-400/30',
-                  hasStar: false,
-                }
-              : item.rating && item.rating > 0
-              ? {
-                  label: Number(item.rating).toFixed(1),
-                  cls: 'text-white border-white/15',
-                  hasStar: true,
-                }
-              : null;
-
-            if (!singleRating) return null;
-
-            return (
-              <span
-                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-black/80 backdrop-blur-md border shadow-sm ${singleRating.cls}`}
-              >
-                {singleRating.hasStar && (
-                  <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400 shrink-0" />
-                )}
-                <span>{singleRating.label}</span>
-              </span>
-            );
-          })()}
+          )}
+          {item.mdl_rating && !item.imdb_rating && (
+            <span className="badge-rating badge-rating-mdl shadow-md">
+              MDL {item.mdl_rating}
+            </span>
+          )}
+          {item.anilist_rating && !item.imdb_rating && !item.mdl_rating && (
+            <span className="badge-rating badge-rating-anilist shadow-md">
+              AL {item.anilist_rating}%
+            </span>
+          )}
         </div>
       </div>
 
-      {/* Bottom Info Content */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 z-10 flex flex-col justify-end">
-        {(item.release_year || item.episode_count > 0) && (
-          <div className="flex items-center gap-1.5 text-[11px] font-medium text-white/60 mb-1">
-            {item.release_year && <span>{item.release_year}</span>}
-            {item.release_year && item.episode_count > 0 && <span>•</span>}
-            {item.episode_count > 0 && <span>{item.episode_count} Bölüm</span>}
-          </div>
-        )}
-
-        <h3 className="text-[15px] font-bold text-white leading-snug line-clamp-1">
-          {item.title}
-        </h3>
-
-        {/* Smoothly Animated Expanded Details Drawer with Intrinsic Grid Rows */}
+      {/* Bottom Content Area */}
+      <div className="absolute bottom-0 left-0 right-0 p-4 z-30 flex flex-col justify-end text-left">
+        {/* COLLAPSED VIEW */}
         <div
-          className={`grid transition-[grid-template-rows,opacity] duration-450 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-            isExpanded
-              ? 'grid-rows-[1fr] opacity-100 mt-2 delay-75'
-              : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
+          className={`transition-all duration-300 ${
+            isExpanded ? 'opacity-0 translate-y-2 pointer-events-none' : 'opacity-100 translate-y-0'
           }`}
         >
-          <div className="overflow-hidden space-y-2">
-            {item.overview && (
-              <p className="text-xs text-white/75 line-clamp-2 leading-relaxed">
-                {item.overview}
-              </p>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] font-mono tracking-wider uppercase text-white/50">
+              {item.content_type === 'anime'
+                ? 'ANİME'
+                : item.content_type === 'movie'
+                ? 'FİLM'
+                : 'DİZİ'}
+            </span>
+            {item.release_year && (
+              <span className="text-[10px] font-mono text-white/40">
+                • {item.release_year}
+              </span>
             )}
-
-            {/* Genre Chips */}
-            {item.categories && item.categories.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 pt-0.5">
-                {item.categories.slice(0, 3).map((cat) => (
-                  <span
-                    key={cat}
-                    className="text-[10px] px-2 py-0.5 rounded-md bg-white/[0.08] text-white/80 border border-white/10"
-                  >
-                    {cat}
-                  </span>
-                ))}
-              </div>
+            {item.episode_count > 0 && (
+              <span className="text-[10px] font-mono text-white/40">
+                • {item.episode_count} Bölüm
+              </span>
             )}
+          </div>
+          <h3 className="text-sm font-bold text-white truncate drop-shadow-md">
+            {item.title}
+          </h3>
+        </div>
 
-          {/* Quick Action Bar (Events isolated so clicking buttons does NOT trigger series page navigation!) */}
-          <div
-            className="flex items-center gap-2 pt-3"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-          >
+        {/* EXPANDED VIEW */}
+        <div
+          className={`transition-all duration-300 ${
+            isExpanded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'
+          }`}
+        >
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold tracking-wider uppercase bg-white/20 text-white">
+              {item.content_type === 'anime'
+                ? 'ANİME'
+                : item.content_type === 'movie'
+                ? 'FİLM'
+                : 'DİZİ'}
+            </span>
+            {item.release_year && (
+              <span className="text-[11px] font-mono text-white/60">
+                {item.release_year}
+              </span>
+            )}
+            {item.episode_count > 0 && (
+              <span className="text-[11px] font-mono text-white/60">
+                • {item.episode_count} Bölüm
+              </span>
+            )}
+          </div>
+
+          <h3 className="text-base font-extrabold text-white leading-tight drop-shadow-lg mb-1.5 line-clamp-1">
+            {item.title}
+          </h3>
+
+          <p className="text-xs text-white/70 line-clamp-2 leading-relaxed mb-3 font-normal drop-shadow">
+            {item.overview ||
+              `${item.title} tüm alternatif kaynaklar, Türkçe altyazı ve 1080p sinema kalitesinde hemen izlenebilir.`}
+          </p>
+
+          {item.categories && item.categories.length > 0 && (
+            <div className="flex items-center gap-1.5 mb-3 overflow-hidden">
+              {item.categories.slice(0, 3).map((cat) => (
+                <span
+                  key={cat}
+                  className="px-2 py-0.5 rounded-md text-[10px] bg-white/10 text-white/75 truncate"
+                >
+                  {cat}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Quick Interactive Actions */}
+          <div className="flex items-center gap-2 pt-1">
             <Link
-              href={`/seri/${item.slug}/1`}
-              prefetch={true}
+              href={`/seri/${item.slug}?play=1`}
               onClick={(e) => {
                 e.stopPropagation();
-                triggerSound('click');
+                triggerSound?.('click');
               }}
-              onPointerDown={(e) => e.stopPropagation()}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 active:scale-[0.97] transition-all shadow-[0_2px_12px_rgba(0,0,0,0.6)] border border-white/20 cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 active:scale-[0.98] transition-all shadow-lg"
             >
               <Play className="w-3.5 h-3.5 fill-black" />
               <span>Hemen İzle</span>
             </Link>
 
             <button
-              type="button"
               onClick={(e) => {
-                e.preventDefault();
                 e.stopPropagation();
+                triggerSound?.('click');
                 updateWatchStatus(
                   item.id,
-                  inWatchlist ? 'plan_to_watch' : 'watching',
+                  inWatchlist ? 'dropped' : 'watching',
                   1,
                   1
                 );
               }}
-              onPointerDown={(e) => e.stopPropagation()}
-              title={inWatchlist ? 'Listede' : 'Listeme Ekle'}
-              className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
-                inWatchlist
-                  ? 'bg-white text-black border-white'
-                  : 'glass-pill text-white hover:bg-white/20'
-              }`}
+              className="w-8 h-8 rounded-full glass-pill hover:bg-white/20 flex items-center justify-center text-white cursor-pointer transition-all"
+              title={inWatchlist ? 'Listeden Çıkar' : 'Listeme Ekle'}
             >
               {inWatchlist ? (
-                <Check className="w-3.5 h-3.5" />
+                <Check className="w-4 h-4 text-sky-400" />
               ) : (
-                <Plus className="w-3.5 h-3.5" />
+                <Plus className="w-4 h-4" />
               )}
             </button>
 
             <button
-              type="button"
               onClick={(e) => {
-                e.preventDefault();
                 e.stopPropagation();
+                triggerSound?.('click');
                 toggleMediaFavorite(item);
               }}
-              onPointerDown={(e) => e.stopPropagation()}
-              title={isFavorited ? 'Favorilerden Çıkar' : 'Favorilere Ekle'}
-              className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
-                isFavorited
-                  ? 'bg-rose-500 border-rose-400 text-white shadow-[0_0_12px_rgba(244,63,94,0.4)]'
-                  : 'glass-pill text-white hover:bg-white/20'
+              className={`w-8 h-8 rounded-full glass-pill hover:bg-white/20 flex items-center justify-center transition-all cursor-pointer ${
+                isFavorited ? 'text-rose-400' : 'text-white/80 hover:text-white'
               }`}
+              title="Favorilere Ekle"
             >
               <Heart
-                className={`w-3.5 h-3.5 ${isFavorited ? 'fill-white' : ''}`}
+                className={`w-4 h-4 ${isFavorited ? 'fill-rose-400' : ''}`}
               />
             </button>
 
             <button
-              type="button"
               onClick={(e) => {
-                e.preventDefault();
                 e.stopPropagation();
+                triggerSound?.('click');
                 toggleMediaFollow(item);
               }}
-              onPointerDown={(e) => e.stopPropagation()}
-              title={isFollowed ? 'Takibi Bırak' : 'Yeni Bölüm Bildirimlerini Aç'}
-              className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
-                isFollowed
-                  ? 'bg-amber-400 text-black border-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.4)]'
-                  : 'glass-pill text-white/80 hover:text-white hover:bg-white/20'
+              className={`w-8 h-8 rounded-full glass-pill hover:bg-white/20 flex items-center justify-center transition-all cursor-pointer ${
+                isFollowed ? 'text-amber-300' : 'text-white/80 hover:text-white'
               }`}
+              title="Yeni Bölümleri Takip Et"
             >
-              <Bell className={`w-3.5 h-3.5 ${isFollowed ? 'fill-black' : ''}`} />
+              <Bell className={`w-4 h-4 ${isFollowed ? 'fill-amber-300' : ''}`} />
             </button>
           </div>
         </div>
       </div>
-      </div>
     </div>
   );
 }
-
-export default React.memo(AccordionMediaCard);
-

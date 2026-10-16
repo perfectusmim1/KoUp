@@ -194,9 +194,17 @@ export default function Navbar() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
+  const [optimisticPath, setOptimisticPath] = useState<string | null>(null);
+
+  // Sync optimistic navigation path with router pathname
+  useEffect(() => {
+    setOptimisticPath(pathname);
+  }, [pathname]);
+
+  const activePath = optimisticPath ?? pathname;
   const isNavActive = (href: string) => {
-    if (href === '/') return pathname === '/';
-    return pathname === href || pathname.startsWith(`${href}/`);
+    if (href === '/') return activePath === '/';
+    return activePath === href || activePath.startsWith(`${href}/`);
   };
 
   return (
@@ -206,7 +214,7 @@ export default function Navbar() {
           className={`pointer-events-auto flex items-center justify-between transition-all duration-300 ease-out will-change-[width,transform,background-color,border-radius] ${
             isScrolled
               ? 'mt-2 sm:mt-3.5 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-full bg-[#08080a]/90 backdrop-blur-2xl border border-white/[0.14] shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_30px_-5px_rgba(41,151,255,0.12),inset_0_1px_0_rgba(255,255,255,0.18)] py-2 sm:py-2.5 px-4 sm:px-6'
-              : 'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-[#080808]/95 via-[#080808]/70 to-transparent backdrop-blur-[12px] border-b border-white/[0.06] py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+              : 'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-[#080808]/95 via-[#080808]/70 to-transparent backdrop-blur-[12px] py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
           }`}
         >
       {/* LEFT: Brand Mark (Original KU Logo — No Circle or Box Wrapper) */}
@@ -253,7 +261,16 @@ export default function Navbar() {
               key={item.href}
               href={item.href}
               prefetch={true}
-              onClick={() => triggerSound('click')}
+              onMouseDown={(e) => {
+                if (e.button === 0) {
+                  setOptimisticPath(item.href);
+                  triggerSound('click');
+                }
+              }}
+              onClick={() => {
+                setOptimisticPath(item.href);
+                triggerSound('click');
+              }}
               onMouseEnter={() => triggerSound('hover')}
               className={`relative px-5 py-2 rounded-full text-[13px] font-semibold transition-colors duration-200 select-none ${
                 active ? 'text-black' : 'text-white/70 hover:text-white'
@@ -262,11 +279,12 @@ export default function Navbar() {
               {active && (
                 <motion.span
                   layoutId="koup-navbar-active-pill"
+                  initial={false}
                   transition={{
                     type: 'spring',
-                    stiffness: 420,
-                    damping: 32,
-                    mass: 0.8,
+                    stiffness: 480,
+                    damping: 34,
+                    mass: 0.6,
                   }}
                   className="absolute inset-0 rounded-full bg-white shadow-[0_0_24px_rgba(255,255,255,0.4)]"
                 />

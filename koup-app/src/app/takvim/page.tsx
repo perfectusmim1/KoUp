@@ -142,7 +142,7 @@ export default function CalendarPage() {
       <div className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/10 shadow-2xl flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div className="space-y-2">
           <div className="text-[11px] font-mono font-bold uppercase tracking-[0.2em] text-white/50 flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-emerald-400" />
+            <Calendar className="w-4 h-4 text-sky-400" />
             <span>Yayın Takvimi • Canlı Yayın Akışı & Yeni Bölümler</span>
           </div>
           <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
@@ -214,7 +214,7 @@ export default function CalendarPage() {
       {/* Day Overview Banner */}
       <div className="flex items-center justify-between pb-3 border-b border-white/10">
         <div className="flex items-center gap-3">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+          <div className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse" />
           <h2 className="text-lg font-bold text-white">
             {activeDayName} Günü Yayınlanan Seriler
           </h2>
@@ -224,7 +224,7 @@ export default function CalendarPage() {
         </div>
 
         <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-white/50">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+          <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
           <span>Doğrulanmış Orijinal Yayın Günleri</span>
         </div>
       </div>
@@ -247,11 +247,15 @@ export default function CalendarPage() {
           </p>
         </div>
       ) : (
-        <motion.div
-          layout
-          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4"
-        >
-          <AnimatePresence mode="popLayout">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={`${selectedDay}-${selectedCategory}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18, ease: 'easeInOut' }}
+            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4"
+          >
             {displayedSchedules.map((item) => {
               const targetSlug = item.media?.slug || item.slug;
               const coverImg =
@@ -263,20 +267,16 @@ export default function CalendarPage() {
                 : false;
 
               const categoryBadge = isScheduleAnime(item)
-                ? { label: 'ANİME', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30' }
+                ? { label: 'ANİME', color: 'bg-[#1b1035] text-purple-200 border-purple-400/60 shadow-md font-bold' }
                 : (item.media?.country_code === 'KR' || item.category?.toLowerCase().includes('kore'))
-                ? { label: 'K-DRAMA', color: 'bg-sky-500/20 text-sky-300 border-sky-400/30' }
+                ? { label: 'K-DRAMA', color: 'bg-[#0c1d33] text-sky-200 border-sky-400/60 shadow-md font-bold' }
                 : (item.media?.country_code === 'CN' || item.category?.toLowerCase().includes('çin'))
-                ? { label: 'C-DRAMA', color: 'bg-amber-500/20 text-amber-300 border-amber-400/30' }
-                : { label: item.category || 'DİZİ', color: 'bg-purple-500/20 text-purple-300 border-purple-400/30' };
+                ? { label: 'C-DRAMA', color: 'bg-[#2a1708] text-amber-200 border-amber-400/60 shadow-md font-bold' }
+                : { label: item.category || 'DİZİ', color: 'bg-[#0f1d2e] text-blue-200 border-blue-400/60 shadow-md font-bold' };
 
               return (
-                <motion.div
+                <div
                   key={`${item.source_site}-${item.id}`}
-                  initial={{ opacity: 0, scale: 0.96 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ duration: 0.25 }}
                   className="group rounded-2xl apple-glass cv-card overflow-hidden border border-white/10 hover:border-white/30 transition-all flex flex-col"
                 >
                   {/* Poster Thumbnail */}
@@ -292,16 +292,16 @@ export default function CalendarPage() {
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
 
-                    {/* Category Badge */}
+                    {/* Category Badge - Opaque High Contrast */}
                     <span
-                      className={`absolute top-2.5 left-2.5 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border backdrop-blur-md ${categoryBadge.color}`}
+                      className={`absolute top-2.5 left-2.5 text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border shadow-md ${categoryBadge.color}`}
                     >
                       {categoryBadge.label}
                     </span>
 
-                    {/* Episode Badge */}
+                    {/* Episode Badge - Opaque High Contrast */}
                     {item.episode_label && (
-                      <span className="absolute bottom-2.5 left-2.5 right-2.5 text-[11px] font-mono font-bold px-2 py-1 rounded-xl bg-black/80 backdrop-blur-md text-white border border-white/15 truncate text-center">
+                      <span className="absolute bottom-2.5 left-2.5 right-2.5 text-[11px] font-mono font-bold px-2 py-1 rounded-xl bg-black/90 backdrop-blur-md text-white border border-white/25 truncate text-center shadow-md">
                         {item.episode_label}
                       </span>
                     )}
@@ -353,11 +353,11 @@ export default function CalendarPage() {
                       )}
                     </div>
                   </div>
-                </motion.div>
+                </div>
               );
             })}
-          </AnimatePresence>
-        </motion.div>
+          </motion.div>
+        </AnimatePresence>
       )}
     </div>
   );

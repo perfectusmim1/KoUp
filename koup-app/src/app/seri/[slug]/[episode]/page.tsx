@@ -363,9 +363,20 @@ export default function EpisodeWatchPage({
     filteredSources[selectedSourceIdx] || availableSources[0];
 
   return (
-    <div className="min-h-screen pb-32 bg-[#080808] text-white pt-20">
+    <div className="min-h-screen pb-32 bg-[#080808] text-white pt-20 relative overflow-hidden">
+      {/* Ambient Blurred Cinema Backdrop */}
+      <div className="absolute top-0 left-0 right-0 h-[520px] overflow-hidden pointer-events-none -z-0 opacity-40">
+        <img
+          src={getProxiedImageUrl(media.backdrop_image || media.cover_image, media.title)}
+          alt=""
+          className="w-full h-full object-cover filter blur-3xl scale-125 transform-gpu"
+        />
+        <div className="absolute inset-0 bg-[#080808]/70 backdrop-blur-xl" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#080808]/40 via-[#080808]/85 to-[#080808]" />
+      </div>
+
       {/* Top Header Breadcrumb & Back Navigation */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-4">
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-4">
         <div className="flex flex-wrap items-center justify-between gap-3 py-3 border-b border-white/[0.08]">
           <Link
             href={`/seri/${media.slug}`}

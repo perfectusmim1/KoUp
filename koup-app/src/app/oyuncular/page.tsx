@@ -211,14 +211,14 @@ export default function ActorsLeaderboardPage() {
                       #{rank}
                     </span>
 
-                    {/* Type Badge */}
+                    {/* Type Badge - High Contrast Opaque */}
                     <span
-                      className={`absolute bottom-2 left-2 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider backdrop-blur-md border ${
+                      className={`absolute bottom-2 left-2 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border shadow-md ${
                         person.person_type === 'character'
-                          ? 'bg-purple-500/20 text-purple-200 border-purple-400/30'
+                          ? 'bg-[#1b1035] text-purple-200 border-purple-400/60'
                           : person.person_type === 'seiyuu'
-                          ? 'bg-sky-500/20 text-sky-200 border-sky-400/30'
-                          : 'bg-emerald-500/20 text-emerald-200 border-emerald-400/30'
+                          ? 'bg-[#09223b] text-sky-200 border-sky-400/60'
+                          : 'bg-[#0f1d2e] text-blue-200 border-blue-400/60'
                       }`}
                     >
                       {person.person_type === 'character'

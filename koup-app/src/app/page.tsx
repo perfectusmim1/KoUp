@@ -35,6 +35,7 @@ import {
 import { useKoUp } from '@/context/KoUpContext';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 import { cachedQuery, getCache } from '@/lib/cache';
+import { useDragScroll } from '@/hooks/useDragScroll';
 
 interface HomeDataBundle {
   feats: MediaItem[];
@@ -151,7 +152,9 @@ export default function HomePage() {
     'daily' | 'weekly' | 'manual'
   >('daily');
 
-  const top10ScrollRef = useRef<HTMLDivElement>(null);
+  const top10ScrollRef = useDragScroll<HTMLDivElement>();
+  const catalogRailRef = useDragScroll<HTMLDivElement>();
+  const heroThumbnailsRef = useDragScroll<HTMLDivElement>();
 
   useEffect(() => {
     async function fetchHomeData() {
@@ -485,7 +488,10 @@ export default function HomePage() {
                 <span className="text-[10px] tracking-[0.2em] font-semibold uppercase text-white/45">
                   Sıradaki Vitrin Seçkisi
                 </span>
-                <div className="flex items-center gap-2.5 glass-pill-dark p-2 rounded-2xl shadow-[0_20px_45px_rgba(0,0,0,0.85)] overflow-x-auto max-w-full no-scrollbar scroll-smooth [-webkit-overflow-scrolling:touch]">
+                <div
+                  ref={heroThumbnailsRef}
+                  className="flex items-center gap-2.5 glass-pill-dark p-2 rounded-2xl shadow-[0_20px_45px_rgba(0,0,0,0.85)] overflow-x-auto overflow-y-hidden [touch-action:pan-x] max-w-full no-scrollbar scroll-smooth [-webkit-overflow-scrolling:touch]"
+                >
                   {heroItems.slice(0, 4).map((hItem, idx) => {
                     const active = idx === heroIdx;
                     return (
@@ -760,7 +766,7 @@ export default function HomePage() {
 
           <div
             ref={top10ScrollRef}
-            className="flex items-stretch gap-6 sm:gap-10 overflow-x-auto pb-6 pt-4 no-scrollbar snap-x snap-mandatory [-webkit-overflow-scrolling:touch]"
+            className="flex items-stretch gap-6 sm:gap-10 overflow-x-auto overflow-y-hidden [touch-action:pan-x] [overscroll-behavior-y:none] pb-6 pt-4 no-scrollbar snap-x snap-mandatory [-webkit-overflow-scrolling:touch]"
           >
             {top10Items.map((item, idx) => (
               <Link
@@ -843,7 +849,10 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3.5 sm:gap-4 overflow-x-auto pb-4 pt-1 no-scrollbar [-webkit-overflow-scrolling:touch]">
+          <div
+            ref={catalogRailRef}
+            className="flex items-center gap-3.5 sm:gap-4 overflow-x-auto overflow-y-hidden [touch-action:pan-x] pb-4 pt-1 no-scrollbar [-webkit-overflow-scrolling:touch]"
+          >
             {filteredRail.map((item, i) => (
               <AccordionMediaCard
                 key={item.id}
@@ -1056,7 +1065,7 @@ function AccordionRow({
   href: string;
   items: MediaItem[];
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useDragScroll<HTMLDivElement>();
 
   if (!items || items.length === 0) return null;
 
@@ -1104,7 +1113,7 @@ function AccordionRow({
 
       <div
         ref={scrollRef}
-        className="flex items-center gap-3.5 sm:gap-4 overflow-x-auto pb-4 pt-1 no-scrollbar [-webkit-overflow-scrolling:touch]"
+        className="flex items-center gap-3.5 sm:gap-4 overflow-x-auto overflow-y-hidden [touch-action:pan-x] pb-4 pt-1 no-scrollbar [-webkit-overflow-scrolling:touch]"
       >
         {items.map((item) => (
           <AccordionMediaCard key={item.id} item={item} />

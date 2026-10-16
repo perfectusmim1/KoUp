@@ -368,22 +368,33 @@ export default function NetflixPlayer({
     return () => window.removeEventListener('koup-seek-player', handleSeekEvent);
   }, []);
 
-  // Scheduled Episode Live Countdown Timer
-  useEffect(() => {
-    if (currentEpObj?.status !== 'scheduled' && availableSources.length > 0) return;
-    const targetTime = currentEpObj?.scheduled_release_at
-      ? new Date(currentEpObj.scheduled_release_at).getTime()
-      : Date.now() + 14 * 3600 * 1000 + 25 * 60 * 1000;
+  const isTrulyScheduled =
+    currentEpObj?.status === 'scheduled' &&
+    Boolean(
+      currentEpObj?.scheduled_release_at &&
+        new Date(currentEpObj.scheduled_release_at).getTime() > Date.now()
+    );
 
-    const timer = setInterval(() => {
+  // Scheduled Episode Live Countdown Timer - strictly for genuine future scheduled releases
+  useEffect(() => {
+    if (!isTrulyScheduled || !currentEpObj?.scheduled_release_at) {
+      setCountdownText('');
+      return;
+    }
+    const targetTime = new Date(currentEpObj.scheduled_release_at).getTime();
+
+    const updateTimer = () => {
       const diff = Math.max(0, Math.floor((targetTime - Date.now()) / 1000));
       const h = Math.floor(diff / 3600);
       const m = Math.floor((diff % 3600) / 60);
       const s = diff % 60;
       setCountdownText(`${h} saat, ${m} dakika, ${s} saniye`);
-    }, 1000);
+    };
+
+    updateTimer();
+    const timer = setInterval(updateTimer, 1000);
     return () => clearInterval(timer);
-  }, [currentEpObj, availableSources.length]);
+  }, [isTrulyScheduled, currentEpObj?.scheduled_release_at]);
 
   const triggerControlsVisibility = useCallback(() => {
     setShowOverlay(true);
@@ -597,8 +608,8 @@ export default function NetflixPlayer({
           </div>
         )}
 
-        {/* CORE VIDEO AREA: SCHEDULED COUNTDOWN OR NATIVE HLS/MP4 OR LOCKED IFRAME */}
-        {currentEpObj?.status === 'scheduled' || availableSources.length === 0 ? (
+        {/* CORE VIDEO AREA: SCHEDULED COUNTDOWN OR SOURCE PREPARATION OR NATIVE PLAYER */}
+        {isTrulyScheduled ? (
           <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-gradient-to-b from-[#090D14] to-[#08080A]">
             <div className="w-14 h-14 rounded-3xl bg-sky-500/15 border border-sky-400/30 flex items-center justify-center mb-4">
               <Clock className="w-7 h-7 text-sky-400 animate-pulse" />
@@ -607,11 +618,35 @@ export default function NetflixPlayer({
               Yayın Takvimi · Canlı Geri Sayım
             </div>
             <h3 className="text-2xl sm:text-4xl font-mono font-extrabold text-white tracking-tight mb-4">
-              {countdownText}
+              {countdownText || 'Hesaplanıyor...'}
             </h3>
             <div className="max-w-lg px-5 py-3 rounded-2xl bg-sky-950/50 border border-sky-400/30 text-xs sm:text-sm text-sky-200 leading-relaxed">
               {currentEpObj?.translation_note ||
-                'Çeviri işlemi için bölümün yayınlanması bekleniyor, kaynak geldiği gibi çeviri süreci başlayacaktır.'}
+                'Çeviri işlemi için bölümün orijinal yayını bekleniyor. Bölüm yayınlandığı anda kaynaklar eklenecektir.'}
+            </div>
+          </div>
+        ) : availableSources.length === 0 ? (
+          <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-gradient-to-b from-[#0a0c12] to-[#08080A]">
+            <div className="w-14 h-14 rounded-3xl bg-white/10 border border-white/15 flex items-center justify-center mb-4">
+              <Layers className="w-7 h-7 text-sky-400" />
+            </div>
+            <div className="text-xs font-mono uppercase tracking-widest text-sky-400 mb-1">
+              Kaynak Durumu
+            </div>
+            <h3 className="text-xl sm:text-2xl font-bold text-white tracking-tight mb-2">
+              Bu Bölüm İçin Aktif Video Kaynağı Hazırlanıyor
+            </h3>
+            <p className="max-w-md text-xs sm:text-sm text-white/60 mb-5 leading-relaxed">
+              Sunucular otomatik taranıyor veya video akışı güncelleniyor. Lütfen birkaç dakika sonra yeniden deneyin.
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => window.location.reload()}
+                className="px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-2 border border-white/15 cursor-pointer transition-all active:scale-95"
+              >
+                <RotateCw className="w-3.5 h-3.5" />
+                <span>Sayfayı Yenile</span>
+              </button>
             </div>
           </div>
         ) : resolvedMode === 'native_hls' || resolvedMode === 'native_mp4' ? (
