@@ -33,6 +33,9 @@ import {
   Play,
   Save,
   LogIn,
+  UserPlus,
+  LogOut,
+  KeyRound,
 } from 'lucide-react';
 import { supabase, MediaItem, formatContentTypeTR } from '@/lib/supabase';
 import CountryFlag from '@/components/CountryFlag';
@@ -87,7 +90,7 @@ interface UserProfileRow {
 }
 
 interface AdminCommentRow {
-  id: number;
+  id: string | number;
   user_id: string;
   media_id: number;
   episode_id?: number | null;
@@ -121,9 +124,25 @@ interface AdminEpisodeItem {
 }
 
 export default function AdminDashboardPage() {
-  const { user, setIsAuthModalOpen, pushNotification } = useKoUp();
+  const {
+    user,
+    setIsAuthModalOpen,
+    pushNotification,
+    loginWithEmail,
+    registerWithEmail,
+    logout,
+  } = useKoUp();
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+
+  // 403 Security Gate Inline Auth State
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authUsername, setAuthUsername] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [adminCount, setAdminCount] = useState<number | null>(null);
 
   // Stats
   const [stats, setStats] = useState({
@@ -179,6 +198,23 @@ export default function AdminDashboardPage() {
 
   // Check role
   const isAdmin = user?.role === 'admin';
+
+  // Check if any admin exists in database
+  useEffect(() => {
+    if (isAdmin) return;
+    async function checkAdmins() {
+      try {
+        const { count } = await supabase
+          .from('profiles')
+          .select('id', { count: 'exact', head: true })
+          .eq('role', 'admin');
+        setAdminCount(count || 0);
+      } catch {
+        setAdminCount(0);
+      }
+    }
+    checkAdmins();
+  }, [isAdmin]);
 
   // Load Initial Admin Data
   useEffect(() => {
@@ -253,7 +289,7 @@ export default function AdminDashboardPage() {
           q = q.eq('content_type', seriesTypeFilter);
         }
         if (seriesCountryFilter !== 'ALL') {
-          q = q.eq('country', seriesCountryFilter);
+          q = q.eq('country_code', seriesCountryFilter);
         }
         const { data } = await q;
         setSeriesList((data as MediaItem[]) || []);
@@ -660,7 +696,7 @@ export default function AdminDashboardPage() {
   };
 
   // Comment Actions
-  const handleDeleteComment = async (commentId: number) => {
+  const handleDeleteComment = async (commentId: string | number) => {
     if (!confirm('Bu yorumu kaldırmak istediğinize emin misiniz?')) return;
     await supabase.from('comments').delete().eq('id', commentId);
     setCommentsList((prev) => prev.filter((c) => c.id !== commentId));
@@ -704,10 +740,62 @@ export default function AdminDashboardPage() {
     });
   }, [usersList, userSearchQuery, userRoleFilter]);
 
+  // Filtered Series
+  const filteredSeries = useMemo(() => {
+    return seriesList.filter((m) => {
+      const matchType = seriesTypeFilter === 'ALL' || m.content_type === seriesTypeFilter;
+      const code = (m.country_code || (m as any).country || '').toUpperCase();
+      const matchCountry = seriesCountryFilter === 'ALL' || code === seriesCountryFilter;
+      return matchType && matchCountry;
+    });
+  }, [seriesList, seriesTypeFilter, seriesCountryFilter]);
+
+  // 403 Inline Auth Handler
+  const handleInlineAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthLoading(true);
+    try {
+      if (authMode === 'login') {
+        const err = await loginWithEmail(authEmail.trim(), authPassword);
+        if (err) {
+          setAuthError(
+            err.includes('Invalid login credentials')
+              ? 'E-posta veya şifre hatalı. Lütfen kontrol ediniz.'
+              : err
+          );
+        } else {
+          pushNotification('Giriş Başarılı', 'Yönetici paneli yükleniyor...', 'success');
+        }
+      } else {
+        if (!authUsername.trim() || authUsername.trim().length < 3) {
+          setAuthError('Kullanıcı adı en az 3 karakter olmalıdır.');
+          setAuthLoading(false);
+          return;
+        }
+        if (authPassword.length < 6) {
+          setAuthError('Şifre en az 6 karakter olmalıdır.');
+          setAuthLoading(false);
+          return;
+        }
+        const err = await registerWithEmail(authEmail.trim(), authPassword, authUsername.trim());
+        if (err) {
+          setAuthError(err);
+        } else {
+          pushNotification('Hesap Oluşturuldu', 'Yönetici hesabı tanımlandı.', 'success');
+        }
+      }
+    } catch (err: any) {
+      setAuthError(err.message || 'Giriş işlemi gerçekleştirilemedi.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
   // UNAUTHORIZED / SECURITY GATE
   if (!isAdmin) {
     return (
-      <div className="min-h-screen pt-36 pb-28 max-w-2xl mx-auto px-6 text-center space-y-6">
+      <div className="w-full min-h-[calc(100vh-8rem)] pt-24 sm:pt-32 pb-24 max-w-2xl mx-auto px-4 sm:px-6 text-center space-y-6">
         <div className="w-20 h-20 rounded-3xl bg-rose-500/15 border border-rose-500/30 text-rose-400 mx-auto flex items-center justify-center shadow-[0_0_32px_rgba(244,63,94,0.3)]">
           <ShieldAlert className="w-10 h-10" />
         </div>
@@ -720,39 +808,172 @@ export default function AdminDashboardPage() {
           </p>
         </div>
 
+        {/* Status / Notice Card */}
         <div className="p-6 rounded-3xl apple-glass border border-white/10 space-y-4 text-left">
           <div className="flex items-start gap-3">
             <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
             <div className="text-xs text-white/75 leading-relaxed">
               <strong className="text-white block font-semibold mb-0.5">
-                İlk Hesap Otomatik Admin Yetkisi Alır
+                İlk Hesap Otomatik Master Admin Yetkisi Alır
               </strong>
-              Veritabanında henüz yönetici yoksa, kayıt oluşturduğunuz ilk hesap otomatik olarak <strong>Sistem Yöneticisi (Admin)</strong> yetkisini kazanır.
+              Veritabanında henüz yönetici yoksa (Mevcut Yönetici Sayısı:{' '}
+              <span className="font-mono text-emerald-400 font-bold">
+                {adminCount !== null ? adminCount : 'Kontrol ediliyor...'}
+              </span>
+              ), kayıt oluşturduğunuz ilk hesap otomatik olarak <strong>Sistem Yöneticisi (Admin)</strong> yetkisini kazanır.
             </div>
           </div>
           <div className="flex items-start gap-3">
             <Lock className="w-5 h-5 text-amber-300 shrink-0 mt-0.5" />
             <div className="text-xs text-white/75 leading-relaxed">
               <strong className="text-white block font-semibold mb-0.5">
-                Güvenlik & Rol Denetimi (RLS)
+                Güvenlik & Rol Denetimi (PostgreSQL RLS)
               </strong>
-              Kullanıcı rolleri Postgres düzeyinde kilitlenmiştir; sıradan üyeler yetki yükseltmesi yapamaz.
+              Kullanıcı rolleri veritabanı düzeyinde korunur; admin paneli yetkisiz çağrılardan izoledir.
             </div>
           </div>
         </div>
 
-        <button
-          onClick={() => setIsAuthModalOpen(true)}
-          className="px-8 py-3.5 rounded-full bg-white text-black font-bold text-sm hover:bg-white/90 cursor-pointer shadow-2xl transition-all"
-        >
-          {user ? 'Farklı Yönetici Hesabıyla Giriş Yap' : 'Yönetici Girişi Yap / Hesap Oluştur'}
-        </button>
+        {/* If user is already logged in with a non-admin role */}
+        {user && (
+          <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-400/25 flex items-center justify-between gap-3 text-left">
+            <div>
+              <div className="text-xs font-bold text-amber-300">
+                Giriş Yapılmış Hesap: @{user.username}
+              </div>
+              <div className="text-[11px] text-white/60">
+                Mevcut Rol: <span className="font-mono font-bold text-white uppercase">{user.role}</span> · Bu rol yönetim paneline erişemez.
+              </div>
+            </div>
+            <button
+              onClick={() => logout()}
+              className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Çıkış Yap</span>
+            </button>
+          </div>
+        )}
+
+        {/* Primary Action Button (Triggers Global Auth Modal) */}
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+          <button
+            onClick={() => setIsAuthModalOpen(true)}
+            className="w-full sm:w-auto px-8 py-3.5 rounded-full bg-white text-black font-bold text-sm hover:bg-white/90 cursor-pointer shadow-2xl transition-all flex items-center justify-center gap-2"
+          >
+            <LogIn className="w-4 h-4" />
+            <span>{user ? 'Farklı Yönetici Hesabıyla Giriş Yap' : 'Yönetici Girişi Yap / Hesap Oluştur'}</span>
+          </button>
+        </div>
+
+        {/* Direct Inline Login / Register Card (Zero-friction alternative) */}
+        <div className="p-6 rounded-3xl apple-glass border border-white/15 space-y-4 text-left shadow-2xl">
+          <div className="flex items-center justify-between pb-3 border-b border-white/10">
+            <span className="text-xs font-mono uppercase tracking-widest text-amber-300 flex items-center gap-1.5">
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>Hızlı Yönetici Girişi & Kayıt</span>
+            </span>
+            <div className="flex items-center p-1 rounded-xl bg-black/60 border border-white/10 text-xs">
+              <button
+                type="button"
+                onClick={() => { setAuthMode('login'); setAuthError(null); }}
+                className={`px-3 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
+                  authMode === 'login' ? 'bg-white text-black' : 'text-white/60 hover:text-white'
+                }`}
+              >
+                Giriş Yap
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAuthMode('register'); setAuthError(null); }}
+                className={`px-3 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
+                  authMode === 'register' ? 'bg-white text-black' : 'text-white/60 hover:text-white'
+                }`}
+              >
+                Kayıt Ol (İlk Hesap = Admin)
+              </button>
+            </div>
+          </div>
+
+          {authError && (
+            <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs">
+              {authError}
+            </div>
+          )}
+
+          <form onSubmit={handleInlineAuth} className="space-y-3">
+            {authMode === 'register' && (
+              <div>
+                <label className="block text-[11px] font-medium text-white/70 mb-1">
+                  Kullanıcı Adı
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="admin_koup"
+                  value={authUsername}
+                  onChange={(e) => setAuthUsername(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder-white/40 focus:outline-none focus:border-white/40"
+                />
+              </div>
+            )}
+            <div>
+              <label className="block text-[11px] font-medium text-white/70 mb-1">
+                E-posta Adresi
+              </label>
+              <input
+                type="email"
+                required
+                placeholder="admin@koup.com"
+                value={authEmail}
+                onChange={(e) => setAuthEmail(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder-white/40 focus:outline-none focus:border-white/40"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-white/70 mb-1">
+                Şifre
+              </label>
+              <input
+                type="password"
+                required
+                placeholder="••••••••"
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder-white/40 focus:outline-none focus:border-white/40"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={authLoading}
+              className="w-full py-3 rounded-xl bg-white text-black font-bold text-xs hover:bg-white/90 transition-all cursor-pointer shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 mt-2"
+            >
+              {authLoading ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Yetki Doğrulanıyor...</span>
+                </>
+              ) : authMode === 'login' ? (
+                <>
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>Yönetici Olarak Giriş Yap</span>
+                </>
+              ) : (
+                <>
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>Master Admin Hesabı Oluştur ve Giriş Yap</span>
+                </>
+              )}
+            </button>
+          </form>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen pt-28 pb-32 max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 space-y-8">
+    <div className="w-full min-h-screen pt-28 pb-32 max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 space-y-8 overflow-x-hidden">
       {/* 1. TOP HEADER & METRICS */}
       <div className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/15 flex flex-col xl:flex-row xl:items-center justify-between gap-6 shadow-2xl">
         <div className="space-y-2">
@@ -802,7 +1023,7 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* 2. TAB NAVIGATION BAR (SMOOTH HORIZONTAL SCROLL) */}
-      <div className="sticky top-20 z-40 p-1.5 rounded-2xl glass-pill-dark border border-white/10 shadow-2xl flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+      <div className="sticky top-20 z-40 p-1.5 rounded-2xl glass-pill-dark border border-white/10 shadow-2xl flex items-center gap-1.5 overflow-x-auto no-scrollbar overscroll-x-contain touch-pan-x touch-pan-y">
         {[
           { id: 'overview', label: 'Genel Bakış', icon: Layers },
           { id: 'users', label: 'Kullanıcılar', icon: Users, badge: stats.totalUsers },
@@ -1152,7 +1373,7 @@ export default function AdminDashboardPage() {
               <div>
                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
                   <Film className="w-5 h-5 text-emerald-400" />
-                  <span>Seri & Medya Kataloğu ({seriesList.length})</span>
+                  <span>Seri & Medya Kataloğu ({filteredSeries.length})</span>
                 </h2>
                 <p className="text-xs text-white/55 mt-0.5">
                   17.500+ Dizi, Anime, Asya Filmi ve TV Programı üst verilerini düzenleyin, vitrin sıralamasını belirleyin veya yeni yapım ekleyin.
@@ -1223,7 +1444,7 @@ export default function AdminDashboardPage() {
                 <RefreshCw className="w-4 h-4 animate-spin" />
                 <span>Seriler aranıyor...</span>
               </div>
-            ) : seriesList.length === 0 ? (
+            ) : filteredSeries.length === 0 ? (
               <div className="py-16 text-center text-xs text-white/50">
                 Aramanızla eşleşen yapım bulunamadı.
               </div>
@@ -1240,7 +1461,7 @@ export default function AdminDashboardPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/[0.06]">
-                    {seriesList.map((m) => (
+                    {filteredSeries.map((m) => (
                       <tr key={m.id} className="hover:bg-white/[0.02] transition-colors">
                         <td className="py-3 pl-3">
                           <div className="flex items-center gap-3">
@@ -1806,7 +2027,7 @@ export default function AdminDashboardPage() {
       {/* ================= MODAL: SERİ EKLE / DÜZENLE ================= */}
       <AnimatePresence>
         {seriesModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -1818,7 +2039,7 @@ export default function AdminDashboardPage() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative w-full max-w-2xl rounded-3xl bg-[#131317] border border-white/15 p-6 sm:p-8 shadow-2xl z-10 max-h-[90vh] overflow-y-auto"
+              className="relative w-full max-w-2xl rounded-3xl bg-[#131317] border border-white/15 p-6 sm:p-8 shadow-2xl z-10 max-h-[90vh] overflow-y-auto my-auto"
             >
               <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-4">
                 <h3 className="text-lg font-bold text-white">
@@ -1988,7 +2209,7 @@ export default function AdminDashboardPage() {
       {/* ================= MODAL: BÖLÜM EKLE / DÜZENLE ================= */}
       <AnimatePresence>
         {epModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -2000,7 +2221,7 @@ export default function AdminDashboardPage() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative w-full max-w-md rounded-3xl bg-[#131317] border border-white/15 p-6 shadow-2xl z-10"
+              className="relative w-full max-w-md rounded-3xl bg-[#131317] border border-white/15 p-6 shadow-2xl z-10 max-h-[90vh] overflow-y-auto my-auto"
             >
               <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-4">
                 <h3 className="text-sm font-bold text-white">
@@ -2123,7 +2344,7 @@ export default function AdminDashboardPage() {
       {/* ================= MODAL: KAYNAK EKLE ================= */}
       <AnimatePresence>
         {newSourceModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -2135,7 +2356,7 @@ export default function AdminDashboardPage() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative w-full max-w-md rounded-3xl bg-[#131317] border border-white/15 p-6 shadow-2xl z-10"
+              className="relative w-full max-w-md rounded-3xl bg-[#131317] border border-white/15 p-6 shadow-2xl z-10 max-h-[90vh] overflow-y-auto my-auto"
             >
               <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-4">
                 <h3 className="text-sm font-bold text-white">

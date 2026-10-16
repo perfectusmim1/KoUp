@@ -73,6 +73,10 @@ interface KoUpContextValue {
   ) => void;
   markAllNotificationsRead: () => void;
   markNotificationsRead: () => void;
+  markNotificationRead: (id: string) => void;
+  markNotificationUnread: (id: string) => void;
+  deleteNotification: (id: string) => void;
+  clearAllNotifications: () => void;
   dismissToast: () => void;
   updateProfileSettings: (patch: Partial<UserProfile>) => Promise<void>;
   loginWithEmail: (email: string, password: string) => Promise<string | null>;
@@ -156,6 +160,13 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           setUser(parsed);
         } else {
           localStorage.removeItem('koup_profile_v1');
+        }
+      }
+      const savedNotifs = localStorage.getItem('koup_notifs_v1');
+      if (savedNotifs) {
+        const parsedN = JSON.parse(savedNotifs);
+        if (Array.isArray(parsedN) && parsedN.length > 0) {
+          setNotifications(parsedN);
         }
       }
     } catch {
@@ -476,8 +487,51 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const markNotificationRead = useCallback((id: string) => {
+    setNotifications((prev) => {
+      const next = prev.map((n) => (n.id === id ? { ...n, isRead: true } : n));
+      try {
+        localStorage.setItem('koup_notifs_v1', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  const markNotificationUnread = useCallback((id: string) => {
+    setNotifications((prev) => {
+      const next = prev.map((n) => (n.id === id ? { ...n, isRead: false } : n));
+      try {
+        localStorage.setItem('koup_notifs_v1', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  const deleteNotification = useCallback((id: string) => {
+    setNotifications((prev) => {
+      const next = prev.filter((n) => n.id !== id);
+      try {
+        localStorage.setItem('koup_notifs_v1', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  const clearAllNotifications = useCallback(() => {
+    setNotifications([]);
+    try {
+      localStorage.setItem('koup_notifs_v1', JSON.stringify([]));
+    } catch {}
+  }, []);
+
   const markAllNotificationsRead = useCallback(() => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    setNotifications((prev) => {
+      const next = prev.map((n) => ({ ...n, isRead: true }));
+      try {
+        localStorage.setItem('koup_notifs_v1', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
   }, []);
 
   const dismissToast = useCallback(() => {
@@ -688,6 +742,10 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         pushNotification,
         markAllNotificationsRead,
         markNotificationsRead: markAllNotificationsRead,
+        markNotificationRead,
+        markNotificationUnread,
+        deleteNotification,
+        clearAllNotifications,
         dismissToast,
         updateProfileSettings,
         loginWithEmail,

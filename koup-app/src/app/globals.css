@@ -36,6 +36,8 @@ html {
   color: #e5e2e1;
   font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
   scroll-behavior: smooth;
+  overflow-x: hidden;
+  overflow-y: auto;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -45,7 +47,9 @@ body {
   background-color: #080808;
   color: #e5e2e1;
   font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
-  overflow-x: clip;
+  overflow-x: hidden;
+  overflow-y: visible;
+  min-height: 100vh;
   -webkit-font-smoothing: antialiased;
 }
 

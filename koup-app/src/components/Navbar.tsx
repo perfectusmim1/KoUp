@@ -18,6 +18,12 @@ import {
   Home,
   Menu,
   LogIn,
+  Tv,
+  UserCheck,
+  MessageSquare,
+  Sparkles,
+  CheckCheck,
+  ArrowRight,
 } from 'lucide-react';
 import {
   supabase,
@@ -46,6 +52,8 @@ export default function Navbar() {
     notifications,
     unreadCount,
     markNotificationsRead,
+    markAllNotificationsRead,
+    markNotificationRead,
     triggerSound,
     setIsAuthModalOpen,
   } = useKoUp();
@@ -60,6 +68,7 @@ export default function Navbar() {
 
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const notifContainerRef = useRef<HTMLDivElement>(null);
 
   // Instant Omnibox Search (Debounced 160ms)
   useEffect(() => {
@@ -103,6 +112,12 @@ export default function Navbar() {
         !searchContainerRef.current.contains(e.target as Node)
       ) {
         setSearchOpen(false);
+      }
+      if (
+        notifContainerRef.current &&
+        !notifContainerRef.current.contains(e.target as Node)
+      ) {
+        setNotifOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -355,12 +370,9 @@ export default function Navbar() {
         </div>
 
         {/* Notifications Bell */}
-        <div className="relative">
+        <div ref={notifContainerRef} className="relative">
           <button
-            onClick={() => {
-              setNotifOpen((v) => !v);
-              if (!notifOpen) markNotificationsRead();
-            }}
+            onClick={() => setNotifOpen((v) => !v)}
             className="w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white/80 hover:text-white relative cursor-pointer transition-all"
             aria-label="Bildirimler"
           >
@@ -379,32 +391,95 @@ export default function Navbar() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 6, scale: 0.96 }}
                 transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="absolute right-0 mt-3 w-80 sm:w-96 rounded-3xl bg-[#0f0f12]/95 backdrop-blur-2xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.92)] border border-white/15 z-50"
+                className="absolute right-0 mt-3 w-84 sm:w-[410px] rounded-3xl bg-[#0f0f12]/95 backdrop-blur-2xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.92)] border border-white/15 z-50 flex flex-col gap-3"
               >
-                <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-white/10">
-                  <span className="text-xs font-bold text-white">Bildirim Merkezi</span>
-                  <button
-                    onClick={() => setNotifOpen(false)}
-                    className="text-[11px] text-white/50 hover:text-white cursor-pointer"
-                  >
-                    Kapat
-                  </button>
+                {/* Header */}
+                <div className="flex items-center justify-between pb-2.5 border-b border-white/10">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-white">Bildirim Merkezi</span>
+                    {unreadCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-red-600/30 text-red-300 border border-red-500/40 text-[10px] font-mono font-bold">
+                        {unreadCount} yeni
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={() => markAllNotificationsRead()}
+                        className="text-[11px] font-semibold text-amber-300 hover:text-amber-200 transition-colors cursor-pointer flex items-center gap-1"
+                        title="Tümünü Okundu İşaretle"
+                      >
+                        <CheckCheck className="w-3.5 h-3.5" />
+                        <span>Tümünü Oku</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setNotifOpen(false)}
+                      className="text-[11px] text-white/50 hover:text-white cursor-pointer px-1.5 py-0.5 rounded-lg hover:bg-white/10"
+                    >
+                      Kapat
+                    </button>
+                  </div>
                 </div>
-                <div className="space-y-2 max-h-80 overflow-y-auto">
+
+                {/* Notifications List */}
+                <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                   {notifications.length === 0 ? (
-                    <div className="py-6 text-center text-xs text-white/50">
-                      Yeni bildiriminiz yok.
+                    <div className="py-8 text-center text-xs text-white/50 space-y-1">
+                      <Bell className="w-5 h-5 text-white/30 mx-auto mb-1" />
+                      <p>Yeni bildiriminiz yok.</p>
                     </div>
                   ) : (
                     notifications.map((n) => {
                       const href = n.linkUrl || (n as any).link_url;
-                      const content = (
-                        <>
-                          <div className="text-xs font-semibold text-white">{n.title}</div>
-                          <div className="text-[11px] text-white/60 mt-0.5 leading-relaxed">
-                            {n.body}
+                      const isUnread = !n.isRead;
+
+                      // Category Icon Picker
+                      let CatIcon = Sparkles;
+                      let catColor = 'bg-purple-500/20 text-purple-300 border-purple-400/30';
+                      if (n.type === 'episode') {
+                        CatIcon = Tv;
+                        catColor = 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30';
+                      } else if (n.type === 'actor') {
+                        CatIcon = UserCheck;
+                        catColor = 'bg-amber-500/20 text-amber-300 border-amber-400/30';
+                      } else if (n.type === 'reply') {
+                        CatIcon = MessageSquare;
+                        catColor = 'bg-sky-500/20 text-sky-300 border-sky-400/30';
+                      }
+
+                      const cardContent = (
+                        <div className="flex items-start gap-3">
+                          {/* Category Icon Badge */}
+                          <div
+                            className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 mt-0.5 ${catColor}`}
+                          >
+                            <CatIcon className="w-4 h-4" />
                           </div>
-                        </>
+
+                          {/* Message Content */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <h4
+                                className={`text-xs truncate ${
+                                  isUnread ? 'font-bold text-white' : 'font-medium text-white/80'
+                                }`}
+                              >
+                                {n.title}
+                              </h4>
+                              {isUnread && (
+                                <span className="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.9)] shrink-0" />
+                              )}
+                            </div>
+                            <p className="text-[11px] text-white/60 mt-0.5 line-clamp-2 leading-relaxed">
+                              {n.body}
+                            </p>
+                            <span className="text-[10px] font-mono text-white/40 block mt-1">
+                              {n.createdAt}
+                            </span>
+                          </div>
+                        </div>
                       );
 
                       if (href) {
@@ -412,10 +487,17 @@ export default function Navbar() {
                           <Link
                             key={n.id}
                             href={href}
-                            onClick={() => setNotifOpen(false)}
-                            className="block p-3 rounded-2xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.06] transition-colors"
+                            onClick={() => {
+                              markNotificationRead(n.id);
+                              setNotifOpen(false);
+                            }}
+                            className={`block p-3 rounded-2xl border transition-all cursor-pointer ${
+                              isUnread
+                                ? 'bg-white/[0.08] hover:bg-white/[0.12] border-white/20 shadow-md'
+                                : 'bg-white/[0.02] hover:bg-white/[0.06] border-white/[0.05] opacity-70 hover:opacity-100'
+                            }`}
                           >
-                            {content}
+                            {cardContent}
                           </Link>
                         );
                       }
@@ -423,13 +505,30 @@ export default function Navbar() {
                       return (
                         <div
                           key={n.id}
-                          className="block p-3 rounded-2xl bg-white/[0.04] border border-white/[0.06]"
+                          onClick={() => markNotificationRead(n.id)}
+                          className={`block p-3 rounded-2xl border transition-all cursor-pointer ${
+                            isUnread
+                              ? 'bg-white/[0.08] hover:bg-white/[0.12] border-white/20 shadow-md'
+                              : 'bg-white/[0.02] hover:bg-white/[0.06] border-white/[0.05] opacity-70 hover:opacity-100'
+                          }`}
                         >
-                          {content}
+                          {cardContent}
                         </div>
                       );
                     })
                   )}
+                </div>
+
+                {/* Footer Link to Dedicated Page */}
+                <div className="pt-2 border-t border-white/10">
+                  <Link
+                    href="/bildirimler"
+                    onClick={() => setNotifOpen(false)}
+                    className="w-full py-2.5 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <span>Tüm Bildirimler Sayfasına Git</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
                 </div>
               </motion.div>
             )}
@@ -506,7 +605,9 @@ export default function Navbar() {
       </AnimatePresence>
 
       {/* Global Glass Auth Modal */}
-      <AuthModal />
+      <div className="pointer-events-auto">
+        <AuthModal />
+      </div>
     </header>
   );
 }

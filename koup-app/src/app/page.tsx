@@ -640,10 +640,10 @@ export default function HomePage() {
               <Link
                 key={item.id}
                 href={`/seri/${item.slug}`}
-                className="shrink-0 flex items-end group cursor-pointer snap-start relative pl-2"
+                className="shrink-0 flex items-end group cursor-pointer snap-start relative pl-4 md:pl-6"
               >
                 {/* Netflix/Apple TV+ Top 10 Stroke Numeral */}
-                <span className="text-[125px] md:text-[145px] font-black leading-[0.78] tracking-tighter text-stroke-numeral select-none pointer-events-none drop-shadow-[0_12px_24px_rgba(0,0,0,0.95)] -mr-6 md:-mr-8 z-0">
+                <span className="text-[125px] md:text-[145px] font-black leading-[0.78] tracking-tighter text-stroke-numeral select-none pointer-events-none drop-shadow-[0_12px_24px_rgba(0,0,0,0.95)] -translate-x-4 md:-translate-x-6 -mr-6 md:-mr-8 z-0">
                   {idx + 1}
                 </span>
 
