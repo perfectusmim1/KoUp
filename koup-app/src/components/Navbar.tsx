@@ -87,10 +87,22 @@ export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
 
+  const [isScrolled, setIsScrolled] = useState(false);
+
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const notifContainerRef = useRef<HTMLDivElement>(null);
   const profileContainerRef = useRef<HTMLDivElement>(null);
+
+  // Scroll listener for dynamic floating glass island navbar
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 20);
+    };
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   // Instant Omnibox Search (Debounced 160ms)
   useEffect(() => {
@@ -186,7 +198,13 @@ export default function Navbar() {
 
   return (
     <>
-      <header className="fixed top-3 sm:top-5 left-0 right-0 z-50 pointer-events-none px-3.5 sm:px-6 lg:px-14 flex items-center justify-between">
+      <header
+        className={`fixed left-0 right-0 z-50 flex items-center justify-between transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          isScrolled
+            ? 'top-2 sm:top-3.5 mx-auto max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-full bg-[#08080a]/85 backdrop-blur-2xl border border-white/[0.14] shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_30px_-5px_rgba(41,151,255,0.12),inset_0_1px_0_rgba(255,255,255,0.18)] py-2 sm:py-2.5 px-3.5 sm:px-6'
+            : 'top-0 w-full rounded-none bg-gradient-to-b from-[#080808]/95 via-[#080808]/70 to-transparent backdrop-blur-[12px] border-b border-white/[0.06] py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+        }`}
+      >
       {/* LEFT: Brand Mark (Original KU Logo — No Circle or Box Wrapper) */}
       <div className="pointer-events-auto flex items-center gap-2 sm:gap-3">
         <button
@@ -811,6 +829,7 @@ export default function Navbar() {
           </button>
         )}
       </div>
+      </header>
 
       {/* Mobile Navigation Drawer with Backdrop */}
       <AnimatePresence>
@@ -1112,8 +1131,6 @@ export default function Navbar() {
           </motion.div>
         )}
       </AnimatePresence>
-
-      </header>
 
       {/* Global Glass Auth Modal (Portaled to document.body) */}
       <AuthModal />
