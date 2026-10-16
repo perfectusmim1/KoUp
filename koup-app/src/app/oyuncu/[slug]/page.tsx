@@ -89,9 +89,13 @@ export default function PersonDetailPage({
               .eq('person_id', item.id)
               .limit(40);
 
-            const validCredits = ((castRows as CastMember[]) || []).filter(
-              (c) => c.media
-            );
+            const validCredits = ((castRows as CastMember[]) || [])
+              .filter((c) => c.media)
+              .sort((a, b) => {
+                const yearA = a.media?.release_year || 0;
+                const yearB = b.media?.release_year || 0;
+                return yearB - yearA;
+              });
 
             // Fetch co-star peer connections
             const mediaIds = validCredits.map((c) => c.media_id).slice(0, 10);
@@ -147,6 +151,29 @@ export default function PersonDetailPage({
       document.title = `${person.name} • Filmografi & Profil • KoUp`;
     }
   }, [person?.name]);
+
+  // Fetch enriched / translated biography from TMDB & AniList if current bio is generic or missing
+  useEffect(() => {
+    if (!person?.name) return;
+    const isGeneric =
+      !person.bio_tr ||
+      person.bio_tr.includes('KoUp arşivinde') ||
+      person.bio_tr.includes('önde gelen oyuncularından biridir') ||
+      person.bio_tr.length < 40;
+
+    if (isGeneric) {
+      fetch(
+        `/api/person/bio?id=${person.id}&name=${encodeURIComponent(person.name)}&type=${person.person_type || 'actor'}`
+      )
+        .then((r) => r.json())
+        .then((data) => {
+          if (data?.success && data?.bio_tr) {
+            setPerson((prev) => (prev ? { ...prev, bio_tr: data.bio_tr } : prev));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [person?.id, person?.name, person?.person_type, person?.bio_tr]);
 
   // Fetch related AsyaMag magazine news & gossip for actor
   useEffect(() => {
