@@ -1,6 +1,6 @@
 'use client';
 
-import React, { use, useState, useEffect, Suspense } from 'react';
+import React, { use, useState, useEffect, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
@@ -45,6 +45,7 @@ import {
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
+import CountryFlag from '@/components/CountryFlag';
 
 type ProfileTab = 'overview' | 'library' | 'history' | 'lists' | 'import' | 'settings';
 
@@ -454,6 +455,45 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
     Array.from({ length: 7 }, () => 0)
   );
 
+  // Drama & Anime Country DNA Breakdown
+  const countryBreakdown = useMemo(() => {
+    if (watchedMedia.length === 0) {
+      return [
+        { label: 'Güney Kore (K-Drama)', code: 'KR', displayCode: 'KR', pct: 58 },
+        { label: 'Japonya (Anime & J-Drama)', code: 'JP', displayCode: 'JP', pct: 26 },
+        { label: 'Çin (C-Drama & Wuxia)', code: 'CN', displayCode: 'CN', pct: 12 },
+        { label: 'Tayland & Global', code: 'TH', displayCode: 'GL', pct: 4 },
+      ];
+    }
+
+    let kr = 0;
+    let jp = 0;
+    let cn = 0;
+    let gl = 0;
+
+    watchedMedia.forEach((m) => {
+      const cc = (m.country_code || m.country || '').toUpperCase();
+      const ct = (m.content_type || '').toLowerCase();
+      if (cc === 'KR') kr++;
+      else if (cc === 'JP' || ct === 'anime') jp++;
+      else if (cc === 'CN') cn++;
+      else gl++;
+    });
+
+    const total = watchedMedia.length;
+    const krPct = Math.round((kr / total) * 100);
+    const jpPct = Math.round((jp / total) * 100);
+    const cnPct = Math.round((cn / total) * 100);
+    const glPct = Math.max(0, 100 - (krPct + jpPct + cnPct));
+
+    return [
+      { label: 'Güney Kore (K-Drama)', code: 'KR', displayCode: 'KR', pct: krPct },
+      { label: 'Japonya (Anime & J-Drama)', code: 'JP', displayCode: 'JP', pct: jpPct },
+      { label: 'Çin (C-Drama & Wuxia)', code: 'CN', displayCode: 'CN', pct: cnPct },
+      { label: 'Tayland & Global', code: 'TH', displayCode: 'GL', pct: glPct },
+    ];
+  }, [watchedMedia]);
+
   // Tabs for owner vs visitor
   const TABS: Array<{
     id: ProfileTab;
@@ -764,17 +804,15 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                     </h3>
                   </div>
                   <div className="space-y-4">
-                    {[
-                      { label: 'Güney Kore (K-Drama)', code: 'KR', pct: 58 },
-                      { label: 'Japonya (Anime & J-Drama)', code: 'JP', pct: 26 },
-                      { label: 'Çin (C-Drama & Wuxia)', code: 'CN', pct: 12 },
-                      { label: 'Tayland & Global', code: 'GL', pct: 4 },
-                    ].map((row) => (
+                    {countryBreakdown.map((row) => (
                       <div key={row.code} className="space-y-1.5">
                         <div className="flex justify-between text-xs font-semibold text-white/85">
-                          <span className="flex items-center gap-2">
-                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.06] border border-white/10 text-white/60">
-                              {row.code}
+                          <span className="flex items-center gap-2.5">
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.06] border border-white/10 shrink-0">
+                              <CountryFlag code={row.code} size="sm" className="rounded-xs shadow-xs" />
+                              <span className="text-[10px] font-mono font-bold text-white/70">
+                                {row.displayCode || row.code}
+                              </span>
                             </span>
                             <span>{row.label}</span>
                           </span>
