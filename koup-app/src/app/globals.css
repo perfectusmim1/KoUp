@@ -29,16 +29,23 @@
   box-sizing: border-box;
 }
 
-html,
+html {
+  margin: 0;
+  padding: 0;
+  background-color: #080808;
+  color: #e5e2e1;
+  font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+}
+
 body {
   margin: 0;
   padding: 0;
   background-color: #080808;
   color: #e5e2e1;
   font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
-  overflow-x: hidden;
-  scroll-behavior: smooth;
-  overscroll-behavior: none;
+  overflow-x: clip;
   -webkit-font-smoothing: antialiased;
 }
 

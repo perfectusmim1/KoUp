@@ -389,8 +389,21 @@ export default function NetflixPlayer({
         ref={containerRef}
         onMouseMove={triggerControlsVisibility}
         onClick={triggerControlsVisibility}
-        className={`relative w-full aspect-video rounded-3xl overflow-hidden bg-black border border-white/15 shadow-[0_30px_90px_rgba(0,0,0,0.95)] select-none ${
-          cinemaLightsOff ? 'z-50 ring-2 ring-sky-400/40' : 'z-20'
+        style={
+          !isFullscreen
+            ? {
+                maxWidth: cinemaLightsOff
+                  ? 'min(1240px, calc(82vh * 16 / 9))'
+                  : 'min(1040px, calc(68vh * 16 / 9))',
+              }
+            : undefined
+        }
+        className={`relative mx-auto w-full aspect-video rounded-3xl overflow-hidden bg-black border border-white/15 shadow-[0_30px_90px_rgba(0,0,0,0.95)] select-none transition-all duration-300 ${
+          isFullscreen
+            ? 'max-w-none rounded-none border-none'
+            : cinemaLightsOff
+            ? 'z-50 ring-2 ring-white/30'
+            : 'z-20'
         }`}
       >
         {/* TOP FLOATING NETFLIX GLASS CONTROL DOCK (WORKS OVER ALL SOURCES & IN FULLSCREEN!) */}
@@ -1144,14 +1157,22 @@ export default function NetflixPlayer({
                 </div>
               </div>
             )}
-            <iframe
-              key={streamUrl}
-              src={streamUrl}
-              allowFullScreen
-              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-              referrerPolicy="no-referrer"
-              className="w-full h-full border-0"
-            />
+            {streamUrl ? (
+              <iframe
+                key={streamUrl}
+                src={streamUrl}
+                allowFullScreen
+                allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+                referrerPolicy="no-referrer"
+                className="w-full h-full border-0"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-black">
+                <div className="text-xs font-mono text-white/50 animate-pulse">
+                  Oynatıcı ve akış hazırlanıyor...
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -2,8 +2,19 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { motion } from 'motion/react';
-import { Calendar, Clock, Bell, Play, Star } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import {
+  Calendar,
+  Clock,
+  Bell,
+  Play,
+  Star,
+  Tv,
+  Film,
+  Sparkles,
+  ExternalLink,
+  ShieldCheck,
+} from 'lucide-react';
 import {
   supabase,
   MediaItem,
@@ -12,65 +23,116 @@ import {
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
 
+interface CalendarScheduleItem {
+  id: number;
+  source_site: string;
+  day_of_week: number;
+  date_label: string;
+  title: string;
+  slug: string;
+  episode_label: string;
+  category: string;
+  cover_image: string;
+  source_url: string;
+  media_id: number | null;
+  media?: MediaItem | null;
+}
+
 const DAYS = [
   { id: 1, name: 'Pazartesi', short: 'PZT' },
   { id: 2, name: 'Salı', short: 'SAL' },
   { id: 3, name: 'Çarşamba', short: 'ÇAR' },
   { id: 4, name: 'Perşembe', short: 'PER' },
-  { id: '5', num: 5, name: 'Cuma', short: 'CUM' },
+  { id: 5, name: 'Cuma', short: 'CUM' },
   { id: 6, name: 'Cumartesi', short: 'CMT' },
   { id: 7, name: 'Pazar', short: 'PAZ' },
-].map((d, i) => ({ id: i + 1, name: d.name, short: d.short }));
+];
+
+const SOURCE_FILTERS = [
+  { id: 'all', label: 'Tüm Kaynaklar' },
+  { id: 'webdramaturkey', label: 'WebDramaTurkey (K-Drama & C-Drama)' },
+  { id: 'dizibox', label: 'DiziBox (Yabancı Dizi & TV)' },
+  { id: 'tranimeizle', label: 'Anime Takvimi (AniList)' },
+];
 
 export default function CalendarPage() {
-  const { followedMediaIds, toggleMediaFollow, triggerSound } = useKoUp();
+  const { followedMediaIds, toggleMediaFollow, triggerSound, pushNotification } =
+    useKoUp();
+
   const [selectedDay, setSelectedDay] = useState<number>(
     ((new Date().getDay() + 6) % 7) + 1
   );
-  const [dayItems, setDayItems] = useState<MediaItem[]>([]);
+  const [selectedSource, setSelectedSource] = useState<string>('all');
+  const [schedules, setSchedules] = useState<CalendarScheduleItem[]>([]);
+  const [enabledScrapers, setEnabledScrapers] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    async function loadDaySchedule() {
+    let cancelled = false;
+
+    async function loadSchedule() {
       setIsLoading(true);
-      const offset = (selectedDay - 1) * 18;
-      const { data } = await supabase
-        .from('media')
-        .select('*')
-        .in('content_type', ['dizi', 'anime'])
-        .order('views_count', { ascending: false })
-        .range(offset, offset + 17);
-      setDayItems((data as MediaItem[]) || []);
-      setIsLoading(false);
+      try {
+        const params = new URLSearchParams({
+          day: String(selectedDay),
+        });
+        if (selectedSource !== 'all') {
+          params.set('source', selectedSource);
+        }
+
+        const res = await fetch(`/api/takvim/live?${params.toString()}`);
+        const data = await res.json();
+        if (cancelled) return;
+
+        if (data.success && Array.isArray(data.schedules)) {
+          setSchedules(data.schedules);
+          setEnabledScrapers(data.enabledScrapers || []);
+        } else {
+          setSchedules([]);
+        }
+      } catch (err) {
+        if (!cancelled) setSchedules([]);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
     }
-    loadDaySchedule();
-  }, [selectedDay]);
+
+    loadSchedule();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDay, selectedSource]);
+
+  const activeDayName = DAYS.find((d) => d.id === selectedDay)?.name || 'Pazartesi';
 
   return (
     <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 space-y-8">
-      <div className="rounded-3xl bg-[#0f0f11] p-6 sm:p-8 border border-white/[0.08] shadow-2xl flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+      {/* Header Banner Card */}
+      <div className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/10 shadow-2xl flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div className="space-y-2">
-          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/45 flex items-center gap-2">
-            <Calendar className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Haftalık Yayın & Çeviri Takvimi • Canlı Geri Sayım</span>
+          <div className="text-[11px] font-mono font-bold uppercase tracking-[0.2em] text-white/50 flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-emerald-400" />
+            <span>Gerçek Yayın Takvimi • Canlı Scraper & AniList Senkronizasyonu</span>
           </div>
           <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
-            Yayın Takvimi & Yeni Bölüm Saatleri
+            Yayın Takvimi & Yeni Bölüm Programı
           </h1>
           <p className="text-sm text-white/60 max-w-2xl">
-            Haftanın 7 günü yayınlanan Kore, Çin, Tayland dizileri ve animelerin yeni bölüm saatlerini takip et, bildirim zilini aç.
+            Sadece aktif yayını olan güncel seriler listelenir. Admin panelde açık olan
+            kaynakların (WebDramaTurkey, DiziBox, AniList) orijinal takvimleriyle anlık
+            senkronizedir.
           </p>
         </div>
 
-        {/* 7-Day Selector Tabs with Spring Sliding Pill */}
-        <div className="grid grid-cols-7 gap-1.5 glass-pill-dark p-1.5 rounded-2xl">
+        {/* 7-Day Selector Tabs */}
+        <div className="grid grid-cols-7 gap-1.5 glass-pill-dark p-1.5 rounded-2xl shrink-0">
           {DAYS.map((d) => {
             const active = selectedDay === d.id;
             return (
               <button
                 key={d.id}
                 onClick={() => {
-                  triggerSound('click');
+                  triggerSound?.('click');
                   setSelectedDay(d.id);
                 }}
                 className={`relative px-3 py-2.5 rounded-xl text-center transition-colors cursor-pointer ${
@@ -96,92 +158,175 @@ export default function CalendarPage() {
         </div>
       </div>
 
+      {/* Scraper Source Filter Pills */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-mono text-white/45 mr-1">Kaynak Filtresi:</span>
+        {SOURCE_FILTERS.map((sf) => {
+          const active = selectedSource === sf.id;
+          return (
+            <button
+              key={sf.id}
+              onClick={() => {
+                triggerSound?.('click');
+                setSelectedSource(sf.id);
+              }}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-mono transition-all cursor-pointer border ${
+                active
+                  ? 'bg-white text-black font-bold border-white shadow-[0_0_16px_rgba(255,255,255,0.25)]'
+                  : 'bg-white/[0.04] text-white/70 border-white/10 hover:text-white hover:border-white/20'
+              }`}
+            >
+              {sf.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Day Overview Banner */}
+      <div className="flex items-center justify-between pb-3 border-b border-white/10">
+        <div className="flex items-center gap-3">
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+          <h2 className="text-lg font-bold text-white">
+            {activeDayName} Günü Yayınlanan Seriler
+          </h2>
+          <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/10 text-white/80">
+            {schedules.length} Yapım
+          </span>
+        </div>
+
+        <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-white/50">
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Doğrulanmış Orijinal Yayın Günleri</span>
+        </div>
+      </div>
+
+      {/* Grid of Calendar Items */}
       {isLoading ? (
-        <div className="py-20 text-center text-sm font-mono text-white/50 animate-pulse">
-          Yayın Takvimi Yükleniyor...
+        <div className="py-24 text-center text-sm font-mono text-white/50 animate-pulse">
+          Canlı yayın takvimi ve kaynak bilgileri getiriliyor...
+        </div>
+      ) : schedules.length === 0 ? (
+        <div className="py-24 text-center rounded-3xl apple-glass p-8 border border-white/10 space-y-3">
+          <div className="w-12 h-12 rounded-full bg-white/10 mx-auto flex items-center justify-center text-white/60">
+            <Calendar className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-bold text-white">
+            {activeDayName} gününe ait aktif yayın bulunamadı
+          </h3>
+          <p className="text-xs text-white/50 max-w-md mx-auto">
+            Bu gün için seçili kaynakta yeni bölüm takvimi bulunmuyor veya ilgili kaynak
+            Admin Panelinden devre dışı bırakılmış olabilir.
+          </p>
         </div>
       ) : (
         <motion.div
-          key={selectedDay}
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+          layout
+          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4"
         >
-          {dayItems.map((item, idx) => {
-            const isFol = followedMediaIds.includes(item.id);
-            const nextEp = Math.max(1, (item.episode_count || 12));
-            const airHour = `${18 + (idx % 5)}:${idx % 2 === 0 ? '00' : '30'}`;
-            return (
-              <div
-                key={item.id}
-                className="koup-projection-card rounded-3xl p-4 flex items-center gap-4"
-              >
-                <Link href={`/seri/${item.slug}`} className="shrink-0">
-                  <img
-                    src={getProxiedImageUrl(item.cover_image, item.title)}
-                    alt={item.title}
-                    loading="lazy"
-                    className="w-20 h-28 rounded-2xl object-cover border border-white/10"
-                  />
-                </Link>
+          <AnimatePresence mode="popLayout">
+            {schedules.map((item) => {
+              const targetSlug = item.media?.slug || item.slug;
+              const coverImg =
+                item.media?.cover_image ||
+                item.cover_image ||
+                'https://cdn.webdrama.io/cover/default.jpeg';
+              const isFollowed = item.media_id
+                ? followedMediaIds.includes(item.media_id)
+                : false;
 
-                <div className="flex-1 min-w-0 space-y-1.5">
-                  <div className="flex items-center gap-2 text-[11px] font-mono">
-                    <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-400/30 flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      TSİ {airHour}
-                    </span>
-                    <span className="text-white/75 font-semibold">
-                      {nextEp}. Bölüm
-                    </span>
-                  </div>
+              const sourceBadge =
+                item.source_site === 'webdramaturkey'
+                  ? { label: 'WebDrama', color: 'bg-amber-400/20 text-amber-300 border-amber-400/30' }
+                  : item.source_site === 'dizibox'
+                  ? { label: 'DiziBox', color: 'bg-sky-400/20 text-sky-300 border-sky-400/30' }
+                  : { label: 'AniList', color: 'bg-indigo-400/20 text-indigo-300 border-indigo-400/30' };
 
+              return (
+                <motion.div
+                  key={`${item.source_site}-${item.id}`}
+                  initial={{ opacity: 0, scale: 0.96 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.25 }}
+                  className="group rounded-2xl apple-glass overflow-hidden border border-white/10 hover:border-white/30 transition-all flex flex-col"
+                >
+                  {/* Poster Thumbnail */}
                   <Link
-                    href={`/seri/${item.slug}`}
-                    className="block text-sm font-bold text-white truncate hover:text-white/80"
+                    href={`/seri/${targetSlug}`}
+                    className="relative aspect-[2/3] w-full overflow-hidden block bg-black/60"
                   >
-                    {item.title}
+                    <img
+                      src={getProxiedImageUrl(coverImg)}
+                      alt={item.title}
+                      loading="lazy"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+
+                    {/* Source Site Badge */}
+                    <span
+                      className={`absolute top-2.5 left-2.5 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border backdrop-blur-md ${sourceBadge.color}`}
+                    >
+                      {sourceBadge.label}
+                    </span>
+
+                    {/* Episode Badge */}
+                    {item.episode_label && (
+                      <span className="absolute bottom-2.5 left-2.5 right-2.5 text-[11px] font-mono font-bold px-2 py-1 rounded-xl bg-black/80 backdrop-blur-md text-white border border-white/15 truncate text-center">
+                        {item.episode_label}
+                      </span>
+                    )}
                   </Link>
 
-                  <div className="text-xs text-white/50 flex items-center gap-1.5 truncate">
-                    <span>{formatContentTypeTR(item.content_type, item.country)}</span>
-                    {item.rating ? (
-                      <>
-                        <span>•</span>
-                        <span className="inline-flex items-center gap-1 text-white/75">
-                          <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                          {Number(item.rating).toFixed(1)}
-                        </span>
-                      </>
-                    ) : null}
-                  </div>
+                  {/* Metadata Card Footer */}
+                  <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
+                    <div>
+                      <div className="flex items-center justify-between text-[10px] font-mono text-white/50 mb-1">
+                        <span className="truncate">{item.category || 'Dizi'}</span>
+                        {item.date_label && (
+                          <span className="truncate ml-1 text-white/70">
+                            {item.date_label}
+                          </span>
+                        )}
+                      </div>
 
-                  <div className="pt-1 flex items-center gap-2">
-                    <Link
-                      href={`/seri/${item.slug}?play=1`}
-                      className="flex items-center gap-1 px-3.5 py-1.5 rounded-full bg-white text-black text-[11px] font-bold hover:scale-105 transition-transform"
-                    >
-                      <Play className="w-3 h-3 fill-black" />
-                      <span>Bölüm Sayfası</span>
-                    </Link>
+                      <Link
+                        href={`/seri/${targetSlug}`}
+                        className="text-xs sm:text-sm font-bold text-white hover:text-white/80 line-clamp-2 leading-snug"
+                      >
+                        {item.title}
+                      </Link>
+                    </div>
 
-                    <button
-                      onClick={() => toggleMediaFollow(item)}
-                      title="Yeni bölüm bildirimi al"
-                      className={`p-1.5 rounded-full border text-xs cursor-pointer transition-all ${
-                        isFol
-                          ? 'bg-white text-black border-white'
-                          : 'bg-white/[0.06] border-white/15 text-white/75 hover:text-white'
-                      }`}
-                    >
-                      <Bell className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between gap-1.5">
+                      <Link
+                        href={`/seri/${targetSlug}`}
+                        className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl bg-white/10 hover:bg-white text-white hover:text-black text-xs font-mono font-semibold transition-all"
+                      >
+                        <Play className="w-3 h-3 fill-current" />
+                        <span>İzle</span>
+                      </Link>
+
+                      {item.media && (
+                        <button
+                          onClick={() => {
+                            if (item.media) toggleMediaFollow(item.media);
+                          }}
+                          title={isFollowed ? 'Takibi Bırak' : 'Yeni Bölüm Bildirimi Aç'}
+                          className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all cursor-pointer border ${
+                            isFollowed
+                              ? 'bg-white text-black border-white'
+                              : 'bg-white/[0.04] border-white/10 text-white/60 hover:text-white'
+                          }`}
+                        >
+                          <Bell className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </div>
-            );
-          })}
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
         </motion.div>
       )}
     </div>

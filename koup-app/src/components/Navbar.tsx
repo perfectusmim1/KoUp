@@ -77,10 +77,10 @@ export default function Navbar() {
           supabase
             .from('media')
             .select(
-              'id, slug, title, original_title, content_type, country, release_year, cover_image, backdrop_image, rating, mdl_rating, anilist_score, imdb_rating, categories'
+              'id, slug, title, original_title, content_type, country_code, release_year, cover_image, backdrop_image, site_rating, mdl_rating, anilist_rating, imdb_rating, categories'
             )
             .ilike('search_text', `%${trimmed.toLowerCase()}%`)
-            .order('views_count', { ascending: false })
+            .order('views_total', { ascending: false })
             .limit(6),
           supabase
             .from('people')
@@ -301,9 +301,9 @@ export default function Navbar() {
                                       MDL {m.mdl_rating}
                                     </span>
                                   )}
-                                  {m.anilist_score && (
+                                  {m.anilist_rating && (
                                     <span className="text-sky-300 font-mono">
-                                      AL {m.anilist_score}%
+                                      AL {m.anilist_rating}%
                                     </span>
                                   )}
                                 </div>
@@ -402,19 +402,45 @@ export default function Navbar() {
                   </button>
                 </div>
                 <div className="space-y-2 max-h-80 overflow-y-auto">
-                  {notifications.map((n) => (
-                    <Link
-                      key={n.id}
-                      href={n.link_url}
-                      onClick={() => setNotifOpen(false)}
-                      className="block p-3 rounded-2xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.06] transition-colors"
-                    >
-                      <div className="text-xs font-semibold text-white">{n.title}</div>
-                      <div className="text-[11px] text-white/60 mt-0.5 leading-relaxed">
-                        {n.body}
-                      </div>
-                    </Link>
-                  ))}
+                  {notifications.length === 0 ? (
+                    <div className="py-6 text-center text-xs text-white/50">
+                      Yeni bildiriminiz yok.
+                    </div>
+                  ) : (
+                    notifications.map((n) => {
+                      const href = n.linkUrl || (n as any).link_url;
+                      const content = (
+                        <>
+                          <div className="text-xs font-semibold text-white">{n.title}</div>
+                          <div className="text-[11px] text-white/60 mt-0.5 leading-relaxed">
+                            {n.body}
+                          </div>
+                        </>
+                      );
+
+                      if (href) {
+                        return (
+                          <Link
+                            key={n.id}
+                            href={href}
+                            onClick={() => setNotifOpen(false)}
+                            className="block p-3 rounded-2xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.06] transition-colors"
+                          >
+                            {content}
+                          </Link>
+                        );
+                      }
+
+                      return (
+                        <div
+                          key={n.id}
+                          className="block p-3 rounded-2xl bg-white/[0.04] border border-white/[0.06]"
+                        >
+                          {content}
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </motion.div>
             )}

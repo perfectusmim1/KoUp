@@ -95,33 +95,33 @@ export default function HomePage() {
           .from('media')
           .select('*')
           .not('backdrop_image', 'is', null)
-          .order('views_count', { ascending: false })
+          .order('views_total', { ascending: false })
           .limit(12),
         supabase
           .from('media')
           .select('*')
-          .eq('country', 'KR')
+          .eq('country_code', 'KR')
           .order('mdl_rating', { ascending: false, nullsFirst: false })
           .limit(16),
         supabase
           .from('media')
           .select('*')
-          .eq('country', 'CN')
+          .eq('country_code', 'CN')
           .order('mdl_rating', { ascending: false, nullsFirst: false })
           .limit(16),
         supabase
           .from('media')
           .select('*')
           .eq('content_type', 'anime')
-          .not('anilist_score', 'is', null)
-          .order('anilist_score', { ascending: false })
+          .not('anilist_rating', 'is', null)
+          .order('anilist_rating', { ascending: false })
           .limit(16),
         supabase
           .from('media')
           .select('*')
-          .in('country', ['US', 'TH', 'TW', 'JP'])
+          .in('country_code', ['US', 'TH', 'TW', 'JP'])
           .neq('content_type', 'anime')
-          .order('rating', { ascending: false, nullsFirst: false })
+          .order('site_rating', { ascending: false, nullsFirst: false })
           .limit(16),
         supabase
           .from('episodes')
@@ -295,11 +295,11 @@ export default function HomePage() {
                         </span>
                       </>
                     )}
-                    {activeHero.anilist_score && (
+                    {activeHero.anilist_rating && (
                       <>
                         <span className="text-white/35">•</span>
                         <span className="text-sky-300 font-bold tracking-normal text-[12px]">
-                          %{activeHero.anilist_score} Eşleşme
+                          %{activeHero.anilist_rating} Eşleşme
                         </span>
                       </>
                     )}

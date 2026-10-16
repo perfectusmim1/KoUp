@@ -121,6 +121,22 @@ export default function AdminDashboardPage() {
     );
   };
 
+  const toggleScraperActive = async (bot: ScraperConfigRow) => {
+    const nextState = !bot.is_enabled;
+    setScrapers((prev) =>
+      prev.map((s) => (s.id === bot.id ? { ...s, is_enabled: nextState } : s))
+    );
+    await supabase.rpc('toggle_scraper_enabled', {
+      p_site_key: bot.id,
+      p_enabled: nextState,
+    });
+    pushNotification(
+      'Scraper Durumu Güncellendi',
+      `${bot.name} ${nextState ? 'Aktif Edildi (Takvimde Gösteriliyor)' : 'Devre Dışı Bırakıldı (Takvimden Gizlendi)'}.`,
+      nextState ? 'success' : 'info'
+    );
+  };
+
   const resolveIssue = async (reportId: number) => {
     setReports((prev) =>
       prev.map((r) => (r.id === reportId ? { ...r, status: 'resolved' } : r))
@@ -228,12 +244,28 @@ export default function AdminDashboardPage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+                      <span
+                        className={`w-2.5 h-2.5 rounded-full ${
+                          bot.is_enabled ? 'bg-emerald-400' : 'bg-rose-400'
+                        }`}
+                      />
                       <h3 className="text-sm font-bold text-white">{bot.name}</h3>
                     </div>
-                    <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-white/10 text-white/80">
-                      {bot.items_synced.toLocaleString('tr-TR')} Senkron
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => toggleScraperActive(bot)}
+                        className={`px-3 py-1 rounded-full text-[11px] font-mono font-semibold transition-all cursor-pointer border ${
+                          bot.is_enabled
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40 hover:bg-emerald-500/30'
+                            : 'bg-rose-500/20 text-rose-300 border-rose-400/40 hover:bg-rose-500/30'
+                        }`}
+                      >
+                        {bot.is_enabled ? 'Aktif' : 'Devre Dışı'}
+                      </button>
+                      <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-white/10 text-white/80">
+                        {bot.items_synced.toLocaleString('tr-TR')} Senkron
+                      </span>
+                    </div>
                   </div>
                   <p className="text-xs text-white/55">{bot.notes}</p>
                 </div>

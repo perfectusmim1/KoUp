@@ -65,6 +65,7 @@ interface KoUpContextValue {
     linkUrl?: string
   ) => void;
   markAllNotificationsRead: () => void;
+  markNotificationsRead: () => void;
   dismissToast: () => void;
   updateProfileSettings: (patch: Partial<UserProfile>) => Promise<void>;
   loginWithEmail: (email: string, password: string) => Promise<string | null>;
@@ -634,6 +635,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         togglePersonFollow,
         pushNotification,
         markAllNotificationsRead,
+        markNotificationsRead: markAllNotificationsRead,
         dismissToast,
         updateProfileSettings,
         loginWithEmail,

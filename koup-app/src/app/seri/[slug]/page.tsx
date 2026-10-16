@@ -152,7 +152,7 @@ export default function SeriesDetailPage({
         .select('*')
         .eq('content_type', item.content_type)
         .neq('id', item.id)
-        .order('views_count', { ascending: false })
+        .order('views_total', { ascending: false })
         .limit(10);
       setRelatedMedia((relRows as MediaItem[]) || []);
 
@@ -252,15 +252,25 @@ export default function SeriesDetailPage({
     );
   };
 
-  const airDays = media.air_days?.length ? media.air_days : [3, 4];
+  const airDays = Array.isArray(media.air_days) ? media.air_days : [];
   const countryCode = (media.country || media.country_code || 'GL').toUpperCase();
   const countryLabel =
     COUNTRY_LABELS[countryCode] || media.country_name || countryCode;
+  const displayRating =
+    media.site_rating && Number(media.site_rating) > 0
+      ? Number(media.site_rating)
+      : media.mdl_rating && Number(media.mdl_rating) > 0
+      ? Number(media.mdl_rating)
+      : media.imdb_rating && Number(media.imdb_rating) > 0
+      ? Number(media.imdb_rating)
+      : media.anilist_rating && Number(media.anilist_rating) > 0
+      ? Number(media.anilist_rating) / 10
+      : null;
 
   return (
     <div className="pb-24">
       {/* AMBIENT CINEMA BACKDROP BANNER */}
-      <div className="relative w-full h-[52vh] min-h-[380px] max-h-[540px] overflow-hidden">
+      <div className="relative w-full h-[38vh] min-h-[260px] max-h-[380px] overflow-hidden">
         <img
           src={getProxiedImageUrl(
             media.backdrop_image || media.cover_image,
@@ -274,7 +284,7 @@ export default function SeriesDetailPage({
       </div>
 
       {/* MAIN CONTAINER */}
-      <div className="max-w-[1680px] mx-auto px-4 sm:px-8 lg:px-14 -mt-56 relative z-20 space-y-12">
+      <div className="max-w-[1680px] mx-auto px-4 sm:px-8 lg:px-14 -mt-40 relative z-20 space-y-10">
         {/* 1. SERIES METADATA HEADER CARD */}
         <motion.div
           initial={{ opacity: 0, y: 18 }}
@@ -283,7 +293,7 @@ export default function SeriesDetailPage({
           className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/10 flex flex-col lg:flex-row gap-8 items-start"
         >
           {/* Left 2:3 Poster */}
-          <div className="w-44 sm:w-56 shrink-0 mx-auto lg:mx-0">
+          <div className="w-40 sm:w-52 shrink-0 mx-auto lg:mx-0">
             <div className="koup-projection-card rounded-2xl overflow-hidden border border-white/15 shadow-2xl aspect-[2/3]">
               <img
                 src={getProxiedImageUrl(media.cover_image, media.poster_fallback_url)}
@@ -302,10 +312,10 @@ export default function SeriesDetailPage({
                 <span>{countryLabel}</span>
               </span>
               <span className="px-3 py-1 rounded-full text-xs font-mono uppercase bg-white/[0.06] text-white/85 border border-white/10">
-                {media.content_type} · {media.release_year}
+                {media.content_type} {media.release_year ? `· ${media.release_year}` : ''}
               </span>
               <span className="px-3 py-1 rounded-full text-xs font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-400/25">
-                Yayın Durumu: {media.status_broadcast || 'Final'}
+                Yayın Durumu: {media.status_broadcast || 'Tamamlandı'}
               </span>
               <span className="px-3 py-1 rounded-full text-xs font-mono bg-amber-500/15 text-amber-300 border border-amber-400/25">
                 Çeviri Durumu: {media.status_translation || 'Tamamlandı'}
@@ -331,15 +341,19 @@ export default function SeriesDetailPage({
 
             {/* Distinct Multi-Source Rating Badges + External Links */}
             <div className="flex flex-wrap items-center gap-3 py-1">
-              <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-white/10 border border-white/20">
-                <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
-                <span className="font-mono font-bold text-sm text-white">
-                  {Number(media.site_rating || 8.7).toFixed(1)}
-                </span>
-                <span className="text-[11px] text-white/55">
-                  ({media.site_rating_count || 120} oy)
-                </span>
-              </div>
+              {displayRating !== null && (
+                <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-white/10 border border-white/20">
+                  <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
+                  <span className="font-mono font-bold text-sm text-white">
+                    {displayRating.toFixed(1)}
+                  </span>
+                  {media.site_rating_count && media.site_rating_count > 0 ? (
+                    <span className="text-[11px] text-white/55">
+                      ({media.site_rating_count} oy)
+                    </span>
+                  ) : null}
+                </div>
+              )}
 
               {media.mydramalist_url && (
                 <a
@@ -348,7 +362,12 @@ export default function SeriesDetailPage({
                   rel="noreferrer"
                   className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-[#E5A93C]/15 border border-[#E5A93C]/35 text-[#E5A93C] text-xs font-mono font-bold hover:bg-[#E5A93C]/25 transition-all"
                 >
-                  <span>MDL {Number(media.mdl_rating || 8.6).toFixed(1)}</span>
+                  <span>
+                    MDL{' '}
+                    {media.mdl_rating && Number(media.mdl_rating) > 0
+                      ? Number(media.mdl_rating).toFixed(1)
+                      : 'Sayfası'}
+                  </span>
                   <ExternalLink className="w-3.5 h-3.5" />
                 </a>
               )}
@@ -363,7 +382,12 @@ export default function SeriesDetailPage({
                   rel="noreferrer"
                   className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-white/10 border border-white/20 text-white text-xs font-mono font-bold hover:bg-white/15 transition-all"
                 >
-                  <span>AniList {media.anilist_rating || 85}%</span>
+                  <span>
+                    AniList{' '}
+                    {media.anilist_rating && Number(media.anilist_rating) > 0
+                      ? `${media.anilist_rating}%`
+                      : 'Sayfası'}
+                  </span>
                   <ExternalLink className="w-3.5 h-3.5" />
                 </a>
               )}
@@ -375,7 +399,12 @@ export default function SeriesDetailPage({
                   rel="noreferrer"
                   className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-[#F5C518]/15 border border-[#F5C518]/35 text-[#F5C518] text-xs font-mono font-bold hover:bg-[#F5C518]/25 transition-all"
                 >
-                  <span>IMDb {Number(media.imdb_rating || 8.3).toFixed(1)}</span>
+                  <span>
+                    IMDb{' '}
+                    {media.imdb_rating && Number(media.imdb_rating) > 0
+                      ? Number(media.imdb_rating).toFixed(1)
+                      : 'Sayfası'}
+                  </span>
                   <ExternalLink className="w-3.5 h-3.5" />
                 </a>
               )}
@@ -492,48 +521,90 @@ export default function SeriesDetailPage({
             )}
           </div>
 
-          {/* Right: Broadcast Calendar Widget */}
+          {/* Right: Broadcast Calendar Widget (Only if actively airing in scraper calendar) OR Archive Info Card */}
           <div className="w-full lg:w-80 shrink-0 rounded-2xl bg-black/45 border border-white/10 p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-bold text-white">
-                <Calendar className="w-4 h-4 text-white/75" />
-                <span>Yayın & Çeviri Takvimi</span>
-              </div>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/10 text-white/80">
-                TSİ {media.air_time || '21:00'}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-7 gap-1">
-              {DAY_NAMES.map((d) => {
-                const isAirDay = airDays.includes(d.id);
-                return (
-                  <div
-                    key={d.id}
-                    className={`py-1.5 rounded-lg text-center text-[10px] font-mono font-bold border ${
-                      isAirDay
-                        ? 'bg-white text-black border-white shadow-[0_0_12px_rgba(255,255,255,0.25)]'
-                        : 'bg-white/[0.03] border-white/[0.06] text-white/35'
-                    }`}
-                  >
-                    {d.short}
+            {airDays.length > 0 ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-bold text-white">
+                    <Calendar className="w-4 h-4 text-white/75" />
+                    <span>Haftalık Yayın Takvimi</span>
                   </div>
-                );
-              })}
-            </div>
+                  <Link
+                    href="/takvim"
+                    className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 hover:bg-emerald-500/30"
+                  >
+                    Aktif Yayında
+                  </Link>
+                </div>
 
-            <div className="p-2.5 rounded-xl bg-white/[0.04] border border-white/[0.06] text-xs space-y-1">
-              <div className="flex items-center justify-between text-white/85 font-semibold">
-                <span>Sıradaki / Son Bölüm:</span>
-                <span className="font-mono text-amber-300">
-                  {episodes.length || media.episode_count || 1}. Bölüm
-                </span>
-              </div>
-              <div className="text-[11px] text-white/50 flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                <span>24 Saat Watchdog kaynak kontrolü aktif</span>
-              </div>
-            </div>
+                <div className="grid grid-cols-7 gap-1">
+                  {DAY_NAMES.map((d) => {
+                    const isAirDay = airDays.includes(d.id);
+                    return (
+                      <div
+                        key={d.id}
+                        className={`py-1.5 rounded-lg text-center text-[10px] font-mono font-bold border ${
+                          isAirDay
+                            ? 'bg-white text-black border-white shadow-[0_0_12px_rgba(255,255,255,0.25)]'
+                            : 'bg-white/[0.03] border-white/[0.06] text-white/35'
+                        }`}
+                      >
+                        {d.short}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-white/[0.04] border border-white/[0.06] text-xs space-y-1">
+                  <div className="flex items-center justify-between text-white/85 font-semibold">
+                    <span>Yayın Günleri:</span>
+                    <span className="font-mono text-amber-300">
+                      {DAY_NAMES.filter((d) => airDays.includes(d.id))
+                        .map((d) => d.full)
+                        .join(', ')}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-white/50 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    <span>Canlı scraper takvimi ile senkronize</span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-bold text-white">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span>Arşiv & Yayın Bilgisi</span>
+                  </div>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/10 text-white/80">
+                    {media.status_broadcast || 'Tamamlandı'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-white/[0.04] border border-white/[0.06] text-xs space-y-2">
+                  <div className="flex items-center justify-between text-white/80">
+                    <span className="text-white/50">Mevcut Bölümler:</span>
+                    <span className="font-mono font-bold text-white">
+                      {episodes.length || media.episode_count || 1} Bölüm
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-white/80">
+                    <span className="text-white/50">Bu Bölüm Kaynakları:</span>
+                    <span className="font-mono font-bold text-emerald-300">
+                      {activeEpObj?.sources?.length || 0} Aktif Kaynak
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-white/80">
+                    <span className="text-white/50">Çeviri Durumu:</span>
+                    <span className="font-mono text-amber-300">
+                      {media.status_translation || 'Tamamlandı'}
+                    </span>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </motion.div>
 
@@ -683,7 +754,7 @@ export default function SeriesDetailPage({
                   <Flame className="w-5 h-5 text-amber-400" />
                   <div className="text-xs font-bold text-white mt-1.5">Efsane</div>
                   <div className="text-[11px] font-mono text-white/60 mt-0.5">
-                    {(activeEpObj?.react_fire || 24) + reactionBumps.fire}
+                    {(activeEpObj?.react_fire || 0) + reactionBumps.fire}
                   </div>
                 </button>
 
@@ -694,7 +765,7 @@ export default function SeriesDetailPage({
                   <Droplets className="w-5 h-5 text-sky-300" />
                   <div className="text-xs font-bold text-white mt-1.5">Ağlattı</div>
                   <div className="text-[11px] font-mono text-white/60 mt-0.5">
-                    {(activeEpObj?.react_cry || 11) + reactionBumps.cry}
+                    {(activeEpObj?.react_cry || 0) + reactionBumps.cry}
                   </div>
                 </button>
 
@@ -705,33 +776,34 @@ export default function SeriesDetailPage({
                   <Zap className="w-5 h-5 text-pink-300" />
                   <div className="text-xs font-bold text-white mt-1.5">Şok</div>
                   <div className="text-[11px] font-mono text-white/60 mt-0.5">
-                    {(activeEpObj?.react_shock || 16) + reactionBumps.shock}
+                    {(activeEpObj?.react_shock || 0) + reactionBumps.shock}
                   </div>
                 </button>
               </div>
             </div>
 
-            {/* Mini Episode Excitement Sparkline Bar Chart (Clean Monochrome White Specular) */}
+            {/* Mini Episode Source & Reaction Sparkline Bar Chart */}
             <div className="pt-4 border-t border-white/10">
               <div className="text-[11px] font-mono text-white/55 mb-2 flex items-center justify-between">
-                <span>Sezon Heyecan Grafiği</span>
+                <span>Bölüm Kaynak & Etkileşim Dağılımı</span>
                 <span className="text-white/85">
-                  Zirve: B{Math.min(episodes.length || 1, 8)}
+                  Aktif: B{currentEpisode} ({activeEpObj?.sources?.length || 0} Kaynak)
                 </span>
               </div>
               <div className="h-16 flex items-end gap-1.5">
                 {currentSeasonEpisodes.slice(0, 12).map((ep) => {
                   const totalScore =
-                    (ep.react_fire || 15) +
-                    (ep.react_cry || 6) +
-                    (ep.react_shock || 8);
-                  const hPct = Math.min(100, Math.max(25, (totalScore % 75) + 25));
+                    (ep.react_fire || 0) +
+                    (ep.react_cry || 0) +
+                    (ep.react_shock || 0) +
+                    (ep.sources?.length || 1) * 10;
+                  const hPct = Math.min(100, Math.max(25, totalScore));
                   const active = ep.episode_number === currentEpisode;
                   return (
                     <div
                       key={ep.episode_number}
                       onClick={() => setCurrentEpisode(ep.episode_number)}
-                      title={`${ep.episode_number}. Bölüm Heyecan: ${totalScore}`}
+                      title={`${ep.episode_number}. Bölüm · ${ep.sources?.length || 0} Kaynak`}
                       style={{ height: `${hPct}%` }}
                       className={`flex-1 rounded-t-md cursor-pointer transition-all ${
                         active

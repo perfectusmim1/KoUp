@@ -139,6 +139,15 @@ def main():
     if target in ("all", "dizibox"):
         sync_dizibox_latest(10)
 
+    if target in ("all", "calendar", "takvim"):
+        try:
+            from sync_real_calendars import sync_webdramaturkey, sync_dizibox, sync_anilist_airing
+            sync_webdramaturkey()
+            sync_dizibox()
+            sync_anilist_airing()
+        except Exception as e:
+            print(f"[Calendar Cron] Hata: {e}")
+
     if target in ("all", "watchdog_24h"):
         run_watchdog_check()
 

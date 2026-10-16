@@ -133,9 +133,9 @@ export default function AccordionMediaCard({
               </span>
             ) : null}
 
-            {item.anilist_score ? (
+            {item.anilist_rating ? (
               <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-black/75 backdrop-blur-md text-sky-300 border border-sky-400/30">
-                AL {item.anilist_score}%
+                AL {item.anilist_rating}%
               </span>
             ) : null}
 

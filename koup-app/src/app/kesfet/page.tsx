@@ -84,7 +84,7 @@ function DiscoverContent() {
         query = query.eq('content_type', typeFilter);
       }
       if (countryFilter !== 'ALL') {
-        query = query.eq('country', countryFilter);
+        query = query.eq('country_code', countryFilter);
       }
       if (genreFilter !== 'Tümü') {
         query = query.contains('categories', [genreFilter]);
@@ -94,9 +94,9 @@ function DiscoverContent() {
       }
 
       if (sortBy === 'views') {
-        query = query.order('views_count', { ascending: false });
+        query = query.order('views_total', { ascending: false });
       } else if (sortBy === 'rating') {
-        query = query.order('rating', { ascending: false, nullsFirst: false });
+        query = query.order('site_rating', { ascending: false, nullsFirst: false });
       } else {
         query = query.order('release_year', {
           ascending: false,
