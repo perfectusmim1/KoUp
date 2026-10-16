@@ -102,9 +102,6 @@ export default function RootLayout({
                 <Link href="/takvim" className="hover:text-white">
                   Yayın Takvimi
                 </Link>
-                <Link href="/admin" className="text-amber-300 hover:underline">
-                  Admin Kontrol Merkezi
-                </Link>
               </div>
             </div>
           </footer>

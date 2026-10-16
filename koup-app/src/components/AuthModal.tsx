@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Lock, Mail, User, ShieldCheck, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { X, Lock, Mail, User, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { useKoUp } from '@/context/KoUpContext';
 
 function translateAuthError(err: string): string {
@@ -193,8 +193,12 @@ export default function AuthModal() {
 
             {/* Header */}
             <div className="text-center space-y-2 mb-6">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-white/10 border border-white/15 text-white mb-1 shadow-inner">
-                <ShieldCheck className="w-6 h-6 text-sky-400" />
+              <div className="inline-flex items-center justify-center mb-1">
+                <img
+                  src="/logo-dark.png"
+                  alt="KoUp"
+                  className="h-11 w-auto object-contain drop-shadow-[0_4px_20px_rgba(255,255,255,0.25)]"
+                />
               </div>
               <h2 className="text-2xl font-bold text-white tracking-tight">
                 {mode === 'login' ? 'KoUp Hesabına Giriş Yap' : 'Yeni KoUp Hesabı Oluştur'}

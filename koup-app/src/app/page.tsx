@@ -46,6 +46,7 @@ interface HomeDataBundle {
   people: PersonItem[];
   magPosts: MagazinePost[];
   recentEpsProcessed?: any[];
+  masterpieces?: MediaItem[];
 }
 
 // Module-level cache so navigating back to home in the same session is 0ms instant
@@ -133,6 +134,22 @@ export default function HomePage() {
         ]
       : []
   );
+  const [masterpieceItems, setMasterpieceItems] = useState<MediaItem[]>(() => {
+    if (initialBundle?.masterpieces && initialBundle.masterpieces.length > 0) {
+      return initialBundle.masterpieces;
+    }
+    const pool =
+      initialBundle?.feats && initialBundle.feats.length >= 4
+        ? initialBundle.feats
+        : initialBundle?.kds || [];
+    if (pool.length === 0) return [];
+    const daySeed = Math.floor(Date.now() / (1000 * 60 * 60 * 24));
+    const start = (daySeed * 4) % Math.max(1, pool.length - 3);
+    return pool.slice(start, start + 4);
+  });
+  const [masterpieceRotationMode, setMasterpieceRotationMode] = useState<
+    'daily' | 'weekly' | 'manual'
+  >('daily');
 
   const top10ScrollRef = useRef<HTMLDivElement>(null);
 
@@ -238,6 +255,20 @@ export default function HomePage() {
         })
         .catch(() => {});
 
+      // Canlı Başyapıtlar & Günlük/Haftalık Rotasyon Verisi
+      fetch('/api/admin/masterpieces')
+        .then((r) => r.json())
+        .then((j) => {
+          if (Array.isArray(j?.activeItems) && j.activeItems.length > 0) {
+            setMasterpieceItems(j.activeItems);
+            if (memoryHomeBundle) (memoryHomeBundle as any).masterpieces = j.activeItems;
+          }
+          if (j?.config?.rotationMode) {
+            setMasterpieceRotationMode(j.config.rotationMode);
+          }
+        })
+        .catch(() => {});
+
       let processedEps: any[] = [];
       if (episodes && episodes.length > 0) {
         const mIds = Array.from(new Set(episodes.map((e: any) => e.media_id)));
@@ -307,7 +338,10 @@ export default function HomePage() {
     .filter((item) => continueWatchingIds.includes(item.id))
     .slice(0, 4);
 
-  const featuretteItems = (heroItems.length >= 4 ? heroItems : kdramaItems).slice(0, 4);
+  const featuretteItems =
+    masterpieceItems.length >= 4
+      ? masterpieceItems.slice(0, 4)
+      : (heroItems.length >= 4 ? heroItems : kdramaItems).slice(0, 4);
 
   return (
     <div className="min-h-screen pb-28 bg-[#080808]">
@@ -607,10 +641,22 @@ export default function HomePage() {
           <section className="w-full px-6 md:px-14 cv-auto">
             <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
               <div>
-                <span className="text-[11px] font-bold tracking-[0.2em] uppercase text-white/40">
-                  Ödüllü Sinema Portfolyosu
-                </span>
-                <h2 className="text-2xl md:text-4xl font-bold tracking-tight text-white mt-1">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-[11px] font-bold tracking-[0.2em] uppercase text-white/40">
+                    Ödüllü Sinema Portfolyosu
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-white/10 text-sky-300 border border-white/10 inline-flex items-center gap-1.5 shadow-sm">
+                    <Clock className="w-3 h-3 text-sky-400" />
+                    <span>
+                      {masterpieceRotationMode === 'weekly'
+                        ? 'Haftalık Rotasyon'
+                        : masterpieceRotationMode === 'manual'
+                        ? 'Editör Seçkisi'
+                        : 'Günün Başyapıtları · 24s Rotasyon'}
+                    </span>
+                  </span>
+                </div>
+                <h2 className="text-2xl md:text-4xl font-bold tracking-tight text-white">
                   KoUp Orijinal Başyapıtlar
                 </h2>
               </div>
@@ -618,6 +664,7 @@ export default function HomePage() {
                 MyDramaList, AniList ve küresel festivallerde en yüksek puanı almış seçkin yapımlar.
               </p>
             </div>
+
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {featuretteItems.map((item, idx) => (

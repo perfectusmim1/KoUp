@@ -356,6 +356,16 @@ export default function AdminDashboardPage() {
   const [featuredMedia, setFeaturedMedia] = useState<MediaItem[]>([]);
   const [runningScraperId, setRunningScraperId] = useState<string | null>(null);
 
+  // KoUp Orijinal Başyapıtlar (Masterpieces) State
+  const [masterpieceConfig, setMasterpieceConfig] = useState<{
+    rotationMode: 'daily' | 'weekly' | 'manual';
+    pinnedIds: number[];
+  }>({ rotationMode: 'daily', pinnedIds: [] });
+  const [masterpieceActiveItems, setMasterpieceActiveItems] = useState<MediaItem[]>([]);
+  const [masterpieceSearch, setMasterpieceSearch] = useState('');
+  const [masterpieceSearchResults, setMasterpieceSearchResults] = useState<MediaItem[]>([]);
+  const [masterpieceSaving, setMasterpieceSaving] = useState(false);
+
   // Broadcast
   const [broadcastTitle, setBroadcastTitle] = useState('');
   const [broadcastBody, setBroadcastBody] = useState('');
@@ -484,6 +494,14 @@ export default function AdminDashboardPage() {
           totalComments: cCountRes.count ?? 0,
           openReports: rCountRes.count ?? 0,
         });
+        // Load Masterpieces Config & Live Items
+        fetch('/api/admin/masterpieces')
+          .then((r) => r.json())
+          .then((j) => {
+            if (j?.config) setMasterpieceConfig(j.config);
+            if (Array.isArray(j?.activeItems)) setMasterpieceActiveItems(j.activeItems);
+          })
+          .catch(() => {});
       } catch (err) {
         console.error('Admin initial load error:', err);
       }
@@ -1048,6 +1066,82 @@ export default function AdminDashboardPage() {
       );
       pushNotification('Vitrin Hatası', err.message || 'Güncellenemedi.', 'info');
     }
+  };
+
+  // Masterpieces Handlers & Search Debouncer
+  useEffect(() => {
+    if (!masterpieceSearch.trim()) {
+      setMasterpieceSearchResults([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      const { data } = await supabase
+        .from('media')
+        .select('*')
+        .or(`title.ilike.%${masterpieceSearch.trim()}%,slug.ilike.%${masterpieceSearch.trim()}%`)
+        .limit(8);
+      setMasterpieceSearchResults((data as MediaItem[]) || []);
+    }, 250);
+    return () => clearTimeout(t);
+  }, [masterpieceSearch]);
+
+  const handleUpdateMasterpieceConfig = async (
+    newMode: 'daily' | 'weekly' | 'manual',
+    newPinnedIds?: number[]
+  ) => {
+    setMasterpieceSaving(true);
+    const targetPinned = newPinnedIds !== undefined ? newPinnedIds : masterpieceConfig.pinnedIds;
+    try {
+      const { data: s } = await supabase.auth.getSession();
+      const token = s?.session?.access_token;
+      const res = await fetch('/api/admin/masterpieces', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          rotationMode: newMode,
+          pinnedIds: targetPinned,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Kaydedilemedi');
+
+      setMasterpieceConfig({
+        rotationMode: newMode,
+        pinnedIds: targetPinned,
+      });
+
+      // Reload live active items
+      const refreshRes = await fetch('/api/admin/masterpieces');
+      const refreshData = await refreshRes.json();
+      if (Array.isArray(refreshData?.activeItems)) {
+        setMasterpieceActiveItems(refreshData.activeItems);
+      }
+
+      invalidateCache('home_');
+      pushNotification(
+        'Başyapıtlar Güncellendi',
+        `Rotasyon modu "${newMode === 'daily' ? 'Günlük Dinamik' : newMode === 'weekly' ? 'Haftalık Dinamik' : 'Manuel Sabit'}" olarak ayarlandı.`,
+        'success'
+      );
+    } catch (err: any) {
+      pushNotification('Başyapıt Güncelleme Hatası', err.message, 'info');
+    } finally {
+      setMasterpieceSaving(false);
+    }
+  };
+
+  const handlePinMasterpiece = (mediaId: number) => {
+    if (masterpieceConfig.pinnedIds.includes(mediaId)) return;
+    const nextPinned = [...masterpieceConfig.pinnedIds, mediaId];
+    handleUpdateMasterpieceConfig(masterpieceConfig.rotationMode, nextPinned);
+  };
+
+  const handleUnpinMasterpiece = (mediaId: number) => {
+    const nextPinned = masterpieceConfig.pinnedIds.filter((id) => id !== mediaId);
+    handleUpdateMasterpieceConfig(masterpieceConfig.rotationMode, nextPinned);
   };
 
   const handleSaveSeries = async (e: React.FormEvent) => {
@@ -1717,6 +1811,199 @@ export default function AdminDashboardPage() {
                   </button>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* KoUp Orijinal Başyapıtlar & Dinamik Rotasyon Yönetimi */}
+          <div className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/15 space-y-6 shadow-2xl">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-sky-400">
+                  <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
+                  <span>Ana Sayfa Başyapıtlar Portfolyosu</span>
+                </div>
+                <h3 className="text-xl font-bold text-white mt-1">
+                  KoUp Orijinal Başyapıtlar & Dinamik Rotasyon
+                </h3>
+                <p className="text-xs text-white/60 mt-1 max-w-2xl leading-relaxed">
+                  Ana sayfadaki 4 dev ödüllü yapım kartının rotasyon modunu belirleyin. Günlük veya haftalık otomatik döngü seçildiğinde, en yüksek puanlı (MDL 9.0+, AniList 85+) yapımlar periyodik olarak vitrine çıkar.
+                </p>
+              </div>
+
+              {/* Rotation Mode Selector */}
+              <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-black/60 border border-white/10 shrink-0">
+                {[
+                  { id: 'daily', label: '🔄 Günlük (24s)', desc: 'Her gece 00:00' },
+                  { id: 'weekly', label: '📅 Haftalık', desc: 'Her Pazartesi' },
+                  { id: 'manual', label: '📌 Sabit Seçim', desc: 'Sadece Yöneticinin Sabitledikleri' },
+                ].map((mode) => {
+                  const active = masterpieceConfig.rotationMode === mode.id;
+                  return (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      disabled={masterpieceSaving}
+                      onClick={() => handleUpdateMasterpieceConfig(mode.id as any)}
+                      className={`px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                        active
+                          ? 'bg-sky-500 text-white font-bold shadow-lg shadow-sky-500/25'
+                          : 'text-white/60 hover:text-white hover:bg-white/[0.06]'
+                      }`}
+                    >
+                      {mode.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Currently Active in Homepage (Live Preview) */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <span>Şu Anda Ana Sayfada Yayındaki 4 Başyapıt:</span>
+                  <span className="text-[10px] font-mono text-sky-300 font-semibold px-2 py-0.5 rounded-full bg-sky-500/15 border border-sky-400/20">
+                    {masterpieceConfig.rotationMode === 'daily'
+                      ? 'Günlük Dinamik Rotasyon'
+                      : masterpieceConfig.rotationMode === 'weekly'
+                      ? 'Haftalık Dinamik Rotasyon'
+                      : 'Manuel Sabitlenmiş'}
+                  </span>
+                </span>
+                <span className="text-[11px] font-mono text-white/40">
+                  {masterpieceConfig.pinnedIds.length} yapım sabitlendi
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {masterpieceActiveItems.slice(0, 4).map((item, idx) => {
+                  const isPinned = masterpieceConfig.pinnedIds.includes(item.id);
+                  return (
+                    <div
+                      key={item.id}
+                      className="group relative rounded-2xl overflow-hidden bg-[#0d0d10] border border-white/10 hover:border-white/30 transition-all p-3.5 flex flex-col justify-between h-[210px]"
+                    >
+                      <img
+                        src={item.cover_image || item.backdrop_image || ''}
+                        alt={item.title}
+                        className="absolute inset-0 w-full h-full object-cover opacity-25 group-hover:opacity-40 transition-opacity"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#0d0d10] via-[#0d0d10]/70 to-transparent" />
+
+                      <div className="relative z-10 flex items-center justify-between">
+                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-white/10 text-white">
+                          #{idx + 1} Başyapıt
+                        </span>
+                        {isPinned ? (
+                          <span className="text-[10px] font-mono text-amber-300 px-2 py-0.5 rounded-md bg-amber-400/15 border border-amber-400/30 font-bold">
+                            📌 Sabit
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-mono text-sky-300 px-2 py-0.5 rounded-md bg-sky-400/15 border border-sky-400/30">
+                            🔄 Rotasyon
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="relative z-10 space-y-1">
+                        <div className="text-sm font-bold text-white truncate">{item.title}</div>
+                        <div className="flex items-center gap-2 text-[11px] text-white/60 font-mono">
+                          <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
+                          <span>MDL {item.mdl_rating || item.site_rating || '9.0'}</span>
+                          <span>•</span>
+                          <span>{item.country_code || 'KR'}</span>
+                          <span>•</span>
+                          <span>{item.release_year || '2024'}</span>
+                        </div>
+                        <div className="pt-2 flex items-center gap-2">
+                          {isPinned ? (
+                            <button
+                              type="button"
+                              onClick={() => handleUnpinMasterpiece(item.id)}
+                              className="text-[10px] font-semibold text-rose-300 hover:text-rose-200 underline cursor-pointer"
+                            >
+                              Sabitlemeyi Kaldır
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handlePinMasterpiece(item.id)}
+                              className="text-[10px] font-semibold text-sky-300 hover:text-sky-200 underline cursor-pointer"
+                            >
+                              Vitrinde Sabitle (Pin)
+                            </button>
+                          )}
+                          <Link
+                            href={`/seri/${item.slug}`}
+                            target="_blank"
+                            className="text-[10px] text-white/50 hover:text-white flex items-center gap-0.5 ml-auto"
+                          >
+                            <span>Görüntüle</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Quick Pin Search from 17,500+ Database */}
+            <div className="p-4 rounded-2xl bg-black/40 border border-white/10 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-white/80">
+                  Arşivden Özel Seri Sabitle (17.500+ Yapım):
+                </span>
+                <span className="text-[11px] text-white/45">
+                  Sabitlenen yapımlar rotasyonun en başında yer alır
+                </span>
+              </div>
+              <div className="relative">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                <input
+                  type="text"
+                  placeholder="Başyapıt olarak sabitlemek istediğiniz serinin adını yazın..."
+                  value={masterpieceSearch}
+                  onChange={(e) => setMasterpieceSearch(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 rounded-xl bg-black/60 border border-white/10 text-xs text-white placeholder-white/40 focus:outline-none focus:border-white/30"
+                />
+              </div>
+
+              {masterpieceSearchResults.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1">
+                  {masterpieceSearchResults.map((res) => {
+                    const alreadyPinned = masterpieceConfig.pinnedIds.includes(res.id);
+                    return (
+                      <div
+                        key={res.id}
+                        className="p-2.5 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-white truncate">{res.title}</div>
+                          <div className="text-[10px] text-white/50 font-mono">
+                            {res.country_code} • {res.release_year} • MDL {res.mdl_rating || '8.5'}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (alreadyPinned) handleUnpinMasterpiece(res.id);
+                            else handlePinMasterpiece(res.id);
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer shrink-0 transition-colors ${
+                            alreadyPinned
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                              : 'bg-white text-black hover:bg-white/90'
+                          }`}
+                        >
+                          {alreadyPinned ? 'Kaldır' : 'Sabitle'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>

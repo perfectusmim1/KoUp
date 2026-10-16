@@ -376,14 +376,19 @@ export default function EpisodeWatchPage({
           </Link>
 
           <div className="flex items-center gap-2.5">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.06] border border-white/10 text-xs text-white/80">
+            <Link
+              href={`/kesfet?country=${encodeURIComponent(((media.country_code || media.country) || '').toUpperCase())}`}
+              prefetch={true}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.06] border border-white/10 text-xs text-white/80 hover:bg-white/15 hover:text-white hover:border-white/25 transition-all cursor-pointer shadow-sm"
+              title={`${COUNTRY_LABELS[((media.country_code || media.country) || '').toUpperCase()] || 'Ülke'} yapımlarını keşfet`}
+            >
               <CountryFlag code={media.country_code || media.country} size="sm" />
               <span className="font-semibold">
                 {COUNTRY_LABELS[((media.country_code || media.country) || '').toUpperCase()] ||
                   media.country_name ||
                   'ASYA'}
               </span>
-            </span>
+            </Link>
 
             <span className="px-3 py-1 rounded-full bg-sky-500/15 border border-sky-400/30 text-sky-300 font-mono text-xs font-bold">
               S{currentSeason} : B{currentEpNum}

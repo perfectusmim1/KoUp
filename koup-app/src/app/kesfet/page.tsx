@@ -63,7 +63,8 @@ function DiscoverContent() {
   const [countryFilter, setCountryFilter] = useState(
     searchParams.get('country') || 'ALL'
   );
-  const [genreFilter, setGenreFilter] = useState('Tümü');
+  const initialCategory = searchParams.get('category') || searchParams.get('genre') || 'Tümü';
+  const [genreFilter, setGenreFilter] = useState(initialCategory);
   const [sortBy, setSortBy] = useState<'views' | 'rating' | 'year'>('views');
   const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
   const [items, setItems] = useState<MediaItem[]>([]);
@@ -73,9 +74,14 @@ function DiscoverContent() {
     const t = searchParams.get('type');
     const c = searchParams.get('country');
     const q = searchParams.get('q');
+    const cat = searchParams.get('category') || searchParams.get('genre');
     if (t) setTypeFilter(t);
-    if (c) setCountryFilter(c);
+    if (c) setCountryFilter(c.toUpperCase());
     if (q !== null) setSearchQuery(q);
+    if (cat) {
+      const matched = GENRES.find((g) => g.toLowerCase() === cat.toLowerCase());
+      setGenreFilter(matched || cat);
+    }
   }, [searchParams]);
 
   useEffect(() => {
@@ -195,67 +201,88 @@ function DiscoverContent() {
 
           <div className="h-5 w-px bg-white/10 mx-1 shrink-0 hidden sm:block" />
 
-          {COUNTRIES.map((c) => {
-            const active = countryFilter === c.id;
-            return (
-              <button
-                key={c.id}
-                onClick={() => {
-                  triggerSound('click');
-                  setCountryFilter(c.id);
-                }}
-                className={`relative shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors cursor-pointer ${
-                  active ? 'text-black' : 'glass-pill text-white/75 hover:text-white'
-                }`}
-              >
-                {active && (
-                  <motion.span
-                    layoutId="kesfet-country-pill"
-                    transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                    className="absolute inset-0 rounded-full bg-white shadow-[0_0_20px_rgba(255,255,255,0.35)]"
-                  />
-                )}
-                {c.code ? (
-                  <span className="relative z-10 flex items-center mr-0.5">
-                    <CountryFlag code={c.code} size="sm" />
-                  </span>
-                ) : (
-                  <Globe className="w-3.5 h-3.5 relative z-10" />
-                )}
-                <span className="relative z-10">{c.label}</span>
-              </button>
-            );
-          })}
+          {(() => {
+            const hasCountry = COUNTRIES.some((c) => c.id === countryFilter);
+            const countriesList = hasCountry
+              ? COUNTRIES
+              : [
+                  ...COUNTRIES,
+                  {
+                    id: countryFilter,
+                    label: countryFilter,
+                    code: countryFilter,
+                  },
+                ];
+
+            return countriesList.map((c) => {
+              const active = countryFilter === c.id;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => {
+                    triggerSound('click');
+                    setCountryFilter(c.id);
+                  }}
+                  className={`relative shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors cursor-pointer ${
+                    active ? 'text-black' : 'glass-pill text-white/75 hover:text-white'
+                  }`}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="kesfet-country-pill"
+                      transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                      className="absolute inset-0 rounded-full bg-white shadow-[0_0_20px_rgba(255,255,255,0.35)]"
+                    />
+                  )}
+                  {c.code ? (
+                    <span className="relative z-10 flex items-center mr-0.5">
+                      <CountryFlag code={c.code} size="sm" />
+                    </span>
+                  ) : (
+                    <Globe className="w-3.5 h-3.5 relative z-10" />
+                  )}
+                  <span className="relative z-10">{c.label}</span>
+                </button>
+              );
+            });
+          })()}
         </div>
 
         {/* Genre Chips with Spring Pill */}
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1.5 [-webkit-overflow-scrolling:touch]">
-          {GENRES.map((g) => {
-            const active = genreFilter === g;
-            return (
-              <button
-                key={g}
-                onClick={() => {
-                  triggerSound('click');
-                  setGenreFilter(g);
-                }}
-                className={`relative shrink-0 px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-colors cursor-pointer ${
-                  active
-                    ? 'text-black'
-                    : 'bg-white/[0.04] text-white/65 border border-white/10 hover:text-white'
-                }`}
-              >
-                {active && (
-                  <motion.span
-                    layoutId="kesfet-genre-pill"
-                    transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                    className="absolute inset-0 rounded-full bg-white shadow"
-                  />
-                )}
-                <span className="relative z-10">{g}</span>
-              </button>
-            );
-          })}
+          {(() => {
+            const genresList =
+              genreFilter !== 'Tümü' && !GENRES.includes(genreFilter)
+                ? [genreFilter, ...GENRES]
+                : GENRES;
+
+            return genresList.map((g) => {
+              const active = genreFilter === g;
+              return (
+                <button
+                  key={g}
+                  onClick={() => {
+                    triggerSound('click');
+                    setGenreFilter(g);
+                  }}
+                  className={`relative shrink-0 px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-colors cursor-pointer ${
+                    active
+                      ? 'text-black'
+                      : 'bg-white/[0.04] text-white/65 border border-white/10 hover:text-white'
+                  }`}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="kesfet-genre-pill"
+                      transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                      className="absolute inset-0 rounded-full bg-white shadow"
+                    />
+                  )}
+                  <span className="relative z-10">{g}</span>
+                </button>
+              );
+            });
+          })()}
         </div>
       </div>
 

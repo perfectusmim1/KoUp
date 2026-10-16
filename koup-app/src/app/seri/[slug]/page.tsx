@@ -312,7 +312,12 @@ export default function SeriesDetailPage({
           <div className="flex-1 space-y-3 w-full">
             {/* Top Badges Row: Flag & Country, Content Type, Year, Episodes */}
             <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/80 backdrop-blur-md border border-white/15 text-xs text-white font-bold">
+              <Link
+                href={`/kesfet?country=${encodeURIComponent(((media.country_code || media.country) || '').toUpperCase())}`}
+                prefetch={true}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/80 backdrop-blur-md border border-white/15 text-xs text-white font-bold hover:bg-white/20 hover:border-white/35 transition-all cursor-pointer shadow-sm"
+                title={`${COUNTRY_LABELS[((media.country_code || media.country) || '').toUpperCase()] || 'Ülke'} yapımlarını keşfet`}
+              >
                 <CountryFlag code={media.country_code || media.country} size="sm" />
                 <span>
                   {COUNTRY_LABELS[((media.country_code || media.country) || '').toUpperCase()] ||
@@ -320,11 +325,15 @@ export default function SeriesDetailPage({
                     media.country ||
                     'ASYA'}
                 </span>
-              </span>
+              </Link>
 
-              <span className="px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-xs font-bold uppercase tracking-wider text-white/90">
+              <Link
+                href={`/kesfet?type=${encodeURIComponent(media.content_type || 'dizi')}${media.country_code || media.country ? `&country=${encodeURIComponent(((media.country_code || media.country) || '').toUpperCase())}` : ''}`}
+                prefetch={true}
+                className="px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-xs font-bold uppercase tracking-wider text-white/90 hover:bg-white/20 hover:border-white/35 transition-all cursor-pointer shadow-sm"
+              >
                 {formatContentTypeTR(media.content_type, media.country_code || media.country)}
-              </span>
+              </Link>
 
               {media.release_year && (
                 <span className="px-3 py-1 rounded-full bg-white/[0.06] border border-white/10 text-xs font-mono text-white/75">
@@ -383,12 +392,15 @@ export default function SeriesDetailPage({
             {media.categories && media.categories.length > 0 && (
               <div className="flex flex-wrap justify-center md:justify-start gap-1.5 pt-1">
                 {media.categories.map((cat) => (
-                  <span
+                  <Link
                     key={cat}
-                    className="text-xs px-2.5 py-1 rounded-lg bg-white/[0.06] text-white/80 border border-white/10"
+                    href={`/kesfet?category=${encodeURIComponent(cat)}`}
+                    prefetch={true}
+                    className="text-xs px-2.5 py-1 rounded-lg bg-white/[0.06] text-white/80 border border-white/10 hover:bg-white/15 hover:text-white hover:border-white/30 transition-all cursor-pointer"
+                    title={`${cat} kategorisindeki yapımları keşfet`}
                   >
                     {cat}
-                  </span>
+                  </Link>
                 ))}
               </div>
             )}
