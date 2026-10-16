@@ -284,18 +284,20 @@ export default function SeriesDetailPage({
   return (
     <div className="min-h-screen pb-32 bg-[#080808] text-white">
       {/* 1. CINEMATIC HERO BANNER */}
-      <div className="relative w-full h-[65vh] min-h-[500px] max-h-[720px] overflow-hidden flex items-end">
-        {/* Full Backdrop */}
-        <img
-          src={backdropSrc}
-          alt={media.title}
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-[#080808]/75 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#080808] via-transparent to-transparent opacity-80" />
+      <div className="relative w-full h-[65vh] min-h-[500px] max-h-[720px] flex items-end">
+        {/* Full Backdrop (Clipped) */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <img
+            src={backdropSrc}
+            alt={media.title}
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-[#080808]/75 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#080808] via-transparent to-transparent opacity-80" />
+        </div>
 
         {/* Hero Meta Info */}
-        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full pb-10 flex flex-col md:flex-row items-end gap-6 sm:gap-8">
+        <div className="relative z-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full pb-10 flex flex-col md:flex-row items-end gap-6 sm:gap-8">
           {/* Vertical Poster with Glass Glow */}
           <div className="hidden sm:block w-44 md:w-56 shrink-0 aspect-[2/3] rounded-3xl overflow-hidden shadow-[0_25px_60px_rgba(0,0,0,0.95)] border border-white/20">
             <img
@@ -394,9 +396,9 @@ export default function SeriesDetailPage({
               {/* Primary Watch Button */}
               <Link
                 href={`/seri/${media.slug}/${resumeEp}`}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs transition-all shadow-[0_0_25px_rgba(16,185,129,0.5)] active:scale-[0.98] transform-gpu backface-hidden cursor-pointer"
+                className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white font-bold text-xs transition-all shadow-[0_0_25px_rgba(41,151,255,0.45)] active:scale-[0.98] transform-gpu backface-hidden cursor-pointer"
               >
-                <Play className="w-4 h-4 fill-black" />
+                <Play className="w-4 h-4 fill-white" />
                 <span>
                   {userProg?.last_episode_num
                     ? `${userProg.last_episode_num}. Bölümden Devam Et`
@@ -423,11 +425,13 @@ export default function SeriesDetailPage({
                 variant="white"
                 leftIcon={<Plus className="w-3.5 h-3.5" />}
                 placeholder="Kütüphaneme Ekle"
+                portal={true}
+                direction="auto"
                 options={[
                   {
                     value: 'watching',
                     label: 'İzliyorum',
-                    icon: <Eye className="w-3.5 h-3.5 text-emerald-400" />,
+                    icon: <Eye className="w-3.5 h-3.5 text-sky-400" />,
                   },
                   {
                     value: 'completed',
@@ -537,7 +541,7 @@ export default function SeriesDetailPage({
         {/* Overview & Fansub Translation Notes */}
         <div className="p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08] space-y-4">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-emerald-400" />
+            <Sparkles className="w-5 h-5 text-sky-400" />
             <span>Konu & Yapım Özeti</span>
           </h2>
           <p className="text-sm sm:text-base text-white/80 leading-relaxed font-light">
@@ -557,7 +561,7 @@ export default function SeriesDetailPage({
           <section className="p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08]">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <Users className="w-5 h-5 text-emerald-400" />
+                <Users className="w-5 h-5 text-sky-400" />
                 <span>Oyuncu Kadrosu & Karakterler ({cast.length})</span>
               </h2>
               <span className="text-xs text-white/50">Profil ve filmografi için oyuncuya tıklayın</span>

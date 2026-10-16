@@ -48,18 +48,25 @@ export default function CustomSelect({
   direction = 'auto',
   searchable,
   searchPlaceholder = 'Seçenek ara...',
-  portal = false,
+  portal = true,
   disabled = false,
   id: explicitId,
   name,
   'aria-label': ariaLabel,
 }: CustomSelectProps) {
+  const [mounted, setMounted] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [openUpwards, setOpenUpwards] = useState(direction === 'up');
   const [alignRight, setAlignRight] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
-  const [portalCoords, setPortalCoords] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [portalCoords, setPortalCoords] = useState<{
+    top?: number;
+    bottom?: number;
+    left?: number;
+    right?: number;
+    width: number;
+  } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -89,9 +96,13 @@ export default function CustomSelect({
     );
   }, [options, searchQuery, isSearchable]);
 
-  // Recalculate position on open, resize, or scroll
-  const updatePosition = useCallback(() => {
-    if (!triggerRef.current || typeof window === 'undefined') return;
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Compute exact coordinates relative to window viewport
+  const calculatePosition = useCallback(() => {
+    if (!triggerRef.current || typeof window === 'undefined') return null;
     const rect = triggerRef.current.getBoundingClientRect();
     const spaceBelow = window.innerHeight - rect.bottom;
     const spaceAbove = rect.top;
@@ -102,19 +113,32 @@ export default function CustomSelect({
     } else if (direction === 'down') {
       upwards = false;
     } else {
-      upwards = spaceBelow < 260 && spaceAbove > 200;
+      // If space below is tight (< 280px) and space above has room (> 180px), open upwards
+      upwards = spaceBelow < 280 && spaceAbove > 180;
     }
-    setOpenUpwards(upwards);
-    setAlignRight(rect.right + 220 > window.innerWidth);
 
-    if (portal) {
-      setPortalCoords({
-        top: upwards ? rect.top - 8 : rect.bottom + 8,
-        left: rect.left,
-        width: rect.width,
-      });
+    const isRightAligned = rect.right + 220 > window.innerWidth;
+
+    const coords = {
+      top: upwards ? undefined : Math.round(rect.bottom + 6),
+      bottom: upwards ? Math.round(window.innerHeight - rect.top + 6) : undefined,
+      left: isRightAligned ? undefined : Math.round(Math.max(12, Math.min(rect.left, window.innerWidth - 320))),
+      right: isRightAligned ? Math.round(Math.max(12, window.innerWidth - rect.right)) : undefined,
+      width: Math.round(Math.max(rect.width, 210)),
+    };
+
+    return { upwards, alignRight: isRightAligned, coords };
+  }, [direction]);
+
+  // Recalculate position on scroll or resize
+  const updatePosition = useCallback(() => {
+    const res = calculatePosition();
+    if (res) {
+      setOpenUpwards(res.upwards);
+      setAlignRight(res.alignRight);
+      setPortalCoords(res.coords);
     }
-  }, [direction, portal]);
+  }, [calculatePosition]);
 
   useEffect(() => {
     if (isOpen) {
@@ -296,18 +320,22 @@ export default function CustomSelect({
             portal && portalCoords
               ? {
                   position: 'fixed',
-                  top: openUpwards ? undefined : `${portalCoords.top}px`,
-                  bottom: openUpwards ? `${window.innerHeight - portalCoords.top}px` : undefined,
-                  left: alignRight ? undefined : `${portalCoords.left}px`,
-                  right: alignRight ? `${window.innerWidth - portalCoords.left - portalCoords.width}px` : undefined,
+                  top: portalCoords.top !== undefined ? `${portalCoords.top}px` : undefined,
+                  bottom: portalCoords.bottom !== undefined ? `${portalCoords.bottom}px` : undefined,
+                  left: portalCoords.left !== undefined ? `${portalCoords.left}px` : undefined,
+                  right: portalCoords.right !== undefined ? `${portalCoords.right}px` : undefined,
+                  minWidth: `${portalCoords.width}px`,
+                  zIndex: 999999,
                 }
               : undefined
           }
           className={`${
-            portal ? '' : 'absolute'
-          } ${alignRight ? 'right-0' : 'left-0'} ${
-            openUpwards ? 'bottom-full mb-2' : 'top-full mt-2'
-          } z-[9999] min-w-[210px] max-w-[340px] w-max p-1.5 rounded-2xl bg-[#141418]/95 backdrop-blur-3xl border border-white/20 shadow-[0_24px_60px_rgba(0,0,0,0.95),0_0_24px_-4px_rgba(41,151,255,0.14)] ring-1 ring-white/10 flex flex-col overflow-hidden ${menuClassName}`}
+            portal
+              ? 'fixed z-[999999]'
+              : `absolute ${alignRight ? 'right-0' : 'left-0'} ${
+                  openUpwards ? 'bottom-full mb-2' : 'top-full mt-2'
+                } z-[9999]`
+          } min-w-[210px] max-w-[340px] w-max p-1.5 rounded-2xl bg-[#141418]/95 backdrop-blur-3xl border border-white/20 shadow-[0_24px_60px_rgba(0,0,0,0.95),0_0_24px_-4px_rgba(41,151,255,0.18)] ring-1 ring-white/10 flex flex-col overflow-hidden ${menuClassName}`}
           onKeyDown={handleKeyDown}
         >
           {/* Optional Instant Search Filter */}
@@ -418,7 +446,20 @@ export default function CustomSelect({
         id={selectId}
         type="button"
         disabled={disabled}
-        onClick={() => !disabled && setIsOpen((prev) => !prev)}
+        onClick={() => {
+          if (disabled) return;
+          if (!isOpen) {
+            const res = calculatePosition();
+            if (res) {
+              setOpenUpwards(res.upwards);
+              setAlignRight(res.alignRight);
+              setPortalCoords(res.coords);
+            }
+            setIsOpen(true);
+          } else {
+            setIsOpen(false);
+          }
+        }}
         onKeyDown={handleKeyDown}
         className={`flex items-center justify-between cursor-pointer transition-all duration-200 ease-out hover:brightness-110 active:scale-[0.98] transform-gpu backface-hidden select-none koup-focus-ring ${
           disabled ? 'opacity-40 cursor-not-allowed' : ''
@@ -451,9 +492,11 @@ export default function CustomSelect({
       </button>
 
       {/* Floating Glass Dropdown Menu (Portal or Absolute) */}
-      {portal && typeof document !== 'undefined'
+      {mounted && portal && typeof document !== 'undefined'
         ? createPortal(menuContent, document.body)
-        : menuContent}
+        : !portal
+        ? menuContent
+        : null}
     </div>
   );
 }
