@@ -197,6 +197,20 @@ export default function SeriesDetailPage({
     }
   }, [media?.title]);
 
+  // On-the-fly self-healing image enricher
+  useEffect(() => {
+    if (media && (!media.cover_image || !media.backdrop_image)) {
+      fetch(`/api/media/auto-enrich?id=${media.id}&slug=${encodeURIComponent(media.slug)}`)
+        .then((r) => r.json())
+        .then((res) => {
+          if (res?.updatedMedia) {
+            setMedia((prev) => (prev ? { ...prev, ...res.updatedMedia } : prev));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [media?.id, media?.cover_image, media?.backdrop_image, media?.slug]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center pt-24 bg-[#080808]">

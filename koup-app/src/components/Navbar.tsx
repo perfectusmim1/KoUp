@@ -465,7 +465,7 @@ export default function Navbar() {
               setProfileDropdownOpen(false);
               setSearchOpen(false);
             }}
-            className="w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white/80 hover:text-white relative cursor-pointer transition-all hover:border-[var(--accent-blue)]/40 hover:shadow-[0_0_15px_rgba(41,151,255,0.2)]"
+            className="w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white/80 hover:text-white relative cursor-pointer transition-all duration-300 ease-out hover:border-[var(--accent-blue)]/50 hover:bg-white/[0.1] hover:shadow-[0_0_16px_rgba(41,151,255,0.25)] hover:scale-[1.05] active:scale-[0.95]"
             aria-label="Bildirimler"
           >
             <Bell className="w-4 h-4" />
@@ -670,11 +670,15 @@ export default function Navbar() {
                 setNotifOpen(false);
                 setSearchOpen(false);
               }}
-              className="flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 rounded-full glass-pill hover:border-white/30 transition-all cursor-pointer relative"
+              className={`group flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 rounded-full glass-pill hover:scale-[1.03] active:scale-[0.97] transition-all duration-300 ease-out cursor-pointer select-none relative ${
+                profileDropdownOpen
+                  ? 'border-sky-400/50 bg-white/[0.12] shadow-[0_0_18px_rgba(41,151,255,0.28)]'
+                  : 'hover:border-white/40 hover:bg-white/[0.12] hover:shadow-[0_0_18px_rgba(41,151,255,0.2)]'
+              }`}
               aria-label="Kullanıcı Menüsü"
               aria-expanded={profileDropdownOpen}
             >
-              <div className="w-7 h-7 rounded-full bg-white/15 border border-white/20 flex items-center justify-center text-white text-xs font-bold shrink-0 overflow-hidden shadow-xs">
+              <div className="w-7 h-7 rounded-full bg-white/15 border border-white/20 group-hover:border-sky-400/60 flex items-center justify-center text-white text-xs font-bold shrink-0 overflow-hidden shadow-xs transition-colors">
                 {user.avatar_url ? (
                   <img
                     src={getProxiedImageUrl(user.avatar_url, user.display_name || user.username)}
@@ -685,7 +689,7 @@ export default function Navbar() {
                   <User className="w-3.5 h-3.5 text-white" />
                 )}
               </div>
-              <span className="hidden md:inline text-xs font-semibold text-white max-w-[110px] truncate">
+              <span className="hidden md:inline text-xs font-semibold text-white/90 group-hover:text-white max-w-[110px] truncate transition-colors">
                 {user.display_name || user.username || 'Profilim'}
               </span>
             </button>
@@ -821,10 +825,13 @@ export default function Navbar() {
           </div>
         ) : (
           <button
-            onClick={() => setIsAuthModalOpen(true)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-full glass-pill text-xs font-semibold text-white hover:bg-white/15 cursor-pointer transition-all"
+            onClick={() => {
+              triggerSound('click');
+              setIsAuthModalOpen(true);
+            }}
+            className="group flex items-center gap-2 px-4.5 py-2 rounded-full glass-pill text-xs font-semibold text-white/90 hover:text-white hover:bg-white/[0.14] hover:border-white/45 hover:shadow-[0_0_20px_rgba(255,255,255,0.18)] hover:scale-[1.03] active:scale-[0.97] transition-all duration-300 ease-out cursor-pointer select-none"
           >
-            <LogIn className="w-3.5 h-3.5 text-white/70" />
+            <LogIn className="w-3.5 h-3.5 text-white/70 group-hover:text-white group-hover:translate-x-0.5 transition-all duration-300" />
             <span>Giriş Yap</span>
           </button>
         )}

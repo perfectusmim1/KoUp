@@ -10,11 +10,13 @@ import {
   Users,
   Sparkles,
   Award,
+  Newspaper,
 } from 'lucide-react';
 import {
   supabase,
   PersonItem,
   CastMember,
+  MagazinePost,
   getProxiedImageUrl,
 } from '@/lib/supabase';
 import { cachedQuery } from '@/lib/cache';
@@ -44,6 +46,7 @@ export default function PersonDetailPage({
   const [person, setPerson] = useState<PersonItem | null>(null);
   const [credits, setCredits] = useState<CastMember[]>([]);
   const [coStars, setCoStars] = useState<PersonItem[]>([]);
+  const [magazinePosts, setMagazinePosts] = useState<MagazinePost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -144,6 +147,19 @@ export default function PersonDetailPage({
       document.title = `${person.name} • Filmografi & Profil • KoUp`;
     }
   }, [person?.name]);
+
+  // Fetch related AsyaMag magazine news & gossip for actor
+  useEffect(() => {
+    if (!person?.name) return;
+    fetch(`/api/magazin/actor?name=${encodeURIComponent(person.name)}&id=${person.id}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data?.posts)) {
+          setMagazinePosts(data.posts);
+        }
+      })
+      .catch(() => {});
+  }, [person?.id, person?.name]);
 
   if (isLoading) {
     return (
@@ -354,7 +370,92 @@ export default function PersonDetailPage({
         </section>
       )}
 
-      {/* 4. ACTOR & ANIME CHARACTER RICH COMMENTS */}
+      {/* 4. ASYAMAG MAGAZİN & DEDİKODU HABERLERİ */}
+      {magazinePosts.length > 0 && (
+        <section className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-rose-400 font-bold">
+                  AsyaMag · Canlı Magazin & Dedikodu
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-rose-500/15 text-rose-300 border border-rose-400/30">
+                  {person.name} Gündemi
+                </span>
+              </div>
+              <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
+                <Newspaper className="w-5 h-5 text-rose-400" />
+                <span>Oyuncuyla İlgili Magazin Haberleri ({magazinePosts.length})</span>
+              </h2>
+            </div>
+            <Link
+              href="/magazin"
+              className="text-xs text-white/60 hover:text-white flex items-center gap-1 font-semibold transition-colors"
+            >
+              <span>Tüm Magazin Haberlerini Gör</span>
+              <span>→</span>
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {magazinePosts.map((post) => (
+              <Link
+                key={post.slug || post.id}
+                href={`/magazin/${post.slug}`}
+                className="group rounded-2xl overflow-hidden bg-[#121216] border border-white/10 hover:border-white/30 transition-all flex flex-col justify-between shadow-xl cursor-pointer"
+              >
+                <div className="relative aspect-[16/9] w-full overflow-hidden bg-black/40">
+                  {post.featured_image ? (
+                    <img
+                      src={getProxiedImageUrl(post.featured_image)}
+                      alt={post.title}
+                      loading="lazy"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-white/[0.04]">
+                      <Newspaper className="w-8 h-8 text-white/20" />
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#121216] via-transparent to-transparent opacity-80" />
+                  <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-600/90 text-white shadow-md">
+                      {post.categories?.[0] || 'Magazin'}
+                    </span>
+                    {post.is_gossip && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/90 text-black shadow-md">
+                        Dedikodu
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-4 flex-1 flex flex-col justify-between space-y-2">
+                  <div>
+                    <h3 className="text-sm font-bold text-white line-clamp-2 group-hover:text-rose-300 transition-colors leading-snug">
+                      {post.title}
+                    </h3>
+                    {post.excerpt && (
+                      <p className="text-xs text-white/55 line-clamp-2 mt-1.5 leading-relaxed font-light">
+                        {post.excerpt}
+                      </p>
+                    )}
+                  </div>
+                  <div className="pt-2 flex items-center justify-between border-t border-white/10 text-[10px] text-white/45 font-mono">
+                    <span className="text-rose-400 font-semibold">AsyaMag</span>
+                    <span>
+                      {post.published_at ? new Date(post.published_at).toLocaleDateString('tr-TR') : 'Güncel'}
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* 5. ACTOR & ANIME CHARACTER RICH COMMENTS */}
+
       <RichCommentSection
         targetType="person"
         personId={person.id}
