@@ -47,6 +47,7 @@ export interface MediaItem {
   tags: string[];
   site_rating: number;
   site_rating_count: number;
+  rating?: number | null;
   mdl_rating?: number | null;
   anilist_rating?: number | null;
   imdb_rating?: number | null;
@@ -128,6 +129,7 @@ export interface EpisodeData {
 
 export interface MagazinePost {
   id: number;
+  wp_post_id?: number;
   slug: string;
   title: string;
   excerpt: string;
@@ -135,10 +137,13 @@ export interface MagazinePost {
   featured_image?: string | null;
   categories: string[];
   tags: string[];
+  is_gossip?: boolean;
+  author_name?: string;
   related_media_ids: number[];
   related_person_ids: number[];
   source_url?: string | null;
   likes_count: number;
+  views_count?: number;
   comments_count: number;
   published_at: string;
 }
@@ -178,13 +183,18 @@ export interface UserMediaProgress {
   media_id: number;
   status: 'watching' | 'completed' | 'plan_to_watch' | 'on_hold' | 'dropped';
   is_favorite: boolean;
+  is_favorited?: boolean;
   user_score?: number | null;
   watched_episodes: number[];
   last_season_num: number;
   last_episode_num: number;
   last_episode_title?: string | null;
+  current_season?: number;
+  current_episode?: number;
   resume_position_sec: number;
   resume_duration_sec: number;
+  position_seconds?: number;
+  duration_seconds?: number;
   updated_at: string;
   media?: MediaItem;
 }

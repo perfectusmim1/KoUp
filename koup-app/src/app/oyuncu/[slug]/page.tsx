@@ -324,8 +324,8 @@ export default function PersonDetailPage({
       {relatedNews.length > 0 && (
         <section>
           <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-            <Newspaper className="w-5 h-5 text-amber-300" />
-            <span>AsyaMag Magazin & Dedikodu Gündemi</span>
+            <Newspaper className="w-5 h-5 text-white/80" />
+            <span>İlgili Haberler & Magazin Gündemi</span>
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {relatedNews.map((post) => (

@@ -47,7 +47,26 @@ export async function GET(req: NextRequest) {
         }
       }
     } catch {
-      // Fallback to iframe if Tau-Video API is unreachable
+      // Edge Fallback: query Cloudflare Edge Worker
+      try {
+        const edgeRes = await fetch(
+          `https://koup-edge-worker.caganhuseyinerdil.workers.dev/tau?key=${url.split('/').pop()}`,
+          { signal: AbortSignal.timeout(4000) }
+        );
+        if (edgeRes.ok) {
+          const edgeData = await edgeRes.json();
+          if (edgeData?.urls?.length > 0) {
+            return NextResponse.json({
+              mode: 'native_mp4',
+              qualities: edgeData.urls,
+              streamUrl: edgeData.urls[0].url,
+              fallbackIframe: url,
+            });
+          }
+        }
+      } catch {
+        // proceed to iframe fallback
+      }
     }
   }
 

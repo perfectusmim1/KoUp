@@ -34,6 +34,7 @@ import {
   getProxiedImageUrl,
   supabase,
 } from '@/lib/supabase';
+import CustomSelect from '@/components/CustomSelect';
 import { useKoUp } from '@/context/KoUpContext';
 
 interface NetflixPlayerProps {
@@ -138,11 +139,18 @@ export default function NetflixPlayer({
     let cancelled = false;
 
     async function resolve() {
+      if (!activeSource || !activeSource.direct_url) {
+        setResolvedMode('iframe');
+        setStreamUrl('');
+        return;
+      }
       setIsResolving(true);
       try {
+        const sourceUrl = activeSource.direct_url;
+        const sourceProvider = activeSource.provider || '';
         const params = new URLSearchParams({
-          url: activeSource.direct_url,
-          provider: activeSource.provider || '',
+          url: sourceUrl,
+          provider: sourceProvider,
         });
         const resp = await fetch(`/api/resolve-stream?${params.toString()}`);
         const data = await resp.json();
@@ -155,11 +163,11 @@ export default function NetflixPlayer({
           setSelectedQuality(data.qualities?.[0]?.label || '1080p');
         } else {
           setResolvedMode('iframe');
-          setStreamUrl(activeSource.direct_url);
+          setStreamUrl(sourceUrl);
           setQualities([]);
         }
       } catch {
-        if (!cancelled) {
+        if (!cancelled && activeSource?.direct_url) {
           setResolvedMode('iframe');
           setStreamUrl(activeSource.direct_url);
         }
@@ -858,16 +866,21 @@ export default function NetflixPlayer({
               </button>
             </div>
             <form onSubmit={submitIssueReport} className="space-y-3">
-              <select
+              <CustomSelect
                 value={reportReason}
-                onChange={(e) => setReportReason(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-black/70 border border-white/15 text-xs text-white"
-              >
-                <option>Video Açılmıyor / Kırık Kaynak</option>
-                <option>Altyazı Senkronu Kayık / Yok</option>
-                <option>Yanlış Bölüm Yüklenmiş</option>
-                <option>Ses Gelmiyor / Kalite Düşük</option>
-              </select>
+                onChange={(val) => setReportReason(val)}
+                variant="dark"
+                size="sm"
+                className="w-full"
+                triggerClassName="w-full justify-between"
+                menuClassName="w-full"
+                options={[
+                  { value: 'Video Açılmıyor / Kırık Kaynak', label: 'Video Açılmıyor / Kırık Kaynak' },
+                  { value: 'Altyazı Senkronu Kayık / Yok', label: 'Altyazı Senkronu Kayık / Yok' },
+                  { value: 'Yanlış Bölüm Yüklenmiş', label: 'Yanlış Bölüm Yüklenmiş' },
+                  { value: 'Ses Gelmiyor / Kalite Düşük', label: 'Ses Gelmiyor / Kalite Düşük' },
+                ]}
+              />
               <textarea
                 rows={2}
                 value={reportDetails}
@@ -1095,10 +1108,10 @@ export default function NetflixPlayer({
                 {/* Right Native Controls: Quality, Speed, Next Episode */}
                 <div className="flex items-center gap-2">
                   {qualities.length > 1 && (
-                    <select
+                    <CustomSelect
                       value={selectedQuality}
-                      onChange={(e) => {
-                        const q = qualities.find((x) => x.label === e.target.value);
+                      onChange={(val) => {
+                        const q = qualities.find((x) => x.label === val);
                         if (q && videoRef.current) {
                           const t = videoRef.current.currentTime;
                           setSelectedQuality(q.label);
@@ -1108,31 +1121,26 @@ export default function NetflixPlayer({
                           }, 150);
                         }
                       }}
-                      className="px-2.5 py-1 rounded-full bg-white/10 border border-white/15 text-xs font-mono text-white cursor-pointer"
-                    >
-                      {qualities.map((q) => (
-                        <option key={q.label} value={q.label} className="bg-black">
-                          {q.label}
-                        </option>
-                      ))}
-                    </select>
+                      variant="dark"
+                      size="sm"
+                      options={qualities.map((q) => ({ value: q.label, label: q.label }))}
+                    />
                   )}
 
-                  <select
-                    value={playbackRate}
-                    onChange={(e) => {
-                      const r = Number(e.target.value);
+                  <CustomSelect
+                    value={String(playbackRate)}
+                    onChange={(val) => {
+                      const r = Number(val);
                       setPlaybackRate(r);
                       if (videoRef.current) videoRef.current.playbackRate = r;
                     }}
-                    className="px-2.5 py-1 rounded-full bg-white/10 border border-white/15 text-xs font-mono text-white cursor-pointer"
-                  >
-                    {[0.75, 1, 1.25, 1.5, 2].map((r) => (
-                      <option key={r} value={r} className="bg-black">
-                        {r}x Hız
-                      </option>
-                    ))}
-                  </select>
+                    variant="dark"
+                    size="sm"
+                    options={[0.75, 1, 1.25, 1.5, 2].map((r) => ({
+                      value: String(r),
+                      label: `${r}x Hız`,
+                    }))}
+                  />
 
                   {nextEp && (
                     <button

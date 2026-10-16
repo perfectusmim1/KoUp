@@ -34,6 +34,7 @@ import { useKoUp } from '@/context/KoUpContext';
 import NetflixPlayer from '@/components/NetflixPlayer';
 import RichCommentSection from '@/components/RichCommentSection';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
+import CustomSelect from '@/components/CustomSelect';
 
 const DAY_NAMES = [
   { id: 1, short: 'PZT', full: 'Pazartesi' },
@@ -430,13 +431,13 @@ export default function SeriesDetailPage({
 
             {/* Library Status, Favorite, Follow & Report Buttons */}
             <div className="flex flex-wrap items-center gap-2.5 pt-2">
-              <select
+              <CustomSelect
                 value={userProg?.status || ''}
-                onChange={(e) => {
-                  if (e.target.value) {
+                onChange={(val) => {
+                  if (val) {
                     setLibraryStatus(
                       media,
-                      e.target.value as
+                      val as
                         | 'watching'
                         | 'completed'
                         | 'plan_to_watch'
@@ -445,15 +446,16 @@ export default function SeriesDetailPage({
                     );
                   }
                 }}
-                className="px-4 py-2.5 rounded-full bg-white text-black font-bold text-xs cursor-pointer"
-              >
-                <option value="">+ Kütüphaneme Ekle</option>
-                <option value="watching">İzliyorum</option>
-                <option value="completed">Tamamladım</option>
-                <option value="plan_to_watch">İzleyeceğim</option>
-                <option value="on_hold">Beklemede</option>
-                <option value="dropped">Bıraktım</option>
-              </select>
+                variant="white"
+                placeholder="+ Kütüphaneme Ekle"
+                options={[
+                  { value: 'watching', label: 'İzliyorum' },
+                  { value: 'completed', label: 'Tamamladım' },
+                  { value: 'plan_to_watch', label: 'İzleyeceğim' },
+                  { value: 'on_hold', label: 'Beklemede' },
+                  { value: 'dropped', label: 'Bıraktım' },
+                ]}
+              />
 
               <button
                 onClick={() => toggleMediaFavorite(media)}
@@ -493,17 +495,19 @@ export default function SeriesDetailPage({
                 onSubmit={submitSeriesIssue}
                 className="mt-3 p-4 rounded-2xl bg-black/60 border border-amber-400/30 flex flex-col sm:flex-row gap-3"
               >
-                <select
+                <CustomSelect
                   value={seriesReportCategory}
-                  onChange={(e) => setSeriesReportCategory(e.target.value)}
-                  className="px-3 py-2 rounded-xl bg-black border border-white/15 text-xs text-white"
-                >
-                  <option>Eksik Bölümler Var</option>
-                  <option>MDL / AniList / IMDb Eşleşmesi Yanlış</option>
-                  <option>Oyuncu / Karakter Bilgisi Eksik</option>
-                  <option>Kapak / Afiş Görseli Bozuk</option>
-                  <option>Yayın Takvimi Günü Yanlış</option>
-                </select>
+                  onChange={(val) => setSeriesReportCategory(val)}
+                  variant="dark"
+                  size="sm"
+                  options={[
+                    { value: 'Eksik Bölümler Var', label: 'Eksik Bölümler Var' },
+                    { value: 'MDL / AniList / IMDb Eşleşmesi Yanlış', label: 'Eşleşme Yanlış' },
+                    { value: 'Oyuncu / Karakter Bilgisi Eksik', label: 'Oyuncu Bilgisi Eksik' },
+                    { value: 'Kapak / Afiş Görseli Bozuk', label: 'Afiş Görseli Bozuk' },
+                    { value: 'Yayın Takvimi Günü Yanlış', label: 'Takvim Günü Yanlış' },
+                  ]}
+                />
                 <input
                   type="text"
                   value={seriesReportNote}
@@ -902,11 +906,11 @@ export default function SeriesDetailPage({
           <section>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
-                <Newspaper className="w-5 h-5 text-amber-300" />
-                <span>İlgili AsyaMag Haberleri & Dedikodular</span>
+                <Newspaper className="w-5 h-5 text-white/80" />
+                <span>İlgili Haberler & Magazin Gündemi</span>
               </h2>
               <Link href="/magazin" className="text-xs text-white/70 hover:text-white">
-                Magazin Merkezine Git →
+                Tüm Magazin Haberleri →
               </Link>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

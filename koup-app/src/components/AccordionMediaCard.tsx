@@ -34,7 +34,7 @@ export default function AccordionMediaCard({
   priority = false,
 }: AccordionMediaCardProps) {
   const router = useRouter();
-  const { progressMap, updateWatchStatus, triggerSound } = useKoUp();
+  const { progressMap, updateWatchStatus, toggleMediaFavorite, triggerSound } = useKoUp();
   const [isExpanded, setIsExpanded] = useState(false);
   const prefetchRef = useRef(false);
 
@@ -236,9 +236,7 @@ export default function AccordionMediaCard({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  updateWatchStatus(item.id, 'watching', 1, 1, {
-                    is_favorited: !isFavorited,
-                  });
+                  toggleMediaFavorite(item);
                 }}
                 title="Favorilere Ekle"
                 className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all cursor-pointer ${

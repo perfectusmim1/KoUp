@@ -19,6 +19,7 @@ import {
   getProxiedImageUrl,
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
+import CustomSelect from '@/components/CustomSelect';
 
 const PERSON_TABS = [
   { id: 'all', label: 'Tüm Yıldızlar & Karakterler', icon: Sparkles },
@@ -108,18 +109,15 @@ export default function ActorsLeaderboardPage() {
             />
           </div>
 
-          <select
+          <CustomSelect
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as 'favs' | 'dramas')}
-            className="px-4 py-2.5 rounded-full glass-pill-dark text-xs font-semibold text-white cursor-pointer focus:outline-none"
-          >
-            <option value="favs" className="bg-[#0f0f11]">
-              En Çok Favori Alandan Aza
-            </option>
-            <option value="dramas" className="bg-[#0f0f11]">
-              En Çok Yapımda Rol Alan
-            </option>
-          </select>
+            onChange={(val) => setSortBy(val as 'favs' | 'dramas')}
+            variant="pill"
+            options={[
+              { value: 'favs', label: 'En Çok Favorilenenler' },
+              { value: 'dramas', label: 'En Çok Yapımda Rol Alan' },
+            ]}
+          />
         </div>
       </div>
 

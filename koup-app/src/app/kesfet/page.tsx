@@ -17,6 +17,7 @@ import {
 import { supabase, MediaItem } from '@/lib/supabase';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 import { useKoUp } from '@/context/KoUpContext';
+import CustomSelect from '@/components/CustomSelect';
 
 const CONTENT_TYPES = [
   { id: 'ALL', label: 'Tüm Türler', icon: Layers },
@@ -139,21 +140,16 @@ function DiscoverContent() {
               />
             </div>
 
-            <select
+            <CustomSelect
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-              className="px-4 py-2.5 rounded-full glass-pill-dark text-xs font-semibold text-white focus:outline-none cursor-pointer"
-            >
-              <option value="views" className="bg-[#0f0f11] text-white">
-                En Çok İzlenen & Kaynaklı
-              </option>
-              <option value="rating" className="bg-[#0f0f11] text-white">
-                En Yüksek Puanlı (MDL / AniList / IMDb)
-              </option>
-              <option value="year" className="bg-[#0f0f11] text-white">
-                En Yeni Yıl (2026 → Eski)
-              </option>
-            </select>
+              onChange={(val) => setSortBy(val as any)}
+              variant="pill"
+              options={[
+                { value: 'views', label: 'En Çok İzlenen & Kaynaklı' },
+                { value: 'rating', label: 'En Yüksek Puanlı (MDL / AL / IMDb)' },
+                { value: 'year', label: 'En Yeni Yıl (2026 → Eski)' },
+              ]}
+            />
           </div>
         </div>
 

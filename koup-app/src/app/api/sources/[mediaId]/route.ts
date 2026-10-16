@@ -186,9 +186,9 @@ export async function GET(
           status: 'published',
           scheduled_release_at: null,
           translation_note: null,
-          react_fire: ((ep.id * 7) % 45) + 12,
-          react_cry: ((ep.id * 3) % 28) + 4,
-          react_shock: ((ep.id * 5) % 34) + 6,
+          react_fire: 0,
+          react_cry: 0,
+          react_shock: 0,
           sources: processed,
         };
       });
@@ -210,9 +210,9 @@ export async function GET(
         const key = `${le.season_number}_${le.episode_number}`;
         const existing = epMap.get(key);
         if (existing) {
-          if (le.react_fire) existing.react_fire += le.react_fire;
-          if (le.react_cry) existing.react_cry += le.react_cry;
-          if (le.react_shock) existing.react_shock += le.react_shock;
+          existing.react_fire = le.react_fire || 0;
+          existing.react_cry = le.react_cry || 0;
+          existing.react_shock = le.react_shock || 0;
           if (le.status === 'scheduled' && existing.sources.length === 0) {
             existing.status = 'scheduled';
             existing.scheduled_release_at = le.scheduled_release_at;

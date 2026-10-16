@@ -54,7 +54,7 @@ const AWARD_BADGES = [
   'MDL 9.0+ Seçkisi',
   'Kore Reyting Rekortmeni',
   'Eleştirmenlerin Favorisi',
-  '4K HDR Dolby Vision',
+  'Öne Çıkan Yapım',
 ];
 
 export default function HomePage() {
@@ -647,18 +647,19 @@ export default function HomePage() {
               <Link
                 key={item.id}
                 href={`/seri/${item.slug}`}
-                className="shrink-0 flex items-center group cursor-pointer snap-start relative"
+                className="shrink-0 flex items-end group cursor-pointer snap-start relative pl-2"
               >
-                <span className="text-[155px] font-black leading-none tracking-tighter text-stroke-numeral select-none absolute -left-5 z-0 drop-shadow-[0_15px_30px_rgba(0,0,0,0.9)]">
+                {/* Netflix/Apple TV+ Top 10 Stroke Numeral */}
+                <span className="text-[125px] md:text-[145px] font-black leading-[0.78] tracking-tighter text-stroke-numeral select-none pointer-events-none drop-shadow-[0_12px_24px_rgba(0,0,0,0.95)] -mr-6 md:-mr-8 z-0">
                   {idx + 1}
                 </span>
 
-                <div className="relative ml-20 w-52 aspect-[2/3] rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 group-hover:border-white/30 shadow-[0_25px_50px_rgba(0,0,0,0.85)] group-hover:scale-105 transition-all duration-500 z-10 flex flex-col justify-end p-4">
+                <div className="relative z-10 w-44 md:w-52 aspect-[2/3] rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 group-hover:border-white/30 shadow-[0_20px_45px_rgba(0,0,0,0.85)] group-hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-end p-4">
                   <img
                     src={getProxiedImageUrl(item.cover_image, item.title)}
                     alt={item.title}
                     loading="lazy"
-                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                    className="absolute inset-0 w-full h-full object-cover"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-black/40 to-transparent" />
                   <div className="relative z-10 flex flex-col">
@@ -822,7 +823,7 @@ export default function HomePage() {
                         <div className="text-[10px] text-white/45 mt-0.5">
                           {person.person_type === 'character'
                             ? 'Anime Karakteri'
-                            : person.person_type === 'voice_actor'
+                            : person.person_type === 'seiyuu'
                               ? 'Seiyuu'
                               : 'Oyuncu'}
                         </div>
@@ -846,12 +847,12 @@ export default function HomePage() {
           <section className="w-full px-6 md:px-14">
             <div className="flex items-end justify-between mb-6">
               <div>
-                <div className="flex items-center gap-2 text-[11px] font-bold tracking-[0.2em] uppercase text-white/45">
-                  <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                  <span>AsyaMag Canlı API • KoUp İçi Okuma</span>
+                <div className="flex items-center gap-2 text-[11px] font-semibold tracking-[0.2em] uppercase text-white/50">
+                  <Newspaper className="w-3.5 h-3.5 text-white/60" />
+                  <span>Magazin & Gündem</span>
                 </div>
                 <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight mt-1">
-                  Son Dakika Dedikodu & Magazin Gündemi
+                  Son Dakika Magazin & Gündem
                 </h2>
               </div>
               <Link
@@ -875,7 +876,7 @@ export default function HomePage() {
                       src={getProxiedImageUrl(post.featured_image, post.title)}
                       alt={post.title}
                       loading="lazy"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      className="w-full h-full object-cover"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f11] via-black/25 to-transparent" />
                     <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">

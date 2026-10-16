@@ -85,7 +85,9 @@ export function transformWpPost(p: any): MagazinePost {
     is_gossip: isGossip,
     source_url: p?.link || `https://asyamag.com/${slug}/`,
     published_at: publishedAt,
-    views_count: ((wpId * 13) % 900) + 120,
+    views_count: 0,
+    likes_count: 0,
+    comments_count: 0,
     related_media_ids: [],
     related_person_ids: [],
   };

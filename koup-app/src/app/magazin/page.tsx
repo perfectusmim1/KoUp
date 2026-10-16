@@ -6,7 +6,7 @@ import {
   Flame,
   Search,
   RefreshCw,
-  Radio,
+  Newspaper,
 } from 'lucide-react';
 import {
   supabase,
@@ -111,19 +111,15 @@ export default function MagazineHubPage() {
       {/* HEADER */}
       <div className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/15 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2.5 text-xs font-mono uppercase tracking-widest text-amber-300">
-            <Flame className="w-4 h-4" />
-            <span>AsyaMag Canlı Magazin & Dedikodu Merkezi · KoUp İçi Tam Okuma</span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/35 text-emerald-300 text-[10px]">
-              <Radio className="w-3 h-3 animate-pulse" />
-              {sourceMode === 'live_api' ? 'CANLI WP-JSON API AKTİF' : 'HİBRİT ÖNBELLEK'}
-            </span>
+          <div className="flex flex-wrap items-center gap-2.5 text-xs font-semibold uppercase tracking-widest text-white/50">
+            <Newspaper className="w-4 h-4 text-white/60" />
+            <span>Magazin & Gündem</span>
           </div>
           <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
-            Asya Magazin, Dedikodu & Dizi Gündemi
+            Magazin & Dizi Gündemi
           </h1>
           <p className="text-sm text-white/65 max-w-2xl">
-            Güney Kore, Çin, Tayland ve Japonya eğlence dünyasındaki son dedikodular, netizen tepkileri, oyuncu ilişkileri ve yeni dizi duyuruları AsyaMag canlı API akışıyla anlık olarak KoUp içinde.
+            Güney Kore, Çin, Tayland ve Japonya eğlence dünyasındaki en son haberler, dedikodular, oyuncu gelişmeleri ve dizi duyuruları.
           </p>
         </div>
 
@@ -187,7 +183,7 @@ export default function MagazineHubPage() {
                 <img
                   src={getProxiedImageUrl(featuredPost.featured_image)}
                   alt={featuredPost.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                  className="w-full h-full object-cover"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#121216] via-transparent to-transparent lg:hidden" />
               </div>
@@ -240,7 +236,7 @@ export default function MagazineHubPage() {
                     src={getProxiedImageUrl(post.featured_image)}
                     alt={post.title}
                     loading="lazy"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    className="w-full h-full object-cover"
                   />
                   <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
                     {(post.categories || ['Magazin']).slice(0, 2).map((cat) => (

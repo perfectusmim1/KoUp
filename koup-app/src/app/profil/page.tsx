@@ -178,8 +178,8 @@ export default function ProfilePage() {
     }
   };
 
-  const heatmapWeeks = Array.from({ length: 26 }, (_, w) =>
-    Array.from({ length: 7 }, (_, d) => ((w * 7 + d * 3) % 5))
+  const heatmapWeeks = Array.from({ length: 26 }, () =>
+    Array.from({ length: 7 }, () => 0)
   );
 
   const filteredWatchedMedia = watchedMedia.filter((m) => {
@@ -214,7 +214,7 @@ export default function ProfilePage() {
               {profile?.avatar_url ? (
                 <img
                   src={profile.avatar_url}
-                  alt={profile.display_name}
+                  alt={profile.display_name || 'Kullanıcı'}
                   className="w-full h-full object-cover"
                 />
               ) : (
@@ -257,7 +257,7 @@ export default function ProfilePage() {
               className="flex items-center gap-2 px-4 py-2.5 rounded-full glass-pill text-xs font-semibold text-white hover:bg-white/15 cursor-pointer"
             >
               <LogIn className="w-3.5 h-3.5" />
-              <span>Supabase Hesap Bağla</span>
+              <span>Hesap Girişi / Kayıt</span>
             </button>
             <button
               onClick={() => setActiveTab('settings')}
@@ -318,7 +318,7 @@ export default function ProfilePage() {
                   Toplam İzlenen Bölüm
                 </span>
                 <div className="text-3xl font-extrabold text-white mt-2">
-                  {Object.keys(progressMap).length * 16 + 48} Bölüm
+                  {Object.values(progressMap).reduce((acc, p) => acc + (p.watched_episodes?.length || 0), 0)} Bölüm
                 </div>
                 <span className="text-xs text-white/45 mt-1 block">
                   K-Drama, C-Drama & Anime
@@ -330,10 +330,10 @@ export default function ProfilePage() {
                   Toplam Ekran Süresi
                 </span>
                 <div className="text-3xl font-extrabold text-white mt-2">
-                  {((Object.keys(progressMap).length * 14 + 42) / 24).toFixed(1)} Gün
+                  {(Object.values(progressMap).reduce((acc, p) => acc + (p.watched_episodes?.length || 0), 0) * 0.75).toFixed(1)} Saat
                 </div>
                 <span className="text-xs text-white/45 mt-1 block">
-                  Yaklaşık {Object.keys(progressMap).length * 14 + 42} saat sinema keyfi
+                  Gerçek izleme geçmişin
                 </span>
               </div>
 
@@ -342,8 +342,7 @@ export default function ProfilePage() {
                   Tamamlanan Yapım
                 </span>
                 <div className="text-3xl font-extrabold text-white mt-2">
-                  {Object.values(progressMap).filter((p) => p.status === 'completed')
-                    .length + 11}
+                  {Object.values(progressMap).filter((p) => p.status === 'completed').length}
                 </div>
                 <span className="text-xs text-white/45 mt-1 block">
                   Dizi, Anime & Sinema Filmi
@@ -779,7 +778,7 @@ export default function ProfilePage() {
             >
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-bold text-white">
-                  KoUp Supabase Hesap Girişi / Kayıt
+                  KoUp Hesap Girişi / Kayıt
                 </h3>
                 <button
                   type="button"
@@ -790,7 +789,7 @@ export default function ProfilePage() {
                 </button>
               </div>
               <p className="text-xs text-white/60">
-                Frankfurt (eu-central-1) Supabase sunucusu üzerinden cihazlar arası izleme senkronizasyonu.
+                Tüm cihazlarınız arasında izleme geçmişi ve favori listelerinizi anında senkronize edin.
               </p>
               <input
                 type="email"

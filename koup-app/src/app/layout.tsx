@@ -46,7 +46,7 @@ export default function RootLayout({
                     KoUp Cinema Studio
                   </div>
                   <div className="text-xs text-white/45">
-                    MyDramaList · AniList · IMDb · TMDB · AsyaMag Entegre Arşiv
+                    K-Drama · C-Drama · Anime & Asya Sineması Arşivi
                   </div>
                 </div>
               </div>
@@ -64,7 +64,7 @@ export default function RootLayout({
                   Oyuncular & Karakterler
                 </Link>
                 <Link href="/magazin" className="hover:text-white">
-                  AsyaMag Dedikodu
+                  Magazin & Gündem
                 </Link>
                 <Link href="/takvim" className="hover:text-white">
                   Yayın Takvimi

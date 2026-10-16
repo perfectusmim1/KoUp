@@ -8,8 +8,6 @@ import {
   Search,
   Bell,
   User,
-  Volume2,
-  VolumeX,
   Compass,
   Users,
   Newspaper,
@@ -45,8 +43,6 @@ export default function Navbar() {
     notifications,
     unreadCount,
     markNotificationsRead,
-    soundEnabled,
-    toggleSound,
     triggerSound,
   } = useKoUp();
 
@@ -74,14 +70,10 @@ export default function Navbar() {
       setIsSearching(true);
       try {
         const [mRes, pRes] = await Promise.all([
-          supabase
-            .from('media')
-            .select(
-              'id, slug, title, original_title, content_type, country_code, release_year, cover_image, backdrop_image, site_rating, mdl_rating, anilist_rating, imdb_rating, categories'
-            )
-            .ilike('search_text', `%${trimmed.toLowerCase()}%`)
-            .order('views_total', { ascending: false })
-            .limit(6),
+          supabase.rpc('search_catalog', {
+            p_query: trimmed,
+            p_limit: 8,
+          }),
           supabase
             .from('people')
             .select('id, slug, name, native_name, person_type, image_url, favorites_count')
@@ -294,7 +286,7 @@ export default function Navbar() {
                                   {m.title}
                                 </div>
                                 <div className="text-[11px] text-white/50 flex items-center gap-2 mt-0.5">
-                                  <span>{formatContentTypeTR(m.content_type, m.country)}</span>
+                                  <span>{formatContentTypeTR(m.content_type, m.country_code || (m as any).country)}</span>
                                   {m.release_year && <span>• {m.release_year}</span>}
                                   {m.mdl_rating && (
                                     <span className="text-amber-300 font-mono">
@@ -338,8 +330,12 @@ export default function Navbar() {
                                 <div className="text-xs font-semibold text-white truncate">
                                   {p.name}
                                 </div>
-                                <div className="text-[10px] text-white/45 font-mono">
-                                  {p.favorites_count} Favori
+                                <div className="text-[10px] text-white/45">
+                                  {p.favorites_count > 0
+                                    ? `${p.favorites_count} Favori`
+                                    : p.person_type === 'director'
+                                    ? 'Yönetmen'
+                                    : 'Oyuncu'}
                                 </div>
                               </div>
                             </button>
@@ -353,17 +349,6 @@ export default function Navbar() {
             )}
           </AnimatePresence>
         </div>
-
-        {/* Sound Micro-Interaction Toggle */}
-        <button
-          onClick={toggleSound}
-          title={soundEnabled ? 'Arayüz Sesleri Açık' : 'Arayüz Sesleri Kapalı'}
-          className={`w-10 h-10 rounded-full glass-pill flex items-center justify-center cursor-pointer transition-all ${
-            soundEnabled ? 'text-white border-white/25' : 'text-white/50 hover:text-white'
-          }`}
-        >
-          {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-        </button>
 
         {/* Notifications Bell */}
         <div className="relative">

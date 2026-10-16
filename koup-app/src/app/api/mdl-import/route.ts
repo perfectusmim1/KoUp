@@ -133,7 +133,7 @@ export async function POST(req: NextRequest) {
       if (m[1]) mdlSlugs.add(m[1].toLowerCase());
     }
 
-    let matchedMedia = [];
+    let matchedMedia: any[] = [];
     if (mdlSlugs.size > 0) {
       const slugArr = Array.from(mdlSlugs).slice(0, 100);
       const { data } = await supabase

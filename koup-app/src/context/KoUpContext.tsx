@@ -39,6 +39,13 @@ interface KoUpContextValue {
   setIsAuthModalOpen: (v: boolean) => void;
   isRouletteOpen: boolean;
   setIsRouletteOpen: (v: boolean) => void;
+  unreadCount: number;
+  updateWatchStatus: (
+    mediaId: number,
+    status: UserMediaProgress['status'],
+    season?: number,
+    episode?: number
+  ) => void;
   updateEpisodeProgress: (
     media: MediaItem,
     seasonNum: number,
@@ -97,11 +104,11 @@ const DEFAULT_PROFILE: UserProfile = {
     notify_comment_reply: true,
     notify_list_activity: true,
   },
-  stats_episodes_watched: 48,
-  stats_series_completed: 6,
-  stats_movies_completed: 4,
-  stats_anime_completed: 5,
-  stats_total_minutes: 2840,
+  stats_episodes_watched: 0,
+  stats_series_completed: 0,
+  stats_movies_completed: 0,
+  stats_anime_completed: 0,
+  stats_total_minutes: 0,
   mdl_username: '',
   anilist_username: '',
   anilist_auto_sync: true,
@@ -588,25 +595,58 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const triggerSound = useCallback(
-    (kind?: string) => {
-      const settings =
-        user?.notification_settings || DEFAULT_PROFILE.notification_settings;
-      if (!settings.sound_enabled) return;
-      playNotificationChime(
-        kind === 'click'
-          ? 'minimal_pop'
-          : (settings.sound_tone as SoundTone) || 'apple_glass',
-        kind === 'click' ? 0.35 : settings.sound_volume ?? 0.7,
-        settings.mute_during_fullscreen ?? true
-      );
+    (_kind?: string) => {
+      // User request: Disable continuous UI interaction sounds; sound only plays when pushNotification arrives.
+      return;
     },
-    [user]
+    []
   );
 
   const continueWatchingList = Object.values(progressMap)
     .filter((p) => p.status === 'watching' && p.media)
     .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
     .slice(0, 30);
+
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
+
+  const updateWatchStatus = useCallback(
+    (
+      mediaId: number,
+      status: UserMediaProgress['status'],
+      season = 1,
+      episode = 1
+    ) => {
+      setProgressMap((prev) => {
+        const existing = prev[mediaId];
+        const updated: UserMediaProgress = existing
+          ? {
+              ...existing,
+              status,
+              last_season_num: season,
+              last_episode_num: episode,
+              updated_at: new Date().toISOString(),
+            }
+          : {
+              media_id: mediaId,
+              status,
+              is_favorite: false,
+              watched_episodes: [],
+              last_season_num: season,
+              last_episode_num: episode,
+              resume_position_sec: 0,
+              resume_duration_sec: 3600,
+              updated_at: new Date().toISOString(),
+            };
+        const next = { ...prev, [mediaId]: updated };
+        try {
+          localStorage.setItem('koup_progress_v1', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      pushNotification('Liste Güncellendi', 'İçerik tercihiniz kaydedildi.', 'success');
+    },
+    [pushNotification]
+  );
 
   return (
     <KoUpContext.Provider
@@ -620,6 +660,8 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         followedMediaIds,
         followedPersonIds,
         notifications,
+        unreadCount,
+        updateWatchStatus,
         activeToast,
         soundEnabled,
         toggleSound,
