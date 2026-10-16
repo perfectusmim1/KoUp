@@ -55,6 +55,8 @@ export default function SeriesDetailPage({
     toggleMediaFollow,
     toggleEpisodeWatched,
     pushNotification,
+    openAuthModal,
+    isSoftBanned,
   } = useKoUp();
 
   const [media, setMedia] = useState<MediaItem | null>(null);
@@ -284,7 +286,7 @@ export default function SeriesDetailPage({
   return (
     <div className="min-h-screen pb-32 bg-[#080808] text-white">
       {/* 1. CINEMATIC HERO BANNER */}
-      <div className="relative w-full h-[65vh] min-h-[500px] max-h-[720px] flex items-end">
+      <div className="relative w-full min-h-[520px] md:h-[65vh] md:min-h-[500px] md:max-h-[720px] flex items-end pt-24 md:pt-0">
         {/* Full Backdrop (Clipped) */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <img
@@ -292,14 +294,14 @@ export default function SeriesDetailPage({
             alt={media.title}
             className="w-full h-full object-cover"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-[#080808]/75 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-[#080808]/85 to-transparent" />
           <div className="absolute inset-0 bg-gradient-to-r from-[#080808] via-transparent to-transparent opacity-80" />
         </div>
 
         {/* Hero Meta Info */}
-        <div className="relative z-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full pb-10 flex flex-col md:flex-row items-end gap-6 sm:gap-8">
+        <div className="relative z-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full pb-8 md:pb-10 flex flex-col md:flex-row items-center md:items-end gap-5 sm:gap-8 text-center md:text-left">
           {/* Vertical Poster with Glass Glow */}
-          <div className="hidden sm:block w-44 md:w-56 shrink-0 aspect-[2/3] rounded-3xl overflow-hidden shadow-[0_25px_60px_rgba(0,0,0,0.95)] border border-white/20">
+          <div className="w-32 sm:w-44 md:w-56 shrink-0 aspect-[2/3] rounded-2xl sm:rounded-3xl overflow-hidden shadow-[0_25px_60px_rgba(0,0,0,0.95)] border border-white/20">
             <img
               src={posterSrc}
               alt={media.title}
@@ -307,9 +309,9 @@ export default function SeriesDetailPage({
             />
           </div>
 
-          <div className="flex-1 space-y-3">
+          <div className="flex-1 space-y-3 w-full">
             {/* Top Badges Row: Flag & Country, Content Type, Year, Episodes */}
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/80 backdrop-blur-md border border-white/15 text-xs text-white font-bold">
                 <CountryFlag code={media.country_code || media.country} size="sm" />
                 <span>
@@ -338,19 +340,19 @@ export default function SeriesDetailPage({
             </div>
 
             {/* Title */}
-            <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight leading-none">
+            <h1 className="text-2xl sm:text-4xl md:text-5xl font-black text-white tracking-tight leading-tight">
               {media.title}
             </h1>
 
             {/* Original / Native Title */}
             {(media.native_title || media.title_en) && (
-              <p className="text-sm text-white/55 font-medium">
+              <p className="text-xs sm:text-sm text-white/55 font-medium">
                 {media.native_title || media.title_en}
               </p>
             )}
 
             {/* Ratings Bar */}
-            <div className="flex flex-wrap items-center gap-2.5 pt-1">
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 pt-0.5">
               {media.rating && media.rating > 0 ? (
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-400/20 border border-amber-400/40 text-amber-200 text-xs font-bold">
                   <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
@@ -379,7 +381,7 @@ export default function SeriesDetailPage({
 
             {/* Categories */}
             {media.categories && media.categories.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 pt-1">
+              <div className="flex flex-wrap justify-center md:justify-start gap-1.5 pt-1">
                 {media.categories.map((cat) => (
                   <span
                     key={cat}
@@ -391,12 +393,12 @@ export default function SeriesDetailPage({
               </div>
             )}
 
-            {/* ACTION BAR: Watch CTA, + Kütüphaneme Ekle, Favorile, Takip Et */}
-            <div className="flex flex-wrap items-center gap-3 pt-3">
+            {/* ACTION BAR: Watch CTA, + Kütüphaneme Ekle, Favorile, Takip Et in 2x2 grid on mobile */}
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5 sm:gap-3 pt-3 w-full">
               {/* Primary Watch Button */}
               <Link
                 href={`/seri/${media.slug}/${resumeEp}`}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white font-bold text-xs transition-all shadow-[0_0_25px_rgba(41,151,255,0.45)] active:scale-[0.98] transform-gpu backface-hidden cursor-pointer"
+                className="col-span-2 sm:w-auto flex items-center justify-center gap-2 px-6 py-3 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white font-bold text-xs transition-all shadow-[0_0_25px_rgba(41,151,255,0.45)] active:scale-[0.98] transform-gpu backface-hidden cursor-pointer"
               >
                 <Play className="w-4 h-4 fill-white" />
                 <span>
@@ -407,60 +409,88 @@ export default function SeriesDetailPage({
               </Link>
 
               {/* + Kütüphaneme Ekle Dropdown */}
-              <CustomSelect
-                value={userProg?.status || ''}
-                onChange={(val) => {
-                  if (val) {
-                    setLibraryStatus(
-                      media,
-                      val as
-                        | 'watching'
-                        | 'completed'
-                        | 'plan_to_watch'
-                        | 'on_hold'
-                        | 'dropped'
-                    );
-                  }
-                }}
-                variant="white"
-                leftIcon={<Plus className="w-3.5 h-3.5" />}
-                placeholder="Kütüphaneme Ekle"
-                portal={true}
-                direction="auto"
-                options={[
-                  {
-                    value: 'watching',
-                    label: 'İzliyorum',
-                    icon: <Eye className="w-3.5 h-3.5 text-sky-400" />,
-                  },
-                  {
-                    value: 'completed',
-                    label: 'Tamamladım',
-                    icon: <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" />,
-                  },
-                  {
-                    value: 'plan_to_watch',
-                    label: 'İzleyeceğim',
-                    icon: <Bookmark className="w-3.5 h-3.5 text-amber-400" />,
-                  },
-                  {
-                    value: 'on_hold',
-                    label: 'Beklemede',
-                    icon: <PauseCircle className="w-3.5 h-3.5 text-purple-400" />,
-                  },
-                  {
-                    value: 'dropped',
-                    label: 'Bıraktım',
-                    icon: <XCircle className="w-3.5 h-3.5 text-rose-400" />,
-                  },
-                ]}
-              />
+              <div className="col-span-1 sm:w-auto w-full">
+                <CustomSelect
+                  value={userProg?.status || ''}
+                  onChange={(val) => {
+                    if (!user) {
+                      openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
+                      return;
+                    }
+                    if (isSoftBanned) {
+                      pushNotification(
+                        'Hesap Askıda',
+                        'Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır. İçerik etkileşimleri devre dışıdır.',
+                        'info'
+                      );
+                      return;
+                    }
+                    if (val) {
+                      setLibraryStatus(
+                        media,
+                        val as
+                          | 'watching'
+                          | 'completed'
+                          | 'plan_to_watch'
+                          | 'on_hold'
+                          | 'dropped'
+                      );
+                    }
+                  }}
+                  variant="white"
+                  leftIcon={<Plus className="w-3.5 h-3.5" />}
+                  placeholder="Kütüphane"
+                  portal={true}
+                  direction="auto"
+                  options={[
+                    {
+                      value: 'watching',
+                      label: 'İzliyorum',
+                      icon: <Eye className="w-3.5 h-3.5 text-sky-400" />,
+                    },
+                    {
+                      value: 'completed',
+                      label: 'Tamamladım',
+                      icon: <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" />,
+                    },
+                    {
+                      value: 'plan_to_watch',
+                      label: 'İzleyeceğim',
+                      icon: <Bookmark className="w-3.5 h-3.5 text-amber-400" />,
+                    },
+                    {
+                      value: 'on_hold',
+                      label: 'Beklemede',
+                      icon: <PauseCircle className="w-3.5 h-3.5 text-purple-400" />,
+                    },
+                    {
+                      value: 'dropped',
+                      label: 'Bıraktım',
+                      icon: <XCircle className="w-3.5 h-3.5 text-rose-400" />,
+                    },
+                  ]}
+                />
+              </div>
 
               {/* Favorile Button */}
               <button
                 type="button"
-                onClick={() => toggleMediaFavorite(media)}
-                className={`flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold border transition-all cursor-pointer active:scale-[0.98] transform-gpu backface-hidden ${
+                onClick={() => {
+                  if (!user) {
+                    openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
+                    return;
+                  }
+                  if (isSoftBanned) {
+                    pushNotification(
+                      'Hesap Askıda',
+                      'Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır. İçerik etkileşimleri devre dışıdır.',
+                      'info'
+                    );
+                    return;
+                  }
+                  toggleMediaFavorite(media);
+                }}
+                className={`col-span-1 sm:w-auto w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold border transition-all cursor-pointer active:scale-[0.98] transform-gpu backface-hidden ${
                   isFavorited
                     ? 'bg-rose-500/20 border-rose-400 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.3)]'
                     : 'apple-glass-pill text-white hover:bg-white/15'
@@ -475,22 +505,36 @@ export default function SeriesDetailPage({
               {/* Takip Et Button */}
               <button
                 type="button"
-                onClick={() => toggleMediaFollow(media)}
-                className={`flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold border transition-all cursor-pointer active:scale-[0.98] transform-gpu backface-hidden ${
+                onClick={() => {
+                  if (!user) {
+                    openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
+                    return;
+                  }
+                  if (isSoftBanned) {
+                    pushNotification(
+                      'Hesap Askıda',
+                      'Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır. İçerik etkileşimleri devre dışıdır.',
+                      'info'
+                    );
+                    return;
+                  }
+                  toggleMediaFollow(media);
+                }}
+                className={`col-span-1 sm:w-auto w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold border transition-all cursor-pointer active:scale-[0.98] transform-gpu backface-hidden ${
                   isFollowed
                     ? 'bg-amber-400 text-black border-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.35)]'
                     : 'apple-glass-pill text-white hover:bg-white/15'
                 }`}
               >
                 <Bell className={`w-4 h-4 ${isFollowed ? 'fill-black' : ''}`} />
-                <span>{isFollowed ? 'Takip Ediliyor' : 'Seriyi Takip Et'}</span>
+                <span>{isFollowed ? 'Takipte' : 'Takip Et'}</span>
               </button>
 
               {/* Sorun Bildir Button */}
               <button
                 type="button"
                 onClick={() => setShowSeriesReport((v) => !v)}
-                className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-full apple-glass-pill text-amber-300 hover:bg-amber-400/15 text-xs font-medium cursor-pointer"
+                className="col-span-1 sm:w-auto w-full flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-full apple-glass-pill text-amber-300 hover:bg-amber-400/15 text-xs font-medium cursor-pointer"
               >
                 <AlertTriangle className="w-3.5 h-3.5" />
                 <span>Sorun Bildir</span>

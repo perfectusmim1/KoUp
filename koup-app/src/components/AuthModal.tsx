@@ -36,7 +36,14 @@ function translateAuthError(err: string): string {
 }
 
 export default function AuthModal() {
-  const { isAuthModalOpen, setIsAuthModalOpen, loginWithEmail, registerWithEmail } = useKoUp();
+  const {
+    isAuthModalOpen,
+    setIsAuthModalOpen,
+    authModalMessage,
+    setAuthModalMessage,
+    loginWithEmail,
+    registerWithEmail,
+  } = useKoUp();
 
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -53,6 +60,7 @@ export default function AuthModal() {
 
   const handleClose = () => {
     setIsAuthModalOpen(false);
+    setAuthModalMessage(null);
     setErrorMessage(null);
     setEmail('');
     setPassword('');
@@ -197,6 +205,14 @@ export default function AuthModal() {
                   : 'K-Drama, Anime ve sinema dünyasına katılın, topluluğun bir parçası olun.'}
               </p>
             </div>
+
+            {/* Prompt Notice (e.g. "İşlem yapabilmek için lütfen giriş yapın.") */}
+            {authModalMessage && (
+              <div className="mb-5 p-3 rounded-2xl bg-amber-500/15 border border-amber-400/30 text-amber-200 text-xs flex items-center gap-2.5">
+                <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+                <span className="leading-relaxed font-semibold">{authModalMessage}</span>
+              </div>
+            )}
 
             {/* Mode Switch Tabs */}
             <div className="grid grid-cols-2 p-1 rounded-2xl bg-black/50 border border-white/10 mb-6 relative z-10">

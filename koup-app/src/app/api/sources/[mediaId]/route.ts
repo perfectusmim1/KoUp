@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { supabase } from '@/lib/supabase';
 
-export const revalidate = 60;
+export const revalidate = 3600;
 
 let archiveDb: DatabaseSync | null = null;
 
@@ -243,12 +243,19 @@ export async function GET(
       { mediaId: idNum, totalEpisodes: episodes.length, episodes },
       {
         headers: {
-          'Cache-Control': 'public, max-age=60, stale-while-revalidate=600',
+          'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
         },
       }
     );
   } catch (err) {
     console.error('Error loading episode sources:', err);
-    return NextResponse.json({ mediaId: idNum, totalEpisodes: 0, episodes: [] });
+    return NextResponse.json(
+      { mediaId: idNum, totalEpisodes: 0, episodes: [] },
+      {
+        headers: {
+          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+        },
+      }
+    );
   }
 }

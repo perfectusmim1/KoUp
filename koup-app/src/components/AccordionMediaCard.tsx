@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Play, Plus, Check, Heart, Bell, Star } from 'lucide-react';
 import {
   MediaItem,
   getProxiedImageUrl,
   formatContentTypeTR,
-  getCountryFlag,
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
 import CountryFlag from '@/components/CountryFlag';
@@ -16,6 +16,7 @@ interface AccordionMediaCardProps {
   item: MediaItem;
   rank?: number;
   priority?: boolean;
+  fluidWidth?: boolean;
 }
 
 const COUNTRY_SHORT_TR: Record<string, string> = {
@@ -48,6 +49,7 @@ function AccordionMediaCard({
   item,
   rank,
   priority = false,
+  fluidWidth = false,
 }: AccordionMediaCardProps) {
   const router = useRouter();
   const {
@@ -63,6 +65,13 @@ function AccordionMediaCard({
   const [isNearRight, setIsNearRight] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const prefetchRef = useRef(false);
+  const hoverTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    };
+  }, []);
 
   const userProg = progressMap[item.id];
   const inWatchlist = Boolean(userProg);
@@ -70,26 +79,41 @@ function AccordionMediaCard({
   const isFollowed = Boolean(followedMediaIds.includes(item.id));
 
   const handleMouseEnter = () => {
-    if (!prefetchRef.current) {
-      prefetchRef.current = true;
-      router.prefetch(`/seri/${item.slug}`);
-      router.prefetch(`/seri/${item.slug}/1`);
+    // On mobile touch devices (hover: none or window width < 768px): cards should NOT expand width
+    if (typeof window !== 'undefined') {
+      const isTouchOrMobile =
+        window.matchMedia('(hover: none)').matches || window.innerWidth < 768;
+      if (isTouchOrMobile) return;
     }
 
-    if (cardRef.current && typeof window !== 'undefined') {
-      const rect = cardRef.current.getBoundingClientRect();
-      if (rect.right + 190 > window.innerWidth) {
-        setIsNearRight(true);
-      } else {
-        setIsNearRight(false);
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+
+    hoverTimerRef.current = setTimeout(() => {
+      if (!prefetchRef.current) {
+        prefetchRef.current = true;
+        router.prefetch(`/seri/${item.slug}`);
+        router.prefetch(`/seri/${item.slug}/1`);
       }
-    }
 
-    setIsExpanded(true);
-    triggerSound('expand');
+      if (cardRef.current && typeof window !== 'undefined') {
+        const rect = cardRef.current.getBoundingClientRect();
+        if (rect.right + 190 > window.innerWidth) {
+          setIsNearRight(true);
+        } else {
+          setIsNearRight(false);
+        }
+      }
+
+      setIsExpanded(true);
+      triggerSound('expand');
+    }, 70);
   };
 
   const handleMouseLeave = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
     setIsExpanded(false);
   };
 
@@ -117,13 +141,37 @@ function AccordionMediaCard({
         router.push(`/seri/${item.slug}`);
       }}
       style={{
-        width: isExpanded ? '390px' : '204px',
-        minWidth: isExpanded ? '390px' : '204px',
-        maxWidth: 'calc(100vw - 32px)',
+        width: isExpanded
+          ? '390px'
+          : fluidWidth
+          ? '100%'
+          : undefined,
+        minWidth: isExpanded
+          ? '390px'
+          : fluidWidth
+          ? '0px'
+          : undefined,
+        maxWidth: isExpanded ? 'calc(100vw - 32px)' : undefined,
         transformOrigin: isNearRight ? 'right center' : 'left center',
+        transition:
+          'width 0.35s cubic-bezier(0.25, 1, 0.5, 1), transform 0.35s cubic-bezier(0.25, 1, 0.5, 1)',
+        willChange: 'width, transform',
       }}
-      className="koup-accordion-card relative shrink-0 rounded-2xl overflow-hidden cursor-pointer select-none h-[306px] group transition-all duration-400 ease-[cubic-bezier(0.16,1,0.3,1)]"
+      className={`koup-accordion-card relative shrink-0 rounded-2xl overflow-hidden cursor-pointer select-none h-[306px] group ${
+        fluidWidth
+          ? 'w-full min-w-0'
+          : 'w-[160px] sm:w-[204px] min-w-[150px] sm:min-w-[204px]'
+      }`}
     >
+      {/* Background Instant Navigation Link with 0ms Prefetch */}
+      <Link
+        href={`/seri/${item.slug}`}
+        prefetch={true}
+        className="absolute inset-0 z-0"
+        aria-label={item.title}
+        tabIndex={-1}
+      />
+
       {/* Rank Numeral Overlay if part of a Ranked Row */}
       {rank !== undefined && (
         <div className="absolute -left-2 bottom-2 z-20 pointer-events-none">
@@ -228,7 +276,6 @@ function AccordionMediaCard({
       {/* Bottom Info Content */}
       <div className="absolute bottom-0 left-0 right-0 p-4 z-10 flex flex-col justify-end">
         <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 mb-1">
-          <span>{getCountryFlag(countryCode)}</span>
           <span className={getTypeBadgeClass(item.content_type, countryCode)}>
             {formatContentTypeTR(item.content_type, countryCode)}
           </span>
@@ -277,20 +324,19 @@ function AccordionMediaCard({
               e.stopPropagation();
             }}
           >
-            <button
-              type="button"
+            <Link
+              href={`/seri/${item.slug}/1`}
+              prefetch={true}
               onClick={(e) => {
-                e.preventDefault();
                 e.stopPropagation();
                 triggerSound('click');
-                router.push(`/seri/${item.slug}/1`);
               }}
               onPointerDown={(e) => e.stopPropagation()}
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 active:scale-[0.97] transition-all shadow-[0_2px_12px_rgba(0,0,0,0.6)] border border-white/20 cursor-pointer"
             >
               <Play className="w-3.5 h-3.5 fill-black" />
               <span>Hemen İzle</span>
-            </button>
+            </Link>
 
             <button
               type="button"

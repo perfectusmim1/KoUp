@@ -17,15 +17,18 @@ import {
 } from '@/lib/supabase';
 import { playNotificationChime, SoundTone } from '@/lib/sound';
 import { invalidateCache } from '@/lib/cache';
+import { getClientFingerprint } from '@/lib/fingerprint';
 
 export interface ToastNotification {
   id: string;
   title: string;
   body: string;
-  type: 'info' | 'episode' | 'actor' | 'reply' | 'success';
+  type: 'episode' | 'actor' | 'reply' | 'system' | 'info' | 'success';
   linkUrl?: string;
   createdAt: string;
   isRead: boolean;
+  mediaId?: number;
+  personId?: number;
 }
 
 interface KoUpContextValue {
@@ -47,6 +50,13 @@ interface KoUpContextValue {
   setIsSearchOpen: (v: boolean) => void;
   isAuthModalOpen: boolean;
   setIsAuthModalOpen: (v: boolean) => void;
+  authModalMessage: string | null;
+  setAuthModalMessage: (msg: string | null) => void;
+  openAuthModal: (message?: string) => void;
+  isSoftBanned: boolean;
+  isHardBanned: boolean;
+  hardBanReason: string | null;
+  deviceFingerprint: string;
   isRouletteOpen: boolean;
   setIsRouletteOpen: (v: boolean) => void;
   unreadCount: number;
@@ -79,7 +89,8 @@ interface KoUpContextValue {
     title: string,
     body: string,
     type?: ToastNotification['type'],
-    linkUrl?: string
+    linkUrl?: string,
+    extra?: { mediaId?: number; personId?: number }
   ) => void;
   markAllNotificationsRead: () => void;
   markNotificationsRead: () => void;
@@ -122,7 +133,20 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
   const [activeToast, setActiveToast] = useState<ToastNotification | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalMessage, setAuthModalMessage] = useState<string | null>(null);
+  const [deviceFingerprint, setDeviceFingerprint] = useState<string>('');
+  const [isHardBanned, setIsHardBanned] = useState(false);
+  const [hardBanReason, setHardBanReason] = useState<string | null>(null);
   const [isRouletteOpen, setIsRouletteOpen] = useState(false);
+
+  const openAuthModal = useCallback((message?: string) => {
+    setAuthModalMessage(message || 'İşlem yapabilmek için lütfen giriş yapın.');
+    setIsAuthModalOpen(true);
+  }, []);
+
+  const isSoftBanned = Boolean(
+    user && user.is_banned && (user.ban_type === 'soft' || user.role === 'banned')
+  );
 
   const isHydratedRef = useRef(false);
   const recentNotifsRef = useRef<Map<string, number>>(new Map());
@@ -156,6 +180,10 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       if (profile) {
         // Profile role comes ONLY from database verification
         setUser(profile);
+        if (profile.is_banned && profile.ban_type === 'hard') {
+          setIsHardBanned(true);
+          setHardBanReason(profile.ban_reason || 'Cihazınız kalıcı olarak yasaklanmıştır.');
+        }
         try {
           // Cache locally for offline/instant basic UI but ALWAYS strip elevated role
           localStorage.setItem('koup_profile_v1', JSON.stringify({ ...profile, role: 'user' }));
@@ -185,7 +213,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         setUser(fallback);
       }
 
-      // Fetch user notifications from Supabase if table exists
+      // Fetch user notifications from Supabase if table exists (strictly for authenticated users)
       const activeUserId = profile?.id || userId;
       if (activeUserId) {
         void supabase
@@ -196,15 +224,42 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           .limit(40)
           .then(({ data: dbNotifs }) => {
             if (dbNotifs && dbNotifs.length > 0) {
-              const formatted: ToastNotification[] = dbNotifs.map((row: any) => ({
-                id: row.id,
-                title: row.title,
-                body: row.body,
-                type: (row.type === 'comment_reply' ? 'reply' : row.type === 'new_episode' ? 'episode' : row.type === 'actor_update' ? 'actor' : 'info') as ToastNotification['type'],
-                linkUrl: row.link_url || undefined,
-                createdAt: row.created_at ? new Date(row.created_at).toLocaleDateString('tr-TR') : 'Şimdi',
-                isRead: Boolean(row.is_read),
-              }));
+              const formatted: ToastNotification[] = dbNotifs
+                .map((row: any) => {
+                  let mappedType: ToastNotification['type'] = 'system';
+                  if (row.type === 'comment_reply' || row.type === 'reply') mappedType = 'reply';
+                  else if (row.type === 'new_episode' || row.type === 'episode') mappedType = 'episode';
+                  else if (row.type === 'actor_update' || row.type === 'actor') mappedType = 'actor';
+                  else mappedType = 'system';
+
+                  return {
+                    id: String(row.id),
+                    title: row.title || 'Bildirim',
+                    body: row.body || '',
+                    type: mappedType,
+                    linkUrl: row.link_url || undefined,
+                    createdAt: row.created_at
+                      ? new Date(row.created_at).toLocaleDateString('tr-TR')
+                      : 'Şimdi',
+                    isRead: Boolean(row.is_read),
+                  };
+                })
+                .filter((n: ToastNotification) => {
+                  const t = n.title.toLowerCase();
+                  const b = n.body.toLowerCase();
+                  // Permanently reject dummy notifications & broadcast spam
+                  return !(
+                    t.includes('reply 1988') ||
+                    t.includes('yoo in na') ||
+                    t.includes('vitrin') ||
+                    t.includes('slider') ||
+                    t.includes('hesap oluşturuldu') ||
+                    t.includes('oturum kapatıldı') ||
+                    b.includes('reply 1988') ||
+                    b.includes('yoo in na')
+                  );
+                });
+
               setNotifications((prev) => {
                 const map = new Map<string, ToastNotification>();
                 formatted.forEach((n) => map.set(n.id, n));
@@ -263,39 +318,86 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
             ...parsed,
             role: 'user',
           });
+
+          // Only load notifications if user is authenticated!
+          const savedNotifs = localStorage.getItem('koup_notifs_v1');
+          if (savedNotifs) {
+            const parsedN = JSON.parse(savedNotifs);
+            if (Array.isArray(parsedN)) {
+              // Permanently filter out any legacy dummy notifications or unwanted spam
+              const cleaned = parsedN.filter((n: any) => {
+                if (!n || !n.title) return false;
+                const t = (n.title || '').toLowerCase();
+                const b = (n.body || '').toLowerCase();
+                if (
+                  t.includes('reply 1988') ||
+                  t.includes('yoo in na') ||
+                  t.includes('vitrin') ||
+                  t.includes('slider') ||
+                  t.includes('hesap oluşturuldu') ||
+                  t.includes('oturum kapatıldı') ||
+                  b.includes('reply 1988') ||
+                  b.includes('yoo in na') ||
+                  n.id === 'notif-comment-1' ||
+                  n.id === 'notif-ep-1' ||
+                  n.id === 'notif-actor-1' ||
+                  n.id === 'welcome-1' ||
+                  n.id === 'sched-2'
+                ) {
+                  return false;
+                }
+                return ['episode', 'actor', 'reply', 'system'].includes(n.type);
+              });
+              setNotifications(cleaned.slice(0, 50));
+              try {
+                localStorage.setItem('koup_notifs_v1', JSON.stringify(cleaned.slice(0, 50)));
+              } catch {}
+            }
+          }
         } else {
           localStorage.removeItem('koup_profile_v1');
-        }
-      }
-
-      const savedNotifs = localStorage.getItem('koup_notifs_v1');
-      if (savedNotifs) {
-        const parsedN = JSON.parse(savedNotifs);
-        if (Array.isArray(parsedN)) {
-          // Permanently clean and mark as read any legacy sample notifications
-          const cleaned = parsedN.map((n: any) => {
-            if (
-              n.id === 'notif-comment-1' ||
-              n.id === 'notif-ep-1' ||
-              n.id === 'notif-actor-1' ||
-              n.id === 'welcome-1' ||
-              n.id === 'sched-2'
-            ) {
-              return { ...n, isRead: true };
-            }
-            return n;
-          });
-          setNotifications(cleaned.slice(0, 50));
+          setNotifications([]);
           try {
-            localStorage.setItem('koup_notifs_v1', JSON.stringify(cleaned.slice(0, 50)));
+            localStorage.removeItem('koup_notifs_v1');
           } catch {}
         }
+      } else {
+        // Guest user: Zero automated notifications loaded!
+        setNotifications([]);
+        try {
+          localStorage.removeItem('koup_notifs_v1');
+        } catch {}
       }
     } catch {
       // ignore storage errors
     } finally {
       isHydratedRef.current = true;
     }
+
+    // Initialize device fingerprint and enforce Hard Ban check
+    getClientFingerprint().then(async (fp) => {
+      if (!isMounted) return;
+      setDeviceFingerprint(fp);
+
+      try {
+        const { data: bannedRows, error } = await supabase
+          .from('banned_fingerprints')
+          .select('id, reason, is_active')
+          .eq('fingerprint_hash', fp)
+          .eq('is_active', true)
+          .limit(1);
+
+        if (!error && bannedRows && bannedRows.length > 0) {
+          setIsHardBanned(true);
+          setHardBanReason(
+            bannedRows[0].reason ||
+              'Cihazınız topluluk kurallarının ağır ihlali nedeniyle KoUp platformundan kalıcı olarak yasaklanmıştır.'
+          );
+        }
+      } catch {
+        // ignore
+      }
+    });
 
     // Check real Supabase session & sync verified profile fresh from DB
     supabase.auth.getSession().then(async ({ data }) => {
@@ -305,8 +407,10 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           await syncUserProfile(data.session.user.id, data.session.user);
         } else {
           setUser(null);
+          setNotifications([]);
           try {
             localStorage.removeItem('koup_profile_v1');
+            localStorage.removeItem('koup_notifs_v1');
           } catch {}
         }
       } finally {
@@ -321,8 +425,10 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       if (!isMounted) return;
       if (event === 'SIGNED_OUT') {
         setUser(null);
+        setNotifications([]);
         try {
           localStorage.removeItem('koup_profile_v1');
+          localStorage.removeItem('koup_notifs_v1');
         } catch {}
         invalidateCache();
         setAuthLoading(false);
@@ -334,8 +440,10 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         if (isMounted) setAuthLoading(false);
       } else if (event === 'INITIAL_SESSION' && !session) {
         setUser(null);
+        setNotifications([]);
         try {
           localStorage.removeItem('koup_profile_v1');
+          localStorage.removeItem('koup_notifs_v1');
         } catch {}
         if (isMounted) setAuthLoading(false);
       }
@@ -358,25 +466,97 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     };
   }, [syncUserProfile]);
 
-  // Push notification with deduplication, throttling, and max list size cap
+
+  // Push notification with guest guard, spam elimination, and 4 allowed notification types
   const pushNotification = useCallback(
     (
       title: string,
       body: string,
-      type: ToastNotification['type'] = 'info',
-      linkUrl?: string
+      type: ToastNotification['type'] = 'system',
+      linkUrl?: string,
+      extra?: { mediaId?: number; personId?: number }
     ) => {
+      // 1. STRICT GUEST USER GUARD:
+      // NO notifications should be pushed to guest users!
+      if (!user) {
+        return;
+      }
+
+      // 2. DISALLOW UNWANTED SPAM / BROADCASTS:
+      // Search for and eliminate "Vitrin Güncellendi", slider broadcasts, or dummy notifications!
+      const lowerTitle = title.toLowerCase();
+      const lowerBody = body.toLowerCase();
+      if (
+        lowerTitle.includes('vitrin') ||
+        lowerTitle.includes('slider') ||
+        lowerTitle.includes('oturum kapatıldı') ||
+        lowerTitle.includes('hesap oluşturuldu') ||
+        lowerTitle.includes('reply 1988') ||
+        lowerTitle.includes('yoo in na') ||
+        lowerBody.includes('reply 1988') ||
+        lowerBody.includes('yoo in na')
+      ) {
+        return;
+      }
+
+      // 3. Transient UI Toasts ('info', 'success'):
+      // General feedback ("Ayarlar Kaydedildi", "Kaynak Eklendi") shows as activeToast for feedback,
+      // but does NOT pollute the user's permanent notifications inbox.
+      if (type === 'info' || type === 'success') {
+        const toastItem: ToastNotification = {
+          id: `toast-${Date.now()}`,
+          title,
+          body,
+          type: 'system',
+          linkUrl,
+          createdAt: 'Şimdi',
+          isRead: true,
+        };
+        setActiveToast(toastItem);
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = setTimeout(() => {
+          setActiveToast((curr) => (curr?.id === toastItem.id ? null : curr));
+        }, 4000);
+        return;
+      }
+
+      // 4. THE ONLY 4 REAL NOTIFICATION TYPES ALLOWED:
+      // 1. episode: New episode uploaded for a series that the user ACTUALLY follows in followedMediaIds.
+      // 2. actor: Followed actor in a new release that the user ACTUALLY follows in followedPersonIds.
+      // 3. reply: Someone replied to the user's comment.
+      // 4. system: Official warning or message from admin/mod team.
+      let finalType: 'episode' | 'actor' | 'reply' | 'system' = 'system';
+
+      if (type === 'episode') {
+        if (extra?.mediaId && !followedMediaIds.includes(extra.mediaId)) {
+          return; // Skip: user does not follow this media
+        }
+        finalType = 'episode';
+      } else if (type === 'actor') {
+        if (
+          extra?.personId &&
+          !followedPersonIds.includes(extra.personId) &&
+          !favPersonIds.includes(extra.personId)
+        ) {
+          return; // Skip: user does not follow this actor
+        }
+        finalType = 'actor';
+      } else if (type === 'reply') {
+        finalType = 'reply';
+      } else {
+        finalType = 'system';
+      }
+
       const key = `${title}::${body}`;
       const now = Date.now();
       const lastSeen = recentNotifsRef.current.get(key) || 0;
 
-      // Throttle exact duplicate notifications within 3.5s (prevents double-renders in StrictMode)
+      // Throttle exact duplicate notifications within 3.5s
       if (now - lastSeen < 3500) {
         return;
       }
       recentNotifsRef.current.set(key, now);
 
-      // Clean up throttling map
       if (recentNotifsRef.current.size > 40) {
         for (const [k, time] of recentNotifsRef.current.entries()) {
           if (now - time > 10000) recentNotifsRef.current.delete(k);
@@ -387,10 +567,12 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         id: `notif-${now}-${Math.random().toString(36).slice(2, 6)}`,
         title,
         body,
-        type,
+        type: finalType,
         linkUrl,
         createdAt: 'Şimdi',
         isRead: false,
+        mediaId: extra?.mediaId,
+        personId: extra?.personId,
       };
 
       setNotifications((prev) => {
@@ -404,7 +586,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
 
       setActiveToast(item);
 
-      const settings = user?.notification_settings || DEFAULT_NOTIFICATION_SETTINGS;
+      const settings = user.notification_settings || DEFAULT_NOTIFICATION_SETTINGS;
       if (settings.sound_enabled) {
         playNotificationChime(
           (settings.sound_tone as SoundTone) || 'apple_glass',
@@ -421,26 +603,25 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       }, 4500);
 
       // Persist to Supabase user_notifications table if authenticated
-      if (user?.id) {
-        let dbType: 'comment_reply' | 'mention' | 'new_episode' | 'actor_update' | 'report_resolved' | 'system' = 'system';
-        if (type === 'reply') dbType = 'comment_reply';
-        else if (type === 'episode') dbType = 'new_episode';
-        else if (type === 'actor') dbType = 'actor_update';
+      let dbType: 'comment_reply' | 'mention' | 'new_episode' | 'actor_update' | 'report_resolved' | 'system' = 'system';
+      if (finalType === 'reply') dbType = 'comment_reply';
+      else if (finalType === 'episode') dbType = 'new_episode';
+      else if (finalType === 'actor') dbType = 'actor_update';
 
-        void Promise.resolve(
-          supabase.from('user_notifications').insert({
-            user_id: user.id,
-            title,
-            body,
-            type: dbType,
-            link_url: linkUrl || null,
-            is_read: false,
-          })
-        ).catch(() => {});
-      }
+      void Promise.resolve(
+        supabase.from('user_notifications').insert({
+          user_id: user.id,
+          title,
+          body,
+          type: dbType,
+          link_url: linkUrl || null,
+          is_read: false,
+        })
+      ).catch(() => {});
     },
-    [user?.id, user?.notification_settings]
+    [user, followedMediaIds, followedPersonIds, favPersonIds]
   );
+
 
   const updateEpisodeProgress = useCallback(
     (
@@ -500,6 +681,19 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
 
   const toggleEpisodeWatched = useCallback(
     (media: MediaItem, episodeNum: number, upToHere = false) => {
+      if (!user) {
+        openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
+        return;
+      }
+      if (isSoftBanned) {
+        pushNotification(
+          'Hesap Askıda',
+          'Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır. İçerik etkileşimleri devre dışıdır.',
+          'info'
+        );
+        return;
+      }
+
       setProgressMap((prev) => {
         const existing = prev[media.id] || {
           media_id: media.id,
@@ -546,11 +740,24 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
     },
-    [pushNotification]
+    [user, isSoftBanned, openAuthModal, pushNotification]
   );
 
   const setLibraryStatus = useCallback(
     (media: MediaItem, status: UserMediaProgress['status'], score?: number) => {
+      if (!user) {
+        openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
+        return;
+      }
+      if (isSoftBanned) {
+        pushNotification(
+          'Hesap Askıda',
+          'Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır. İçerik etkileşimleri devre dışıdır.',
+          'info'
+        );
+        return;
+      }
+
       setProgressMap((prev) => {
         const existing = prev[media.id];
         const updated: UserMediaProgress = {
@@ -574,10 +781,23 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
     },
-    []
+    [user, isSoftBanned, openAuthModal, pushNotification]
   );
 
   const toggleMediaFavorite = useCallback((media: MediaItem) => {
+    if (!user) {
+      openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
+      return;
+    }
+    if (isSoftBanned) {
+      pushNotification(
+        'Hesap Askıda',
+        'Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır. İçerik etkileşimleri devre dışıdır.',
+        'info'
+      );
+      return;
+    }
+
     setProgressMap((prev) => {
       const existing = prev[media.id];
       const nextFav = !(existing?.is_favorite ?? false);
@@ -600,9 +820,22 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       } catch {}
       return next;
     });
-  }, []);
+  }, [user, isSoftBanned, openAuthModal, pushNotification]);
 
   const toggleMediaFollow = useCallback((media: MediaItem) => {
+    if (!user) {
+      openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
+      return;
+    }
+    if (isSoftBanned) {
+      pushNotification(
+        'Hesap Askıda',
+        'Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır. İçerik etkileşimleri devre dışıdır.',
+        'info'
+      );
+      return;
+    }
+
     setFollowedMediaIds((prev) => {
       const exists = prev.includes(media.id);
       const next = exists ? prev.filter((id) => id !== media.id) : [...prev, media.id];
@@ -611,10 +844,23 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       } catch {}
       return next;
     });
-  }, []);
+  }, [user, isSoftBanned, openAuthModal, pushNotification]);
 
   const togglePersonFavorite = useCallback(
     async (personId: number, _personName?: string): Promise<number> => {
+      if (!user) {
+        openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
+        return 0;
+      }
+      if (isSoftBanned) {
+        pushNotification(
+          'Hesap Askıda',
+          'Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır. İçerik etkileşimleri devre dışıdır.',
+          'info'
+        );
+        return favPersonIds.length;
+      }
+
       let expectedCount = 0;
       setFavPersonIds((prev) => {
         const isFav = prev.includes(personId);
@@ -636,10 +882,23 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
 
       return expectedCount;
     },
-    [favPersonIds]
+    [user, isSoftBanned, favPersonIds, openAuthModal, pushNotification]
   );
 
   const togglePersonFollow = useCallback((personId: number, _personName?: string) => {
+    if (!user) {
+      openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
+      return;
+    }
+    if (isSoftBanned) {
+      pushNotification(
+        'Hesap Askıda',
+        'Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır. İçerik etkileşimleri devre dışıdır.',
+        'info'
+      );
+      return;
+    }
+
     setFollowedPersonIds((prev) => {
       const exists = prev.includes(personId);
       const next = exists ? prev.filter((id) => id !== personId) : [...prev, personId];
@@ -648,7 +907,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       } catch {}
       return next;
     });
-  }, []);
+  }, [user, isSoftBanned, openAuthModal, pushNotification]);
 
   const markNotificationRead = useCallback((id: string) => {
     setNotifications((prev) => {
@@ -793,12 +1052,13 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     await supabase.auth.signOut();
     setUser(null);
+    setNotifications([]);
     try {
       localStorage.removeItem('koup_profile_v1');
+      localStorage.removeItem('koup_notifs_v1');
     } catch {}
     invalidateCache();
-    pushNotification('Oturum Kapatıldı', 'Misafir sinema moduna geçildi.', 'info');
-  }, [pushNotification]);
+  }, []);
 
   const soundEnabled = Boolean(user?.notification_settings?.sound_enabled ?? true);
 
@@ -839,6 +1099,19 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       season = 1,
       episode = 1
     ) => {
+      if (!user) {
+        openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
+        return;
+      }
+      if (isSoftBanned) {
+        pushNotification(
+          'Hesap Askıda',
+          'Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır. İçerik etkileşimleri devre dışıdır.',
+          'info'
+        );
+        return;
+      }
+
       setProgressMap((prev) => {
         const existing = prev[mediaId];
         const updated: UserMediaProgress = existing
@@ -868,7 +1141,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       });
       pushNotification('Liste Güncellendi', 'İçerik tercihiniz kaydedildi.', 'success');
     },
-    [pushNotification]
+    [user, isSoftBanned, openAuthModal, pushNotification]
   );
 
   // Memoize context value to prevent wasteful whole-app re-renders
@@ -894,6 +1167,13 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       setIsSearchOpen,
       isAuthModalOpen,
       setIsAuthModalOpen,
+      authModalMessage,
+      setAuthModalMessage,
+      openAuthModal,
+      isSoftBanned,
+      isHardBanned,
+      hardBanReason,
+      deviceFingerprint,
       isRouletteOpen,
       setIsRouletteOpen,
       updateEpisodeProgress,
@@ -933,6 +1213,12 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     triggerSound,
     isSearchOpen,
     isAuthModalOpen,
+    authModalMessage,
+    openAuthModal,
+    isSoftBanned,
+    isHardBanned,
+    hardBanReason,
+    deviceFingerprint,
     isRouletteOpen,
     updateEpisodeProgress,
     toggleEpisodeWatched,
@@ -954,7 +1240,76 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     logout,
   ]);
 
-  return <KoUpContext.Provider value={contextValue}>{children}</KoUpContext.Provider>;
+  return (
+    <KoUpContext.Provider value={contextValue}>
+      {isHardBanned ? (
+        <div className="fixed inset-0 z-[9999999] bg-[#070709] text-white flex flex-col items-center justify-center p-6 text-center select-none overflow-y-auto">
+          <div className="w-24 h-24 rounded-3xl bg-rose-600/20 border-2 border-rose-500/40 text-rose-400 flex items-center justify-center mb-6 shadow-[0_0_60px_rgba(225,29,72,0.45)]">
+            <svg
+              className="w-12 h-12"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
+            </svg>
+          </div>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 font-mono text-xs uppercase tracking-widest font-bold mb-4">
+            Cihaz & Donanım Seviyesinde Engellendi
+          </div>
+          <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight mb-4 max-w-2xl leading-tight">
+            Erişiminiz Engellendi (403 Banned)
+          </h1>
+          <p className="text-base text-white/70 max-w-xl leading-relaxed mb-6 font-medium">
+            Cihazınız topluluk kurallarının ağır ihlali nedeniyle KoUp platformundan kalıcı olarak yasaklanmıştır.
+          </p>
+          {hardBanReason && (
+            <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 max-w-md w-full text-left mb-6">
+              <div className="text-[11px] font-mono uppercase tracking-wider text-rose-400 font-bold mb-1">
+                Yasaklama Gerekçesi
+              </div>
+              <div className="text-xs text-white/90">
+                {hardBanReason}
+              </div>
+            </div>
+          )}
+          <div className="text-xs text-white/35 font-mono">
+            Güvenlik Kimliği: {deviceFingerprint ? deviceFingerprint.slice(0, 24) : 'Hesap İmzası'}... · KoUp Güvenlik Duvarı
+          </div>
+        </div>
+      ) : (
+        <>
+          {isSoftBanned && (
+            <div className="fixed top-0 left-0 right-0 z-[999990] bg-rose-600/95 text-white backdrop-blur-md px-4 py-2.5 shadow-xl flex items-center justify-center gap-2.5 text-xs font-semibold border-b border-rose-400/40 text-center">
+              <svg
+                className="w-4 h-4 text-rose-200 shrink-0"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
+              <span>
+                Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır. İçerik etkileşimleri devre dışıdır.
+                {user?.ban_reason ? ` (Gerekçe: ${user.ban_reason})` : ''}
+              </span>
+            </div>
+          )}
+          {children}
+        </>
+      )}
+    </KoUpContext.Provider>
+  );
 }
 
 export function useKoUp() {

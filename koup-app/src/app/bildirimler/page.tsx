@@ -38,6 +38,8 @@ function formatNotificationDate(dateStr?: string): string {
 export default function NotificationsPage() {
   const router = useRouter();
   const {
+    user,
+    setIsAuthModalOpen,
     notifications,
     unreadCount,
     markNotificationRead,
@@ -45,7 +47,6 @@ export default function NotificationsPage() {
     markAllNotificationsRead,
     deleteNotification,
     clearAllNotifications,
-    pushNotification,
   } = useKoUp();
 
   const [selectedFilter, setSelectedFilter] = useState<CategoryFilter>('all');
@@ -83,37 +84,9 @@ export default function NotificationsPage() {
       episode: unique.filter((n) => n.type === 'episode').length,
       actor: unique.filter((n) => n.type === 'actor').length,
       reply: unique.filter((n) => n.type === 'reply').length,
-      info: unique.filter((n) => n.type === 'info' || n.type === 'success').length,
+      info: unique.filter((n) => n.type === 'info' || n.type === 'success' || n.type === 'system').length,
     };
   }, [notifications]);
-
-  // Seed sample notifications only upon user request
-  const handleLoadDemoNotifications = () => {
-    pushNotification(
-      'Yorumuna Yeni Yanıt Geldi',
-      '@elif_kdrama: "Kesinlikle katılıyorum, 1. bölüm son sahnesi efsaneydi!"',
-      'reply',
-      '/seri/reply-1988'
-    );
-    pushNotification(
-      'Takip Ettiğin Dizide Yeni Bölüm!',
-      '"Alchemy of Souls" 2. Sezon 5. Bölüm Türkçe altyazılı olarak arşive eklendi.',
-      'episode',
-      '/seri/alchemy-of-souls'
-    );
-    pushNotification(
-      'Takip Ettiğin Oyuncudan Yeni Proje!',
-      'Song Joong-ki kadrosunda yer aldığı "Reborn Rich" yayına girdi.',
-      'actor',
-      '/oyuncular'
-    );
-    pushNotification(
-      'Haftalık Yayın Takvimi Güncellendi',
-      'Bu hafta çarşamba ve perşembe yayınlanacak 8 yeni Asya draması takvime eklendi.',
-      'info',
-      '/takvim'
-    );
-  };
 
   const getCategoryMeta = (type: ToastNotification['type']) => {
     switch (type) {
@@ -154,6 +127,45 @@ export default function NotificationsPage() {
     }
   };
 
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-[#080808] text-white pt-28 pb-32 px-4 sm:px-6 md:px-12 lg:px-20">
+        <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
+          <div className="absolute top-1/4 left-1/3 w-[600px] h-[600px] bg-red-600/5 rounded-full blur-[140px]" />
+          <div className="absolute top-1/2 right-1/4 w-[500px] h-[500px] bg-sky-600/5 rounded-full blur-[140px]" />
+        </div>
+
+        <div className="max-w-5xl mx-auto">
+          <nav className="flex items-center gap-2 text-xs text-white/50 mb-6 font-medium">
+            <Link href="/" prefetch={true} className="hover:text-white transition-colors">
+              Ana Sayfa
+            </Link>
+            <ChevronRight className="w-3.5 h-3.5 text-white/30" />
+            <span className="text-white">Bildirimler</span>
+          </nav>
+
+          <div className="py-24 rounded-3xl bg-[#0f0f12]/50 border border-white/10 text-center px-6 flex flex-col items-center justify-center max-w-xl mx-auto shadow-2xl">
+            <div className="w-16 h-16 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center mb-5">
+              <Bell className="w-8 h-8 text-rose-400" />
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
+              Bildirim Merkezi
+            </h1>
+            <p className="text-sm sm:text-base text-white/60 font-light leading-relaxed mt-2.5 mb-8 max-w-md">
+              Bildirimlerinizi görmek ve takip ettiğiniz serilerden haberdar olmak için lütfen giriş yapın.
+            </p>
+            <button
+              onClick={() => setIsAuthModalOpen(true)}
+              className="px-6 py-3 rounded-2xl bg-white text-black text-sm font-bold hover:bg-white/90 active:scale-95 transition-all shadow-xl shadow-white/10 cursor-pointer"
+            >
+              Giriş Yap
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#080808] text-white pt-28 pb-32 px-4 sm:px-6 md:px-12 lg:px-20">
       {/* Background ambient lighting */}
@@ -165,7 +177,7 @@ export default function NotificationsPage() {
       <div className="max-w-5xl mx-auto">
         {/* Breadcrumb Navigation */}
         <nav className="flex items-center gap-2 text-xs text-white/50 mb-6 font-medium">
-          <Link href="/" className="hover:text-white transition-colors">
+          <Link href="/" prefetch={true} className="hover:text-white transition-colors">
             Ana Sayfa
           </Link>
           <ChevronRight className="w-3.5 h-3.5 text-white/30" />
@@ -381,14 +393,6 @@ export default function NotificationsPage() {
                     Tüm Bildirimleri Göster
                   </button>
                 )}
-                {notifications.length === 0 && (
-                  <button
-                    onClick={handleLoadDemoNotifications}
-                    className="px-4 py-2 rounded-xl bg-white text-black text-xs font-semibold hover:bg-white/90 transition-all cursor-pointer shadow-lg shadow-white/10"
-                  >
-                    Örnek Bildirimleri Yükle
-                  </button>
-                )}
               </div>
             </div>
           ) : (
@@ -494,6 +498,7 @@ export default function NotificationsPage() {
                     {link && (
                       <Link
                         href={link}
+                        prefetch={true}
                         onClick={(e) => {
                           e.stopPropagation();
                           if (isUnread) markNotificationRead(n.id);

@@ -234,7 +234,7 @@ export default function RichCommentSection({
   magazineId,
   targetTitle,
 }: RichCommentSectionProps) {
-  const { user, setIsAuthModalOpen, pushNotification } = useKoUp();
+  const { user, setIsAuthModalOpen, openAuthModal, pushNotification, isSoftBanned } = useKoUp();
 
   const [comments, setComments] = useState<CommentRow[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
@@ -444,12 +444,16 @@ export default function RichCommentSection({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) {
+      openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
+      return;
+    }
+
+    if (isSoftBanned) {
       pushNotification(
-        'Giriş Yapmalısınız',
-        'Yorum gönderebilmek için lütfen oturum açın.',
+        'Hesap Askıda',
+        'Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır. İçerik etkileşimleri devre dışıdır.',
         'info'
       );
-      setIsAuthModalOpen(true);
       return;
     }
 
@@ -739,12 +743,15 @@ export default function RichCommentSection({
 
   const toggleLike = async (c: CommentRow) => {
     if (!user) {
+      openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
+      return;
+    }
+    if (isSoftBanned) {
       pushNotification(
-        'Giriş Yapmalısınız',
-        'Yorumları beğenmek için lütfen KoUp hesabınıza giriş yapın.',
+        'Hesap Askıda',
+        'Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır. İçerik etkileşimleri devre dışıdır.',
         'info'
       );
-      setIsAuthModalOpen(true);
       return;
     }
 
@@ -808,8 +815,15 @@ export default function RichCommentSection({
 
   const handleDislike = (c: CommentRow) => {
     if (!user) {
-      pushNotification('Giriş Yapmalısınız', 'Görüş belirtmek için lütfen giriş yapın.', 'info');
-      setIsAuthModalOpen(true);
+      openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
+      return;
+    }
+    if (isSoftBanned) {
+      pushNotification(
+        'Hesap Askıda',
+        'Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır. İçerik etkileşimleri devre dışıdır.',
+        'info'
+      );
       return;
     }
     setDislikedIds((prev) => {
@@ -823,8 +837,15 @@ export default function RichCommentSection({
 
   const handleReportComment = async (c: CommentRow) => {
     if (!user) {
-      pushNotification('Giriş Yapmalısınız', 'Yorum bildirmek için lütfen giriş yapın.', 'info');
-      setIsAuthModalOpen(true);
+      openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
+      return;
+    }
+    if (isSoftBanned) {
+      pushNotification(
+        'Hesap Askıda',
+        'Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır. İçerik etkileşimleri devre dışıdır.',
+        'info'
+      );
       return;
     }
     const reason = window.prompt(
@@ -870,8 +891,15 @@ export default function RichCommentSection({
 
   const handleOpenInlineReply = (c: CommentRow) => {
     if (!user) {
-      pushNotification('Giriş Yapmalısınız', 'Yanıt vermek için lütfen giriş yapın.', 'info');
-      setIsAuthModalOpen(true);
+      openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
+      return;
+    }
+    if (isSoftBanned) {
+      pushNotification(
+        'Hesap Askıda',
+        'Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır. İçerik etkileşimleri devre dışıdır.',
+        'info'
+      );
       return;
     }
     const targetUsername = c.profiles?.username || c.author_username || 'kullanici';
@@ -888,7 +916,15 @@ export default function RichCommentSection({
 
   const handleSubmitInlineReply = async (parentComment: CommentRow) => {
     if (!user) {
-      setIsAuthModalOpen(true);
+      openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
+      return;
+    }
+    if (isSoftBanned) {
+      pushNotification(
+        'Hesap Askıda',
+        'Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır. İçerik etkileşimleri devre dışıdır.',
+        'info'
+      );
       return;
     }
     if (!inlineReplyText.trim()) return;
@@ -963,8 +999,8 @@ export default function RichCommentSection({
   };
 
   return (
-    <section className="mt-10 rounded-3xl apple-glass p-6 sm:p-8 border border-white/10">
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-5 mb-6 border-b border-white/10">
+    <section className="mt-10 rounded-3xl apple-glass p-4 sm:p-8 border border-white/10 overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-5 mb-5 border-b border-white/10">
         <div>
           <h3 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-sky-400" />
@@ -974,6 +1010,15 @@ export default function RichCommentSection({
             {targetTitle} hakkında düşüncelerini, teorilerini ve sahne analizlerini paylaş.
           </p>
         </div>
+      </div>
+
+      {/* KoUp Community Rules Warning Banner */}
+      <div className="mb-6 p-3.5 sm:p-4 rounded-2xl bg-amber-500/10 border border-amber-400/25 flex items-start gap-3 text-amber-200/90 text-xs leading-relaxed">
+        <ShieldAlert className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400 shrink-0 mt-0.5" />
+        <p>
+          <strong className="font-semibold text-amber-300">KoUp Topluluk Kuralları:</strong>{' '}
+          Aşırı küfür, hakaret ve nefret söylemi yasaktır. Tartışmalar saygı çerçevesinde yürütülmelidir. Kural ihlali durumunda hesap veya cihaz düzeyinde kısıtlama uygulanır.
+        </p>
       </div>
 
       {/* REQUIRE AUTHENTICATION GATE */}
@@ -992,12 +1037,22 @@ export default function RichCommentSection({
           </div>
           <button
             type="button"
-            onClick={() => setIsAuthModalOpen(true)}
+            onClick={() => openAuthModal('İşlem yapabilmek için lütfen giriş yapın.')}
             className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white font-bold text-xs shadow-[0_0_20px_rgba(41,151,255,0.4)] transition-all cursor-pointer active:scale-95"
           >
             <User className="w-3.5 h-3.5" />
             <span>Giriş Yap / Ücretsiz Kayıt Ol</span>
           </button>
+        </div>
+      ) : isSoftBanned ? (
+        <div className="rounded-2xl bg-rose-500/10 border border-rose-500/30 p-6 text-center space-y-2 mb-8">
+          <div className="flex items-center justify-center gap-2 text-rose-300 font-bold text-sm">
+            <ShieldAlert className="w-5 h-5 text-rose-400" />
+            <span>Hesabınız Askıya Alınmıştır (Hafif Ban)</span>
+          </div>
+          <p className="text-xs text-white/70 max-w-md mx-auto">
+            Topluluk kuralları ihlali nedeniyle hesabınız askıya alınmıştır. Yorum yapma, beğenme ve etkileşim özellikleri devre dışıdır.
+          </p>
         </div>
       ) : (
         /* RICH CUSTOMIZABLE COMMENT COMPOSER FOR LOGGED-IN USERS */
@@ -1029,7 +1084,7 @@ export default function RichCommentSection({
           />
 
           {/* Formatting Toolbar */}
-          <div className="flex flex-wrap items-center gap-1.5 py-1.5 px-2 rounded-xl bg-black/40 border border-white/[0.07]">
+          <div className="flex flex-wrap items-center gap-1.5 py-1.5 px-2 rounded-xl bg-black/40 border border-white/[0.07] max-w-full overflow-x-auto no-scrollbar">
             <button
               type="button"
               onClick={() => setIsHeading((v) => !v)}
@@ -1348,7 +1403,7 @@ export default function RichCommentSection({
               <div
                 key={c.id}
                 id={`comment-${c.id}`}
-                className={`p-4 sm:p-5 rounded-2xl border transition-all ${
+                className={`p-3.5 sm:p-5 rounded-2xl border transition-all max-w-full overflow-hidden break-words ${
                   isHiddenByModeration
                     ? 'bg-rose-950/20 border-rose-500/30'
                     : 'bg-white/[0.03] border-white/[0.08] hover:border-white/[0.14]'
@@ -1560,7 +1615,7 @@ export default function RichCommentSection({
                     )}
 
                     {/* Action Toolbar Row */}
-                    <div className="flex items-center flex-wrap gap-2.5 pt-1 text-white/60">
+                    <div className="flex items-center flex-wrap gap-1.5 sm:gap-2.5 pt-1 text-white/60 max-w-full">
                       {/* Like Button */}
                       <button
                         type="button"

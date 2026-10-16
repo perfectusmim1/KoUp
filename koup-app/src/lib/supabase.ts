@@ -155,7 +155,13 @@ export interface UserProfile {
   avatar_url?: string | null;
   banner_url?: string | null;
   bio?: string | null;
-  role: 'user' | 'translator' | 'editor' | 'admin';
+  role: 'user' | 'translator' | 'editor' | 'moderator' | 'mod' | 'admin' | string;
+  is_banned?: boolean;
+  ban_type?: 'soft' | 'hard' | null;
+  ban_reason?: string | null;
+  ban_expires_at?: string | null;
+  fingerprint_hash?: string | null;
+  warning_count?: number;
   is_private: boolean;
   hide_watch_history: boolean;
   notification_settings: {
@@ -276,3 +282,6 @@ export function formatContentTypeTR(contentType?: string | null, country?: strin
   if (c === 'TH') return 'THAI DRAMA';
   return 'DİZİ';
 }
+
+// Re-export cache layer utilities for direct import from supabase.ts
+export { cachedQuery, invalidateCache, setCache, getCache, resolveQueryTTL } from '@/lib/cache';

@@ -34,6 +34,9 @@ import {
   User,
   Eye,
   EyeOff,
+  ArrowLeft,
+  Clock,
+  Ban,
 } from 'lucide-react';
 import { supabase, MediaItem, formatContentTypeTR } from '@/lib/supabase';
 import { invalidateCache } from '@/lib/cache';
@@ -87,6 +90,13 @@ interface UserProfileRow {
   stats_episodes_watched?: number;
   stats_series_completed?: number;
   stats_total_minutes?: number;
+  email?: string | null;
+  is_banned?: boolean;
+  ban_type?: 'soft' | 'hard' | null;
+  ban_reason?: string | null;
+  ban_expires_at?: string | null;
+  fingerprint_hash?: string | null;
+  warning_count?: number;
 }
 
 interface AdminCommentRow {
@@ -322,11 +332,13 @@ export default function AdminDashboardPage() {
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
 
-  // 403 Security Gate Inline Auth State (Admin Login Only - Zero Client Self-Promotion)
-  const [authEmail, setAuthEmail] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
-  const [authLoading, setAuthLoading] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
+  // Moderation Modal State (for Warning, Soft Ban, Hard Ban)
+  const [modModalOpen, setModModalOpen] = useState(false);
+  const [modTargetUser, setModTargetUser] = useState<UserProfileRow | null>(null);
+  const [modActionType, setModActionType] = useState<'warn' | 'soft_ban' | 'hard_ban'>('warn');
+  const [modReason, setModReason] = useState('');
+  const [modDuration, setModDuration] = useState<'24h' | '3d' | '7d' | '30d' | 'permanent'>('permanent');
+  const [modSubmitting, setModSubmitting] = useState(false);
 
   // Live Stats
   const [stats, setStats] = useState({
@@ -398,6 +410,17 @@ export default function AdminDashboardPage() {
 
   // Strictly check role from database/session
   const isAdmin = user?.role === 'admin';
+  const isModerator = user?.role === 'moderator' || user?.role === 'mod';
+  const hasAdminPanelAccess = isAdmin || isModerator;
+
+  // Auto-redirect moderator to users or comments if they land on an admin-only tab
+  useEffect(() => {
+    if (!isAdmin && isModerator) {
+      if (activeTab !== 'users' && activeTab !== 'comments') {
+        setActiveTab('users');
+      }
+    }
+  }, [isAdmin, isModerator, activeTab]);
 
   // 300ms Debouncing for Series Search
   useEffect(() => {
@@ -436,7 +459,7 @@ export default function AdminDashboardPage() {
 
   // Load Initial Admin Data & Exact Database Counts
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!hasAdminPanelAccess) return;
 
     async function loadInitial() {
       try {
@@ -466,11 +489,11 @@ export default function AdminDashboardPage() {
       }
     }
     loadInitial();
-  }, [isAdmin]);
+  }, [hasAdminPanelAccess]);
 
   // Load Users Tab (Server-Side Paginated with 50 items/page)
   useEffect(() => {
-    if (!isAdmin || activeTab !== 'users') return;
+    if (!hasAdminPanelAccess || activeTab !== 'users') return;
     async function loadUsers() {
       setUserLoading(true);
       try {
@@ -486,11 +509,13 @@ export default function AdminDashboardPage() {
 
         if (debouncedUserSearch) {
           q = q.or(
-            `username.ilike.%${debouncedUserSearch}%,display_name.ilike.%${debouncedUserSearch}%`
+            `username.ilike.%${debouncedUserSearch}%,display_name.ilike.%${debouncedUserSearch}%,email.ilike.%${debouncedUserSearch}%`
           );
         }
 
-        if (userRoleFilter !== 'ALL') {
+        if (userRoleFilter === 'banned') {
+          q = q.eq('is_banned', true);
+        } else if (userRoleFilter !== 'ALL') {
           q = q.eq('role', userRoleFilter);
         }
 
@@ -509,7 +534,7 @@ export default function AdminDashboardPage() {
       }
     }
     loadUsers();
-  }, [isAdmin, activeTab, usersPage, debouncedUserSearch, userRoleFilter, pushNotification]);
+  }, [hasAdminPanelAccess, activeTab, usersPage, debouncedUserSearch, userRoleFilter, pushNotification]);
 
   // Load Series Tab (Server-Side Paginated with 50 items/page)
   useEffect(() => {
@@ -667,7 +692,7 @@ export default function AdminDashboardPage() {
 
   // Load Comments Tab (Server-Side Paginated with 50 items/page)
   useEffect(() => {
-    if (!isAdmin || activeTab !== 'comments') return;
+    if (!hasAdminPanelAccess || activeTab !== 'comments') return;
     async function loadComments() {
       setCommentsLoading(true);
       try {
@@ -710,7 +735,7 @@ export default function AdminDashboardPage() {
       }
     }
     loadComments();
-  }, [isAdmin, activeTab, commentsPage, debouncedCommentSearch, commentFilter, pushNotification]);
+  }, [hasAdminPanelAccess, activeTab, commentsPage, debouncedCommentSearch, commentFilter, pushNotification]);
 
   // Scraper Actions
   const triggerScraperNow = async (scraperId: string, name: string) => {
@@ -803,8 +828,157 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // User Role Management - Strict RPC ONLY, No direct fallback
+  // Moderation Handlers (Warn, Soft Ban, Hard Ban, Unban, Toggle Mod)
+  const handleOpenModerationModal = (target: UserProfileRow, action: 'warn' | 'soft_ban' | 'hard_ban') => {
+    setModTargetUser(target);
+    setModActionType(action);
+    setModReason(
+      action === 'warn'
+        ? 'Topluluk kurallarını ihlal eden yorum / davranış.'
+        : action === 'soft_ban'
+        ? 'Spam veya rahatsız edici içerik paylaşımı.'
+        : 'Ciddi kural ihlali / zararlı davranış.'
+    );
+    setModDuration(action === 'soft_ban' ? '7d' : 'permanent');
+    setModModalOpen(true);
+  };
+
+  const handleExecuteModeration = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modTargetUser || modSubmitting) return;
+    setModSubmitting(true);
+
+    try {
+      if (modActionType === 'warn') {
+        const { error } = await supabase.rpc('admin_warn_user', {
+          target_user_id: modTargetUser.id,
+          p_reason: modReason.trim() || 'Topluluk kuralları ihlali',
+        });
+        if (error) throw error;
+
+        setUsersList((prev) =>
+          prev.map((u) =>
+            u.id === modTargetUser.id ? { ...u, warning_count: (u.warning_count || 0) + 1 } : u
+          )
+        );
+        pushNotification(
+          'Uyarı Gönderildi',
+          `@${modTargetUser.username} kullanıcısına resmi topluluk uyarısı iletildi.`,
+          'success'
+        );
+      } else if (modActionType === 'soft_ban' || modActionType === 'hard_ban') {
+        if (modActionType === 'hard_ban' && !isAdmin) {
+          throw new Error('Yalnızca sistem yöneticileri (Admin) Hard Ban uygulayabilir.');
+        }
+
+        let expiresAt: string | null = null;
+        if (modActionType === 'soft_ban' && modDuration !== 'permanent') {
+          const now = new Date();
+          if (modDuration === '24h') now.setHours(now.getHours() + 24);
+          else if (modDuration === '3d') now.setDate(now.getDate() + 3);
+          else if (modDuration === '7d') now.setDate(now.getDate() + 7);
+          else if (modDuration === '30d') now.setDate(now.getDate() + 30);
+          expiresAt = now.toISOString();
+        }
+
+        const banType = modActionType === 'soft_ban' ? 'soft' : 'hard';
+        const { error } = await supabase.rpc('admin_ban_user', {
+          target_user_id: modTargetUser.id,
+          p_ban_type: banType,
+          p_reason: modReason.trim() || (banType === 'hard' ? 'Kalıcı Cihaz Engelleme' : 'Geçici Askıya Alma'),
+          p_expires_at: expiresAt,
+          p_fingerprint: modTargetUser.fingerprint_hash || null,
+        });
+        if (error) throw error;
+
+        setUsersList((prev) =>
+          prev.map((u) =>
+            u.id === modTargetUser.id
+              ? {
+                  ...u,
+                  is_banned: true,
+                  ban_type: banType,
+                  ban_reason: modReason.trim(),
+                  ban_expires_at: expiresAt,
+                }
+              : u
+          )
+        );
+        pushNotification(
+          banType === 'hard' ? 'Hard Ban Uygulandı' : 'Hafif Ban Uygulandı',
+          `@${modTargetUser.username} kullanıcısı ${banType === 'hard' ? 'cihaz düzeyinde kalıcı olarak engellendi' : 'askıya alındı'}.`,
+          'success'
+        );
+      }
+      setModModalOpen(false);
+      setModTargetUser(null);
+    } catch (err: any) {
+      pushNotification('Moderasyon Hatası', err.message || 'İşlem gerçekleştirilemedi.', 'info');
+    } finally {
+      setModSubmitting(false);
+    }
+  };
+
+  const handleUnbanUser = async (target: UserProfileRow) => {
+    if (!confirm(`@${target.username} kullanıcısının banını ve kısıtlamalarını kaldırmak istediğinize emin misiniz?`)) return;
+    try {
+      const { error } = await supabase.rpc('admin_unban_user', {
+        p_target_user_id: target.id,
+      });
+      if (error) throw error;
+
+      setUsersList((prev) =>
+        prev.map((u) =>
+          u.id === target.id
+            ? { ...u, is_banned: false, ban_type: null, ban_reason: null, ban_expires_at: null }
+            : u
+        )
+      );
+      pushNotification(
+        'Yasak Kaldırıldı',
+        `@${target.username} kullanıcısının askıya alma ve cihaz engeli kaldırıldı.`,
+        'success'
+      );
+    } catch (err: any) {
+      pushNotification('Hata', err.message || 'Yasak kaldırılamadı.', 'info');
+    }
+  };
+
+  const handleToggleModRole = async (target: UserProfileRow) => {
+    if (!isAdmin) {
+      pushNotification('Yetkisiz İşlem', 'Yalnızca Admin yetkisi olanlar Moderatör atayabilir.', 'info');
+      return;
+    }
+    const isCurrentlyMod = target.role === 'moderator' || target.role === 'mod';
+    const actionDesc = isCurrentlyMod ? 'moderatörlük yetkisini geri almak' : 'moderatör yapmak';
+    if (!confirm(`@${target.username} kullanıcısını ${actionDesc} istediğinize emin misiniz?`)) return;
+
+    try {
+      const { data, error } = await supabase.rpc('admin_toggle_mod_role', {
+        target_user_id: target.id,
+      });
+      if (error) throw error;
+
+      const newRole = data || (isCurrentlyMod ? 'user' : 'moderator');
+      setUsersList((prev) =>
+        prev.map((u) => (u.id === target.id ? { ...u, role: newRole } : u))
+      );
+      pushNotification(
+        'Yetki Güncellendi',
+        `@${target.username} artık ${newRole === 'moderator' ? 'Moderatör' : 'Üye'}.`,
+        'success'
+      );
+    } catch (err: any) {
+      pushNotification('Yetki Hatası', err.message || 'Moderatör rolü değiştirilemedi.', 'info');
+    }
+  };
+
+  // User Role Management - Strict RPC ONLY, No direct fallback (Admin only)
   const handleSetUserRole = async (targetId: string, newRole: string) => {
+    if (!isAdmin) {
+      pushNotification('Yetkisiz İşlem', 'Yalnızca sistem yöneticileri (Admin) rol atayabilir.', 'info');
+      return;
+    }
     try {
       const { error } = await supabase.rpc('admin_set_user_role', {
         target_user_id: targetId,
@@ -868,11 +1042,6 @@ export default function AdminDashboardPage() {
       setFeaturedMedia((fRes as MediaItem[]) || []);
       invalidateCache('media_');
       invalidateCache('home_');
-      pushNotification(
-        'Vitrin Güncellendi',
-        `"${media.title}" ana sayfa vitrinine ${nextVal ? 'eklendi' : 'çıkarıldı'}.`,
-        'success'
-      );
     } catch (err: any) {
       setSeriesList((prev) =>
         prev.map((m) => (m.id === media.id ? { ...m, is_featured: !nextVal } : m))
@@ -935,6 +1104,10 @@ export default function AdminDashboardPage() {
   };
 
   const handleDeleteSeries = async (mediaId: number, title: string) => {
+    if (!isAdmin) {
+      pushNotification('Yetkisiz İşlem', 'Yalnızca sistem yöneticileri (Admin) seri silebilir.', 'info');
+      return;
+    }
     if (!confirm(`"${title}" serisini ve tüm bağlı verilerini silmek istediğinize emin misiniz?`)) return;
     try {
       const { error } = await supabase.from('media').delete().eq('id', mediaId);
@@ -1210,54 +1383,31 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // 403 Inline Auth Handler (Admin Sign-In Only)
-  const handleInlineAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError(null);
-    setAuthLoading(true);
-    try {
-      const err = await loginWithEmail(authEmail.trim(), authPassword);
-      if (err) {
-        setAuthError(
-          err.includes('Invalid login credentials')
-            ? 'E-posta veya şifre hatalı. Lütfen kontrol ediniz.'
-            : err
-        );
-      } else {
-        pushNotification('Giriş Başarılı', 'Yönetici paneli yükleniyor...', 'success');
-      }
-    } catch (err: any) {
-      setAuthError(err.message || 'Giriş işlemi gerçekleştirilemedi.');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
   // Loading state while auth is hydrating from Supabase
   if (isGlobalAuthLoading) {
     return (
       <div className="w-full min-h-[calc(100vh-8rem)] pt-32 pb-24 flex flex-col items-center justify-center space-y-4 text-center">
         <RefreshCw className="w-8 h-8 text-amber-300 animate-spin" />
         <div className="text-sm text-white/60 font-mono tracking-wider">
-          Yönetici yetkileri doğrulanıyor...
+          Yetkiler doğrulanıyor...
         </div>
       </div>
     );
   }
 
-  // UNAUTHORIZED / SECURITY GATE
-  if (!isAdmin) {
+  // UNAUTHORIZED / SECURITY GATE (Apple/Netflix High-Security 403 Gate)
+  if (!hasAdminPanelAccess) {
     return (
       <div className="w-full min-h-[calc(100vh-8rem)] pt-24 sm:pt-32 pb-24 max-w-2xl mx-auto px-4 sm:px-6 text-center space-y-6">
-        <div className="w-20 h-20 rounded-3xl bg-rose-500/15 border border-rose-500/30 text-rose-400 mx-auto flex items-center justify-center shadow-[0_0_32px_rgba(244,63,94,0.3)]">
+        <div className="w-20 h-20 rounded-3xl bg-rose-500/15 border border-rose-500/30 text-rose-400 mx-auto flex items-center justify-center shadow-[0_0_36px_rgba(244,63,94,0.35)]">
           <ShieldAlert className="w-10 h-10" />
         </div>
         <div className="space-y-2">
           <h1 className="text-3xl font-extrabold text-white tracking-tight">
-            403 · KoUp Yönetici Paneli Kilitli
+            403 · Yetkisiz Erişim
           </h1>
           <p className="text-sm text-white/60 leading-relaxed">
-            Bu alana yalnızca sistem yöneticileri (admin) erişebilir. Ziyaretçiler ve normal üyeler için yönetim paneli tamamen izoledir.
+            Bu alana yalnızca sistem yöneticileri ve yetkili moderatörler erişebilir. Ziyaretçiler ve standart üyeler için yönetim paneli tamamen izoledir.
           </p>
         </div>
 
@@ -1269,21 +1419,21 @@ export default function AdminDashboardPage() {
               <strong className="text-white block font-semibold mb-0.5">
                 Güvenlik & Rol Denetimi (PostgreSQL RLS)
               </strong>
-              Kullanıcı rolleri veritabanı düzeyinde korunur; admin paneli yetkisiz çağrılardan tamamen izoledir.
+              Kullanıcı rolleri ve veri erişim yetkileri veritabanı düzeyinde katı RLS politikaları ile korunur; yönetim paneli yetkisiz çağrılardan tamamen izoledir.
             </div>
           </div>
           <div className="flex items-start gap-3">
             <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
             <div className="text-xs text-white/75 leading-relaxed">
               <strong className="text-white block font-semibold mb-0.5">
-                Yetkili Girişi Gerekir
+                Yetkili Hesap Girişi Gerekir
               </strong>
-              Yönetim yetkisine sahip bir hesap ile giriş yapmanız durumunda panel otomatik olarak aktifleşecektir.
+              Yönetici veya moderatör yetkisine sahip bir hesap ile giriş yapılması durumunda yönetim paneli otomatik olarak aktifleşecektir.
             </div>
           </div>
         </div>
 
-        {/* If user is already logged in with a non-admin role */}
+        {/* If user is already logged in with a non-admin/non-mod role */}
         {user && (
           <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-400/25 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-left">
             <div>
@@ -1291,7 +1441,11 @@ export default function AdminDashboardPage() {
                 Giriş Yapılmış Hesap: @{user.username}
               </div>
               <div className="text-[11px] text-white/60 mt-0.5">
-                Mevcut Rol: <span className="font-mono font-bold text-white uppercase">{user.role}</span> · Bu rol yönetim paneline erişim yetkisine sahip değildir.
+                Mevcut Rol:{' '}
+                <span className="font-mono font-bold text-white uppercase">
+                  {user.role || 'user'}
+                </span>{' '}
+                · Bu hesap yönetim paneline erişim yetkisine sahip değildir.
               </div>
             </div>
             <button
@@ -1304,78 +1458,24 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* Primary Action Button (Triggers Global Auth Modal) */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-          <button
-            onClick={() => setIsAuthModalOpen(true)}
+        {/* Actions: Ana Sayfaya Dön & (if logged in) Çıkış Yap */}
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+          <Link
+            href="/"
             className="w-full sm:w-auto px-8 py-3.5 rounded-full bg-white text-black font-bold text-sm hover:bg-white/90 cursor-pointer shadow-2xl transition-all flex items-center justify-center gap-2"
           >
-            <LogIn className="w-4 h-4" />
-            <span>{user ? 'Farklı Yönetici Hesabıyla Giriş Yap' : 'Yönetici Girişi Yap'}</span>
-          </button>
-        </div>
-
-        {/* Direct Inline Login Card */}
-        <div className="p-6 rounded-3xl apple-glass border border-white/15 space-y-4 text-left shadow-2xl">
-          <div className="flex items-center justify-between pb-3 border-b border-white/10">
-            <span className="text-xs font-mono uppercase tracking-widest text-amber-300 flex items-center gap-1.5">
-              <KeyRound className="w-3.5 h-3.5" />
-              <span>Yönetici Oturum Açma</span>
-            </span>
-          </div>
-
-          {authError && (
-            <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs">
-              {authError}
-            </div>
-          )}
-
-          <form onSubmit={handleInlineAuth} className="space-y-3">
-            <div>
-              <label className="block text-[11px] font-medium text-white/70 mb-1">
-                Yönetici E-posta Adresi
-              </label>
-              <input
-                type="email"
-                required
-                placeholder="admin@koup.com"
-                value={authEmail}
-                onChange={(e) => setAuthEmail(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder-white/40 focus:outline-none focus:border-white/40"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] font-medium text-white/70 mb-1">
-                Şifre
-              </label>
-              <input
-                type="password"
-                required
-                placeholder="••••••••"
-                value={authPassword}
-                onChange={(e) => setAuthPassword(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder-white/40 focus:outline-none focus:border-white/40"
-              />
-            </div>
-
+            <ArrowLeft className="w-4 h-4" />
+            <span>Ana Sayfaya Dön</span>
+          </Link>
+          {user && (
             <button
-              type="submit"
-              disabled={authLoading}
-              className="w-full py-3 rounded-xl bg-white text-black font-bold text-xs hover:bg-white/90 transition-all cursor-pointer shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 mt-2"
+              onClick={() => logout()}
+              className="w-full sm:w-auto px-6 py-3.5 rounded-full bg-white/10 hover:bg-white/20 text-white font-medium text-sm border border-white/10 cursor-pointer transition-all flex items-center justify-center gap-2"
             >
-              {authLoading ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Yetki Doğrulanıyor...</span>
-                </>
-              ) : (
-                <>
-                  <LogIn className="w-3.5 h-3.5" />
-                  <span>Yönetici Olarak Giriş Yap</span>
-                </>
-              )}
+              <LogOut className="w-4 h-4" />
+              <span>Çıkış Yap</span>
             </button>
-          </form>
+          )}
         </div>
       </div>
     );
@@ -1388,13 +1488,15 @@ export default function AdminDashboardPage() {
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-amber-300">
             <ShieldCheck className="w-4 h-4 text-amber-400" />
-            <span>KoUp Master Yönetim & Denetim Merkezi · RLS Aktif</span>
+            <span>{isAdmin ? 'KoUp Master Yönetim & Denetim Merkezi · RLS Aktif' : 'KoUp Moderasyon Merkezi · RLS Aktif'}</span>
           </div>
           <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
-            Sistem Yönetim Paneli
+            {isAdmin ? 'Sistem Yönetim Paneli' : 'Moderatör Denetim Paneli'}
           </h1>
           <p className="text-xs sm:text-sm text-white/65 max-w-3xl leading-relaxed">
-            Kullanıcıları, 17.500+ yapımlık arşivi, bölümleri ve video akış linklerini, yorum moderasyonunu, otomatik scraper cron botlarını ve acil durum sorun bildirimlerini tek merkezden yönetin.
+            {isAdmin
+              ? 'Kullanıcıları, 17.500+ yapımlık arşivi, bölümleri ve video akış linklerini, yorum moderasyonunu, otomatik scraper cron botlarını ve acil durum sorun bildirimlerini tek merkezden yönetin.'
+              : 'Kullanıcı topluluk hesaplarını, yorum moderasyonunu ve şikayetleri güvenle denetleyin.'}
           </p>
         </div>
 
@@ -1434,15 +1536,17 @@ export default function AdminDashboardPage() {
       {/* 2. TAB NAVIGATION BAR */}
       <div className="sticky top-20 z-40 p-1.5 rounded-2xl glass-pill-dark border border-white/10 shadow-2xl flex items-center gap-1.5 overflow-x-auto no-scrollbar overscroll-x-contain touch-pan-x touch-pan-y">
         {[
-          { id: 'overview', label: 'Genel Bakış', icon: Layers },
+          { id: 'overview', label: 'Genel Bakış', icon: Layers, adminOnly: true },
           { id: 'users', label: 'Kullanıcılar', icon: Users, badge: stats.totalUsers },
-          { id: 'series', label: 'Seri & Medya', icon: Film, badge: stats.totalMedia },
-          { id: 'episodes', label: 'Bölümler & Kaynaklar', icon: Tv },
+          { id: 'series', label: 'Seri & Medya', icon: Film, badge: stats.totalMedia, adminOnly: true },
+          { id: 'episodes', label: 'Bölümler & Kaynaklar', icon: Tv, adminOnly: true },
           { id: 'comments', label: 'Yorum Moderasyonu', icon: MessageSquare, badge: stats.totalComments },
-          { id: 'scrapers', label: 'Scraper Botları & Cron', icon: Radio },
-          { id: 'reports', label: 'Sorun Bildirimleri', icon: AlertTriangle, badge: stats.openReports },
-          { id: 'broadcast', label: 'Toplu Bildirim', icon: Send },
-        ].map((tab) => {
+          { id: 'scrapers', label: 'Scraper Botları & Cron', icon: Radio, adminOnly: true },
+          { id: 'reports', label: 'Sorun Bildirimleri', icon: AlertTriangle, badge: stats.openReports, adminOnly: true },
+          { id: 'broadcast', label: 'Toplu Bildirim', icon: Send, adminOnly: true },
+        ]
+          .filter((tab) => !tab.adminOnly || isAdmin)
+          .map((tab) => {
           const Icon = tab.icon;
           const active = activeTab === tab.id;
           return (
@@ -1633,26 +1737,28 @@ export default function AdminDashboardPage() {
                 </p>
               </div>
 
-              {/* Direct Promote Admin by Email */}
-              <form
-                onSubmit={handlePromoteAdminByEmail}
-                className="flex items-center gap-2 p-1.5 rounded-2xl bg-black/50 border border-white/10 w-full md:w-auto"
-              >
-                <input
-                  type="email"
-                  required
-                  placeholder="admin_yapilacak@eposta.com"
-                  value={promoteEmailInput}
-                  onChange={(e) => setPromoteEmailInput(e.target.value)}
-                  className="px-3 py-1.5 rounded-xl bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-56"
-                />
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 rounded-xl bg-amber-400 text-black text-xs font-bold hover:bg-amber-300 transition-all cursor-pointer whitespace-nowrap"
+              {/* Direct Promote Admin by Email (Admin Only) */}
+              {isAdmin && (
+                <form
+                  onSubmit={handlePromoteAdminByEmail}
+                  className="flex items-center gap-2 p-1.5 rounded-2xl bg-black/50 border border-white/10 w-full md:w-auto"
                 >
-                  Admin Yap
-                </button>
-              </form>
+                  <input
+                    type="email"
+                    required
+                    placeholder="admin_yapilacak@eposta.com"
+                    value={promoteEmailInput}
+                    onChange={(e) => setPromoteEmailInput(e.target.value)}
+                    className="px-3 py-1.5 rounded-xl bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-56"
+                  />
+                  <button
+                    type="submit"
+                    className="px-4 py-1.5 rounded-xl bg-amber-400 text-black text-xs font-bold hover:bg-amber-300 transition-all cursor-pointer whitespace-nowrap"
+                  >
+                    Admin Yap
+                  </button>
+                </form>
+              )}
             </div>
 
             {/* Filters */}
@@ -1661,7 +1767,7 @@ export default function AdminDashboardPage() {
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
                 <input
                   type="text"
-                  placeholder="Kullanıcı adı veya isim ile ara..."
+                  placeholder="Kullanıcı adı, isim veya e-posta ile ara..."
                   value={userSearchInput}
                   onChange={(e) => setUserSearchInput(e.target.value)}
                   className="w-full pl-10 pr-10 py-2.5 rounded-2xl bg-black/50 border border-white/10 text-xs text-white placeholder-white/40 focus:outline-none focus:border-white/30"
@@ -1691,7 +1797,7 @@ export default function AdminDashboardPage() {
                         : 'bg-white/[0.05] text-white/70 hover:text-white'
                     }`}
                   >
-                    {r.toUpperCase()}
+                    {r === 'banned' ? 'YASAKLI (BAN)' : r.toUpperCase()}
                   </button>
                 ))}
               </div>
@@ -1714,9 +1820,10 @@ export default function AdminDashboardPage() {
                     <tr className="border-b border-white/10 text-white/50 font-mono uppercase tracking-wider">
                       <th className="pb-3 pl-3">Kullanıcı</th>
                       <th className="pb-3">Kayıt Tarihi</th>
-                      <th className="pb-3">İzleme İstatistiği</th>
-                      <th className="pb-3">Mevcut Rol</th>
-                      <th className="pb-3 text-right pr-3">Rol Değiştir</th>
+                      <th className="pb-3">İzleme</th>
+                      <th className="pb-3">Durum & Roller</th>
+                      <th className="pb-3">İşlemler & Moderasyon</th>
+                      {isAdmin && <th className="pb-3 text-right pr-3">Rol Seç</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/[0.06]">
@@ -1728,12 +1835,17 @@ export default function AdminDashboardPage() {
                               {u.username ? u.username.slice(0, 1).toUpperCase() : '?'}
                             </div>
                             <div>
-                              <div className="font-bold text-white">
-                                {u.display_name || u.username}
+                              <div className="font-bold text-white flex items-center gap-1.5">
+                                <span>{u.display_name || u.username}</span>
                               </div>
                               <div className="text-[11px] font-mono text-white/45">
                                 @{u.username}
                               </div>
+                              {u.email && (
+                                <div className="text-[10px] text-white/35 font-mono truncate max-w-[180px]" title={u.email}>
+                                  {u.email}
+                                </div>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -1744,35 +1856,147 @@ export default function AdminDashboardPage() {
                           {u.stats_episodes_watched || 0} Bölüm · {u.stats_series_completed || 0} Dizi
                         </td>
                         <td className="py-3.5">
-                          <span
-                            className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border ${
-                              u.role === 'admin'
-                                ? 'bg-amber-400/20 text-amber-300 border-amber-400/30'
-                                : u.role === 'moderator'
-                                ? 'bg-purple-400/20 text-purple-300 border-purple-400/30'
-                                : u.role === 'translator'
-                                ? 'bg-emerald-400/20 text-emerald-300 border-emerald-400/30'
-                                : u.role === 'editor'
-                                ? 'bg-sky-400/20 text-sky-300 border-sky-400/30'
-                                : u.role === 'banned'
-                                ? 'bg-rose-500/20 text-rose-300 border-rose-400/30'
-                                : 'bg-white/10 text-white/70 border-white/15'
-                            }`}
-                          >
-                            {u.role ? u.role.toUpperCase() : 'USER'}
-                          </span>
+                          <div className="flex flex-col gap-1.5 items-start">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {/* Role Pill */}
+                              {u.role === 'admin' && (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                                  ADMIN
+                                </span>
+                              )}
+                              {(u.role === 'moderator' || u.role === 'mod') && (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-purple-400/20 text-purple-300 border border-purple-400/30">
+                                  MODERATÖR
+                                </span>
+                              )}
+                              {u.role === 'translator' && (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-400/20 text-emerald-300 border border-emerald-400/30">
+                                  ÇEVİRMEN
+                                </span>
+                              )}
+                              {u.role === 'editor' && (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-sky-400/20 text-sky-300 border border-sky-400/30">
+                                  EDİTÖR
+                                </span>
+                              )}
+
+                              {/* Ban / Warning / Normal Status Pill */}
+                              {u.is_banned && u.ban_type === 'hard' ? (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-red-600/25 text-red-300 border border-red-500/40 flex items-center gap-1 shadow-[0_0_12px_rgba(239,68,68,0.2)]">
+                                  <ShieldAlert className="w-3 h-3" />
+                                  <span>HARD BAN</span>
+                                </span>
+                              ) : u.is_banned && u.ban_type === 'soft' ? (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-400/30 flex items-center gap-1">
+                                  <AlertTriangle className="w-3 h-3" />
+                                  <span>HAFİF BAN</span>
+                                </span>
+                              ) : (u.warning_count || 0) > 0 ? (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-orange-500/20 text-orange-300 border border-orange-400/30">
+                                  UYARI ({u.warning_count}/3)
+                                </span>
+                              ) : u.role !== 'admin' && u.role !== 'moderator' && u.role !== 'mod' ? (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                                  NORMAL
+                                </span>
+                              ) : null}
+                            </div>
+
+                            {/* Ban reason or details */}
+                            {u.is_banned && (
+                              <div className="text-[10px] text-white/50 max-w-[220px] truncate" title={u.ban_reason || ''}>
+                                <span className="text-white/30">Neden:</span> {u.ban_reason || 'Belirtilmedi'}
+                                {u.ban_expires_at && (
+                                  <span className="block text-white/40">
+                                    Bitiş: {new Date(u.ban_expires_at).toLocaleDateString('tr-TR')}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </td>
-                        <td className="py-3.5 text-right pr-3">
-                          <CustomSelect
-                            value={u.role || 'user'}
-                            onChange={(newVal) => handleSetUserRole(u.id, newVal)}
-                            options={USER_ROLE_OPTIONS}
-                            variant="dark"
-                            size="sm"
-                            triggerClassName="!rounded-xl bg-black/60 border-white/15 text-xs py-1.5 px-3 min-w-[140px]"
-                            menuClassName="min-w-[180px] z-50"
-                          />
+                        <td className="py-3.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {u.is_banned ? (
+                              <button
+                                type="button"
+                                onClick={() => handleUnbanUser(u)}
+                                className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/35 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                title="Banı ve Kısıtlamaları Kaldır"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Banı Kaldır</span>
+                              </button>
+                            ) : (
+                              <>
+                                {/* Uyarı Gönder */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenModerationModal(u, 'warn')}
+                                  className="px-2.5 py-1.5 rounded-xl bg-orange-500/15 hover:bg-orange-500/25 text-orange-300 border border-orange-500/30 text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                                  title="Resmi Topluluk Uyarısı Gönder"
+                                >
+                                  <AlertTriangle className="w-3.5 h-3.5" />
+                                  <span>Uyarı Gönder</span>
+                                </button>
+
+                                {/* Hafif Ban */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenModerationModal(u, 'soft_ban')}
+                                  className="px-2.5 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                                  title="Hesabı Askıya Al (Yorum/Beğeni/Kütüphane Engeli)"
+                                >
+                                  <Lock className="w-3.5 h-3.5" />
+                                  <span>Hafif Ban</span>
+                                </button>
+
+                                {/* Hard Ban (Admin Only) */}
+                                {isAdmin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenModerationModal(u, 'hard_ban')}
+                                    className="px-2.5 py-1.5 rounded-xl bg-red-600/20 hover:bg-red-600/35 text-red-300 border border-red-500/40 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                    title="Cihaz Parmak İzi & IP Kısıtlaması"
+                                  >
+                                    <ShieldAlert className="w-3.5 h-3.5" />
+                                    <span>Hard Ban</span>
+                                  </button>
+                                )}
+                              </>
+                            )}
+
+                            {/* Mod Yetkisi Ver / Geri Al (Admin Only) */}
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                onClick={() => handleToggleModRole(u)}
+                                className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors ${
+                                  u.role === 'moderator' || u.role === 'mod'
+                                    ? 'bg-purple-500/20 hover:bg-purple-500/35 text-purple-300 border-purple-400/40'
+                                    : 'bg-white/[0.05] hover:bg-white/10 text-white/70 border-white/10'
+                                }`}
+                                title={u.role === 'moderator' || u.role === 'mod' ? 'Moderatörlük Yetkisini Al' : 'Moderatör Yetkisi Ver'}
+                              >
+                                <ShieldCheck className="w-3.5 h-3.5" />
+                                <span>{u.role === 'moderator' || u.role === 'mod' ? 'Mod Yetkisini Al' : 'Mod Yetkisi Ver'}</span>
+                              </button>
+                            )}
+                          </div>
                         </td>
+                        {isAdmin && (
+                          <td className="py-3.5 text-right pr-3">
+                            <CustomSelect
+                              value={u.role || 'user'}
+                              onChange={(newVal) => handleSetUserRole(u.id, newVal)}
+                              options={USER_ROLE_OPTIONS}
+                              variant="dark"
+                              size="sm"
+                              triggerClassName="!rounded-xl bg-black/60 border-white/15 text-xs py-1.5 px-3 min-w-[130px]"
+                              menuClassName="min-w-[170px] z-50"
+                            />
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -1983,13 +2207,15 @@ export default function AdminDashboardPage() {
                             >
                               <Edit3 className="w-3.5 h-3.5" />
                             </button>
-                            <button
-                              onClick={() => handleDeleteSeries(m.id, m.title)}
-                              className="p-1.5 rounded-xl bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 cursor-pointer transition-colors"
-                              title="Sil"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {isAdmin && (
+                              <button
+                                onClick={() => handleDeleteSeries(m.id, m.title)}
+                                className="p-1.5 rounded-xl bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 cursor-pointer transition-colors"
+                                title="Sil"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -3025,6 +3251,245 @@ export default function AdminDashboardPage() {
                     className="px-5 py-2 rounded-xl bg-white text-black font-bold text-xs hover:bg-white/90 cursor-pointer transition-all shadow-md"
                   >
                     Kaynağı Bağla
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ================= MODAL: MODERASYON İŞLEMİ (UYARI / HAFİF BAN / HARD BAN) ================= */}
+      <AnimatePresence>
+        {modModalOpen && modTargetUser && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                if (!modSubmitting) {
+                  setModModalOpen(false);
+                  setModTargetUser(null);
+                }
+              }}
+              className="fixed inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-lg rounded-3xl bg-[#131317] border border-white/15 p-6 sm:p-7 shadow-2xl z-10 max-h-[90vh] overflow-y-auto my-auto space-y-5"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className={`w-9 h-9 rounded-2xl flex items-center justify-center border ${
+                      modActionType === 'hard_ban'
+                        ? 'bg-red-500/15 text-red-400 border-red-500/30'
+                        : modActionType === 'soft_ban'
+                        ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+                        : 'bg-orange-500/15 text-orange-400 border-orange-500/30'
+                    }`}
+                  >
+                    {modActionType === 'hard_ban' ? (
+                      <ShieldAlert className="w-5 h-5" />
+                    ) : modActionType === 'soft_ban' ? (
+                      <Lock className="w-5 h-5" />
+                    ) : (
+                      <AlertTriangle className="w-5 h-5" />
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">
+                      {modActionType === 'hard_ban'
+                        ? 'Hard Ban · Cihaz & IP Engelleme'
+                        : modActionType === 'soft_ban'
+                        ? 'Hafif Ban · Hesabı Askıya Al'
+                        : 'Resmi Topluluk Uyarısı Gönder'}
+                    </h3>
+                    <p className="text-[11px] text-white/50">
+                      Hedef: @{modTargetUser.username} ({modTargetUser.display_name || 'İsimsiz'})
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={modSubmitting}
+                  onClick={() => {
+                    setModModalOpen(false);
+                    setModTargetUser(null);
+                  }}
+                  className="p-1 rounded-full bg-white/10 text-white/70 hover:text-white cursor-pointer transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Action Description Banner */}
+              <div
+                className={`p-3.5 rounded-2xl border text-xs leading-relaxed ${
+                  modActionType === 'hard_ban'
+                    ? 'bg-red-500/10 border-red-500/25 text-red-200'
+                    : modActionType === 'soft_ban'
+                    ? 'bg-rose-500/10 border-rose-500/25 text-rose-200'
+                    : 'bg-orange-500/10 border-orange-500/25 text-orange-200'
+                }`}
+              >
+                {modActionType === 'hard_ban' && (
+                  <div>
+                    <strong className="block font-bold text-red-100 mb-0.5">
+                      ⚠️ Kritik Sistem Güvenlik Müdahalesi (Admin Yetkisi)
+                    </strong>
+                    Kullanıcının tarayıcı/donanım parmak izi (fingerprint) kalıcı kara listeye alınır. Kullanıcı ve cihazındaki tüm oturumlar anında 403 Banned ekranına kilitlenir.
+                  </div>
+                )}
+                {modActionType === 'soft_ban' && (
+                  <div>
+                    <strong className="block font-bold text-rose-100 mb-0.5">
+                      Hesap İşlem Kısıtlaması (Hafif Ban)
+                    </strong>
+                    Kullanıcı sitedeki yapımları ve bölümleri izlemeye devam edebilir ancak yorum yapamaz, beğeni atamaz, takip/favori ekleyemez ve izleme listelerini güncelleyemez. Sayfa üstünde kalıcı uyarı şeridi görür.
+                  </div>
+                )}
+                {modActionType === 'warn' && (
+                  <div>
+                    <strong className="block font-bold text-orange-100 mb-0.5">
+                      Resmi İhlal Uyarısı
+                    </strong>
+                    Kullanıcıya bildirim gönderilir ve profil uyarı sayacı (1-3) artırılır. 3 uyarı alan kullanıcılar moderasyon listesinde öncelikli olarak işaretlenir.
+                  </div>
+                )}
+              </div>
+
+              {/* Form */}
+              <form onSubmit={handleExecuteModeration} className="space-y-4">
+                {/* Duration (only for soft ban) */}
+                {modActionType === 'soft_ban' && (
+                  <div>
+                    <label className="block text-[11px] font-medium text-white/70 mb-1.5">
+                      Askıya Alma Süresi
+                    </label>
+                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                      {[
+                        { id: '24h', label: '24 Saat' },
+                        { id: '3d', label: '3 Gün' },
+                        { id: '7d', label: '7 Gün' },
+                        { id: '30d', label: '30 Gün' },
+                        { id: 'permanent', label: 'Kalıcı' },
+                      ].map((dur) => (
+                        <button
+                          key={dur.id}
+                          type="button"
+                          onClick={() => setModDuration(dur.id as any)}
+                          className={`py-2 rounded-xl text-xs font-mono font-medium border transition-all cursor-pointer ${
+                            modDuration === dur.id
+                              ? 'bg-rose-500/25 text-rose-200 border-rose-400 font-bold'
+                              : 'bg-black/40 text-white/60 border-white/10 hover:text-white'
+                          }`}
+                        >
+                          {dur.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Reason Presets */}
+                <div>
+                  <label className="block text-[11px] font-medium text-white/70 mb-1.5">
+                    Hızlı Şablonlar
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      'Spam veya reklam içerikli yorumlar',
+                      'Küfür, hakaret ve nefret söylemi',
+                      'Uyarıya rağmen spoiler etiketsiz paylaşım',
+                      'Telif hakkı veya izinsiz kaynak dağıtımı',
+                      'Çoklu hesap ve sistem istismarı',
+                    ].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setModReason(preset)}
+                        className="px-2.5 py-1 rounded-lg bg-white/[0.05] hover:bg-white/10 border border-white/10 text-[10px] text-white/70 hover:text-white cursor-pointer transition-colors"
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Reason Text */}
+                <div>
+                  <label className="block text-[11px] font-medium text-white/70 mb-1">
+                    Gerekçe / Açıklama *
+                  </label>
+                  <textarea
+                    required
+                    rows={3}
+                    placeholder="İhlal gerekçesini detaylıca belirtiniz..."
+                    value={modReason}
+                    onChange={(e) => setModReason(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-2xl bg-black/60 border border-white/15 text-xs text-white placeholder-white/40 focus:outline-none focus:border-white/35 resize-none"
+                  />
+                </div>
+
+                {/* Target User Metadata */}
+                <div className="p-3 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between text-[11px] text-white/50 font-mono">
+                  <span>Mevcut Uyarı: <strong className="text-white">{modTargetUser.warning_count || 0} / 3</strong></span>
+                  <span>Rol: <strong className="text-white uppercase">{modTargetUser.role || 'user'}</strong></span>
+                  <span>Fingerprint: <strong className="text-white">{modTargetUser.fingerprint_hash ? 'Kayıtlı ✓' : 'Yok'}</strong></span>
+                </div>
+
+                {/* Actions */}
+                <div className="pt-3 border-t border-white/10 flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    disabled={modSubmitting}
+                    onClick={() => {
+                      setModModalOpen(false);
+                      setModTargetUser(null);
+                    }}
+                    className="px-4 py-2 text-xs text-white/70 hover:text-white cursor-pointer transition-colors"
+                  >
+                    İptal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={modSubmitting || !modReason.trim()}
+                    className={`px-5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 cursor-pointer shadow-lg transition-all disabled:opacity-50 ${
+                      modActionType === 'hard_ban'
+                        ? 'bg-red-600 hover:bg-red-500 text-white shadow-red-600/30'
+                        : modActionType === 'soft_ban'
+                        ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/30'
+                        : 'bg-orange-500 hover:bg-orange-400 text-white shadow-orange-500/30'
+                    }`}
+                  >
+                    {modSubmitting ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>İşleniyor...</span>
+                      </>
+                    ) : (
+                      <>
+                        {modActionType === 'hard_ban' ? (
+                          <ShieldAlert className="w-3.5 h-3.5" />
+                        ) : modActionType === 'soft_ban' ? (
+                          <Lock className="w-3.5 h-3.5" />
+                        ) : (
+                          <Send className="w-3.5 h-3.5" />
+                        )}
+                        <span>
+                          {modActionType === 'hard_ban'
+                            ? 'Hard Banı Onayla'
+                            : modActionType === 'soft_ban'
+                            ? 'Hafif Banı Uygula'
+                            : 'Uyarıyı Gönder'}
+                        </span>
+                      </>
+                    )}
                   </button>
                 </div>
               </form>

@@ -79,6 +79,7 @@ export default function Navbar() {
 
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [mediaResults, setMediaResults] = useState<MediaItem[]>([]);
   const [personResults, setPersonResults] = useState<PersonItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -168,6 +169,7 @@ export default function Navbar() {
         setTimeout(() => searchInputRef.current?.focus(), 40);
       } else if (e.key === 'Escape') {
         setSearchOpen(false);
+        setMobileSearchOpen(false);
         setNotifOpen(false);
         setMobileMenuOpen(false);
         setProfileDropdownOpen(false);
@@ -184,9 +186,9 @@ export default function Navbar() {
 
   return (
     <>
-      <header className="fixed top-5 left-0 right-0 z-50 pointer-events-none px-5 lg:px-14 flex items-center justify-between">
+      <header className="fixed top-3 sm:top-5 left-0 right-0 z-50 pointer-events-none px-3.5 sm:px-6 lg:px-14 flex items-center justify-between">
       {/* LEFT: Brand Mark (Original KU Logo — No Circle or Box Wrapper) */}
-      <div className="pointer-events-auto flex items-center gap-3">
+      <div className="pointer-events-auto flex items-center gap-2 sm:gap-3">
         <button
           onClick={() => setMobileMenuOpen((v) => !v)}
           className="lg:hidden w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white/80 hover:text-white cursor-pointer"
@@ -197,22 +199,23 @@ export default function Navbar() {
 
         <Link
           href="/"
+          prefetch={true}
           onClick={() => triggerSound('click')}
-          className="flex items-center gap-3 group"
+          className="flex items-center gap-2 sm:gap-3 group"
         >
           <img
             src="/logo-dark.png"
             alt="KoUp"
-            className="h-9 w-auto object-contain transition-transform duration-300 group-hover:scale-105 drop-shadow-[0_4px_16px_rgba(255,255,255,0.2)]"
+            className="h-8 sm:h-9 w-auto object-contain transition-transform duration-300 group-hover:scale-105 drop-shadow-[0_4px_16px_rgba(255,255,255,0.2)]"
           />
           <div className="flex flex-col">
-            <span className="text-[16px] font-bold tracking-wider text-white leading-none">
+            <span className="text-[15px] sm:text-[16px] font-bold tracking-wider text-white leading-none">
               KoUp
-              <span className="text-white/55 font-light ml-1 text-[13px]">
+              <span className="text-white/55 font-light ml-1 text-[13px] hidden sm:inline">
                 TV+
               </span>
             </span>
-            <span className="text-[9px] tracking-[0.22em] font-medium uppercase text-white/40 mt-1">
+            <span className="text-[9px] tracking-[0.22em] font-medium uppercase text-white/40 mt-1 hidden sm:block">
               Cinema Studio
             </span>
           </div>
@@ -227,6 +230,7 @@ export default function Navbar() {
             <Link
               key={item.href}
               href={item.href}
+              prefetch={true}
               onClick={() => triggerSound('click')}
               onMouseEnter={() => triggerSound('hover')}
               className={`relative px-5 py-2 rounded-full text-[13px] font-semibold transition-colors duration-200 select-none ${
@@ -252,10 +256,22 @@ export default function Navbar() {
       </nav>
 
       {/* RIGHT: Quick Actions (Search, Sound, Notifications, Admin, Profile) */}
-      <div className="pointer-events-auto flex items-center gap-2.5">
-        {/* Instant Search Bar / Trigger */}
-        <div ref={searchContainerRef} className="relative">
-          <div className="flex items-center gap-2 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/50 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 w-44 sm:w-60 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.25)]">
+      <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2.5">
+        {/* Mobile Sleek Magnifying Glass Button (< md) */}
+        <button
+          onClick={() => {
+            triggerSound('click');
+            setMobileSearchOpen(true);
+          }}
+          className="md:hidden w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white/80 hover:text-white cursor-pointer"
+          aria-label="Arama Yap"
+        >
+          <Search className="w-4 h-4" />
+        </button>
+
+        {/* Desktop Instant Search Bar / Trigger (>= md) */}
+        <div ref={searchContainerRef} className="relative hidden md:block">
+          <div className="flex items-center gap-2 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/50 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 w-44 lg:w-60 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.25)]">
             <Search className="w-4 h-4 text-white/60 shrink-0" />
             <input
               ref={searchInputRef}
@@ -300,6 +316,7 @@ export default function Navbar() {
                   </span>
                   <Link
                     href={`/kesfet?q=${encodeURIComponent(query)}`}
+                    prefetch={true}
                     onClick={() => setSearchOpen(false)}
                     className="text-xs text-white/80 hover:text-white flex items-center gap-1 font-medium transition-colors"
                   >
@@ -482,7 +499,25 @@ export default function Navbar() {
 
                 {/* Notifications List */}
                 <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                  {notifications.length === 0 ? (
+                  {!user ? (
+                    <div className="py-8 px-4 text-center space-y-3">
+                      <div className="w-12 h-12 rounded-2xl bg-white/[0.05] border border-white/10 flex items-center justify-center mx-auto text-white/40">
+                        <Bell className="w-6 h-6" />
+                      </div>
+                      <p className="text-xs text-white/60 leading-relaxed max-w-[280px] mx-auto">
+                        Bildirimlerinizi görmek ve takip ettiğiniz serilerden haberdar olmak için lütfen giriş yapın.
+                      </p>
+                      <button
+                        onClick={() => {
+                          setNotifOpen(false);
+                          setIsAuthModalOpen(true);
+                        }}
+                        className="px-4 py-2 rounded-xl bg-white text-black text-xs font-bold hover:bg-white/90 transition-all cursor-pointer shadow-md"
+                      >
+                        Giriş Yap
+                      </button>
+                    </div>
+                  ) : notifications.length === 0 ? (
                     <div className="py-8 text-center text-xs text-white/50 space-y-1">
                       <Bell className="w-5 h-5 text-white/30 mx-auto mb-1" />
                       <p>Yeni bildiriminiz yok.</p>
@@ -544,6 +579,7 @@ export default function Navbar() {
                           <Link
                             key={n.id}
                             href={href}
+                            prefetch={true}
                             onClick={() => {
                               markNotificationRead(n.id);
                               setNotifOpen(false);
@@ -580,6 +616,7 @@ export default function Navbar() {
                 <div className="pt-2 border-t border-white/10">
                   <Link
                     href="/bildirimler"
+                    prefetch={true}
                     onClick={() => setNotifOpen(false)}
                     className="w-full py-2.5 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                   >
@@ -596,6 +633,7 @@ export default function Navbar() {
         {user?.role === 'admin' && (
           <Link
             href="/admin"
+            prefetch={true}
             title="Admin Kontrol Merkezi"
             className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-full glass-pill text-xs font-medium text-amber-300 border-amber-400/30 hover:border-amber-400/60 transition-all shadow-[0_0_12px_rgba(245,158,11,0.2)]"
           >
@@ -679,6 +717,7 @@ export default function Navbar() {
                   {/* Navigation Options */}
                   <Link
                     href={`/profil/${encodeURIComponent(user.username)}`}
+                    prefetch={true}
                     onClick={() => {
                       triggerSound('click');
                       setProfileDropdownOpen(false);
@@ -691,6 +730,7 @@ export default function Navbar() {
 
                   <Link
                     href={`/profil/${encodeURIComponent(user.username)}?tab=library`}
+                    prefetch={true}
                     onClick={() => {
                       triggerSound('click');
                       setProfileDropdownOpen(false);
@@ -703,6 +743,7 @@ export default function Navbar() {
 
                   <Link
                     href={`/profil/${encodeURIComponent(user.username)}?tab=history`}
+                    prefetch={true}
                     onClick={() => {
                       triggerSound('click');
                       setProfileDropdownOpen(false);
@@ -715,6 +756,7 @@ export default function Navbar() {
 
                   <Link
                     href={`/profil/${encodeURIComponent(user.username)}?tab=settings`}
+                    prefetch={true}
                     onClick={() => {
                       triggerSound('click');
                       setProfileDropdownOpen(false);
@@ -728,6 +770,7 @@ export default function Navbar() {
                   {user.role === 'admin' && (
                     <Link
                       href="/admin"
+                      prefetch={true}
                       onClick={() => {
                         triggerSound('click');
                         setProfileDropdownOpen(false);
@@ -778,36 +821,295 @@ export default function Navbar() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setMobileMenuOpen(false)}
-              className="pointer-events-auto fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
+              className="pointer-events-auto fixed inset-0 z-40 bg-black/75 backdrop-blur-md lg:hidden"
             />
             <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className="pointer-events-auto lg:hidden fixed top-20 left-4 right-4 rounded-3xl bg-[#0f0f12]/95 backdrop-blur-2xl p-4 border border-white/15 shadow-2xl z-50 grid grid-cols-2 gap-2"
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+              className="pointer-events-auto lg:hidden fixed top-0 left-0 bottom-0 w-[290px] max-w-[85vw] h-full bg-[#0a0a0c]/98 backdrop-blur-2xl p-6 border-r border-white/15 shadow-2xl z-50 flex flex-col justify-between"
             >
-              {NAV_LINKS.map((item) => {
-                const Icon = item.icon;
-                const active = isNavActive(item.href);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
+              {/* Drawer Top Header */}
+              <div>
+                <div className="flex items-center justify-between pb-6 border-b border-white/10">
+                  <div className="flex items-center gap-2.5">
+                    <img
+                      src="/logo-dark.png"
+                      alt="KoUp"
+                      className="h-8 w-auto object-contain"
+                    />
+                    <span className="text-base font-bold text-white tracking-wider">
+                      KoUp
+                    </span>
+                  </div>
+                  <button
                     onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl text-xs font-semibold transition-all ${
-                      active
-                        ? 'bg-white text-black'
-                        : 'bg-white/[0.05] text-white/80 hover:text-white'
-                    }`}
+                    className="w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white cursor-pointer"
+                    aria-label="Kapat"
                   >
-                    <Icon className="w-4 h-4" />
-                    <span>{item.label}</span>
-                  </Link>
-                );
-              })}
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Navigation Links with touch targets >= 44px */}
+                <div className="py-6 space-y-2 overflow-y-auto max-h-[calc(100vh-260px)] no-scrollbar">
+                  {NAV_LINKS.map((item) => {
+                    const Icon = item.icon;
+                    const active = isNavActive(item.href);
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        prefetch={true}
+                        onClick={() => {
+                          triggerSound('click');
+                          setMobileMenuOpen(false);
+                        }}
+                        className={`flex items-center gap-3.5 px-4 min-h-[48px] rounded-2xl text-sm font-semibold transition-all ${
+                          active
+                            ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.3)]'
+                            : 'text-white/75 hover:text-white hover:bg-white/[0.06]'
+                        }`}
+                      >
+                        <Icon className="w-5 h-5 shrink-0" />
+                        <span>{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Drawer Bottom Auth/Profile Section */}
+              <div className="pt-4 border-t border-white/10">
+                {user ? (
+                  <div className="space-y-3">
+                    <Link
+                      href={`/profil/${encodeURIComponent(user.username)}`}
+                      prefetch={true}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex items-center gap-3 p-2 rounded-2xl hover:bg-white/[0.06] transition-colors"
+                    >
+                      <div className="w-10 h-10 rounded-full overflow-hidden bg-white/10 border border-white/15 shrink-0 flex items-center justify-center">
+                        {user.avatar_url ? (
+                          <img
+                            src={getProxiedImageUrl(
+                              user.avatar_url,
+                              user.display_name || user.username
+                            )}
+                            alt={user.display_name || user.username}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <User className="w-5 h-5 text-white/80" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-bold text-white truncate">
+                          {user.display_name || user.username}
+                        </div>
+                        <div className="text-xs text-white/50 truncate">
+                          @{user.username}
+                        </div>
+                      </div>
+                    </Link>
+
+                    <button
+                      onClick={() => {
+                        triggerSound('click');
+                        setMobileMenuOpen(false);
+                        logout();
+                      }}
+                      className="w-full flex items-center justify-center gap-2 min-h-[44px] rounded-xl text-xs font-semibold text-rose-300 hover:bg-rose-500/15 transition-colors cursor-pointer"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      <span>Çıkış Yap</span>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      setIsAuthModalOpen(true);
+                    }}
+                    className="w-full min-h-[48px] rounded-2xl bg-white text-black font-bold text-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-95 transition-all"
+                  >
+                    <LogIn className="w-4 h-4" />
+                    <span>Giriş Yap / Kayıt Ol</span>
+                  </button>
+                )}
+              </div>
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* Mobile Fullscreen Search Overlay Modal */}
+      <AnimatePresence>
+        {mobileSearchOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="pointer-events-auto md:hidden fixed inset-0 z-50 bg-[#0a0a0c]/98 backdrop-blur-3xl p-4 flex flex-col"
+          >
+            {/* Top Search Input Bar */}
+            <div className="flex items-center gap-2.5 pb-3 border-b border-white/10">
+              <div className="flex-1 flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-white/10 border border-white/15 focus-within:border-sky-400">
+                <Search className="w-4 h-4 text-white/60 shrink-0" />
+                <input
+                  autoFocus
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="İçerik veya oyuncu ara..."
+                  className="bg-transparent text-sm text-white placeholder-white/40 focus:outline-none w-full"
+                />
+                {query && (
+                  <button
+                    onClick={() => setQuery('')}
+                    className="text-white/50 hover:text-white p-1"
+                    aria-label="Temizle"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={() => {
+                  setMobileSearchOpen(false);
+                  setQuery('');
+                }}
+                className="px-3 py-2 text-xs font-semibold text-white/80 hover:text-white cursor-pointer"
+              >
+                Kapat
+              </button>
+            </div>
+
+            {/* Live Search Results in Mobile Modal */}
+            <div className="flex-1 overflow-y-auto py-3 space-y-4 no-scrollbar">
+              {query.trim().length >= 2 && (
+                <>
+                  <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-white/50">
+                      Sonuçlar
+                    </span>
+                    <Link
+                      href={`/kesfet?q=${encodeURIComponent(query)}`}
+                      prefetch={true}
+                      onClick={() => setMobileSearchOpen(false)}
+                      className="text-xs text-sky-400 hover:text-sky-300 flex items-center gap-1 font-medium"
+                    >
+                      <SlidersHorizontal className="w-3 h-3" />
+                      <span>Gelişmiş Filtre</span>
+                    </Link>
+                  </div>
+
+                  {isSearching ? (
+                    <div className="py-12 text-center text-xs text-white/50 animate-pulse">
+                      Arşiv taranıyor...
+                    </div>
+                  ) : mediaResults.length === 0 && personResults.length === 0 ? (
+                    <div className="py-12 text-center text-xs text-white/50">
+                      &ldquo;{query}&rdquo; için eşleşen kayıt bulunamadı.
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {mediaResults.length > 0 && (
+                        <div>
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-white/40 mb-2">
+                            Diziler, Animeler & Filmler
+                          </div>
+                          <div className="space-y-2">
+                            {mediaResults.map((m) => (
+                              <button
+                                key={m.id}
+                                onClick={() => {
+                                  setMobileSearchOpen(false);
+                                  router.push(`/seri/${m.slug}`);
+                                }}
+                                className="w-full flex items-center gap-3 p-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] transition-colors text-left group cursor-pointer border border-white/[0.06]"
+                              >
+                                <img
+                                  src={getProxiedImageUrl(m.cover_image, m.title)}
+                                  alt={m.title}
+                                  width={44}
+                                  height={62}
+                                  loading="lazy"
+                                  decoding="async"
+                                  className="w-11 h-16 object-cover rounded-xl border border-white/10 shrink-0"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-sm font-semibold text-white truncate">
+                                    {m.title}
+                                  </div>
+                                  <div className="text-[11px] text-white/50 flex flex-wrap items-center gap-1.5 mt-1">
+                                    <span
+                                      className={getNavTypeBadgeClass(
+                                        m.content_type,
+                                        m.country_code || (m as any).country
+                                      )}
+                                    >
+                                      {formatContentTypeTR(
+                                        m.content_type,
+                                        m.country_code || (m as any).country
+                                      )}
+                                    </span>
+                                    {m.release_year && (
+                                      <span>• {m.release_year}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {personResults.length > 0 && (
+                        <div>
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-white/40 mb-2">
+                            Oyuncular & Karakterler
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {personResults.map((p) => (
+                              <button
+                                key={p.id}
+                                onClick={() => {
+                                  setMobileSearchOpen(false);
+                                  router.push(`/oyuncu/${p.slug}`);
+                                }}
+                                className="flex items-center gap-2.5 p-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] transition-colors text-left cursor-pointer border border-white/[0.06]"
+                              >
+                                <img
+                                  src={getProxiedImageUrl(p.image_url, p.name)}
+                                  alt={p.name}
+                                  width={36}
+                                  height={36}
+                                  loading="lazy"
+                                  decoding="async"
+                                  className="w-9 h-9 object-cover rounded-full border border-white/10 shrink-0"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-xs font-semibold text-white truncate">
+                                    {p.name}
+                                  </div>
+                                  <div className="text-[10px] text-white/40 capitalize truncate">
+                                    {p.person_type}
+                                  </div>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
 

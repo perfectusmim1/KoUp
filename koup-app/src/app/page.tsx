@@ -34,7 +34,22 @@ import {
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
-import { cachedQuery } from '@/lib/cache';
+import { cachedQuery, getCache } from '@/lib/cache';
+
+interface HomeDataBundle {
+  feats: MediaItem[];
+  kds: MediaItem[];
+  cds: MediaItem[];
+  ans: MediaItem[];
+  gls: MediaItem[];
+  episodes: any[];
+  people: PersonItem[];
+  magPosts: MagazinePost[];
+  recentEpsProcessed?: any[];
+}
+
+// Module-level cache so navigating back to home in the same session is 0ms instant
+let memoryHomeBundle: HomeDataBundle | null = null;
 
 type QuickFilter = 'ALL' | 'KR' | 'CN' | 'ANIME' | 'GLOBAL';
 
@@ -75,26 +90,55 @@ export default function HomePage() {
   const { progressMap, updateWatchStatus, togglePersonFavorite, personFavorites, triggerSound } =
     useKoUp();
 
-  const [heroItems, setHeroItems] = useState<MediaItem[]>([]);
+  // Instant render from module memory or synchronous cache
+  const initialBundle =
+    memoryHomeBundle ||
+    (typeof window !== 'undefined' ? getCache<HomeDataBundle>('home_catalog_bundle') : null);
+
+  const [heroItems, setHeroItems] = useState<MediaItem[]>(() =>
+    initialBundle
+      ? initialBundle.feats.length > 0
+        ? initialBundle.feats.slice(0, 6)
+        : initialBundle.kds.slice(0, 6)
+      : []
+  );
   const [heroIdx, setHeroIdx] = useState(0);
   const [isHeroPaused, setIsHeroPaused] = useState(false);
 
-  const [top10Items, setTop10Items] = useState<MediaItem[]>([]);
-  const [kdramaItems, setKdramaItems] = useState<MediaItem[]>([]);
-  const [cdramaItems, setCdramaItems] = useState<MediaItem[]>([]);
-  const [animeItems, setAnimeItems] = useState<MediaItem[]>([]);
-  const [globalItems, setGlobalItems] = useState<MediaItem[]>([]);
-  const [recentEpisodes, setRecentEpisodes] = useState<any[]>([]);
-  const [topPeople, setTopPeople] = useState<PersonItem[]>([]);
-  const [magPosts, setMagPosts] = useState<MagazinePost[]>([]);
+  const [top10Items, setTop10Items] = useState<MediaItem[]>(() =>
+    initialBundle
+      ? [
+          ...initialBundle.kds.slice(0, 4),
+          ...initialBundle.ans.slice(0, 4),
+          ...initialBundle.cds.slice(0, 2),
+        ]
+      : []
+  );
+  const [kdramaItems, setKdramaItems] = useState<MediaItem[]>(() => initialBundle?.kds || []);
+  const [cdramaItems, setCdramaItems] = useState<MediaItem[]>(() => initialBundle?.cds || []);
+  const [animeItems, setAnimeItems] = useState<MediaItem[]>(() => initialBundle?.ans || []);
+  const [globalItems, setGlobalItems] = useState<MediaItem[]>(() => initialBundle?.gls || []);
+  const [recentEpisodes, setRecentEpisodes] = useState<any[]>(
+    () => initialBundle?.recentEpsProcessed || []
+  );
+  const [topPeople, setTopPeople] = useState<PersonItem[]>(() => initialBundle?.people || []);
+  const [magPosts, setMagPosts] = useState<MagazinePost[]>(() => initialBundle?.magPosts || []);
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('ALL');
-  const [filteredRail, setFilteredRail] = useState<MediaItem[]>([]);
+  const [filteredRail, setFilteredRail] = useState<MediaItem[]>(() =>
+    initialBundle
+      ? [
+          ...initialBundle.kds.slice(0, 5),
+          ...initialBundle.ans.slice(0, 5),
+          ...initialBundle.cds.slice(0, 4),
+        ]
+      : []
+  );
 
   const top10ScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function fetchHomeData() {
-      const homeData = await cachedQuery('home_catalog_bundle', 180_000, async () => {
+      const homeData = await cachedQuery('home_catalog_bundle', 300_000, async () => {
         const [
           featRes,
           kdRes,
@@ -189,23 +233,33 @@ export default function HomePage() {
         .then((j) => {
           if (Array.isArray(j?.posts) && j.posts.length > 0) {
             setMagPosts(j.posts);
+            if (memoryHomeBundle) memoryHomeBundle.magPosts = j.posts;
           }
         })
         .catch(() => {});
 
+      let processedEps: any[] = [];
       if (episodes && episodes.length > 0) {
         const mIds = Array.from(new Set(episodes.map((e: any) => e.media_id)));
-        const { data: mRows } = await supabase
-          .from('media')
-          .select('*')
-          .in('id', mIds);
-        const mMap = new Map(((mRows as MediaItem[]) || []).map((m) => [m.id, m]));
-        setRecentEpisodes(
-          episodes
-            .map((e: any) => ({ ...e, media: mMap.get(e.media_id) }))
-            .filter((e: any) => e.media)
+        const mRows = await cachedQuery(
+          `home_episodes_media_${mIds.sort().join('_')}`,
+          300_000,
+          async () => {
+            const { data } = await supabase.from('media').select('*').in('id', mIds);
+            return (data as MediaItem[]) || [];
+          }
         );
+        const mMap = new Map(((mRows as MediaItem[]) || []).map((m) => [m.id, m]));
+        processedEps = episodes
+          .map((e: any) => ({ ...e, media: mMap.get(e.media_id) }))
+          .filter((e: any) => e.media);
+        setRecentEpisodes(processedEps);
       }
+
+      memoryHomeBundle = {
+        ...homeData,
+        recentEpsProcessed: processedEps,
+      };
     }
     fetchHomeData();
   }, []);
@@ -340,33 +394,32 @@ export default function HomePage() {
                   </div>
 
                   {/* Pure White Display Title */}
-                  <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold text-white tracking-[-0.04em] leading-[1.03] drop-shadow-[0_12px_32px_rgba(0,0,0,0.9)]">
+                  <h1 className="text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold text-white tracking-[-0.04em] leading-[1.05] drop-shadow-[0_12px_32px_rgba(0,0,0,0.9)]">
                     {activeHero.title}
                   </h1>
 
-                  <p className="text-[15px] md:text-[16px] text-white/75 font-normal leading-relaxed max-w-xl line-clamp-3 drop-shadow-md">
+                  <p className="text-sm sm:text-[15px] md:text-[16px] text-white/75 font-normal leading-relaxed max-w-xl line-clamp-3 drop-shadow-md">
                     {activeHero.overview ||
                       'KoUp 1080p sinema kalitesinde, tüm alternatif kaynaklar ve Türkçe altyazı seçenekleriyle hemen izlemeye başlayın.'}
                   </p>
 
                   {/* Sleek Pill Actions (Exact ui/code.html) */}
-                  <div className="flex flex-wrap items-center gap-3.5 pt-2">
-                    <button
-                      onClick={() => {
-                        triggerSound('click');
-                        router.push(`/seri/${activeHero.slug}?play=1`);
-                      }}
-                      className="flex items-center gap-2.5 px-8 py-3.5 rounded-full bg-white text-black font-bold text-[14px] hover:bg-white/90 active:scale-[0.98] transition-all duration-200 transform-gpu backface-hidden shadow-[0_4px_24px_rgba(255,255,255,0.25)] cursor-pointer"
+                  <div className="flex flex-wrap items-center gap-2.5 sm:gap-3.5 pt-2 w-full">
+                    <Link
+                      href={`/seri/${activeHero.slug}?play=1`}
+                      prefetch={true}
+                      onClick={() => triggerSound('click')}
+                      className="w-full sm:w-auto justify-center flex items-center gap-2.5 px-8 py-3.5 rounded-full bg-white text-black font-bold text-[14px] hover:bg-white/90 active:scale-[0.98] transition-all duration-200 transform-gpu backface-hidden shadow-[0_4px_24px_rgba(255,255,255,0.25)] cursor-pointer"
                     >
                       <Play className="w-5 h-5 fill-black" />
                       <span>Hemen İzle</span>
-                    </button>
+                    </Link>
 
                     <button
                       onClick={() =>
                         updateWatchStatus(activeHero.id, 'watching', 1, 1)
                       }
-                      className="flex items-center gap-2 px-6 py-3.5 rounded-full glass-pill hover:bg-white/15 text-white font-semibold text-[14px] active:scale-[0.98] transition-all duration-200 transform-gpu backface-hidden cursor-pointer"
+                      className="flex-1 sm:flex-initial justify-center flex items-center gap-2 px-6 py-3.5 rounded-full glass-pill hover:bg-white/15 text-white font-semibold text-[14px] active:scale-[0.98] transition-all duration-200 transform-gpu backface-hidden cursor-pointer"
                     >
                       {progressMap[activeHero.id] ? (
                         <>
@@ -383,8 +436,9 @@ export default function HomePage() {
 
                     <Link
                       href={`/seri/${activeHero.slug}`}
+                      prefetch={true}
                       aria-label="Detaylar"
-                      className="w-12 h-12 rounded-full glass-pill hover:bg-white/15 flex items-center justify-center text-white/80 hover:text-white transition-all duration-300"
+                      className="w-12 h-12 shrink-0 rounded-full glass-pill hover:bg-white/15 flex items-center justify-center text-white/80 hover:text-white transition-all duration-300"
                     >
                       <Info className="w-5 h-5" />
                     </Link>
@@ -393,11 +447,11 @@ export default function HomePage() {
               </AnimatePresence>
 
               {/* Floating Interactive Preview Rail (Bottom Right — Exact ui/code.html) */}
-              <div className="relative flex flex-col items-start lg:items-end gap-3 z-20">
+              <div className="relative flex flex-col items-start lg:items-end gap-3 z-20 w-full lg:w-auto">
                 <span className="text-[10px] tracking-[0.2em] font-semibold uppercase text-white/45">
                   Sıradaki Vitrin Seçkisi
                 </span>
-                <div className="flex items-center gap-2.5 glass-pill-dark p-2 rounded-2xl shadow-[0_20px_45px_rgba(0,0,0,0.85)] overflow-x-auto max-w-full no-scrollbar">
+                <div className="flex items-center gap-2.5 glass-pill-dark p-2 rounded-2xl shadow-[0_20px_45px_rgba(0,0,0,0.85)] overflow-x-auto max-w-full no-scrollbar scroll-smooth [-webkit-overflow-scrolling:touch]">
                   {heroItems.slice(0, 4).map((hItem, idx) => {
                     const active = idx === heroIdx;
                     return (
@@ -466,6 +520,7 @@ export default function HomePage() {
               </div>
               <Link
                 href="/profil"
+                prefetch={true}
                 className="text-[12px] tracking-wider uppercase font-semibold text-white/50 hover:text-white flex items-center gap-1.5 transition-colors"
               >
                 <span>Tümünü Gör</span>
@@ -473,7 +528,7 @@ export default function HomePage() {
               </Link>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
+            <div className="flex md:grid md:grid-cols-2 xl:grid-cols-4 gap-4 overflow-x-auto md:overflow-visible pb-3 md:pb-0 no-scrollbar snap-x snap-mandatory [-webkit-overflow-scrolling:touch]">
               {continueWatchingItems.map((item) => {
                 const prog = progressMap[item.id];
                 const pct = Math.min(
@@ -500,7 +555,8 @@ export default function HomePage() {
                   <Link
                     key={item.id}
                     href={`/seri/${item.slug}?play=1&ep=${prog?.current_episode || 1}`}
-                    className="group relative rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/[0.08] hover:border-white/25 transition-all duration-500 shadow-xl cursor-pointer block"
+                    prefetch={true}
+                    className="w-[82vw] max-w-[320px] shrink-0 md:w-auto snap-start group relative rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/[0.08] hover:border-white/25 transition-all duration-500 shadow-xl cursor-pointer block"
                   >
                     <div className="relative w-full aspect-[21/9] overflow-hidden">
                       <img
@@ -568,6 +624,7 @@ export default function HomePage() {
                 <Link
                   key={item.id}
                   href={`/seri/${item.slug}`}
+                  prefetch={true}
                   className="group relative rounded-3xl overflow-hidden bg-[#0f0f11] h-[440px] flex flex-col justify-between p-7 border border-white/10 hover:border-white/30 transition-all duration-500 shadow-2xl cursor-pointer"
                 >
                   <img
@@ -659,20 +716,21 @@ export default function HomePage() {
 
           <div
             ref={top10ScrollRef}
-            className="flex items-stretch gap-10 overflow-x-auto pb-6 pt-4 no-scrollbar snap-x snap-mandatory"
+            className="flex items-stretch gap-6 sm:gap-10 overflow-x-auto pb-6 pt-4 no-scrollbar snap-x snap-mandatory [-webkit-overflow-scrolling:touch]"
           >
             {top10Items.map((item, idx) => (
               <Link
                 key={item.id}
                 href={`/seri/${item.slug}`}
-                className="shrink-0 flex items-end group cursor-pointer snap-start relative pl-4 md:pl-6"
+                prefetch={true}
+                className="shrink-0 flex items-end group cursor-pointer snap-start relative pl-3 sm:pl-4 md:pl-6"
               >
                 {/* Netflix/Apple TV+ Top 10 Stroke Numeral */}
-                <span className="text-[125px] md:text-[145px] font-black leading-[0.78] tracking-tighter text-stroke-numeral select-none pointer-events-none drop-shadow-[0_12px_24px_rgba(0,0,0,0.95)] -translate-x-4 md:-translate-x-6 -mr-6 md:-mr-8 z-0">
+                <span className="text-[96px] sm:text-[125px] md:text-[145px] font-black leading-[0.78] tracking-tighter text-stroke-numeral select-none pointer-events-none drop-shadow-[0_12px_24px_rgba(0,0,0,0.95)] -translate-x-3 sm:-translate-x-4 md:-translate-x-6 -mr-5 sm:-mr-6 md:-mr-8 z-0">
                   {idx + 1}
                 </span>
 
-                <div className="relative z-10 w-44 md:w-52 aspect-[2/3] rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 group-hover:border-white/30 shadow-[0_20px_45px_rgba(0,0,0,0.85)] group-hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-end p-4">
+                <div className="relative z-10 w-36 sm:w-44 md:w-52 min-w-[144px] aspect-[2/3] rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 group-hover:border-white/30 shadow-[0_20px_45px_rgba(0,0,0,0.85)] group-hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-end p-3.5 sm:p-4">
                   <img
                     src={getProxiedImageUrl(item.cover_image, item.title)}
                     alt={item.title}
@@ -685,7 +743,7 @@ export default function HomePage() {
                     <span className={getTypeBadgeClass(item.content_type, item.country_code || item.country)}>
                       {formatContentTypeTR(item.content_type, item.country_code || item.country)}
                     </span>
-                    <span className="text-[15px] font-bold text-white truncate mt-0.5">
+                    <span className="text-[14px] sm:text-[15px] font-bold text-white truncate mt-0.5">
                       {item.title}
                     </span>
                   </div>
@@ -744,7 +802,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4 overflow-x-auto pb-4 pt-1 no-scrollbar">
+          <div className="flex items-center gap-3.5 sm:gap-4 overflow-x-auto pb-4 pt-1 no-scrollbar [-webkit-overflow-scrolling:touch]">
             {filteredRail.map((item, i) => (
               <AccordionMediaCard
                 key={item.id}
@@ -796,6 +854,7 @@ export default function HomePage() {
                 </div>
                 <Link
                   href="/oyuncular"
+                  prefetch={true}
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full glass-pill text-xs font-semibold text-white hover:bg-white/15 transition-all"
                 >
                   <span>Tüm Sıralamayı Gör (21.814)</span>
@@ -827,7 +886,7 @@ export default function HomePage() {
                         <Heart className={`w-3.5 h-3.5 ${isFav ? 'fill-white' : ''}`} />
                       </button>
 
-                      <Link href={`/oyuncu/${person.slug}`} className="flex flex-col items-center">
+                      <Link href={`/oyuncu/${person.slug}`} prefetch={true} className="flex flex-col items-center">
                         <div className="w-20 h-20 rounded-full overflow-hidden border border-white/15 group-hover:border-white/40 transition-all mb-3">
                           <img
                             src={getProxiedImageUrl(person.image_url, person.name)}
@@ -877,6 +936,7 @@ export default function HomePage() {
               </div>
               <Link
                 href="/magazin"
+                prefetch={true}
                 className="text-xs font-semibold text-white/60 hover:text-white flex items-center gap-1 transition-colors"
               >
                 <span>Tüm Haberler</span>
@@ -889,6 +949,7 @@ export default function HomePage() {
                 <Link
                   key={post.slug}
                   href={`/magazin/${post.slug}`}
+                  prefetch={true}
                   className="koup-projection-card rounded-2xl overflow-hidden flex flex-col justify-between group"
                 >
                   <div className="relative h-44 overflow-hidden">
@@ -991,6 +1052,7 @@ function AccordionRow({
           </button>
           <Link
             href={href}
+            prefetch={true}
             className="text-xs font-semibold text-white/55 hover:text-white flex items-center gap-1 ml-2 transition-colors"
           >
             <span>Tümünü Gör</span>
@@ -1001,7 +1063,7 @@ function AccordionRow({
 
       <div
         ref={scrollRef}
-        className="flex items-center gap-4 overflow-x-auto pb-4 pt-1 no-scrollbar"
+        className="flex items-center gap-3.5 sm:gap-4 overflow-x-auto pb-4 pt-1 no-scrollbar [-webkit-overflow-scrolling:touch]"
       >
         {items.map((item) => (
           <AccordionMediaCard key={item.id} item={item} />

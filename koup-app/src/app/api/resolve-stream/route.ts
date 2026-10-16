@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 export const revalidate = 3600;
 
 const CACHE_HEADERS = {
-  'Cache-Control': 'public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400',
+  'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
 };
 
 export async function GET(req: NextRequest) {

@@ -165,7 +165,7 @@ function DiscoverContent() {
         </div>
 
         {/* Type + Country Row with Fluid Spring Pills */}
-        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-white/[0.06]">
+        <div className="flex items-center gap-2 pt-2 border-t border-white/[0.06] overflow-x-auto no-scrollbar pb-1.5 [-webkit-overflow-scrolling:touch]">
           {CONTENT_TYPES.map((ct) => {
             const Icon = ct.icon;
             const active = typeFilter === ct.id;
@@ -176,7 +176,7 @@ function DiscoverContent() {
                   triggerSound('click');
                   setTypeFilter(ct.id);
                 }}
-                className={`relative flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition-colors cursor-pointer ${
+                className={`relative shrink-0 flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition-colors cursor-pointer ${
                   active ? 'text-black' : 'glass-pill text-white/75 hover:text-white'
                 }`}
               >
@@ -193,7 +193,7 @@ function DiscoverContent() {
             );
           })}
 
-          <div className="h-5 w-px bg-white/10 mx-1 hidden sm:block" />
+          <div className="h-5 w-px bg-white/10 mx-1 shrink-0 hidden sm:block" />
 
           {COUNTRIES.map((c) => {
             const active = countryFilter === c.id;
@@ -204,7 +204,7 @@ function DiscoverContent() {
                   triggerSound('click');
                   setCountryFilter(c.id);
                 }}
-                className={`relative flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors cursor-pointer ${
+                className={`relative shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors cursor-pointer ${
                   active ? 'text-black' : 'glass-pill text-white/75 hover:text-white'
                 }`}
               >
@@ -229,7 +229,7 @@ function DiscoverContent() {
         </div>
 
         {/* Genre Chips with Spring Pill */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1.5 [-webkit-overflow-scrolling:touch]">
           {GENRES.map((g) => {
             const active = genreFilter === g;
             return (
@@ -239,7 +239,7 @@ function DiscoverContent() {
                   triggerSound('click');
                   setGenreFilter(g);
                 }}
-                className={`relative px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-colors cursor-pointer ${
+                className={`relative shrink-0 px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-colors cursor-pointer ${
                   active
                     ? 'text-black'
                     : 'bg-white/[0.04] text-white/65 border border-white/10 hover:text-white'
@@ -275,10 +275,10 @@ function DiscoverContent() {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-          className="flex flex-wrap items-center justify-center sm:justify-start gap-4 cv-auto"
+          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3.5 sm:gap-4 cv-auto"
         >
           {items.map((item) => (
-            <AccordionMediaCard key={item.id} item={item} />
+            <AccordionMediaCard key={item.id} item={item} fluidWidth={true} />
           ))}
         </motion.div>
       )}

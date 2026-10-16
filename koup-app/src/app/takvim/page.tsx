@@ -49,12 +49,33 @@ const DAYS = [
   { id: 7, name: 'Pazar', short: 'PAZ' },
 ];
 
-const SOURCE_FILTERS = [
-  { id: 'all', label: 'Tüm Kaynaklar' },
-  { id: 'webdramaturkey', label: 'WebDramaTurkey (K-Drama & C-Drama)' },
-  { id: 'dizibox', label: 'DiziBox (Yabancı Dizi & TV)' },
-  { id: 'tranimeizle', label: 'Anime Takvimi (AniList)' },
+const CATEGORY_FILTERS = [
+  { id: 'all', label: 'Tüm Kategoriler' },
+  { id: 'kdrama', label: 'K-Drama & Asya Dizileri' },
+  { id: 'anime', label: 'Animeler' },
+  { id: 'dizi', label: 'Popüler & Global Diziler' },
 ];
+
+function isScheduleAnime(item: CalendarScheduleItem): boolean {
+  return (
+    item.source_site === 'tranimeizle' ||
+    item.source_site === 'animecix' ||
+    Boolean(item.category?.toLowerCase().includes('anime')) ||
+    item.media?.content_type === 'anime'
+  );
+}
+
+function isScheduleKdrama(item: CalendarScheduleItem): boolean {
+  if (isScheduleAnime(item)) return false;
+  return (
+    item.source_site === 'webdramaturkey' ||
+    Boolean(item.category?.toLowerCase().includes('kore')) ||
+    Boolean(item.category?.toLowerCase().includes('k-drama')) ||
+    Boolean(item.category?.toLowerCase().includes('çin')) ||
+    item.media?.country_code === 'KR' ||
+    item.media?.country_code === 'CN'
+  );
+}
 
 export default function CalendarPage() {
   const { followedMediaIds, toggleMediaFollow, triggerSound, pushNotification } =
@@ -63,7 +84,7 @@ export default function CalendarPage() {
   const [selectedDay, setSelectedDay] = useState<number>(
     ((new Date().getDay() + 6) % 7) + 1
   );
-  const [selectedSource, setSelectedSource] = useState<string>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [schedules, setSchedules] = useState<CalendarScheduleItem[]>([]);
   const [enabledScrapers, setEnabledScrapers] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -74,14 +95,11 @@ export default function CalendarPage() {
     async function loadSchedule() {
       setIsLoading(true);
       try {
-        const cacheKey = `takvim_schedules_${selectedDay}_${selectedSource}`;
+        const cacheKey = `takvim_schedules_${selectedDay}`;
         const result = await cachedQuery(cacheKey, 120_000, async () => {
           const params = new URLSearchParams({
             day: String(selectedDay),
           });
-          if (selectedSource !== 'all') {
-            params.set('source', selectedSource);
-          }
 
           const res = await fetch(`/api/takvim/live?${params.toString()}`);
           return res.json();
@@ -106,9 +124,17 @@ export default function CalendarPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedDay, selectedSource]);
+  }, [selectedDay]);
 
   const activeDayName = DAYS.find((d) => d.id === selectedDay)?.name || 'Pazartesi';
+
+  const displayedSchedules = schedules.filter((item) => {
+    if (selectedCategory === 'all') return true;
+    if (selectedCategory === 'anime') return isScheduleAnime(item);
+    if (selectedCategory === 'kdrama') return isScheduleKdrama(item);
+    if (selectedCategory === 'dizi') return !isScheduleAnime(item) && !isScheduleKdrama(item);
+    return true;
+  });
 
   return (
     <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 space-y-8">
@@ -117,15 +143,13 @@ export default function CalendarPage() {
         <div className="space-y-2">
           <div className="text-[11px] font-mono font-bold uppercase tracking-[0.2em] text-white/50 flex items-center gap-2">
             <Calendar className="w-4 h-4 text-emerald-400" />
-            <span>Gerçek Yayın Takvimi • Canlı Scraper & AniList Senkronizasyonu</span>
+            <span>Yayın Takvimi • Canlı Yayın Akışı & Yeni Bölümler</span>
           </div>
           <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
             Yayın Takvimi & Yeni Bölüm Programı
           </h1>
           <p className="text-sm text-white/60 max-w-2xl">
-            Sadece aktif yayını olan güncel seriler listelenir. Admin panelde açık olan
-            kaynakların (WebDramaTurkey, DiziBox, AniList) orijinal takvimleriyle anlık
-            senkronizedir.
+            Aktif yayını devam eden Kore dizileri, Asya yapımları ve popüler animelerin haftalık yayın programı. Yeni bölümler yayınlandığı gün güncellenir.
           </p>
         </div>
 
@@ -163,17 +187,17 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* Scraper Source Filter Pills */}
+      {/* Category Filter Pills (Internal Scraper Sources Completely Removed) */}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-mono text-white/45 mr-1">Kaynak Filtresi:</span>
-        {SOURCE_FILTERS.map((sf) => {
-          const active = selectedSource === sf.id;
+        <span className="text-xs font-mono text-white/45 mr-1">Kategori:</span>
+        {CATEGORY_FILTERS.map((cf) => {
+          const active = selectedCategory === cf.id;
           return (
             <button
-              key={sf.id}
+              key={cf.id}
               onClick={() => {
                 triggerSound?.('click');
-                setSelectedSource(sf.id);
+                setSelectedCategory(cf.id);
               }}
               className={`px-3.5 py-1.5 rounded-full text-xs font-mono transition-all cursor-pointer border ${
                 active
@@ -181,7 +205,7 @@ export default function CalendarPage() {
                   : 'bg-white/[0.04] text-white/70 border-white/10 hover:text-white hover:border-white/20'
               }`}
             >
-              {sf.label}
+              {cf.label}
             </button>
           );
         })}
@@ -195,7 +219,7 @@ export default function CalendarPage() {
             {activeDayName} Günü Yayınlanan Seriler
           </h2>
           <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/10 text-white/80">
-            {schedules.length} Yapım
+            {displayedSchedules.length} Yapım
           </span>
         </div>
 
@@ -208,9 +232,9 @@ export default function CalendarPage() {
       {/* Grid of Calendar Items */}
       {isLoading ? (
         <div className="py-24 text-center text-sm font-mono text-white/50 animate-pulse">
-          Canlı yayın takvimi ve kaynak bilgileri getiriliyor...
+          Canlı yayın takvimi ve program bilgileri getiriliyor...
         </div>
-      ) : schedules.length === 0 ? (
+      ) : displayedSchedules.length === 0 ? (
         <div className="py-24 text-center rounded-3xl apple-glass p-8 border border-white/10 space-y-3">
           <div className="w-12 h-12 rounded-full bg-white/10 mx-auto flex items-center justify-center text-white/60">
             <Calendar className="w-6 h-6" />
@@ -219,8 +243,7 @@ export default function CalendarPage() {
             {activeDayName} gününe ait aktif yayın bulunamadı
           </h3>
           <p className="text-xs text-white/50 max-w-md mx-auto">
-            Bu gün için seçili kaynakta yeni bölüm takvimi bulunmuyor veya ilgili kaynak
-            Admin Panelinden devre dışı bırakılmış olabilir.
+            Seçili gün veya kategori için yeni bölüm yayını bulunmuyor.
           </p>
         </div>
       ) : (
@@ -229,7 +252,7 @@ export default function CalendarPage() {
           className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4"
         >
           <AnimatePresence mode="popLayout">
-            {schedules.map((item) => {
+            {displayedSchedules.map((item) => {
               const targetSlug = item.media?.slug || item.slug;
               const coverImg =
                 item.media?.cover_image ||
@@ -239,12 +262,13 @@ export default function CalendarPage() {
                 ? followedMediaIds.includes(item.media_id)
                 : false;
 
-              const sourceBadge =
-                item.source_site === 'webdramaturkey'
-                  ? { label: 'WebDrama', color: 'bg-amber-400/20 text-amber-300 border-amber-400/30' }
-                  : item.source_site === 'dizibox'
-                  ? { label: 'DiziBox', color: 'bg-sky-400/20 text-sky-300 border-sky-400/30' }
-                  : { label: 'AniList', color: 'bg-indigo-400/20 text-indigo-300 border-indigo-400/30' };
+              const categoryBadge = isScheduleAnime(item)
+                ? { label: 'ANİME', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30' }
+                : (item.media?.country_code === 'KR' || item.category?.toLowerCase().includes('kore'))
+                ? { label: 'K-DRAMA', color: 'bg-sky-500/20 text-sky-300 border-sky-400/30' }
+                : (item.media?.country_code === 'CN' || item.category?.toLowerCase().includes('çin'))
+                ? { label: 'C-DRAMA', color: 'bg-amber-500/20 text-amber-300 border-amber-400/30' }
+                : { label: item.category || 'DİZİ', color: 'bg-purple-500/20 text-purple-300 border-purple-400/30' };
 
               return (
                 <motion.div
@@ -268,11 +292,11 @@ export default function CalendarPage() {
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
 
-                    {/* Source Site Badge */}
+                    {/* Category Badge */}
                     <span
-                      className={`absolute top-2.5 left-2.5 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border backdrop-blur-md ${sourceBadge.color}`}
+                      className={`absolute top-2.5 left-2.5 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border backdrop-blur-md ${categoryBadge.color}`}
                     >
-                      {sourceBadge.label}
+                      {categoryBadge.label}
                     </span>
 
                     {/* Episode Badge */}
