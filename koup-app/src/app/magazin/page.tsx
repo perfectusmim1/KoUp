@@ -152,19 +152,23 @@ export default function MagazineHubPage() {
 
       {/* CATEGORY FILTER TABS */}
       <div className="flex flex-wrap items-center gap-2">
-        {MAGAZINE_CATEGORIES.map((cat) => (
-          <button
-            key={cat}
-            onClick={() => setActiveCategory(cat)}
-            className={`px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer ${
-              activeCategory === cat
-                ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.4)]'
-                : 'apple-glass-pill text-white/75 hover:text-white'
-            }`}
-          >
-            {cat === 'Dedikodu' ? '🔥 Dedikodu' : cat}
-          </button>
-        ))}
+        {MAGAZINE_CATEGORIES.map((cat) => {
+          const active = activeCategory === cat;
+          return (
+            <button
+              key={cat}
+              onClick={() => setActiveCategory(cat)}
+              className={`relative flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-colors cursor-pointer ${
+                active
+                  ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.4)]'
+                  : 'glass-pill text-white/75 hover:text-white'
+              }`}
+            >
+              {cat === 'Dedikodu' && <Flame className="w-3.5 h-3.5" />}
+              <span>{cat}</span>
+            </button>
+          );
+        })}
       </div>
 
       {isLoading ? (

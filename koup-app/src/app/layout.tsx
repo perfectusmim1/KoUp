@@ -29,17 +29,17 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="bg-[#08080A] text-[#F4F4F6] min-h-screen flex flex-col selection:bg-sky-400 selection:text-black">
+      <body className="bg-[#080808] text-[#F4F4F6] min-h-screen flex flex-col selection:bg-white selection:text-black">
         <KoUpProvider>
           <Navbar />
           <main className="flex-1">{children}</main>
-          <footer className="mt-24 border-t border-white/[0.07] bg-[#060608] py-12 px-6 lg:px-14">
+          <footer className="mt-24 border-t border-white/[0.06] bg-[#080808] py-12 px-6 lg:px-14">
             <div className="max-w-[1680px] mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
               <div className="flex items-center gap-3.5">
                 <img
                   src="/logo-dark.png"
                   alt="KoUp"
-                  className="w-9 h-9 object-contain"
+                  className="h-9 w-auto object-contain"
                 />
                 <div>
                   <div className="text-sm font-bold text-white">

@@ -2,20 +2,29 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   User,
-  Lock,
-  Globe,
-  Volume2,
-  RefreshCw,
-  FolderPlus,
   Heart,
   Clock,
   CheckCircle2,
+  Bookmark,
+  PauseCircle,
+  XCircle,
+  Lock,
+  Globe,
+  Download,
+  Volume2,
+  FolderPlus,
   Sparkles,
+  LogIn,
+  BarChart3,
+  Library,
+  FolderHeart,
+  Zap,
   Settings,
-  Play,
-  EyeOff,
+  Activity,
+  ChevronRight,
 } from 'lucide-react';
 import {
   supabase,
@@ -24,215 +33,235 @@ import {
   getProxiedImageUrl,
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
-import { playNotificationChime, SoundTone } from '@/lib/sound';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 
-interface CustomListObj {
-  id: string;
-  title: string;
-  description: string;
-  cover_image_url: string;
-  visibility: 'public' | 'private' | 'unlisted';
-  media_ids: number[];
-}
+type ProfileTab = 'overview' | 'library' | 'lists' | 'import' | 'settings';
 
 export default function ProfilePage() {
   const {
-    user,
+    profile,
     progressMap,
-    favPersonIds,
-    setLibraryStatus,
-    updateProfileSettings,
-    pushNotification,
-    setIsAuthModalOpen,
+    personFavorites,
+    soundEnabled,
+    toggleSound,
+    triggerSound,
   } = useKoUp();
 
-  const [activeTab, setActiveTab] = useState<
-    'overview' | 'library' | 'lists' | 'sync' | 'settings'
-  >('overview');
-  const [libraryFilter, setLibraryFilter] = useState<
-    'watching' | 'completed' | 'plan_to_watch' | 'on_hold' | 'dropped' | 'favorites'
-  >('watching');
-
+  const [activeTab, setActiveTab] = useState<ProfileTab>('overview');
+  const [libraryFilter, setLibraryFilter] = useState<string>('ALL');
+  const [watchedMedia, setWatchedMedia] = useState<MediaItem[]>([]);
   const [favPeople, setFavPeople] = useState<PersonItem[]>([]);
 
-  // Custom Lists state
-  const [customLists, setCustomLists] = useState<CustomListObj[]>([
+  // MDL / AniList 1-Click Import state
+  const [mdlUsername, setMdlUsername] = useState('');
+  const [anilistUsername, setAnilistUsername] = useState('');
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+
+  // Privacy toggles
+  const [isPrivateProfile, setIsPrivateProfile] = useState(false);
+  const [hideWatchHistory, setHideWatchHistory] = useState(false);
+
+  // Custom Lists
+  const [customLists, setCustomLists] = useState<
+    Array<{ id: number; title: string; description: string; count: number }>
+  >([
     {
-      id: 'list-1',
-      title: 'En İyi Soğuk CEO & Sözleşmeli Evlilik K-Dramaları',
-      description: 'Romantik komedi ve yüksek kimyalı favori Kore dizilerim.',
-      cover_image_url:
-        'https://image.tmdb.org/t/p/original/rAOjnEFTuNysY7bot8zonhImGMh.jpg',
-      visibility: 'public',
-      media_ids: [1, 2, 3, 4],
+      id: 1,
+      title: 'Ağlatan Kore Dizileri Seçkim',
+      description: 'Mendilsiz izlenmeyecek duygusal başyapıtlar',
+      count: 8,
     },
   ]);
   const [newListTitle, setNewListTitle] = useState('');
   const [newListDesc, setNewListDesc] = useState('');
-  const [newListCoverUrl, setNewListCoverUrl] = useState('');
-  const [newListVisibility, setNewListVisibility] = useState<
-    'public' | 'private' | 'unlisted'
-  >('public');
 
-  // MDL & AniList 1-Click Import state
-  const [mdlUsername, setMdlUsername] = useState(user?.mdl_username || '');
-  const [anilistUsername, setAnilistUsername] = useState(
-    user?.anilist_username || ''
-  );
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<{
-    platform: string;
-    username: string;
-    matchedCount: number;
-    matchedItems: Array<{ media: MediaItem; status: string; score: number }>;
-  } | null>(null);
+  // Auth Modal state
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [authStatus, setAuthStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    if (favPersonIds.length > 0) {
-      supabase
-        .from('people')
-        .select('*')
-        .in('id', favPersonIds)
-        .then(({ data }) => {
-          setFavPeople((data as PersonItem[]) || []);
-        });
-    } else {
-      setFavPeople([]);
+    async function loadUserMediaAndPeople() {
+      const mIds = Object.keys(progressMap).map(Number);
+      if (mIds.length > 0) {
+        const { data: mRows } = await supabase
+          .from('media')
+          .select('*')
+          .in('id', mIds);
+        setWatchedMedia((mRows as MediaItem[]) || []);
+      }
+
+      if (personFavorites.length > 0) {
+        const { data: pRows } = await supabase
+          .from('people')
+          .select('*')
+          .in('id', personFavorites);
+        setFavPeople((pRows as PersonItem[]) || []);
+      } else {
+        setFavPeople([]);
+      }
     }
-  }, [favPersonIds]);
 
-  const progressEntries = Object.values(progressMap).filter((p) => p.media);
-  const totalWatchedEps =
-    (user?.stats_episodes_watched || 48) +
-    progressEntries.reduce((acc, p) => acc + (p.watched_episodes?.length || 1), 0);
-  const totalHours = Math.round((totalWatchedEps * 52) / 60);
-  const totalDays = (totalHours / 24).toFixed(1);
+    loadUserMediaAndPeople();
+  }, [progressMap, personFavorites]);
 
-  const filteredLibrary = progressEntries.filter((p) => {
-    if (libraryFilter === 'favorites') return p.is_favorite;
-    return p.status === libraryFilter;
-  });
+  const handleImport = async (source: 'mdl' | 'anilist') => {
+    const username = source === 'mdl' ? mdlUsername.trim() : anilistUsername.trim();
+    if (!username) return;
+    setIsImporting(true);
+    setImportStatus(null);
+    triggerSound('click');
+
+    try {
+      const res = await fetch('/api/mdl-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source, username }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        triggerSound('success');
+        setImportStatus(
+          `${data.message} (${data.matchedCount} yapım KoUp kütüphanenize bağlandı)`
+        );
+      } else {
+        setImportStatus(`Hata: ${data.error || 'İçe aktarım başarısız'}`);
+      }
+    } catch {
+      setImportStatus('Bağlantı hatası oluştu.');
+    } finally {
+      setIsImporting(false);
+    }
+  };
 
   const handleCreateList = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newListTitle.trim()) return;
-    const item: CustomListObj = {
-      id: `lst-${Date.now()}`,
-      title: newListTitle.trim(),
-      description: newListDesc.trim() || 'Özel KoUp koleksiyonu',
-      cover_image_url:
-        newListCoverUrl.trim() ||
-        'https://image.tmdb.org/t/p/original/rAOjnEFTuNysY7bot8zonhImGMh.jpg',
-      visibility: newListVisibility,
-      media_ids: progressEntries.slice(0, 4).map((p) => p.media_id),
-    };
-    setCustomLists((prev) => [item, ...prev]);
+    triggerSound('success');
+    setCustomLists((prev) => [
+      ...prev,
+      {
+        id: Date.now(),
+        title: newListTitle.trim(),
+        description: newListDesc.trim() || 'Özel Koleksiyon',
+        count: 0,
+      },
+    ]);
     setNewListTitle('');
     setNewListDesc('');
-    setNewListCoverUrl('');
-    pushNotification(
-      'Özel Liste Oluşturuldu 📁',
-      `"${item.title}" koleksiyonun (${item.visibility.toUpperCase()}) yayına alındı.`,
-      'success'
-    );
   };
 
-  const handleExternalImport = async (platform: 'mdl' | 'anilist') => {
-    const uname = platform === 'mdl' ? mdlUsername : anilistUsername;
-    if (!uname.trim()) {
-      pushNotification(
-        'Kullanıcı Adı Gerekli',
-        `Lütfen ${platform === 'mdl' ? 'MyDramaList' : 'AniList'} kullanıcı adınızı girin.`,
-        'info'
-      );
-      return;
-    }
-
-    setIsSyncing(true);
-    try {
-      const resp = await fetch('/api/mdl-import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform, username: uname.trim() }),
+  const handleSupabaseLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailInput || !passwordInput) return;
+    setAuthStatus('Giriş yapılıyor...');
+    const { error } = await supabase.auth.signInWithPassword({
+      email: emailInput,
+      password: passwordInput,
+    });
+    if (error) {
+      const { error: signUpErr } = await supabase.auth.signUp({
+        email: emailInput,
+        password: passwordInput,
       });
-      const data = await resp.json();
-      if (resp.ok && data.matchedItems) {
-        setSyncResult(data);
-        for (const item of data.matchedItems) {
-          if (item.media) {
-            setLibraryStatus(
-              item.media as MediaItem,
-              (item.status as 'watching' | 'completed') || 'completed',
-              item.score
-            );
-          }
-        }
-        pushNotification(
-          `${platform.toUpperCase()} İçe Aktarma Tamamlandı ⚡`,
-          `${data.matchedCount} yapım KoUp kütüphanene ve istatistiklerine senkronlandı!`,
-          'success'
-        );
+      if (signUpErr) {
+        setAuthStatus(`Uyarı: ${signUpErr.message}`);
       } else {
-        pushNotification(
-          'İçe Aktarma Bilgisi',
-          data.error || 'Kullanıcı bulunamadı.',
-          'info'
-        );
+        setAuthStatus('Hesap oluşturuldu ve oturum açıldı.');
+        setTimeout(() => setAuthModalOpen(false), 1200);
       }
-    } catch {
-      pushNotification('Bağlantı Hatası', 'İçe aktarma servisine ulaşılamadı.', 'info');
-    } finally {
-      setIsSyncing(false);
+    } else {
+      setAuthStatus('Başarıyla giriş yapıldı.');
+      setTimeout(() => setAuthModalOpen(false), 900);
     }
   };
+
+  const heatmapWeeks = Array.from({ length: 26 }, (_, w) =>
+    Array.from({ length: 7 }, (_, d) => ((w * 7 + d * 3) % 5))
+  );
+
+  const filteredWatchedMedia = watchedMedia.filter((m) => {
+    if (libraryFilter === 'ALL') return true;
+    return progressMap[m.id]?.status === libraryFilter;
+  });
+
+  const TABS: Array<{
+    id: ProfileTab;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+  }> = [
+    { id: 'overview', label: 'Genel Bakış & Drama DNA', icon: BarChart3 },
+    { id: 'library', label: `Kütüphanem (${watchedMedia.length})`, icon: Library },
+    { id: 'lists', label: `Özel Listelerim (${customLists.length})`, icon: FolderHeart },
+    { id: 'import', label: 'MDL & AniList Tek Tıkla Aktarım', icon: Zap },
+    { id: 'settings', label: 'Gizlilik & Ses Ayarları', icon: Settings },
+  ];
 
   return (
-    <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-4 sm:px-8 lg:px-14 space-y-8">
-      {/* 1. PROFILE BANNER & HEADER */}
-      <div className="rounded-3xl overflow-hidden apple-glass border border-white/15">
-        <div className="relative h-44 sm:h-56 overflow-hidden">
-          <img
-            src={getProxiedImageUrl(user?.banner_url)}
-            alt="Profil Kapak"
-            className="w-full h-full object-cover brightness-75"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#08080A] via-black/30 to-transparent" />
+    <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 space-y-8">
+      {/* PROFILE HERO BANNER (Clean Dark Slate, No Broken Avatar Image) */}
+      <div className="rounded-3xl overflow-hidden bg-[#0f0f11] border border-white/[0.08] shadow-2xl">
+        <div className="h-36 sm:h-48 bg-gradient-to-r from-[#141418] via-[#1c1c22] to-[#121215] relative overflow-hidden">
+          <div className="absolute inset-0 cinema-vignette" />
         </div>
 
-        <div className="px-6 sm:px-10 pb-8 -mt-14 relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div className="flex flex-col sm:flex-row items-center sm:items-end gap-5 text-center sm:text-left">
-            <img
-              src={getProxiedImageUrl(user?.avatar_url)}
-              alt={user?.display_name || 'Profil'}
-              className="w-28 h-28 rounded-3xl object-cover border-4 border-[#08080A] shadow-2xl"
-            />
-            <div>
-              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-white">
-                  {user?.display_name}
+        <div className="px-6 sm:px-10 pb-8 -mt-12 relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-5">
+            {/* Clean Avatar Circle — Fallback Icon if No Avatar URL */}
+            <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-3xl overflow-hidden border-2 border-white/20 shadow-2xl bg-[#17171b] flex items-center justify-center shrink-0">
+              {profile?.avatar_url ? (
+                <img
+                  src={profile.avatar_url}
+                  alt={profile.display_name}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <User className="w-11 h-11 text-white/80" />
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                  {profile?.display_name || 'KoUp VIP Üye'}
                 </h1>
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-white/10 text-white/75">
-                  @{user?.username}
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-white/[0.06] text-white/65 border border-white/10">
+                  @{profile?.username || 'koup_sinema'}
                 </span>
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-sky-400/20 text-sky-300 border border-sky-400/30">
-                  {user?.is_private ? '🔒 Gizli Profil' : '🌍 Herkese Açık Profil'}
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-white/10 text-white border border-white/15">
+                  {isPrivateProfile ? (
+                    <>
+                      <Lock className="w-3 h-3" />
+                      <span>Gizli Profil</span>
+                    </>
+                  ) : (
+                    <>
+                      <Globe className="w-3 h-3" />
+                      <span>Herkese Açık Profil</span>
+                    </>
+                  )}
                 </span>
               </div>
-              <p className="text-xs sm:text-sm text-white/65 mt-1">{user?.bio}</p>
+              <p className="text-xs sm:text-sm text-white/60 max-w-xl">
+                {profile?.bio ||
+                  'K-Drama, C-Drama ve Anime tutkunu • KoUp Sinema Koleksiyoneri'}
+              </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
             <button
-              onClick={() => setIsAuthModalOpen(true)}
-              className="px-4 py-2.5 rounded-full apple-glass-pill text-xs font-semibold text-sky-300 hover:bg-sky-400/15 cursor-pointer"
+              onClick={() => setAuthModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-full glass-pill text-xs font-semibold text-white hover:bg-white/15 cursor-pointer"
             >
-              Supabase Hesap Bağla / Değiştir
+              <LogIn className="w-3.5 h-3.5" />
+              <span>Supabase Hesap Bağla</span>
             </button>
             <button
               onClick={() => setActiveTab('settings')}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-white text-black text-xs font-bold cursor-pointer"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:scale-105 transition-transform cursor-pointer"
             >
               <Settings className="w-3.5 h-3.5" />
               <span>Gizlilik & Ses Ayarları</span>
@@ -240,561 +269,558 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="px-6 sm:px-10 py-3 border-t border-white/10 flex flex-wrap gap-2 bg-black/30">
-          {[
-            { id: 'overview', label: '📊 Genel Bakış & Drama DNA' },
-            { id: 'library', label: `📚 Kütüphanem (${progressEntries.length})` },
-            { id: 'lists', label: `📁 Özel Listelerim (${customLists.length})` },
-            { id: 'sync', label: '⚡ MDL & AniList Tek Tıkla Aktarım' },
-            { id: 'settings', label: '⚙️ Gizlilik & Sesli Bildirim Ayarları' },
-          ].map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setActiveTab(t.id as typeof activeTab)}
-              className={`px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer ${
-                activeTab === t.id
-                  ? 'bg-white text-black shadow'
-                  : 'text-white/70 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        {/* NAVIGATION TABS WITH FLUID SPRING SLIDING PILL */}
+        <div className="px-6 sm:px-10 pb-4 flex items-center gap-2 overflow-x-auto no-scrollbar border-t border-white/[0.06] pt-4">
+          {TABS.map((t) => {
+            const Icon = t.icon;
+            const active = activeTab === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => {
+                  triggerSound('click');
+                  setActiveTab(t.id);
+                }}
+                className={`relative flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                  active ? 'text-black' : 'glass-pill text-white/75 hover:text-white'
+                }`}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="profile-active-tab-pill"
+                    transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                    className="absolute inset-0 rounded-full bg-white shadow-[0_0_20px_rgba(255,255,255,0.35)]"
+                  />
+                )}
+                <Icon className="w-3.5 h-3.5 relative z-10" />
+                <span className="relative z-10">{t.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* TAB 1: OVERVIEW & DRAMA DNA */}
-      {activeTab === 'overview' && (
-        <div className="space-y-8">
-          {/* Stat Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="rounded-3xl apple-glass p-6 border border-white/10">
-              <div className="text-xs font-mono text-sky-400">TOPLAM İZLENEN BÖLÜM</div>
-              <div className="text-3xl font-mono font-extrabold text-white mt-2">
-                {totalWatchedEps} Bölüm
-              </div>
-              <div className="text-xs text-white/50 mt-1">
-                K-Drama, C-Drama & Anime
-              </div>
-            </div>
-
-            <div className="rounded-3xl apple-glass p-6 border border-white/10">
-              <div className="text-xs font-mono text-amber-300">TOPLAM EKRAN SÜRESİ</div>
-              <div className="text-3xl font-mono font-extrabold text-white mt-2">
-                {totalDays} Gün
-              </div>
-              <div className="text-xs text-white/50 mt-1">
-                Yaklaşık {totalHours} saat sinema keyfi
-              </div>
-            </div>
-
-            <div className="rounded-3xl apple-glass p-6 border border-white/10">
-              <div className="text-xs font-mono text-emerald-400">TAMAMLANAN YAPIM</div>
-              <div className="text-3xl font-mono font-extrabold text-white mt-2">
-                {(user?.stats_series_completed || 6) +
-                  (user?.stats_anime_completed || 5) +
-                  progressEntries.filter((p) => p.status === 'completed').length}
-              </div>
-              <div className="text-xs text-white/50 mt-1">
-                Dizi, Anime & Sinema Filmi
-              </div>
-            </div>
-
-            <div className="rounded-3xl apple-glass p-6 border border-white/10">
-              <div className="text-xs font-mono text-pink-400">
-                FAVORİ OYUNCU & KARAKTER
-              </div>
-              <div className="text-3xl font-mono font-extrabold text-white mt-2">
-                {favPersonIds.length} Yıldız
-              </div>
-              <div className="text-xs text-white/50 mt-1">
-                MDL & AniList favorilerin
-              </div>
-            </div>
-          </div>
-
-          {/* Drama & Anime DNA Breakdown */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="rounded-3xl apple-glass p-6 border border-white/10 space-y-4">
-              <h3 className="text-base font-bold text-white">
-                🧬 Drama & Anime DNA · Ülke Dağılımı
-              </h3>
-              <div className="space-y-3">
-                {[
-                  { label: '🇰🇷 Güney Kore (K-Drama)', pct: 58, color: 'bg-sky-400' },
-                  { label: '🇯🇵 Japonya (Anime & J-Drama)', pct: 26, color: 'bg-amber-400' },
-                  { label: '🇨🇳 Çin (C-Drama & Wuxia)', pct: 12, color: 'bg-emerald-400' },
-                  { label: '🇹🇭 Tayland & Global', pct: 4, color: 'bg-pink-400' },
-                ].map((row) => (
-                  <div key={row.label} className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-white/85 font-medium">{row.label}</span>
-                      <span className="font-mono text-white/60">%{row.pct}</span>
-                    </div>
-                    <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-                      <div
-                        style={{ width: `${row.pct}%` }}
-                        className={`h-full rounded-full ${row.color}`}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Favorite Actors & Anime Characters */}
-            <div className="rounded-3xl apple-glass p-6 border border-white/10 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-bold text-white">
-                  ❤️ Favori Oyuncularım & Karakterlerim
-                </h3>
-                <Link href="/oyuncular" className="text-xs text-sky-400 hover:underline">
-                  Yıldız Keşfet →
-                </Link>
-              </div>
-              {favPeople.length === 0 ? (
-                <div className="py-8 text-center text-xs text-white/50">
-                  Oyuncular veya anime karakterleri sayfasından ❤️ butonuna tıklayarak favori yıldızlarını buraya ekleyebilirsin.
+      {/* TAB CONTENT WITH SMOOTH ENTRY ANIMATION */}
+      <AnimatePresence mode="wait">
+        {activeTab === 'overview' && (
+          <motion.div
+            key="overview"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="space-y-8"
+          >
+            {/* Stats Bento Row */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="rounded-3xl bg-[#0f0f11] p-6 border border-white/[0.08]">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-white/50">
+                  Toplam İzlenen Bölüm
+                </span>
+                <div className="text-3xl font-extrabold text-white mt-2">
+                  {Object.keys(progressMap).length * 16 + 48} Bölüm
                 </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {favPeople.map((p) => (
-                    <Link
-                      key={p.id}
-                      href={`/oyuncu/${p.slug}`}
-                      className="flex items-center gap-2.5 p-2 rounded-2xl bg-white/[0.04] hover:bg-white/10 border border-white/10"
-                    >
-                      <img
-                        src={getProxiedImageUrl(p.image_url)}
-                        alt={p.name}
-                        className="w-10 h-10 rounded-full object-cover"
-                      />
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-white truncate">
-                          {p.name}
-                        </div>
-                        <div className="text-[10px] font-mono text-pink-300">
-                          ❤️ {p.favorites_count + 1}
-                        </div>
+                <span className="text-xs text-white/45 mt-1 block">
+                  K-Drama, C-Drama & Anime
+                </span>
+              </div>
+
+              <div className="rounded-3xl bg-[#0f0f11] p-6 border border-white/[0.08]">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-white/50">
+                  Toplam Ekran Süresi
+                </span>
+                <div className="text-3xl font-extrabold text-white mt-2">
+                  {((Object.keys(progressMap).length * 14 + 42) / 24).toFixed(1)} Gün
+                </div>
+                <span className="text-xs text-white/45 mt-1 block">
+                  Yaklaşık {Object.keys(progressMap).length * 14 + 42} saat sinema keyfi
+                </span>
+              </div>
+
+              <div className="rounded-3xl bg-[#0f0f11] p-6 border border-white/[0.08]">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-white/50">
+                  Tamamlanan Yapım
+                </span>
+                <div className="text-3xl font-extrabold text-white mt-2">
+                  {Object.values(progressMap).filter((p) => p.status === 'completed')
+                    .length + 11}
+                </div>
+                <span className="text-xs text-white/45 mt-1 block">
+                  Dizi, Anime & Sinema Filmi
+                </span>
+              </div>
+
+              <div className="rounded-3xl bg-[#0f0f11] p-6 border border-white/[0.08]">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-white/50">
+                  Favori Oyuncu & Karakter
+                </span>
+                <div className="text-3xl font-extrabold text-white mt-2">
+                  {personFavorites.length} Yıldız
+                </div>
+                <span className="text-xs text-white/45 mt-1 block">
+                  MDL & AniList favorilerin
+                </span>
+              </div>
+            </div>
+
+            {/* Drama DNA + Favorite Stars */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              <div className="lg:col-span-6 rounded-3xl bg-[#0f0f11] p-6 sm:p-8 border border-white/[0.08] space-y-5">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-white/80" />
+                  <h3 className="text-lg font-bold text-white">
+                    Drama & Anime DNA • Ülke Dağılımı
+                  </h3>
+                </div>
+                <div className="space-y-4">
+                  {[
+                    { label: 'Güney Kore (K-Drama)', code: 'KR', pct: 58 },
+                    { label: 'Japonya (Anime & J-Drama)', code: 'JP', pct: 26 },
+                    { label: 'Çin (C-Drama & Wuxia)', code: 'CN', pct: 12 },
+                    { label: 'Tayland & Global', code: 'GL', pct: 4 },
+                  ].map((row) => (
+                    <div key={row.code} className="space-y-1.5">
+                      <div className="flex justify-between text-xs font-semibold text-white/85">
+                        <span className="flex items-center gap-2">
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.06] border border-white/10 text-white/60">
+                            {row.code}
+                          </span>
+                          <span>{row.label}</span>
+                        </span>
+                        <span className="font-mono text-white/60">%{row.pct}</span>
                       </div>
-                    </Link>
+                      <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-white shadow-[0_0_8px_white]"
+                          style={{ width: `${row.pct}%` }}
+                        />
+                      </div>
+                    </div>
                   ))}
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: 6-TAB PERSONAL LIBRARY */}
-      {activeTab === 'library' && (
-        <div className="space-y-6">
-          <div className="flex flex-wrap gap-2">
-            {[
-              { id: 'watching', label: '▶ İzliyorum' },
-              { id: 'completed', label: '✓ Tamamladım' },
-              { id: 'plan_to_watch', label: '📌 İzleyeceğim' },
-              { id: 'on_hold', label: '⏸ Beklemede' },
-              { id: 'dropped', label: '✕ Bıraktım' },
-              { id: 'favorites', label: '❤️ Favorilerim' },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setLibraryFilter(tab.id as typeof libraryFilter)}
-                className={`px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer ${
-                  libraryFilter === tab.id
-                    ? 'bg-sky-400 text-black'
-                    : 'apple-glass-pill text-white/75 hover:text-white'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {filteredLibrary.length === 0 ? (
-            <div className="rounded-3xl apple-glass p-12 text-center border border-white/10">
-              <p className="text-sm text-white/60 mb-4">
-                Bu sekmede henüz yapım yok. Katalogdan ekleyebilir veya MDL/AniList hesabını tek tıkla içe aktarabilirsin.
-              </p>
-              <button
-                onClick={() => setActiveTab('sync')}
-                className="px-5 py-2.5 rounded-full bg-white text-black text-xs font-bold cursor-pointer"
-              >
-                MDL / AniList Listemi Aktar →
-              </button>
-            </div>
-          ) : (
-            <div className="flex flex-wrap gap-4">
-              {filteredLibrary.map((entry) =>
-                entry.media ? (
-                  <AccordionMediaCard key={entry.media.id} item={entry.media} />
-                ) : null
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 3: CUSTOM LISTS WITH URL COVER IMAGE */}
-      {activeTab === 'lists' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <form
-            onSubmit={handleCreateList}
-            className="rounded-3xl apple-glass p-6 border border-white/15 space-y-4 h-fit"
-          >
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <FolderPlus className="w-5 h-5 text-sky-400" />
-              <span>Yeni Özel Liste Oluştur</span>
-            </h3>
-            <div>
-              <label className="block text-xs text-white/60 mb-1">Liste Başlığı</label>
-              <input
-                type="text"
-                required
-                value={newListTitle}
-                onChange={(e) => setNewListTitle(e.target.value)}
-                placeholder="Örn: Ağlatan Kore Dizileri Seçkisi"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-white/10 text-xs text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-white/60 mb-1">
-                Kapak Görseli URL (Supabase Storage kullanılmaz)
-              </label>
-              <input
-                type="url"
-                value={newListCoverUrl}
-                onChange={(e) => setNewListCoverUrl(e.target.value)}
-                placeholder="https://... (Görsel URL)"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-white/10 text-xs text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-white/60 mb-1">Görünürlük</label>
-              <select
-                value={newListVisibility}
-                onChange={(e) =>
-                  setNewListVisibility(
-                    e.target.value as 'public' | 'private' | 'unlisted'
-                  )
-                }
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black border border-white/15 text-xs text-white"
-              >
-                <option value="public">🌍 Herkese Açık (Public)</option>
-                <option value="private">🔒 Sadece Bana Özel (Private)</option>
-                <option value="unlisted">🔗 Sadece Link İle (Unlisted)</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-white/60 mb-1">Açıklama</label>
-              <textarea
-                rows={2}
-                value={newListDesc}
-                onChange={(e) => setNewListDesc(e.target.value)}
-                placeholder="Liste hakkında kısa not..."
-                className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 text-xs text-white"
-              />
-            </div>
-            <button
-              type="submit"
-              className="w-full py-2.5 rounded-full bg-white text-black font-bold text-xs cursor-pointer"
-            >
-              Koleksiyonu Oluştur
-            </button>
-          </form>
-
-          <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {customLists.map((lst) => (
-              <div
-                key={lst.id}
-                className="koup-projection-card rounded-3xl overflow-hidden bg-[#121216] border border-white/10 flex flex-col"
-              >
-                <div className="relative h-44">
-                  <img
-                    src={getProxiedImageUrl(lst.cover_image_url)}
-                    alt={lst.title}
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#121216] via-black/30 to-transparent" />
-                  <span className="absolute top-3 right-3 px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-black/75 text-sky-300 border border-white/15">
-                    {lst.visibility.toUpperCase()}
-                  </span>
-                </div>
-                <div className="p-5 flex-1 flex flex-col justify-between">
-                  <div>
-                    <h4 className="text-base font-bold text-white">{lst.title}</h4>
-                    <p className="text-xs text-white/60 mt-1">{lst.description}</p>
-                  </div>
-                  <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-xs font-mono text-emerald-300">
-                    <span>%75 Tamamlandı</span>
-                    <span>{lst.media_ids.length} Yapım</span>
-                  </div>
-                </div>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
 
-      {/* TAB 4: 1-CLICK MYDRAMALIST & ANILIST IMPORT */}
-      {activeTab === 'sync' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* MDL Import Card */}
-          <div className="rounded-3xl apple-glass p-6 sm:p-8 border border-[#E5A93C]/30 space-y-4">
-            <div className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-[#E5A93C]/20 text-[#E5A93C] w-fit">
-              MyDramaList · Tek Tıkla Liste İçe Aktarma
-            </div>
-            <h3 className="text-xl font-bold text-white">
-              MDL İzleme Listeni KoUp&apos;a Aktar
-            </h3>
-            <p className="text-xs text-white/65 leading-relaxed">
-              Şifre gerekmez. Herkese açık MyDramaList kullanıcı adını gir; izlediğin K-Drama, C-Drama ve Asya filmleri otomatik olarak KoUp kütüphanene eklensin.
-            </p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={mdlUsername}
-                onChange={(e) => setMdlUsername(e.target.value)}
-                placeholder="MDL Kullanıcı Adın (örn: kdrama_fan)"
-                className="flex-1 px-4 py-2.5 rounded-full bg-black/60 border border-white/15 text-xs text-white"
-              />
-              <button
-                onClick={() => handleExternalImport('mdl')}
-                disabled={isSyncing}
-                className="px-5 py-2.5 rounded-full bg-[#E5A93C] text-black font-bold text-xs cursor-pointer"
-              >
-                {isSyncing ? 'Aktarılıyor...' : 'MDL Listemi Çek'}
-              </button>
-            </div>
-          </div>
+              {/* Favorited Actors & Anime Characters */}
+              <div className="lg:col-span-6 rounded-3xl bg-[#0f0f11] p-6 sm:p-8 border border-white/[0.08] space-y-5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Heart className="w-4 h-4 text-rose-400 fill-rose-400" />
+                    <h3 className="text-lg font-bold text-white">
+                      Favori Oyuncularım & Karakterlerim
+                    </h3>
+                  </div>
+                  <Link
+                    href="/oyuncular"
+                    className="text-xs font-semibold text-white/70 hover:text-white flex items-center gap-1"
+                  >
+                    <span>Yıldız Keşfet</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
 
-          {/* AniList Sync Card */}
-          <div className="rounded-3xl apple-glass p-6 sm:p-8 border border-[#38BDF8]/30 space-y-4">
-            <div className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-[#38BDF8]/20 text-[#38BDF8] w-fit">
-              AniList GraphQL · Resmi Anime Senkronu
+                {favPeople.length === 0 ? (
+                  <div className="py-10 text-center text-xs text-white/45">
+                    Oyuncular veya anime karakterleri sayfasından kalp butonuna tıklayarak favori yıldızlarını buraya ekleyebilirsin.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {favPeople.map((p) => (
+                      <Link
+                        key={p.id}
+                        href={`/oyuncu/${p.slug}`}
+                        className="flex items-center gap-2.5 p-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 transition-colors"
+                      >
+                        <img
+                          src={getProxiedImageUrl(p.image_url, p.name)}
+                          alt={p.name}
+                          className="w-11 h-11 rounded-full object-cover shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-white truncate">
+                            {p.name}
+                          </div>
+                          <div className="text-[10px] font-mono text-white/50">
+                            {p.favorites_count + 1} Favori
+                          </div>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-            <h3 className="text-xl font-bold text-white">
-              AniList Hesabını & Animelerini Eşitle
-            </h3>
-            <p className="text-xs text-white/65 leading-relaxed">
-              AniList kullanıcı adını girerek tüm anime izleme geçmişini, puanlarını ve bölüm ilerlemeni KoUp arşivindeki 7.069 animeyle anında eşleştir.
-            </p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={anilistUsername}
-                onChange={(e) => setAnilistUsername(e.target.value)}
-                placeholder="AniList Kullanıcı Adın (örn: Josh)"
-                className="flex-1 px-4 py-2.5 rounded-full bg-black/60 border border-white/15 text-xs text-white"
-              />
-              <button
-                onClick={() => handleExternalImport('anilist')}
-                disabled={isSyncing}
-                className="px-5 py-2.5 rounded-full bg-[#38BDF8] text-black font-bold text-xs cursor-pointer"
-              >
-                {isSyncing ? 'Eşitleniyor...' : 'AniList Senkronla'}
-              </button>
-            </div>
-          </div>
 
-          {syncResult && (
-            <div className="md:col-span-2 rounded-3xl apple-glass p-6 border border-emerald-400/30">
-              <h4 className="text-sm font-bold text-emerald-300 mb-3">
-                ✓ {syncResult.username} ({syncResult.platform.toUpperCase()}) hesabından{' '}
-                {syncResult.matchedCount} yapım başarıyla kütüphanene aktarıldı!
-              </h4>
-              <div className="flex items-center gap-4 overflow-x-auto no-scrollbar">
-                {syncResult.matchedItems.map((item) => (
-                  <AccordionMediaCard key={item.media.id} item={item.media} />
+            {/* 365-Day Watch Activity Heatmap */}
+            <div className="rounded-3xl bg-[#0f0f11] p-6 sm:p-8 border border-white/[0.08] space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-bold text-white">
+                  Yıllık İzleme Aktivite Haritası (Son 6 Ay)
+                </h3>
+                <span className="text-xs font-mono text-white/45">
+                  Günlük Bölüm Yoğunluğu
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-2 no-scrollbar">
+                {heatmapWeeks.map((week, wIdx) => (
+                  <div key={wIdx} className="flex flex-col gap-1.5 shrink-0">
+                    {week.map((lvl, dIdx) => (
+                      <div
+                        key={dIdx}
+                        className={`w-3.5 h-3.5 rounded-sm ${
+                          lvl === 0
+                            ? 'bg-white/[0.05]'
+                            : lvl === 1
+                              ? 'bg-white/20'
+                              : lvl === 2
+                                ? 'bg-white/40'
+                                : lvl === 3
+                                  ? 'bg-white/70'
+                                  : 'bg-white'
+                        }`}
+                      />
+                    ))}
+                  </div>
                 ))}
               </div>
             </div>
-          )}
-        </div>
-      )}
+          </motion.div>
+        )}
 
-      {/* TAB 5: PRIVACY & AUDIO NOTIFICATION SETTINGS */}
-      {activeTab === 'settings' && user && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Privacy & Profile URL Customization */}
-          <div className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/15 space-y-4">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <Lock className="w-5 h-5 text-sky-400" />
-              <span>Profil Gizliliği & Görsel URL Ayarları</span>
-            </h3>
-
-            <label className="flex items-center justify-between p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 cursor-pointer">
-              <div>
-                <div className="text-xs font-bold text-white">
-                  Gizli Profil (Private Mode)
-                </div>
-                <div className="text-[11px] text-white/55">
-                  Açıldığında profilin ve istatistiklerin sadece sana görünür
-                </div>
-              </div>
-              <input
-                type="checkbox"
-                checked={user.is_private}
-                onChange={(e) =>
-                  updateProfileSettings({ is_private: e.target.checked })
-                }
-                className="accent-sky-400 w-4 h-4"
-              />
-            </label>
-
-            <label className="flex items-center justify-between p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 cursor-pointer">
-              <div>
-                <div className="text-xs font-bold text-white">
-                  Sadece İzleme Geçmişimi Gizle
-                </div>
-                <div className="text-[11px] text-white/55">
-                  Profilin açık kalır ancak izlediğin bölümler diğer kullanıcılara gizlenir
-                </div>
-              </div>
-              <input
-                type="checkbox"
-                checked={user.hide_watch_history}
-                onChange={(e) =>
-                  updateProfileSettings({ hide_watch_history: e.target.checked })
-                }
-                className="accent-sky-400 w-4 h-4"
-              />
-            </label>
-
-            <div>
-              <label className="block text-xs text-white/60 mb-1">
-                Avatar Görsel URL
-              </label>
-              <input
-                type="url"
-                defaultValue={user.avatar_url || ''}
-                onBlur={(e) => updateProfileSettings({ avatar_url: e.target.value })}
-                className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 text-xs text-white"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-white/60 mb-1">
-                Profil Banner Görsel URL
-              </label>
-              <input
-                type="url"
-                defaultValue={user.banner_url || ''}
-                onBlur={(e) => updateProfileSettings({ banner_url: e.target.value })}
-                className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 text-xs text-white"
-              />
-            </div>
-          </div>
-
-          {/* Web Audio Notification Chime Settings */}
-          <div className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/15 space-y-4">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <Volume2 className="w-5 h-5 text-amber-300" />
-              <span>Canlı Sesli Bildirim & Sinema Modu Ayarları</span>
-            </h3>
-
-            <label className="flex items-center justify-between p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 cursor-pointer">
-              <div>
-                <div className="text-xs font-bold text-white">
-                  Bildirim Sesleri (Apple Glass Chime)
-                </div>
-                <div className="text-[11px] text-white/55">
-                  Yeni bölüm veya yorum yanıtı geldiğinde kristal ses çalar
-                </div>
-              </div>
-              <input
-                type="checkbox"
-                checked={user.notification_settings.sound_enabled}
-                onChange={(e) =>
-                  updateProfileSettings({
-                    notification_settings: {
-                      ...user.notification_settings,
-                      sound_enabled: e.target.checked,
-                    },
-                  })
-                }
-                className="accent-amber-400 w-4 h-4"
-              />
-            </label>
-
-            <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-white">Bildirim Ses Tonu</span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    playNotificationChime(
-                      user.notification_settings.sound_tone,
-                      user.notification_settings.sound_volume,
-                      false
-                    )
-                  }
-                  className="px-3 py-1 rounded-full bg-amber-400 text-black font-bold text-[11px] cursor-pointer"
-                >
-                  🔊 Sesi Dene
-                </button>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                {(
-                  [
-                    { id: 'apple_glass', label: 'Apple Glass' },
-                    { id: 'soft_chime', label: 'Soft Chime' },
-                    { id: 'minimal_pop', label: 'Minimal Pop' },
-                  ] as const
-                ).map((t) => (
+        {/* TAB 2: LIBRARY (5 Watch States) */}
+        {activeTab === 'library' && (
+          <motion.div
+            key="library"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="space-y-6"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              {[
+                { id: 'ALL', label: 'Tümü', icon: Sparkles },
+                { id: 'watching', label: 'İzleniyor', icon: Clock },
+                { id: 'completed', label: 'Tamamlandı', icon: CheckCircle2 },
+                { id: 'plan_to_watch', label: 'Planlanan', icon: Bookmark },
+                { id: 'on_hold', label: 'Beklemede', icon: PauseCircle },
+                { id: 'dropped', label: 'Bırakıldı', icon: XCircle },
+              ].map((st) => {
+                const Icon = st.icon;
+                return (
                   <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => {
-                      playNotificationChime(t.id, 0.7, false);
-                      updateProfileSettings({
-                        notification_settings: {
-                          ...user.notification_settings,
-                          sound_tone: t.id,
-                        },
-                      });
-                    }}
-                    className={`py-2 rounded-xl text-xs font-semibold border cursor-pointer ${
-                      user.notification_settings.sound_tone === t.id
-                        ? 'bg-white text-black border-white'
-                        : 'bg-black/40 text-white/70 border-white/10'
+                    key={st.id}
+                    onClick={() => setLibraryFilter(st.id)}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold cursor-pointer transition-all ${
+                      libraryFilter === st.id
+                        ? 'bg-white text-black'
+                        : 'glass-pill text-white/75 hover:text-white'
                     }`}
                   >
-                    {t.label}
+                    <Icon className="w-3.5 h-3.5" />
+                    <span>{st.label}</span>
                   </button>
+                );
+              })}
+            </div>
+
+            {filteredWatchedMedia.length === 0 ? (
+              <div className="rounded-3xl bg-[#0f0f11] p-14 text-center border border-white/10">
+                <p className="text-sm text-white/60">
+                  Bu izleme durumunda henüz kayıtlı bir dizi veya anime bulunmuyor.
+                </p>
+                <Link
+                  href="/kesfet"
+                  className="inline-block mt-4 px-6 py-2.5 rounded-full bg-white text-black text-xs font-bold"
+                >
+                  Katalogdan Yapım Ekle
+                </Link>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-4">
+                {filteredWatchedMedia.map((m) => (
+                  <AccordionMediaCard key={m.id} item={m} />
                 ))}
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* TAB 3: CUSTOM LISTS */}
+        {activeTab === 'lists' && (
+          <motion.div
+            key="lists"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="grid grid-cols-1 lg:grid-cols-12 gap-6"
+          >
+            <form
+              onSubmit={handleCreateList}
+              className="lg:col-span-4 rounded-3xl bg-[#0f0f11] p-6 border border-white/[0.08] space-y-4 h-fit"
+            >
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <FolderPlus className="w-4 h-4 text-white/80" />
+                <span>Yeni Özel Koleksiyon Oluştur</span>
+              </h3>
+              <input
+                type="text"
+                value={newListTitle}
+                onChange={(e) => setNewListTitle(e.target.value)}
+                placeholder="Örn: En İyi Wuxia & Fantastik Seçkim"
+                className="w-full px-4 py-2.5 rounded-xl bg-black/50 border border-white/15 text-xs text-white focus:outline-none"
+              />
+              <textarea
+                value={newListDesc}
+                onChange={(e) => setNewListDesc(e.target.value)}
+                rows={3}
+                placeholder="Koleksiyon açıklaması..."
+                className="w-full px-4 py-2.5 rounded-xl bg-black/50 border border-white/15 text-xs text-white focus:outline-none"
+              />
+              <button
+                type="submit"
+                className="w-full py-2.5 rounded-full bg-white text-black text-xs font-bold cursor-pointer"
+              >
+                Koleksiyonu Kaydet
+              </button>
+            </form>
+
+            <div className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {customLists.map((lst) => (
+                <div
+                  key={lst.id}
+                  className="koup-projection-card rounded-3xl p-6 flex flex-col justify-between"
+                >
+                  <div>
+                    <span className="text-[10px] font-mono text-white/60 uppercase">
+                      Herkese Açık Koleksiyon
+                    </span>
+                    <h4 className="text-lg font-bold text-white mt-1">
+                      {lst.title}
+                    </h4>
+                    <p className="text-xs text-white/60 mt-1">
+                      {lst.description}
+                    </p>
+                  </div>
+                  <div className="mt-5 pt-3 border-t border-white/10 flex items-center justify-between text-xs font-mono text-white/50">
+                    <span>{lst.count} Yapım</span>
+                    <span className="text-white/80">Paylaş →</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {/* TAB 4: 1-CLICK MDL & ANILIST WATCHLIST IMPORT */}
+        {activeTab === 'import' && (
+          <motion.div
+            key="import"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="grid grid-cols-1 md:grid-cols-2 gap-6"
+          >
+            {/* MyDramaList 1-Click Import */}
+            <div className="rounded-3xl bg-[#0f0f11] p-6 sm:p-8 border border-white/[0.08] space-y-4">
+              <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-400/15 text-amber-300 border border-amber-400/30">
+                MyDramaList (MDL) • Şifresiz Açık Profil İçe Aktarma
+              </span>
+              <h3 className="text-xl font-bold text-white">
+                MDL İzleme Listeni Tek Tıkla KoUp&apos;a Aktar
+              </h3>
+              <p className="text-xs text-white/65 leading-relaxed">
+                MyDramaList şifreni vermene gerek kalmadan yalnızca kullanıcı adını girerek açık izleme listendeki K-Drama ve C-Drama puanlarını KoUp hesabına aktarabilirsin.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={mdlUsername}
+                  onChange={(e) => setMdlUsername(e.target.value)}
+                  placeholder="MDL kullanıcı adın..."
+                  className="flex-1 px-4 py-2.5 rounded-full bg-black/55 border border-white/15 text-xs text-white focus:outline-none"
+                />
+                <button
+                  onClick={() => handleImport('mdl')}
+                  disabled={isImporting}
+                  className="px-5 py-2.5 rounded-full bg-white text-black font-bold text-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>MDL&apos;den Çek</span>
+                </button>
               </div>
             </div>
 
-            <label className="flex items-center justify-between p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 cursor-pointer">
-              <div>
-                <div className="text-xs font-bold text-white">
-                  Akıllı Sinema Modu (Tam Ekranda Sustur)
-                </div>
-                <div className="text-[11px] text-white/55">
-                  Tam ekranda dizi/anime izlerken bildirim seslerini otomatik susturur
-                </div>
+            {/* AniList GraphQL 1-Click Sync */}
+            <div className="rounded-3xl bg-[#0f0f11] p-6 sm:p-8 border border-white/[0.08] space-y-4">
+              <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-sky-400/15 text-sky-300 border border-sky-400/30">
+                AniList GraphQL • Resmi API Senkronizasyonu
+              </span>
+              <h3 className="text-xl font-bold text-white">
+                AniList Anime Kütüphaneni Senkronize Et
+              </h3>
+              <p className="text-xs text-white/65 leading-relaxed">
+                AniList kullanıcı adını girerek izlediğin animeleri, puanlarını ve bölüm ilerlemelerini doğrudan KoUp üzerindeki 7.069 animeyle eşleştir.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={anilistUsername}
+                  onChange={(e) => setAnilistUsername(e.target.value)}
+                  placeholder="AniList kullanıcı adın..."
+                  className="flex-1 px-4 py-2.5 rounded-full bg-black/55 border border-white/15 text-xs text-white focus:outline-none"
+                />
+                <button
+                  onClick={() => handleImport('anilist')}
+                  disabled={isImporting}
+                  className="px-5 py-2.5 rounded-full bg-white text-black font-bold text-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>AniList&apos;ten Çek</span>
+                </button>
               </div>
+            </div>
+
+            {importStatus && (
+              <div className="md:col-span-2 p-4 rounded-2xl bg-white/[0.06] border border-white/20 text-xs font-mono text-white">
+                {importStatus}
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* TAB 5: PRIVACY & SOUND MICRO-INTERACTION SETTINGS */}
+        {activeTab === 'settings' && (
+          <motion.div
+            key="settings"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="rounded-3xl bg-[#0f0f11] p-6 sm:p-8 border border-white/[0.08] max-w-2xl space-y-6"
+          >
+            <h3 className="text-lg font-bold text-white">
+              Profil Gizliliği & Arayüz Deneyimi Ayarları
+            </h3>
+
+            <div className="space-y-4">
+              <label className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.04] border border-white/10 cursor-pointer">
+                <div>
+                  <div className="text-sm font-bold text-white">
+                    Gizli Profil Modu (Private Account)
+                  </div>
+                  <div className="text-xs text-white/55">
+                    Açıldığında profil sayfanı yalnızca sen görebilirsin.
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={isPrivateProfile}
+                  onChange={(e) => setIsPrivateProfile(e.target.checked)}
+                  className="w-5 h-5 accent-white"
+                />
+              </label>
+
+              <label className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.04] border border-white/10 cursor-pointer">
+                <div>
+                  <div className="text-sm font-bold text-white">
+                    İzleme Geçmişimi & Kütüphanemi Gizle
+                  </div>
+                  <div className="text-xs text-white/55">
+                    Profilin açık kalsın ama izlediğin diziler diğer kullanıcılara görünmesin.
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={hideWatchHistory}
+                  onChange={(e) => setHideWatchHistory(e.target.checked)}
+                  className="w-5 h-5 accent-white"
+                />
+              </label>
+
+              <label className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.04] border border-white/10 cursor-pointer">
+                <div>
+                  <div className="text-sm font-bold text-white flex items-center gap-2">
+                    <Volume2 className="w-4 h-4 text-white/80" />
+                    <span>Arayüz Sesli Mikro-Etkileşimleri (Web Audio API)</span>
+                  </div>
+                  <div className="text-xs text-white/55">
+                    Kart açılışlarında ve buton tıklamalarında ince akustik ses efektleri.
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={soundEnabled}
+                  onChange={toggleSound}
+                  className="w-5 h-5 accent-white"
+                />
+              </label>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* SUPABASE AUTH MODAL */}
+      <AnimatePresence>
+        {authModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
+          >
+            <motion.form
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onSubmit={handleSupabaseLogin}
+              className="w-full max-w-md rounded-3xl bg-[#0f0f11] p-6 sm:p-8 border border-white/15 space-y-4"
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-bold text-white">
+                  KoUp Supabase Hesap Girişi / Kayıt
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setAuthModalOpen(false)}
+                  className="text-xs text-white/50 hover:text-white cursor-pointer"
+                >
+                  Kapat
+                </button>
+              </div>
+              <p className="text-xs text-white/60">
+                Frankfurt (eu-central-1) Supabase sunucusu üzerinden cihazlar arası izleme senkronizasyonu.
+              </p>
               <input
-                type="checkbox"
-                checked={user.notification_settings.mute_during_fullscreen}
-                onChange={(e) =>
-                  updateProfileSettings({
-                    notification_settings: {
-                      ...user.notification_settings,
-                      mute_during_fullscreen: e.target.checked,
-                    },
-                  })
-                }
-                className="accent-sky-400 w-4 h-4"
+                type="email"
+                required
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                placeholder="E-posta adresin..."
+                className="w-full px-4 py-3 rounded-xl bg-black/60 border border-white/15 text-xs text-white"
               />
-            </label>
-          </div>
-        </div>
-      )}
+              <input
+                type="password"
+                required
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                placeholder="Şifren (en az 6 karakter)..."
+                className="w-full px-4 py-3 rounded-xl bg-black/60 border border-white/15 text-xs text-white"
+              />
+              {authStatus && (
+                <div className="text-xs font-mono text-white/80">{authStatus}</div>
+              )}
+              <button
+                type="submit"
+                className="w-full py-3 rounded-full bg-white text-black font-bold text-xs cursor-pointer"
+              >
+                Giriş Yap / Kayıt Ol
+              </button>
+            </motion.form>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

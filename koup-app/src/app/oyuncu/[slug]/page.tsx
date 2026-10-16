@@ -159,20 +159,25 @@ export default function PersonDetailPage({
 
         <div className="flex-1 text-center md:text-left space-y-4">
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
-            <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-sky-400/20 text-sky-300 border border-sky-400/35">
-              {person.person_type === 'character'
-                ? '🎌 Anime Karakteri (AniList)'
-                : person.person_type === 'seiyuu'
-                ? '🎙️ Japonca Seslendirmen (Seiyuu)'
-                : '🎬 Dizi & Sinema Oyuncusu (MDL)'}
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold bg-white/[0.08] text-white border border-white/15">
+              <Sparkles className="w-3.5 h-3.5 text-white/80" />
+              <span>
+                {person.person_type === 'character'
+                  ? 'Anime Karakteri (AniList)'
+                  : person.person_type === 'seiyuu'
+                    ? 'Japonca Seslendirmen (Seiyuu)'
+                    : 'Dizi & Sinema Oyuncusu (MDL)'}
+              </span>
             </span>
 
-            <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-pink-500/20 text-pink-300 border border-pink-400/35">
-              ❤️ {totalFavs.toLocaleString('tr-TR')} Favori
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold bg-rose-500/15 text-rose-300 border border-rose-400/30">
+              <Heart className="w-3.5 h-3.5 fill-rose-400 text-rose-400" />
+              <span>{totalFavs.toLocaleString('tr-TR')} Favori</span>
             </span>
 
-            <span className="px-3 py-1 rounded-full text-xs font-mono bg-amber-400/15 text-amber-300 border border-amber-400/30">
-              ★ Ortalama Puan: {person.avg_rating || 8.6}
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono bg-amber-400/15 text-amber-300 border border-amber-400/30">
+              <Award className="w-3.5 h-3.5 text-amber-300" />
+              <span>Ortalama Puan: {person.avg_rating || 8.6}</span>
             </span>
           </div>
 
@@ -301,8 +306,9 @@ export default function PersonDetailPage({
                 <div className="text-xs font-bold text-white truncate">
                   {peer.name}
                 </div>
-                <div className="text-[10px] font-mono text-pink-300 mt-0.5">
-                  ❤️ {peer.favorites_count}
+                <div className="text-[10px] font-mono text-white/65 mt-0.5 flex items-center justify-center gap-1">
+                  <Heart className="w-2.5 h-2.5 fill-rose-400 text-rose-400" />
+                  <span>{peer.favorites_count}</span>
                 </div>
               </Link>
             ))}

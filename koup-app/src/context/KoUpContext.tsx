@@ -21,13 +21,18 @@ export interface ToastNotification {
 
 interface KoUpContextValue {
   user: UserProfile | null;
+  profile: UserProfile | null;
   progressMap: Record<number, UserMediaProgress>;
   continueWatchingList: UserMediaProgress[];
   favPersonIds: number[];
+  personFavorites: number[];
   followedMediaIds: number[];
   followedPersonIds: number[];
   notifications: ToastNotification[];
   activeToast: ToastNotification | null;
+  soundEnabled: boolean;
+  toggleSound: () => void;
+  triggerSound: (kind?: string) => void;
   isSearchOpen: boolean;
   setIsSearchOpen: (v: boolean) => void;
   isAuthModalOpen: boolean;
@@ -75,9 +80,9 @@ const DEFAULT_PROFILE: UserProfile = {
   id: 'local-cinema-member',
   username: 'koup_sinema',
   display_name: 'KoUp VIP Üye',
-  avatar_url: 'https://s4.anilist.co/file/anilistcdn/character/large/b138101-73be2N5L863q.png',
+  avatar_url: null,
   banner_url: 'https://image.tmdb.org/t/p/original/rAOjnEFTuNysY7bot8zonhImGMh.jpg',
-  bio: 'K-Drama, C-Drama ve Anime tutkunu · Lumina Cinema Koleksiyoneri',
+  bio: 'K-Drama, C-Drama ve Anime tutkunu · KoUp Sinema Koleksiyoneri',
   role: 'admin',
   is_private: false,
   hide_watch_history: false,
@@ -386,7 +391,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       };
       saveProgressMap({ ...progressMap, [media.id]: updated });
       pushNotification(
-        nextFav ? 'Favorilere Eklendi ❤️' : 'Favorilerden Çıkarıldı',
+        nextFav ? 'Favorilere Eklendi' : 'Favorilerden Çıkarıldı',
         `${media.title} favori listende güncellendi.`,
         'success'
       );
@@ -405,7 +410,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           // ignore
         }
         pushNotification(
-          exists ? 'Takip Bırakıldı' : 'Seri Takibe Alındı 🔔',
+          exists ? 'Takip Bırakıldı' : 'Seri Takibe Alındı',
           exists
             ? `${media.title} bildirimleri kapatıldı.`
             : `${media.title} için yeni bölüm yüklendiğinde anında sesli bildirim alacaksın.`,
@@ -439,7 +444,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       const newCount = Math.max(0, (curr?.favorites_count || 10) + delta);
 
       pushNotification(
-        isFav ? 'Favoriden Çıkarıldı' : 'Oyuncu / Karakter Favorilendi ❤️',
+        isFav ? 'Favoriden Çıkarıldı' : 'Oyuncu / Karakter Favorilendi',
         personName
           ? `${personName} favori sıralamasında ${isFav ? 'güncellendi' : 'yükseldi'}!`
           : 'Favori tercihin kaydedildi.',
@@ -461,7 +466,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           // ignore
         }
         pushNotification(
-          exists ? 'Oyuncu Takibi Bırakıldı' : 'Oyuncu Takibe Alındı 🔔',
+          exists ? 'Oyuncu Takibi Bırakıldı' : 'Oyuncu Takibe Alındı',
           personName
             ? `${personName} yeni bir diziye veya AsyaMag haberine konu olduğunda bildirim alacaksın.`
             : 'Takip listen güncellendi.',
@@ -556,6 +561,43 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     pushNotification('Oturum Kapatıldı', 'Misafir sinema moduna geçildi.', 'info');
   }, [pushNotification]);
 
+  const soundEnabled = Boolean(
+    user?.notification_settings?.sound_enabled ?? true
+  );
+
+  const toggleSound = useCallback(() => {
+    setUser((prev) => {
+      const base = prev || DEFAULT_PROFILE;
+      const nextSettings = {
+        ...base.notification_settings,
+        sound_enabled: !base.notification_settings.sound_enabled,
+      };
+      const updated = { ...base, notification_settings: nextSettings };
+      try {
+        localStorage.setItem('koup_profile_v1', JSON.stringify(updated));
+      } catch {
+        // ignore
+      }
+      return updated;
+    });
+  }, []);
+
+  const triggerSound = useCallback(
+    (kind?: string) => {
+      const settings =
+        user?.notification_settings || DEFAULT_PROFILE.notification_settings;
+      if (!settings.sound_enabled) return;
+      playNotificationChime(
+        kind === 'click'
+          ? 'minimal_pop'
+          : (settings.sound_tone as SoundTone) || 'apple_glass',
+        kind === 'click' ? 0.35 : settings.sound_volume ?? 0.7,
+        settings.mute_during_fullscreen ?? true
+      );
+    },
+    [user]
+  );
+
   const continueWatchingList = Object.values(progressMap)
     .filter((p) => p.status === 'watching' && p.media)
     .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
@@ -565,13 +607,18 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     <KoUpContext.Provider
       value={{
         user,
+        profile: user,
         progressMap,
         continueWatchingList,
         favPersonIds,
+        personFavorites: favPersonIds,
         followedMediaIds,
         followedPersonIds,
         notifications,
         activeToast,
+        soundEnabled,
+        toggleSound,
+        triggerSound,
         isSearchOpen,
         setIsSearchOpen,
         isAuthModalOpen,

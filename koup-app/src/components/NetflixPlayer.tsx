@@ -201,7 +201,7 @@ export default function NetflixPlayer({
             // Auto-failover to next working source!
             if (selectedSourceIdx + 1 < filteredSources.length) {
               pushNotification(
-                'Otomatik Yedek Kaynağa Geçildi ⚡',
+                'Otomatik Yedek Kaynağa Geçildi',
                 `${activeSource?.source_name} yanıt vermedi, sıradaki kaynağa geçiliyor.`,
                 'info'
               );
@@ -364,7 +364,7 @@ export default function NetflixPlayer({
     setActiveDrawer(null);
     setReportDetails('');
     pushNotification(
-      'Sorun Bildirimi Alındı 🛠️',
+      'Sorun Bildirimi Alındı',
       '24 Saat Watchdog botu bu bölümü anında yeniden tarama kuyruğuna aldı.',
       'success'
     );
@@ -755,7 +755,7 @@ export default function NetflixPlayer({
                           </div>
                           <div className="text-[10px] font-mono text-white/45">
                             {ep.status === 'scheduled'
-                              ? '⏳ Yakında Yayınlanacak'
+                              ? 'Yakında Yayınlanacak'
                               : `${ep.sources?.length || 0} Aktif Kaynak`}
                           </div>
                         </div>
@@ -817,7 +817,7 @@ export default function NetflixPlayer({
                       </div>
                       {c.voice_actor_name && (
                         <div className="text-[10px] text-amber-300 truncate">
-                          🎙️ Seiyuu: {c.voice_actor_name}
+                          Seiyuu: {c.voice_actor_name}
                         </div>
                       )}
                     </div>
@@ -954,9 +954,10 @@ export default function NetflixPlayer({
                   e.stopPropagation();
                   if (videoRef.current) videoRef.current.currentTime += 85;
                 }}
-                className="absolute bottom-24 right-6 z-30 px-4 py-2 rounded-full bg-white/95 text-black font-bold text-xs shadow-2xl hover:scale-105 transition-all cursor-pointer"
+                className="absolute bottom-24 right-6 z-30 px-4 py-2 rounded-full bg-white/95 text-black font-bold text-xs shadow-2xl hover:scale-105 transition-all cursor-pointer flex items-center gap-1.5"
               >
-                İntroyu Atla (+85sn) ⏭
+                <span>İntroyu Atla (+85sn)</span>
+                <SkipForward className="w-3.5 h-3.5 fill-black" />
               </button>
             )}
 

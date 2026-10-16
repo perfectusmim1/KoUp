@@ -6,14 +6,11 @@ import {
   ShieldCheck,
   RefreshCw,
   AlertTriangle,
-  Sparkles,
   CheckCircle2,
-  Clock,
   Radio,
-  Database,
-  Play,
-  Sliders,
   Send,
+  Volume2,
+  Star,
 } from 'lucide-react';
 import { supabase, MediaItem } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
@@ -99,7 +96,7 @@ export default function AdminDashboardPage() {
           )
         );
         pushNotification(
-          'Scraper & Senkron Tamamlandı ⚡',
+          'Scraper & Senkron Tamamlandı',
           `${name} tarandı (+${data.syncedDelta} yeni/güncel kayıt doğrulandı).`,
           'success'
         );
@@ -118,7 +115,7 @@ export default function AdminDashboardPage() {
       .update({ cron_schedule })
       .eq('id', id);
     pushNotification(
-      'Zamanlayıcı Güncellendi ⏱️',
+      'Zamanlayıcı Güncellendi',
       `${id} botu için yeni cron saati (${cron_schedule}) kaydedildi.`,
       'info'
     );
@@ -133,7 +130,7 @@ export default function AdminDashboardPage() {
       .update({ status: 'resolved' })
       .eq('id', reportId);
     pushNotification(
-      'Sorun Çözüldü İşaretlendi ✓',
+      'Sorun Çözüldü İşaretlendi',
       `Bildirim #${reportId} Watchdog tarafından onarıldı ve kapatıldı.`,
       'success'
     );
@@ -149,7 +146,7 @@ export default function AdminDashboardPage() {
       link_url: '/',
     });
     pushNotification(
-      `📢 ${broadcastTitle.trim()}`,
+      broadcastTitle.trim(),
       broadcastBody.trim(),
       'episode'
     );
@@ -160,7 +157,7 @@ export default function AdminDashboardPage() {
   return (
     <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-4 sm:px-8 lg:px-14 space-y-10">
       {/* SECURITY & INFRASTRUCTURE HEADER */}
-      <div className="rounded-3xl apple-glass p-6 sm:p-8 border border-amber-400/30 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+      <div className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/15 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-amber-300">
             <ShieldCheck className="w-4 h-4" />
@@ -183,10 +180,10 @@ export default function AdminDashboardPage() {
             <div className="text-lg font-mono font-bold text-white mt-0.5">
               17.509 Yapım
             </div>
-            <div className="text-[10px] text-white/45">RLS %100 Aktif</div>
+            <div className="text-[10px] text-white/45">0 Güvenlik Uyarısı</div>
           </div>
           <div className="p-3.5 rounded-2xl bg-black/50 border border-white/10">
-            <div className="text-[10px] font-mono text-sky-400">
+            <div className="text-[10px] font-mono text-white/60">
               OYUNCU & KARAKTER
             </div>
             <div className="text-lg font-mono font-bold text-white mt-0.5">
@@ -215,7 +212,7 @@ export default function AdminDashboardPage() {
               <span>Otomatik Scraper Botları & Cron Saat Yönetimi</span>
             </h2>
             <p className="text-xs text-white/55 mt-0.5">
-              GitHub Actions Cron + 24 Saat Rolling Verification Watchdog (1., 3., 6., 12. ve 24. saat kontrolü)
+              GitHub Actions Cron + Cloudflare Edge Cron + 24 Saat Rolling Verification Watchdog (1., 3., 6., 12. ve 24. saat kontrolü)
             </p>
           </div>
         </div>
@@ -234,7 +231,7 @@ export default function AdminDashboardPage() {
                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
                       <h3 className="text-sm font-bold text-white">{bot.name}</h3>
                     </div>
-                    <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-sky-400/15 text-sky-300">
+                    <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-white/10 text-white/80">
                       {bot.items_synced.toLocaleString('tr-TR')} Senkron
                     </span>
                   </div>
@@ -262,7 +259,7 @@ export default function AdminDashboardPage() {
                     <RefreshCw
                       className={`w-3.5 h-3.5 ${isRunning ? 'animate-spin' : ''}`}
                     />
-                    <span>{isRunning ? 'Taranıyor...' : '⚡ Şimdi Tara'}</span>
+                    <span>{isRunning ? 'Taranıyor...' : 'Şimdi Tara'}</span>
                   </button>
                 </div>
               </div>
@@ -302,8 +299,9 @@ export default function AdminDashboardPage() {
                   </div>
 
                   {rep.status === 'resolved' ? (
-                    <span className="text-xs font-mono text-emerald-400">
-                      ✓ Çözüldü
+                    <span className="inline-flex items-center gap-1 text-xs font-mono text-emerald-400">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Çözüldü</span>
                     </span>
                   ) : (
                     <button
@@ -325,7 +323,7 @@ export default function AdminDashboardPage() {
           className="rounded-3xl apple-glass p-6 border border-white/15 space-y-4 h-fit"
         >
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
-            <Send className="w-5 h-5 text-sky-400" />
+            <Send className="w-5 h-5 text-white/75" />
             <span>Toplu Sesli Bildirim Gönder</span>
           </h3>
           <p className="text-xs text-white/55">
@@ -355,9 +353,10 @@ export default function AdminDashboardPage() {
           </div>
           <button
             type="submit"
-            className="w-full py-2.5 rounded-full bg-sky-400 text-black font-bold text-xs cursor-pointer hover:bg-sky-300 transition-all"
+            className="w-full py-2.5 rounded-full bg-white text-black font-bold text-xs cursor-pointer hover:bg-white/90 transition-all flex items-center justify-center gap-2"
           >
-            🔊 Tüm Üyelere Sesli Bildirim Gönder
+            <Volume2 className="w-4 h-4" />
+            <span>Tüm Üyelere Sesli Bildirim Gönder</span>
           </button>
         </form>
       </div>
@@ -372,7 +371,7 @@ export default function AdminDashboardPage() {
             <Link
               key={m.id}
               href={`/seri/${m.slug}`}
-              className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 hover:border-sky-400 transition-all"
+              className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 hover:border-white/30 transition-all"
             >
               <div className="text-[10px] font-mono text-amber-300">
                 Vitrin #{i + 1}
@@ -380,8 +379,11 @@ export default function AdminDashboardPage() {
               <div className="text-xs font-bold text-white truncate mt-0.5">
                 {m.title}
               </div>
-              <div className="text-[10px] font-mono text-white/50">
-                ★ {m.site_rating} · {m.country_code}
+              <div className="text-[10px] font-mono text-white/50 flex items-center gap-1 mt-0.5">
+                <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
+                <span>
+                  {m.site_rating} · {m.country || m.country_code}
+                </span>
               </div>
             </Link>
           ))}

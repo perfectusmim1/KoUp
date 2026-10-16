@@ -1,22 +1,28 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Play,
   Plus,
-  Bell,
-  ChevronLeft,
-  ChevronRight,
+  Check,
+  Info,
   Flame,
   Sparkles,
-  Calendar,
-  Newspaper,
-  Heart,
-  ArrowRight,
+  ChevronRight,
+  ChevronLeft,
   Clock,
-  Check,
+  Award,
+  Heart,
+  Newspaper,
   Tv,
+  Film,
+  Globe,
+  Layers,
+  Star,
+  Radio,
 } from 'lucide-react';
 import {
   supabase,
@@ -24,21 +30,37 @@ import {
   PersonItem,
   MagazinePost,
   getProxiedImageUrl,
-  COUNTRY_FLAGS,
+  formatContentTypeTR,
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 
+type QuickFilter = 'ALL' | 'KR' | 'CN' | 'ANIME' | 'GLOBAL';
+
+const QUICK_FILTERS: Array<{
+  id: QuickFilter;
+  label: string;
+  sub: string;
+  icon: React.ComponentType<{ className?: string }>;
+}> = [
+  { id: 'ALL', label: 'Tümü', sub: '17.509 Yapım', icon: Layers },
+  { id: 'KR', label: 'K-Drama', sub: 'Güney Kore', icon: Tv },
+  { id: 'CN', label: 'C-Drama & Wuxia', sub: 'Çin', icon: Sparkles },
+  { id: 'ANIME', label: 'Anime', sub: 'AniList', icon: Flame },
+  { id: 'GLOBAL', label: 'Global & Batı', sub: 'IMDb & DiziBox', icon: Globe },
+];
+
+const AWARD_BADGES = [
+  'MDL 9.0+ Seçkisi',
+  'Kore Reyting Rekortmeni',
+  'Eleştirmenlerin Favorisi',
+  '4K HDR Dolby Vision',
+];
+
 export default function HomePage() {
-  const {
-    continueWatchingList,
-    progressMap,
-    followedMediaIds,
-    favPersonIds,
-    setLibraryStatus,
-    toggleMediaFollow,
-    togglePersonFavorite,
-  } = useKoUp();
+  const router = useRouter();
+  const { progressMap, updateWatchStatus, togglePersonFavorite, personFavorites, triggerSound } =
+    useKoUp();
 
   const [heroItems, setHeroItems] = useState<MediaItem[]>([]);
   const [heroIdx, setHeroIdx] = useState(0);
@@ -49,21 +71,13 @@ export default function HomePage() {
   const [cdramaItems, setCdramaItems] = useState<MediaItem[]>([]);
   const [animeItems, setAnimeItems] = useState<MediaItem[]>([]);
   const [globalItems, setGlobalItems] = useState<MediaItem[]>([]);
-  const [recentEpisodes, setRecentEpisodes] = useState<
-    Array<{
-      id: number;
-      media_id: number;
-      season_number: number;
-      episode_number: number;
-      episode_name: string;
-      status: string;
-      media?: MediaItem;
-    }>
-  >([]);
+  const [recentEpisodes, setRecentEpisodes] = useState<any[]>([]);
   const [topPeople, setTopPeople] = useState<PersonItem[]>([]);
   const [magPosts, setMagPosts] = useState<MagazinePost[]>([]);
-  const [quickFilter, setQuickFilter] = useState<string>('ALL');
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>('ALL');
   const [filteredRail, setFilteredRail] = useState<MediaItem[]>([]);
+
+  const top10ScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function fetchHomeData() {
@@ -73,57 +87,59 @@ export default function HomePage() {
         cdRes,
         anRes,
         glRes,
+        epRes,
         peopRes,
         magRes,
-        epRes,
       ] = await Promise.all([
         supabase
           .from('media')
           .select('*')
-          .eq('is_featured', true)
-          .order('featured_order', { ascending: true })
-          .limit(10),
+          .not('backdrop_image', 'is', null)
+          .order('views_count', { ascending: false })
+          .limit(12),
         supabase
           .from('media')
           .select('*')
-          .eq('content_type', 'dizi')
-          .eq('country_code', 'KR')
-          .order('sources_count', { ascending: false })
+          .eq('country', 'KR')
+          .order('mdl_rating', { ascending: false, nullsFirst: false })
           .limit(16),
         supabase
           .from('media')
           .select('*')
-          .eq('content_type', 'dizi')
-          .eq('country_code', 'CN')
-          .order('sources_count', { ascending: false })
+          .eq('country', 'CN')
+          .order('mdl_rating', { ascending: false, nullsFirst: false })
           .limit(16),
         supabase
           .from('media')
           .select('*')
           .eq('content_type', 'anime')
-          .order('sources_count', { ascending: false })
+          .not('anilist_score', 'is', null)
+          .order('anilist_score', { ascending: false })
           .limit(16),
         supabase
           .from('media')
           .select('*')
-          .not('imdb_id', 'is', null)
-          .order('sources_count', { ascending: false })
+          .in('country', ['US', 'TH', 'TW', 'JP'])
+          .neq('content_type', 'anime')
+          .order('rating', { ascending: false, nullsFirst: false })
           .limit(16),
+        supabase
+          .from('episodes')
+          .select(
+            'id, media_id, season_number, episode_number, episode_name, published_at, status, scheduled_release_at, translation_note, react_fire'
+          )
+          .order('id', { ascending: false })
+          .limit(12),
         supabase
           .from('people')
           .select('*')
           .order('favorites_count', { ascending: false })
-          .limit(14),
+          .limit(12),
         supabase
           .from('magazine_posts')
           .select('*')
           .order('published_at', { ascending: false })
-          .limit(6),
-        supabase
-          .from('episodes')
-          .select('*')
-          .order('published_at', { ascending: false })
-          .limit(12),
+          .limit(8),
       ]);
 
       const feats = (featRes.data as MediaItem[]) || [];
@@ -132,7 +148,7 @@ export default function HomePage() {
       const ans = (anRes.data as MediaItem[]) || [];
       const gls = (glRes.data as MediaItem[]) || [];
 
-      setHeroItems(feats.length > 0 ? feats.slice(0, 8) : kds.slice(0, 8));
+      setHeroItems(feats.length > 0 ? feats.slice(0, 6) : kds.slice(0, 6));
       setTop10Items([...kds.slice(0, 4), ...ans.slice(0, 4), ...cds.slice(0, 2)]);
       setKdramaItems(kds);
       setCdramaItems(cds);
@@ -141,6 +157,8 @@ export default function HomePage() {
       setFilteredRail([...kds.slice(0, 5), ...ans.slice(0, 5), ...cds.slice(0, 4)]);
       setTopPeople((peopRes.data as PersonItem[]) || []);
       setMagPosts((magRes.data as MagazinePost[]) || []);
+
+      // Canlı AsyaMag API Güncellemesi
       fetch('/api/magazin/live?limit=8')
         .then((r) => r.json())
         .then((j) => {
@@ -167,12 +185,12 @@ export default function HomePage() {
     fetchHomeData();
   }, []);
 
-  // Auto-advance hero every 7.5 seconds unless paused
+  // Auto-advance hero every 8 seconds unless hovered
   useEffect(() => {
     if (isHeroPaused || heroItems.length <= 1) return;
     const t = setInterval(() => {
       setHeroIdx((prev) => (prev + 1) % heroItems.length);
-    }, 7500);
+    }, 8000);
     return () => clearInterval(t);
   }, [isHeroPaused, heroItems.length]);
 
@@ -196,404 +214,300 @@ export default function HomePage() {
   }, [quickFilter, kdramaItems, cdramaItems, animeItems, globalItems]);
 
   const activeHero = heroItems[heroIdx] || heroItems[0];
-  const nextThreeHeroes = heroItems.length > 1
-    ? [
-        heroItems[(heroIdx + 1) % heroItems.length],
-        heroItems[(heroIdx + 2) % heroItems.length],
-        heroItems[(heroIdx + 3) % heroItems.length],
-      ].filter(Boolean)
-    : [];
+  const continueWatchingIds = Object.values(progressMap)
+    .filter((p) => p.status === 'watching')
+    .map((p) => p.media_id);
+
+  const continueWatchingItems = [
+    ...kdramaItems,
+    ...animeItems,
+    ...cdramaItems,
+    ...heroItems,
+  ]
+    .filter((item, idx, arr) => arr.findIndex((x) => x.id === item.id) === idx)
+    .filter((item) => continueWatchingIds.includes(item.id))
+    .slice(0, 4);
+
+  const featuretteItems = (heroItems.length >= 4 ? heroItems : kdramaItems).slice(0, 4);
 
   return (
-    <div className="pb-20">
-      {/* 1. DEV "EN POPÜLER SERİLER" HERO SLIDER (78vh, APPLE TV+ + MUBI AESTHETIC) */}
+    <div className="min-h-screen pb-28 bg-[#080808]">
+      {/* =====================================================================
+          1. HERO SECTION: Full-Viewport Cinematic Immersion Banner (ui/code.html)
+      ===================================================================== */}
       <section
         onMouseEnter={() => setIsHeroPaused(true)}
         onMouseLeave={() => setIsHeroPaused(false)}
-        className="relative w-full h-[82vh] min-h-[600px] max-h-[920px] flex items-end overflow-hidden"
+        className="relative w-full h-[94vh] min-h-[680px] max-h-[1040px] flex items-end overflow-hidden"
       >
         {activeHero ? (
           <>
-            {/* Background Cinema Backdrop with LCP High Fetch Priority */}
+            {/* Crossfading Widescreen Backdrop */}
             <div className="absolute inset-0 w-full h-full">
-              <img
-                key={activeHero.id}
-                src={getProxiedImageUrl(
-                  activeHero.backdrop_image || activeHero.cover_image,
-                  activeHero.poster_fallback_url
-                )}
-                alt={activeHero.title}
-                fetchPriority="high"
-                className="w-full h-full object-cover object-center scale-105 transition-transform duration-1000 ease-out"
-              />
-              <div className="absolute inset-0 cinema-hero-vignette" />
+              <AnimatePresence mode="sync">
+                <motion.img
+                  key={activeHero.id}
+                  initial={{ opacity: 0, scale: 1.04 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.75, ease: [0.16, 1, 0.3, 1] }}
+                  src={getProxiedImageUrl(
+                    activeHero.backdrop_image || activeHero.cover_image,
+                    activeHero.title
+                  )}
+                  alt={activeHero.title}
+                  fetchPriority="high"
+                  className="absolute inset-0 w-full h-full object-cover object-center"
+                />
+              </AnimatePresence>
+              <div className="absolute inset-0 cinema-vignette" />
             </div>
 
-            {/* Foreground Content */}
-            <div className="relative z-20 max-w-[1680px] mx-auto w-full px-6 sm:px-10 lg:px-14 pb-12 sm:pb-16 flex flex-col lg:flex-row items-start lg:items-end justify-between gap-8">
-              {/* Left: Editorial Typography, Dual Ratings, Status & Actions */}
-              <div className="max-w-2xl space-y-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="px-3 py-1 rounded-full text-[11px] font-mono font-bold uppercase tracking-wider bg-white/15 backdrop-blur-md text-white border border-white/20">
-                    {COUNTRY_FLAGS[activeHero.country_code] || '🎬'}{' '}
-                    {activeHero.country_name} · #{heroIdx + 1} Vitrin
-                  </span>
-
-                  {/* Site Rating */}
-                  <span className="px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-white text-black">
-                    ★ {Number(activeHero.site_rating || 8.9).toFixed(1)}
-                  </span>
-
-                  {/* MDL Rating */}
-                  {activeHero.mdl_rating && (
-                    <span className="px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-[#E5A93C]/20 text-[#E5A93C] border border-[#E5A93C]/40">
-                      MDL {Number(activeHero.mdl_rating).toFixed(1)}
+            {/* Hero Main Typographic Overlay */}
+            <div className="relative z-20 w-full px-6 md:px-14 pb-16 flex flex-col lg:flex-row lg:items-end justify-between gap-10">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeHero.id}
+                  initial={{ opacity: 0, y: 18 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
+                  className="max-w-2xl flex flex-col gap-4"
+                >
+                  {/* Subtle Luxury Metadata */}
+                  <div className="flex items-center flex-wrap gap-2.5 text-[11px] font-semibold tracking-[0.14em] uppercase text-white/75">
+                    <span className="px-2.5 py-1 rounded-md glass-pill text-white border border-white/20 tracking-[0.18em] font-bold">
+                      KoUp Original
                     </span>
-                  )}
-
-                  {/* AniList Rating */}
-                  {activeHero.anilist_rating && (
-                    <span className="px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-[#38BDF8]/20 text-[#38BDF8] border border-[#38BDF8]/40">
-                      AniList {activeHero.anilist_rating}%
+                    <span className="text-white/35">•</span>
+                    <span className="text-white/90">
+                      {formatContentTypeTR(activeHero.content_type, activeHero.country)}
                     </span>
-                  )}
-
-                  {/* IMDb Rating */}
-                  {activeHero.imdb_rating && (
-                    <span className="px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-[#F5C518]/20 text-[#F5C518] border border-[#F5C518]/40">
-                      IMDb {Number(activeHero.imdb_rating).toFixed(1)}
-                    </span>
-                  )}
-
-                  {/* Separate Broadcast & Translation Status Pills */}
-                  <span className="px-2.5 py-1 rounded-full text-[11px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                    Yayın: {activeHero.status_broadcast || 'Final'}
-                  </span>
-                  <span className="px-2.5 py-1 rounded-full text-[11px] font-mono bg-sky-500/20 text-sky-300 border border-sky-400/30">
-                    Çeviri: {activeHero.status_translation || 'Tamamlandı'}
-                  </span>
-                </div>
-
-                <div>
-                  <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold text-white tracking-tight leading-[1.06]">
-                    {activeHero.title}
-                  </h1>
-                  {activeHero.native_title && (
-                    <div className="text-sm sm:text-base font-medium text-white/55 mt-1.5">
-                      {activeHero.native_title} · {activeHero.release_year} ·{' '}
-                      {activeHero.episodes_available || activeHero.episode_count} Bölüm
-                    </div>
-                  )}
-                </div>
-
-                <p className="text-sm sm:text-base text-white/80 line-clamp-2 sm:line-clamp-3 leading-relaxed max-w-xl">
-                  {activeHero.overview}
-                </p>
-
-                {activeHero.categories && activeHero.categories.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {activeHero.categories.slice(0, 5).map((cat) => (
-                      <Link
-                        key={cat}
-                        href={`/kesfet?genre=${encodeURIComponent(cat)}`}
-                        className="text-xs px-3 py-1 rounded-full bg-white/[0.08] hover:bg-white/15 text-white/85 border border-white/10 transition-all"
-                      >
-                        {cat}
-                      </Link>
-                    ))}
-                  </div>
-                )}
-
-                {/* Action Cluster */}
-                <div className="flex flex-wrap items-center gap-3 pt-2">
-                  <Link
-                    href={`/seri/${activeHero.slug}`}
-                    className="flex items-center gap-2.5 px-7 py-3.5 rounded-full bg-white text-black font-bold text-sm shadow-[0_0_30px_rgba(255,255,255,0.35)] hover:scale-[1.03] active:scale-[0.98] transition-all"
-                  >
-                    <Play className="w-4 h-4 fill-black" />
-                    <span>Hemen İzle</span>
-                  </Link>
-
-                  <button
-                    onClick={() => setLibraryStatus(activeHero, 'plan_to_watch')}
-                    className="flex items-center gap-2 px-5 py-3.5 rounded-full apple-glass-pill text-white text-sm font-semibold hover:bg-white/15 transition-all cursor-pointer"
-                  >
-                    {progressMap[activeHero.id] ? (
+                    <span className="text-white/35">•</span>
+                    <span className="text-white/90">4K HDR</span>
+                    <span className="text-white/35">•</span>
+                    <span className="text-white/90">Dolby Vision</span>
+                    {activeHero.mdl_rating && (
                       <>
-                        <Check className="w-4 h-4 text-sky-400" />
-                        <span>Listemde</span>
-                      </>
-                    ) : (
-                      <>
-                        <Plus className="w-4 h-4" />
-                        <span>Listeme Ekle</span>
+                        <span className="text-white/35">•</span>
+                        <span className="text-amber-300 font-bold tracking-normal text-[12px]">
+                          MDL {activeHero.mdl_rating}
+                        </span>
                       </>
                     )}
-                  </button>
+                    {activeHero.anilist_score && (
+                      <>
+                        <span className="text-white/35">•</span>
+                        <span className="text-sky-300 font-bold tracking-normal text-[12px]">
+                          %{activeHero.anilist_score} Eşleşme
+                        </span>
+                      </>
+                    )}
+                  </div>
 
-                  <button
-                    onClick={() => toggleMediaFollow(activeHero)}
-                    className={`flex items-center gap-2 px-4 py-3.5 rounded-full text-sm font-semibold border transition-all cursor-pointer ${
-                      followedMediaIds.includes(activeHero.id)
-                        ? 'bg-sky-400/20 border-sky-400 text-sky-300'
-                        : 'apple-glass-pill text-white/85 hover:text-white'
-                    }`}
-                  >
-                    <Bell className="w-4 h-4" />
-                    <span>
-                      {followedMediaIds.includes(activeHero.id)
-                        ? 'Takip Ediliyor'
-                        : 'Takip Et'}
-                    </span>
-                  </button>
-                </div>
-              </div>
+                  {/* Pure White Display Title */}
+                  <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold text-white tracking-[-0.04em] leading-[1.03] drop-shadow-[0_12px_32px_rgba(0,0,0,0.9)]">
+                    {activeHero.title}
+                  </h1>
 
-              {/* Right: 3-Item Frosted Glass Mini Scene Dock + Slider Arrows */}
-              <div className="w-full lg:w-auto flex flex-col items-end gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono uppercase tracking-widest text-white/50 mr-2">
-                    Sıradaki Vitrin ({heroIdx + 1}/{heroItems.length})
-                  </span>
-                  <button
-                    onClick={() =>
-                      setHeroIdx(
-                        (prev) => (prev - 1 + heroItems.length) % heroItems.length
-                      )
-                    }
-                    className="w-9 h-9 rounded-full apple-glass-pill flex items-center justify-center text-white hover:bg-white/20 cursor-pointer"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() =>
-                      setHeroIdx((prev) => (prev + 1) % heroItems.length)
-                    }
-                    className="w-9 h-9 rounded-full apple-glass-pill flex items-center justify-center text-white hover:bg-white/20 cursor-pointer"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
+                  <p className="text-[15px] md:text-[16px] text-white/75 font-normal leading-relaxed max-w-xl line-clamp-3 drop-shadow-md">
+                    {activeHero.overview ||
+                      'KoUp 1080p sinema kalitesinde, tüm alternatif kaynaklar ve Türkçe altyazı seçenekleriyle hemen izlemeye başlayın.'}
+                  </p>
 
-                {/* Frosted Glass Hero Dock */}
-                <div className="hidden sm:flex items-center gap-2.5 p-2 rounded-3xl apple-glass border border-white/15">
-                  {nextThreeHeroes.map((item) => (
+                  {/* Sleek Pill Actions (Exact ui/code.html) */}
+                  <div className="flex flex-wrap items-center gap-3.5 pt-2">
                     <button
-                      key={item.id}
                       onClick={() => {
-                        const targetIdx = heroItems.findIndex((h) => h.id === item.id);
-                        if (targetIdx >= 0) setHeroIdx(targetIdx);
+                        triggerSound('click');
+                        router.push(`/seri/${activeHero.slug}?play=1`);
                       }}
-                      className="flex items-center gap-2.5 p-2 rounded-2xl bg-white/[0.04] hover:bg-white/15 border border-white/[0.07] transition-all text-left w-52 cursor-pointer group"
+                      className="flex items-center gap-2.5 px-8 py-3.5 rounded-full bg-white text-black font-bold text-[14px] hover:bg-white/90 hover:scale-[1.03] active:scale-[0.98] transition-all duration-300 shadow-[0_0_30px_rgba(255,255,255,0.35)] cursor-pointer"
                     >
-                      <img
-                        src={getProxiedImageUrl(
-                          item.cover_image,
-                          item.poster_fallback_url
-                        )}
-                        alt={item.title}
-                        loading="lazy"
-                        fetchPriority="low"
-                        className="w-11 h-14 rounded-xl object-cover shrink-0"
-                      />
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-white truncate group-hover:text-sky-300">
-                          {item.title}
-                        </div>
-                        <div className="text-[10px] font-mono text-amber-300 mt-0.5">
-                          ★ {item.site_rating} · {item.country_code}
-                        </div>
-                        <div className="text-[10px] text-white/45 truncate">
-                          {item.episodes_available || item.episode_count} Bölüm
-                        </div>
-                      </div>
+                      <Play className="w-5 h-5 fill-black" />
+                      <span>Hemen İzle</span>
                     </button>
-                  ))}
+
+                    <button
+                      onClick={() =>
+                        updateWatchStatus(activeHero.id, 'watching', 1, 1)
+                      }
+                      className="flex items-center gap-2 px-6 py-3.5 rounded-full glass-pill hover:bg-white/15 text-white font-semibold text-[14px] hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 cursor-pointer"
+                    >
+                      {progressMap[activeHero.id] ? (
+                        <>
+                          <Check className="w-4 h-4 text-emerald-400" />
+                          <span>Listemde</span>
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="w-4 h-4 text-white/85" />
+                          <span>Listeme Ekle</span>
+                        </>
+                      )}
+                    </button>
+
+                    <Link
+                      href={`/seri/${activeHero.slug}`}
+                      aria-label="Detaylar"
+                      className="w-12 h-12 rounded-full glass-pill hover:bg-white/15 flex items-center justify-center text-white/80 hover:text-white transition-all duration-300"
+                    >
+                      <Info className="w-5 h-5" />
+                    </Link>
+                  </div>
+                </motion.div>
+              </AnimatePresence>
+
+              {/* Floating Interactive Preview Rail (Bottom Right — Exact ui/code.html) */}
+              <div className="relative flex flex-col items-start lg:items-end gap-3 z-20">
+                <span className="text-[10px] tracking-[0.2em] font-semibold uppercase text-white/45">
+                  Sıradaki Vitrin Seçkisi
+                </span>
+                <div className="flex items-center gap-2.5 glass-pill-dark p-2 rounded-2xl shadow-[0_20px_45px_rgba(0,0,0,0.85)] overflow-x-auto max-w-full no-scrollbar">
+                  {heroItems.slice(0, 4).map((hItem, idx) => {
+                    const active = idx === heroIdx;
+                    return (
+                      <button
+                        key={hItem.id}
+                        onClick={() => {
+                          triggerSound('click');
+                          setHeroIdx(idx);
+                        }}
+                        className={`relative flex items-center gap-3 p-1.5 pr-4 rounded-xl cursor-pointer transition-all duration-300 text-left shrink-0 ${
+                          active
+                            ? 'bg-white/12 border border-white/25 opacity-100'
+                            : 'hover:bg-white/[0.06] border border-transparent opacity-60 hover:opacity-100'
+                        }`}
+                      >
+                        <img
+                          src={getProxiedImageUrl(
+                            hItem.backdrop_image || hItem.cover_image,
+                            hItem.title
+                          )}
+                          alt={hItem.title}
+                          loading="lazy"
+                          fetchPriority="low"
+                          className="w-16 h-10 rounded-lg object-cover shrink-0 shadow-md"
+                        />
+                        <div className="flex flex-col max-w-[130px]">
+                          <span className="text-[12px] font-semibold text-white truncate">
+                            {hItem.title}
+                          </span>
+                          <span className="text-[10px] text-white/50 tracking-wider truncate">
+                            {formatContentTypeTR(hItem.content_type, hItem.country)}
+                          </span>
+                        </div>
+                        {active && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping ml-1" />
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
           </>
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <div className="text-sm font-mono text-sky-400 animate-pulse">
-              KoUp Sinema Vitrini Yükleniyor...
-            </div>
+            <div className="w-10 h-10 rounded-full border-2 border-white border-t-transparent animate-spin" />
           </div>
         )}
       </section>
 
-      {/* MAIN CONTENT RAILS */}
-      <div className="max-w-[1680px] mx-auto px-6 sm:px-10 lg:px-14 space-y-14 -mt-4 relative z-30">
-        {/* 2. KALDIĞIN YERDEN DEVAM ET (CONTINUE WATCHING STRIP) */}
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-sky-400">
-                Kişisel Arşiv · Sıfır Kesinti
-              </div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white">
-                Kaldığın Yerden Devam Et
-              </h2>
-            </div>
-            <Link
-              href="/profil"
-              className="text-xs font-semibold text-white/60 hover:text-white flex items-center gap-1"
-            >
-              <span>Tüm İlerlemem</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {(continueWatchingList.length > 0
-              ? continueWatchingList.slice(0, 4)
-              : kdramaItems.slice(0, 4).map((m, idx) => ({
-                  media_id: m.id,
-                  status: 'watching' as const,
-                  is_favorite: false,
-                  watched_episodes: [1, 2],
-                  last_season_num: 1,
-                  last_episode_num: idx + 2,
-                  last_episode_title: `${idx + 2}. Bölüm`,
-                  resume_position_sec: 1420 + idx * 300,
-                  resume_duration_sec: 3600,
-                  updated_at: new Date().toISOString(),
-                  media: m,
-                }))
-            ).map((prog) => {
-              const m = prog.media!;
-              const pct = Math.min(
-                96,
-                Math.max(
-                  12,
-                  Math.round(
-                    ((prog.resume_position_sec || 900) /
-                      (prog.resume_duration_sec || 3600)) *
-                      100
-                  )
-                )
-              );
-              const remMin = Math.max(
-                5,
-                Math.round(
-                  ((prog.resume_duration_sec || 3600) -
-                    (prog.resume_position_sec || 900)) /
-                    60
-                )
-              );
-              return (
-                <Link
-                  key={m.id}
-                  href={`/seri/${m.slug}?sezon=${prog.last_season_num}&bolum=${prog.last_episode_num}`}
-                  className="koup-projection-card group rounded-2xl overflow-hidden bg-[#121216] border border-white/10 flex flex-col"
-                >
-                  <div className="relative aspect-video overflow-hidden">
-                    <img
-                      src={getProxiedImageUrl(
-                        m.backdrop_image || m.cover_image,
-                        m.poster_fallback_url
-                      )}
-                      alt={m.title}
-                      loading="lazy"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/25 to-transparent" />
-                    <div className="absolute inset-0 flex items-center justify-center opacity-90 group-hover:scale-110 transition-transform">
-                      <div className="w-12 h-12 rounded-full apple-glass flex items-center justify-center border border-white/25">
-                        <Play className="w-5 h-5 text-white fill-white ml-0.5" />
-                      </div>
-                    </div>
-                    <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-black/70 text-sky-300 border border-sky-400/30">
-                      S{prog.last_season_num} : B{prog.last_episode_num}
-                    </span>
-                    {/* Bottom Progress Bar */}
-                    <div className="absolute bottom-0 inset-x-0 h-1 bg-white/20">
-                      <div
-                        style={{ width: `${pct}%` }}
-                        className="h-full bg-gradient-to-r from-sky-400 to-amber-300"
-                      />
-                    </div>
-                  </div>
-                  <div className="p-3.5 flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <h3 className="text-sm font-bold text-white truncate">
-                        {m.title}
-                      </h3>
-                      <p className="text-xs text-white/50 truncate">
-                        {prog.last_episode_title || `${prog.last_episode_num}. Bölüm`}
-                      </p>
-                    </div>
-                    <span className="text-[11px] font-mono text-white/55 shrink-0">
-                      {remMin} dk kaldı
-                    </span>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* 3. CANLI SON YÜKLENEN BÖLÜMLER & YAKINDA TAKVİM ŞERİDİ */}
-        {recentEpisodes.length > 0 && (
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-                <div>
-                  <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-emerald-400">
-                    Otomatik Bot & 24 Saat Watchdog Aktif
-                  </div>
-                  <h2 className="text-xl sm:text-2xl font-bold text-white">
-                    Son Yüklenen & Yakında Yayınlanacak Bölümler
-                  </h2>
-                </div>
+      <div className="w-full space-y-16 pt-12">
+        {/* =====================================================================
+            2. 21:9 ULTRA-WIDE CINEMA CARDS ("Kaldığın Yerden Devam Et" — Exact ui/code.html)
+               Fixes Screenshot 4: Clean dark card + razor-thin 2px pure white glowing progress bar!
+        ===================================================================== */}
+        {continueWatchingItems.length > 0 && (
+          <section className="w-full px-6 md:px-14">
+            <div className="flex items-end justify-between mb-6">
+              <div>
+                <span className="text-[11px] font-bold tracking-[0.2em] uppercase text-white/40">
+                  Kişisel Arşiv
+                </span>
+                <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-white mt-1">
+                  Kaldığın Yerden Devam Et
+                </h2>
               </div>
               <Link
-                href="/takvim"
-                className="text-xs font-semibold text-sky-400 hover:underline flex items-center gap-1"
+                href="/profil"
+                className="text-[12px] tracking-wider uppercase font-semibold text-white/50 hover:text-white flex items-center gap-1.5 transition-colors"
               >
-                <Calendar className="w-3.5 h-3.5" />
-                <span>Haftalık Yayın Takvimi</span>
+                <span>Tümünü Gör</span>
+                <ChevronRight className="w-4 h-4" />
               </Link>
             </div>
 
-            <div className="flex items-center gap-3.5 overflow-x-auto no-scrollbar pb-2">
-              {recentEpisodes.map((ep) => {
-                const m = ep.media!;
-                const isSched = ep.status === 'scheduled';
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
+              {continueWatchingItems.map((item) => {
+                const prog = progressMap[item.id];
+                const pct = Math.min(
+                  Math.max(
+                    Math.round(
+                      ((prog?.position_seconds || 920) /
+                        (prog?.duration_seconds || 2700)) *
+                        100
+                    ),
+                    15
+                  ),
+                  92
+                );
+                const minsLeft = Math.max(
+                  5,
+                  Math.round(
+                    ((prog?.duration_seconds || 2700) -
+                      (prog?.position_seconds || 920)) /
+                      60
+                  )
+                );
+
                 return (
                   <Link
-                    key={`${ep.media_id}-${ep.season_number}-${ep.episode_number}`}
-                    href={`/seri/${m.slug}?sezon=${ep.season_number}&bolum=${ep.episode_number}`}
-                    className="koup-projection-card shrink-0 w-64 rounded-2xl p-3 bg-[#121216] border border-white/[0.08] flex items-center gap-3"
+                    key={item.id}
+                    href={`/seri/${item.slug}?play=1&ep=${prog?.current_episode || 1}`}
+                    className="group relative rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/[0.08] hover:border-white/25 transition-all duration-500 shadow-xl cursor-pointer block"
                   >
-                    <img
-                      src={getProxiedImageUrl(m.cover_image, m.poster_fallback_url)}
-                      alt={m.title}
-                      loading="lazy"
-                      className="w-14 h-20 rounded-xl object-cover shrink-0"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <span
-                        className={`inline-block text-[10px] font-mono font-bold px-2 py-0.5 rounded-full mb-1 ${
-                          isSched
-                            ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
-                            : 'bg-emerald-400/20 text-emerald-300 border border-emerald-400/30'
-                        }`}
-                      >
-                        {isSched
-                          ? `⏳ Yakında · B${ep.episode_number}`
-                          : `⚡ Yeni · S${ep.season_number} B${ep.episode_number}`}
-                      </span>
-                      <h4 className="text-xs font-bold text-white truncate">
-                        {m.title}
-                      </h4>
-                      <p className="text-[11px] text-white/55 truncate mt-0.5">
-                        {ep.episode_name}
-                      </p>
-                      <div className="text-[10px] font-mono text-white/40 mt-1">
-                        {COUNTRY_FLAGS[m.country_code] || '🎬'} {m.country_name}
+                    <div className="relative w-full aspect-[21/9] overflow-hidden">
+                      <img
+                        src={getProxiedImageUrl(
+                          item.backdrop_image || item.cover_image,
+                          item.title
+                        )}
+                        alt={item.title}
+                        loading="lazy"
+                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f11] via-black/30 to-transparent" />
+
+                      {/* Razor Minimal Pure White Progress Line (Exact ui/code.html) */}
+                      <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-white/15">
+                        <div
+                          className="h-full bg-white shadow-[0_0_8px_white] transition-all duration-500"
+                          style={{ width: `${pct}%` }}
+                        />
                       </div>
+
+                      {/* Centered Minimal Play Glyph on Hover */}
+                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        <div className="w-11 h-11 rounded-full glass-pill flex items-center justify-center text-white border border-white/30 shadow-2xl group-hover:scale-105 transition-transform">
+                          <Play className="w-4 h-4 fill-white ml-0.5" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-4 flex items-center justify-between">
+                      <div className="flex flex-col min-w-0 pr-3">
+                        <span className="text-white font-semibold text-[14px] truncate">
+                          {item.title}
+                        </span>
+                        <span className="text-[11px] text-white/50 tracking-wide mt-0.5">
+                          S{prog?.current_season || 1} • B{prog?.current_episode || 1}
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-mono text-white/40 shrink-0">
+                        {minsLeft} dk kaldı
+                      </span>
                     </div>
                   </Link>
                 );
@@ -602,213 +516,75 @@ export default function HomePage() {
           </section>
         )}
 
-        {/* 4. BUGÜN TÜRKİYE'DE EN POPÜLER 10 İÇERİK (HORIZONTAL STRIP ACCORDION) */}
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-amber-300">
-                Trendler · Haftalık İzlenme Liderleri
-              </div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white">
-                Bugün En Popüler 10 İçerik
-              </h2>
-            </div>
-            <span className="hidden sm:inline text-xs text-white/45 font-mono">
-              Kartların üzerine gelerek 16:9 sinema önizlemesini açın
-            </span>
-          </div>
-
-          <div className="flex items-center gap-4 overflow-x-auto no-scrollbar py-2">
-            {top10Items.slice(0, 10).map((item, idx) => (
-              <AccordionMediaCard
-                key={item.id}
-                item={item}
-                rankNumber={idx + 1}
-                priority={idx < 3}
-              />
-            ))}
-          </div>
-        </section>
-
-        {/* 5. HIZLI KEŞİF & ÜLKE / TÜR FİLTRE BARI */}
-        <section>
-          <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
-            <div>
-              <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-sky-400">
-                Anlık Katalog Filtresi
-              </div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white">
-                Ülke & Evrene Göre Hızlı Keşfet
-              </h2>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              {[
-                { id: 'ALL', label: '✨ Tümü' },
-                { id: 'KR', label: '🇰🇷 Güney Kore (K-Drama)' },
-                { id: 'CN', label: '🇨🇳 Çin (C-Drama & Wuxia)' },
-                { id: 'ANIME', label: '🇯🇵 Anime (AniList)' },
-                { id: 'GLOBAL', label: '🇺🇸 Global & IMDb Seçkisi' },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setQuickFilter(tab.id)}
-                  className={`px-4 py-2 rounded-full text-xs font-semibold transition-all cursor-pointer ${
-                    quickFilter === tab.id
-                      ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.35)]'
-                      : 'apple-glass-pill text-white/75 hover:text-white'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4 overflow-x-auto no-scrollbar py-2">
-            {filteredRail.map((item) => (
-              <AccordionMediaCard key={item.id} item={item} />
-            ))}
-          </div>
-        </section>
-
-        {/* 6. OYUNCULAR & ANİME KARAKTERLERİ VİTRİNİ (EN ÇOK FAVORİ ALANDAN AZA) */}
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-pink-400">
-                MDL & AniList Yıldızları · Favori Sıralaması
-              </div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white">
-                En Çok Favori Alan Oyuncular & Anime Karakterleri
-              </h2>
-            </div>
-            <Link
-              href="/oyuncular"
-              className="text-xs font-semibold text-pink-300 hover:underline flex items-center gap-1"
-            >
-              <span>Tüm Sıralamayı Gör (21.814)</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-
-          <div className="flex items-center gap-4 overflow-x-auto no-scrollbar py-2">
-            {topPeople.map((person, idx) => {
-              const isFav = favPersonIds.includes(person.id);
-              return (
-                <div
-                  key={person.id}
-                  className="koup-projection-card shrink-0 w-44 rounded-2xl p-3.5 bg-[#121216] border border-white/[0.08] flex flex-col items-center text-center group"
-                >
-                  <div className="relative mb-3">
-                    <Link href={`/oyuncu/${person.slug}`}>
-                      <img
-                        src={getProxiedImageUrl(person.image_url)}
-                        alt={person.name}
-                        loading="lazy"
-                        className="w-24 h-24 rounded-full object-cover border-2 border-white/15 group-hover:border-sky-400 transition-all"
-                      />
-                    </Link>
-                    <span className="absolute -top-1 -left-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-black/85 text-amber-300 border border-amber-400/30">
-                      #{idx + 1}
-                    </span>
-                    <button
-                      onClick={() => togglePersonFavorite(person.id, person.name)}
-                      title="Favorilere Ekle"
-                      className={`absolute -bottom-1 -right-1 w-7 h-7 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
-                        isFav
-                          ? 'bg-pink-500 border-pink-300 text-white'
-                          : 'bg-black/85 border-white/20 text-pink-300 hover:scale-110'
-                      }`}
-                    >
-                      <Heart className={`w-3.5 h-3.5 ${isFav ? 'fill-white' : ''}`} />
-                    </button>
-                  </div>
-
-                  <Link
-                    href={`/oyuncu/${person.slug}`}
-                    className="text-xs font-bold text-white truncate w-full group-hover:text-sky-300"
-                  >
-                    {person.name}
-                  </Link>
-                  <span className="text-[10px] font-mono uppercase text-white/45 mt-0.5">
-                    {person.person_type === 'character'
-                      ? '🎌 Anime Karakteri'
-                      : person.person_type === 'seiyuu'
-                      ? '🎙️ Seiyuu'
-                      : '🎬 Oyuncu'}
-                  </span>
-                  <div className="mt-2 px-2.5 py-0.5 rounded-full bg-pink-500/15 border border-pink-400/25 text-[11px] font-mono text-pink-300">
-                    ❤️ {(person.favorites_count + (isFav ? 1 : 0)).toLocaleString('tr-TR')}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* 7. ASYAMAG MAGAZİN & DEDİKODU VİTRİNİ (KOUP İÇİNDE TAM OKUMA) */}
-        {magPosts.length > 0 && (
-          <section>
-            <div className="flex items-center justify-between mb-4">
+        {/* =====================================================================
+            3. SIGNATURE APPLE TV+ BILLBOARD FEATURETTES (Exact ui/code.html Section 2)
+        ===================================================================== */}
+        {featuretteItems.length > 0 && (
+          <section className="w-full px-6 md:px-14">
+            <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
               <div>
-                <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-amber-300">
-                  AsyaMag Entegrasyonu · Kore & Çin Gündemi
-                </div>
-                <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
-                  <Newspaper className="w-5 h-5 text-amber-300" />
-                  <span>Asya Magazin & Dedikodu Köşesi</span>
+                <span className="text-[11px] font-bold tracking-[0.2em] uppercase text-white/40">
+                  Ödüllü Sinema Portfolyosu
+                </span>
+                <h2 className="text-2xl md:text-4xl font-bold tracking-tight text-white mt-1">
+                  KoUp Orijinal Başyapıtlar
                 </h2>
               </div>
-              <Link
-                href="/magazin"
-                className="text-xs font-semibold text-amber-300 hover:underline flex items-center gap-1"
-              >
-                <span>Tüm Dedikodu & Haberler</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
+              <p className="text-white/50 text-[14px] max-w-md font-light leading-relaxed">
+                MyDramaList, AniList ve küresel festivallerde en yüksek puanı almış seçkin yapımlar.
+              </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              {magPosts.slice(0, 3).map((post) => (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {featuretteItems.map((item, idx) => (
                 <Link
-                  key={post.id}
-                  href={`/magazin/${post.slug}`}
-                  className="koup-projection-card rounded-3xl overflow-hidden bg-[#121216] border border-white/10 flex flex-col group"
+                  key={item.id}
+                  href={`/seri/${item.slug}`}
+                  className="group relative rounded-3xl overflow-hidden bg-[#0f0f11] h-[440px] flex flex-col justify-between p-7 border border-white/10 hover:border-white/30 transition-all duration-500 shadow-2xl cursor-pointer"
                 >
-                  <div className="relative h-48 overflow-hidden">
-                    <img
-                      src={getProxiedImageUrl(post.featured_image)}
-                      alt={post.title}
-                      loading="lazy"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#121216] via-transparent to-black/30" />
-                    <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
-                      {(post.categories || ['Magazin']).slice(0, 2).map((cat) => (
-                        <span
-                          key={cat}
-                          className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-400/20 backdrop-blur-md text-amber-300 border border-amber-400/35"
-                        >
-                          {cat}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="p-5 flex-1 flex flex-col justify-between">
-                    <div>
-                      <h3 className="text-base font-bold text-white group-hover:text-sky-300 transition-colors line-clamp-2">
-                        {post.title}
-                      </h3>
-                      <p className="text-xs text-white/60 mt-2 line-clamp-2 leading-relaxed">
-                        {post.excerpt}
-                      </p>
-                    </div>
-                    <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between text-[11px] font-mono text-white/45">
-                      <span>
-                        {new Date(post.published_at).toLocaleDateString('tr-TR')}
+                  <img
+                    src={getProxiedImageUrl(
+                      item.cover_image || item.backdrop_image,
+                      item.title
+                    )}
+                    alt={item.title}
+                    loading="lazy"
+                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-black/60 to-black/30" />
+
+                  {/* Top Award Badge */}
+                  <div className="relative z-10 flex items-center justify-between">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full glass-pill border border-amber-300/30 text-amber-200">
+                      <Award className="w-3.5 h-3.5 text-amber-300" />
+                      <span className="text-[10px] tracking-[0.14em] uppercase font-bold">
+                        {AWARD_BADGES[idx % AWARD_BADGES.length]}
                       </span>
-                      <span className="text-sky-400">KoUp İçinde Oku →</span>
+                    </div>
+                    <span className="text-[11px] font-mono text-white/60">
+                      {item.episode_count > 0 ? `${item.episode_count} Bölüm` : item.release_year}
+                    </span>
+                  </div>
+
+                  {/* Bottom Meta & Sleek Controls */}
+                  <div className="relative z-10 flex flex-col gap-2.5">
+                    <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-white/50">
+                      {formatContentTypeTR(item.content_type, item.country)}
+                    </span>
+                    <h3 className="text-2xl font-bold text-white tracking-tight leading-tight line-clamp-1">
+                      {item.title}
+                    </h3>
+                    <p className="text-white/70 text-[13px] line-clamp-2 font-normal leading-relaxed">
+                      {item.overview ||
+                        'Unutulmaz karakterler ve sürükleyici atmosferiyle sezonun en çok konuşulan yapımı.'}
+                    </p>
+                    <div className="pt-2.5 flex items-center justify-between border-t border-white/10 mt-1">
+                      <span className="text-[11px] text-white/60 tracking-wider font-medium truncate pr-2">
+                        {(item.categories || ['Dram', 'Romantik']).slice(0, 2).join(' • ')}
+                      </span>
+                      <div className="w-9 h-9 rounded-full bg-white text-black flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-xl group-hover:scale-105 shrink-0">
+                        <Play className="w-4 h-4 fill-black ml-0.5" />
+                      </div>
                     </div>
                   </div>
                 </Link>
@@ -817,82 +593,387 @@ export default function HomePage() {
           </section>
         )}
 
-        {/* 8. K-DRAMA, ANIME & IMDb SINEMA RAILS */}
-        <section>
-          <div className="flex items-center justify-between mb-4">
+        {/* =====================================================================
+            4. TOP 10 WITH INTEGRATED STROKE OUTLINE NUMERALS (Exact ui/code.html Section 3)
+        ===================================================================== */}
+        <section className="w-full px-6 md:px-14">
+          <div className="flex items-center justify-between mb-8">
             <div>
-              <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#E5A93C]">
-                MyDramaList Bağlantılı · DiziYou 1080p HLS
-              </div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white">
-                🇰🇷 Efsane Kore Dizileri (K-Drama)
+              <span className="text-[11px] font-bold tracking-[0.2em] uppercase text-white/40">
+                Trendler
+              </span>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-white mt-1">
+                Bugün Türkiye&apos;de En Popüler 10 İçerik
               </h2>
             </div>
-            <Link
-              href="/kesfet?type=dizi&country=KR"
-              className="text-xs font-semibold text-white/60 hover:text-white flex items-center gap-1"
-            >
-              <span>Tümünü Gör</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() =>
+                  top10ScrollRef.current?.scrollBy({ left: -520, behavior: 'smooth' })
+                }
+                aria-label="Geri"
+                className="w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() =>
+                  top10ScrollRef.current?.scrollBy({ left: 520, behavior: 'smooth' })
+                }
+                aria-label="İleri"
+                className="w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-4 overflow-x-auto no-scrollbar py-2">
-            {kdramaItems.map((item) => (
-              <AccordionMediaCard key={item.id} item={item} />
+
+          <div
+            ref={top10ScrollRef}
+            className="flex items-stretch gap-10 overflow-x-auto pb-6 pt-4 no-scrollbar snap-x snap-mandatory"
+          >
+            {top10Items.map((item, idx) => (
+              <Link
+                key={item.id}
+                href={`/seri/${item.slug}`}
+                className="shrink-0 flex items-center group cursor-pointer snap-start relative"
+              >
+                <span className="text-[155px] font-black leading-none tracking-tighter text-stroke-numeral select-none absolute -left-5 z-0 drop-shadow-[0_15px_30px_rgba(0,0,0,0.9)]">
+                  {idx + 1}
+                </span>
+
+                <div className="relative ml-20 w-52 aspect-[2/3] rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 group-hover:border-white/30 shadow-[0_25px_50px_rgba(0,0,0,0.85)] group-hover:scale-105 transition-all duration-500 z-10 flex flex-col justify-end p-4">
+                  <img
+                    src={getProxiedImageUrl(item.cover_image, item.title)}
+                    alt={item.title}
+                    loading="lazy"
+                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-black/40 to-transparent" />
+                  <div className="relative z-10 flex flex-col">
+                    <span className="text-[10px] font-bold tracking-widest uppercase text-white/60">
+                      {formatContentTypeTR(item.content_type, item.country)}
+                    </span>
+                    <span className="text-[15px] font-bold text-white truncate mt-0.5">
+                      {item.title}
+                    </span>
+                  </div>
+                </div>
+              </Link>
             ))}
           </div>
         </section>
 
-        <section>
-          <div className="flex items-center justify-between mb-4">
+        {/* =====================================================================
+            5. INTERACTIVE QUICK FILTER BAR WITH FLUID SPRING PILL + ACCORDION ROW
+        ===================================================================== */}
+        <section className="w-full px-6 md:px-14 space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#38BDF8]">
-                AniList Çift Yönlü Köprü · Tau-Video 1080p
-              </div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white">
-                🇯🇵 En Çok İzlenen Animeler
+              <span className="text-[11px] font-bold tracking-[0.2em] uppercase text-white/40">
+                Akordiyon Sahne Önizleme
+              </span>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-white mt-1">
+                Katalog Vitrini
               </h2>
             </div>
-            <Link
-              href="/kesfet?type=anime"
-              className="text-xs font-semibold text-white/60 hover:text-white flex items-center gap-1"
-            >
-              <span>Tümünü Gör (7.069)</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
+
+            {/* Spring-Animated Filter Pill Bar */}
+            <div className="flex items-center gap-1.5 p-1.5 rounded-full glass-pill-dark overflow-x-auto no-scrollbar">
+              {QUICK_FILTERS.map((f) => {
+                const Icon = f.icon;
+                const active = quickFilter === f.id;
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => {
+                      triggerSound('click');
+                      setQuickFilter(f.id);
+                    }}
+                    className={`relative flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+                      active ? 'text-black' : 'text-white/70 hover:text-white'
+                    }`}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="home-quick-filter-pill"
+                        transition={{
+                          type: 'spring',
+                          stiffness: 420,
+                          damping: 32,
+                        }}
+                        className="absolute inset-0 rounded-full bg-white shadow-[0_0_20px_rgba(255,255,255,0.35)]"
+                      />
+                    )}
+                    <Icon className="w-3.5 h-3.5 relative z-10" />
+                    <span className="relative z-10">{f.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="flex items-center gap-4 overflow-x-auto no-scrollbar py-2">
-            {animeItems.map((item) => (
-              <AccordionMediaCard key={item.id} item={item} />
+
+          <div className="flex items-center gap-4 overflow-x-auto pb-4 pt-1 no-scrollbar">
+            {filteredRail.map((item, i) => (
+              <AccordionMediaCard
+                key={item.id}
+                item={item}
+                priority={i < 4}
+              />
             ))}
           </div>
         </section>
 
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#F5C518]">
-                IMDb & TMDB Eşleşmeli · Sinema & Global Diziler
+        {/* =====================================================================
+            6. K-DRAMA, ANIME & C-DRAMA ACCORDION ROWS
+        ===================================================================== */}
+        <AccordionRow
+          subtitle="MyDramaList Yüksek Puanlı"
+          title="Kore Dizileri (K-Drama)"
+          href="/kesfet?country=KR"
+          items={kdramaItems}
+        />
+
+        <AccordionRow
+          subtitle="AniList Sezonun Zirvesi"
+          title="Animeler (Tau-Video 1080p)"
+          href="/kesfet?type=anime"
+          items={animeItems}
+        />
+
+        <AccordionRow
+          subtitle="Wuxia, Xianxia & Modern Romantik"
+          title="Çin Dizileri (C-Drama)"
+          href="/kesfet?country=CN"
+          items={cdramaItems}
+        />
+
+        {/* =====================================================================
+            7. OYUNCULAR, ANİME KARAKTERLERİ & SEİYUU LİDERLİK TABLOSU (No Emojis)
+        ===================================================================== */}
+        {topPeople.length > 0 && (
+          <section className="w-full px-6 md:px-14">
+            <div className="rounded-3xl bg-[#0f0f11] p-6 sm:p-8 border border-white/[0.08]">
+              <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
+                <div>
+                  <span className="text-[11px] font-bold tracking-[0.2em] uppercase text-white/40">
+                    Topluluk Favori Sıralaması
+                  </span>
+                  <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight mt-1">
+                    En Çok Favorilenen Oyuncular & Anime Karakterleri
+                  </h2>
+                </div>
+                <Link
+                  href="/oyuncular"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full glass-pill text-xs font-semibold text-white hover:bg-white/15 transition-all"
+                >
+                  <span>Tüm Sıralamayı Gör (21.814)</span>
+                  <ChevronRight className="w-4 h-4" />
+                </Link>
               </div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white">
-                🍿 IMDb Yüksek Puanlı Dizi & Filmler
-              </h2>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                {topPeople.slice(0, 12).map((person, idx) => {
+                  const isFav = personFavorites.includes(person.id);
+                  return (
+                    <div
+                      key={person.id}
+                      className="koup-projection-card rounded-2xl p-3.5 flex flex-col items-center text-center group relative"
+                    >
+                      <span className="absolute top-2.5 left-2.5 w-6 h-6 rounded-full bg-black/75 border border-white/15 text-[10px] font-mono font-bold text-white flex items-center justify-center">
+                        #{idx + 1}
+                      </span>
+
+                      <button
+                        onClick={() => togglePersonFavorite(person.id)}
+                        title="Favorilere Ekle"
+                        className={`absolute top-2.5 right-2.5 w-7 h-7 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
+                          isFav
+                            ? 'bg-rose-500 border-rose-300 text-white'
+                            : 'bg-black/60 border-white/15 text-white/70 hover:text-white'
+                        }`}
+                      >
+                        <Heart className={`w-3.5 h-3.5 ${isFav ? 'fill-white' : ''}`} />
+                      </button>
+
+                      <Link href={`/oyuncu/${person.slug}`} className="flex flex-col items-center">
+                        <div className="w-20 h-20 rounded-full overflow-hidden border border-white/15 group-hover:border-white/40 transition-all mb-3">
+                          <img
+                            src={getProxiedImageUrl(person.image_url, person.name)}
+                            alt={person.name}
+                            loading="lazy"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          />
+                        </div>
+                        <div className="text-xs font-bold text-white line-clamp-1">
+                          {person.name}
+                        </div>
+                        <div className="text-[10px] text-white/45 mt-0.5">
+                          {person.person_type === 'character'
+                            ? 'Anime Karakteri'
+                            : person.person_type === 'voice_actor'
+                              ? 'Seiyuu'
+                              : 'Oyuncu'}
+                        </div>
+                        <div className="mt-2 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/[0.06] border border-white/10 text-[10px] font-mono text-white/80">
+                          <Heart className="w-2.5 h-2.5 fill-rose-400 text-rose-400" />
+                          <span>{(person.favorites_count || 0) + (isFav ? 1 : 0)}</span>
+                        </div>
+                      </Link>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-            <Link
-              href="/kesfet?type=film"
-              className="text-xs font-semibold text-white/60 hover:text-white flex items-center gap-1"
-            >
-              <span>Tümünü Gör</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-          <div className="flex items-center gap-4 overflow-x-auto no-scrollbar py-2">
-            {globalItems.map((item) => (
-              <AccordionMediaCard key={item.id} item={item} />
-            ))}
-          </div>
-        </section>
+          </section>
+        )}
+
+        {/* =====================================================================
+            8. CANLI ASYAMAG MAGAZİN & DEDİKODU VİTRİNİ (In-Site Reader)
+        ===================================================================== */}
+        {magPosts.length > 0 && (
+          <section className="w-full px-6 md:px-14">
+            <div className="flex items-end justify-between mb-6">
+              <div>
+                <div className="flex items-center gap-2 text-[11px] font-bold tracking-[0.2em] uppercase text-white/45">
+                  <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                  <span>AsyaMag Canlı API • KoUp İçi Okuma</span>
+                </div>
+                <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight mt-1">
+                  Son Dakika Dedikodu & Magazin Gündemi
+                </h2>
+              </div>
+              <Link
+                href="/magazin"
+                className="text-xs font-semibold text-white/60 hover:text-white flex items-center gap-1 transition-colors"
+              >
+                <span>Tüm Haberler</span>
+                <ChevronRight className="w-4 h-4" />
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+              {magPosts.slice(0, 4).map((post) => (
+                <Link
+                  key={post.slug}
+                  href={`/magazin/${post.slug}`}
+                  className="koup-projection-card rounded-2xl overflow-hidden flex flex-col justify-between group"
+                >
+                  <div className="relative h-44 overflow-hidden">
+                    <img
+                      src={getProxiedImageUrl(post.featured_image, post.title)}
+                      alt={post.title}
+                      loading="lazy"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f11] via-black/25 to-transparent" />
+                    <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                      {(post.categories || ['Magazin']).slice(0, 2).map((c) => (
+                        <span
+                          key={c}
+                          className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-black/75 backdrop-blur-md text-white border border-white/15"
+                        >
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="p-4 flex-1 flex flex-col justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-white leading-snug line-clamp-2">
+                        {post.title}
+                      </h3>
+                      <p className="text-xs text-white/55 line-clamp-2 mt-2 leading-relaxed">
+                        {post.excerpt}
+                      </p>
+                    </div>
+                    <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between text-[11px] font-mono text-white/45">
+                      <span>
+                        {new Date(post.published_at).toLocaleDateString('tr-TR', {
+                          day: 'numeric',
+                          month: 'short',
+                        })}
+                      </span>
+                      <span className="text-white/80 font-semibold">
+                        İçeride Oku →
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </div>
+  );
+}
+
+function AccordionRow({
+  subtitle,
+  title,
+  href,
+  items,
+}: {
+  subtitle: string;
+  title: string;
+  href: string;
+  items: MediaItem[];
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  if (!items || items.length === 0) return null;
+
+  return (
+    <section className="w-full px-6 md:px-14">
+      <div className="flex items-end justify-between mb-5">
+        <div>
+          <span className="text-[11px] font-bold tracking-[0.2em] uppercase text-white/40">
+            {subtitle}
+          </span>
+          <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight mt-0.5">
+            {title}
+          </h2>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() =>
+              scrollRef.current?.scrollBy({ left: -560, behavior: 'smooth' })
+            }
+            aria-label="Sola Kaydır"
+            className="w-9 h-9 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white cursor-pointer"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() =>
+              scrollRef.current?.scrollBy({ left: 560, behavior: 'smooth' })
+            }
+            aria-label="Sağa Kaydır"
+            className="w-9 h-9 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white cursor-pointer"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+          <Link
+            href={href}
+            className="text-xs font-semibold text-white/55 hover:text-white flex items-center gap-1 ml-2 transition-colors"
+          >
+            <span>Tümünü Gör</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+      </div>
+
+      <div
+        ref={scrollRef}
+        className="flex items-center gap-4 overflow-x-auto pb-4 pt-1 no-scrollbar"
+      >
+        {items.map((item) => (
+          <AccordionMediaCard key={item.id} item={item} />
+        ))}
+      </div>
+    </section>
   );
 }

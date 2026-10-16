@@ -14,6 +14,7 @@ import {
   Reply,
   Send,
   AlertCircle,
+  User,
 } from 'lucide-react';
 import { supabase, getProxiedImageUrl } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
@@ -72,12 +73,12 @@ const CURATED_GIFS = [
 ];
 
 const KDRAMA_ANIME_STICKERS = [
-  { id: 'finger-heart', emoji: '🫰', label: 'K-Heart' },
-  { id: 'cinema-fire', emoji: '🔥', label: 'Efsane Sahne' },
-  { id: 'crying-bowl', emoji: '😭', label: 'Mendil Bitti' },
-  { id: 'crown-king', emoji: '👑', label: 'Başyapıt' },
-  { id: 'popcorn', emoji: '🍿', label: 'Maraton' },
-  { id: 'shock-twist', emoji: '😱', label: 'Ters Köşe' },
+  { id: 'finger-heart', badge: 'K-HEART', label: 'K-Heart' },
+  { id: 'cinema-fire', badge: 'EFSANE', label: 'Efsane Sahne' },
+  { id: 'crying-bowl', badge: 'DUYGUSAL', label: 'Mendil Bitti' },
+  { id: 'crown-king', badge: 'BAŞYAPIT', label: 'Başyapıt' },
+  { id: 'popcorn', badge: 'MARATON', label: 'Maraton' },
+  { id: 'shock-twist', badge: 'TERS KÖŞE', label: 'Ters Köşe' },
 ];
 
 interface RichCommentSectionProps {
@@ -156,7 +157,6 @@ export default function RichCommentSection({
     e.preventDefault();
     if (!bodyText.trim() && !selectedGif && !selectedSticker) return;
 
-    // Validate image URL if provided
     let safeImageUrl: string | null = null;
     if (imageUrlInput.trim()) {
       if (!imageUrlInput.trim().startsWith('https://')) {
@@ -219,7 +219,6 @@ export default function RichCommentSection({
       // ignore
     }
 
-    // Reset form
     setTitle('');
     setBodyText('');
     setHasSpoiler(false);
@@ -230,7 +229,7 @@ export default function RichCommentSection({
     setReplyTo(null);
 
     pushNotification(
-      replyTo ? 'Yanıtın Gönderildi 💬' : 'Yorumun Yayınlandı ✨',
+      replyTo ? 'Yanıtın Gönderildi' : 'Yorumun Yayınlandı',
       `${targetTitle} tartışmasına katkın eklendi.`,
       'reply'
     );
@@ -253,11 +252,11 @@ export default function RichCommentSection({
       <div className="flex flex-wrap items-center justify-between gap-3 pb-5 mb-6 border-b border-white/10">
         <div>
           <h3 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-amber-300" />
+            <Sparkles className="w-5 h-5 text-white/75" />
             <span>Topluluk Yorumları & Tartışma ({comments.length})</span>
           </h3>
           <p className="text-xs text-white/55 mt-0.5">
-            {targetTitle} hakkında başlık, renkli yazı, GIF, sticker veya görsel URL ile yorum bırak
+            {targetTitle} hakkında başlık, renkli yazı, GIF, etiket veya görsel URL ile yorum bırak
           </p>
         </div>
       </div>
@@ -268,7 +267,7 @@ export default function RichCommentSection({
         className="rounded-2xl bg-white/[0.03] border border-white/10 p-4 sm:p-5 mb-8 space-y-3.5"
       >
         {replyTo && (
-          <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-sky-400/15 border border-sky-400/30 text-xs text-sky-200">
+          <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-white/10 border border-white/20 text-xs text-white/85">
             <span>@{replyTo.author_username} yorumuna yanıt veriyorsun</span>
             <button
               type="button"
@@ -286,7 +285,7 @@ export default function RichCommentSection({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Yorum Başlığı (Opsiyonel — örn: 4. Bölümün Son Sahnesi Efsaneydi!)"
-          className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 text-sm font-semibold text-white placeholder-white/35 focus:outline-none focus:border-sky-400"
+          className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 text-sm font-semibold text-white placeholder-white/35 focus:outline-none focus:border-white/35"
         />
 
         {/* Formatting Toolbar */}
@@ -366,7 +365,7 @@ export default function RichCommentSection({
               setShowStickerPicker(false);
             }}
             className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs cursor-pointer ${
-              showGifPicker ? 'bg-sky-400 text-black font-bold' : 'text-white/70 hover:bg-white/10'
+              showGifPicker ? 'bg-white text-black font-bold' : 'text-white/70 hover:bg-white/10'
             }`}
           >
             <span>GIF</span>
@@ -381,12 +380,12 @@ export default function RichCommentSection({
             }}
             className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs cursor-pointer ${
               showStickerPicker
-                ? 'bg-amber-400 text-black font-bold'
+                ? 'bg-white text-black font-bold'
                 : 'text-white/70 hover:bg-white/10'
             }`}
           >
             <Smile className="w-3.5 h-3.5" />
-            <span>Sticker</span>
+            <span>Etiket</span>
           </button>
 
           {/* External Image URL Toggle */}
@@ -403,7 +402,7 @@ export default function RichCommentSection({
 
           {/* Timestamp Input */}
           <div className="flex items-center gap-1 ml-auto bg-white/[0.05] px-2 py-0.5 rounded-lg border border-white/10">
-            <Clock className="w-3 h-3 text-sky-400" />
+            <Clock className="w-3 h-3 text-white/60" />
             <input
               type="text"
               value={timestampInput}
@@ -425,7 +424,7 @@ export default function RichCommentSection({
                   setSelectedGif(g.url);
                   setShowGifPicker(false);
                 }}
-                className="relative rounded-lg overflow-hidden border border-white/10 hover:border-sky-400 cursor-pointer group"
+                className="relative rounded-lg overflow-hidden border border-white/10 hover:border-white/40 cursor-pointer group"
               >
                 <img src={g.url} alt={g.label} className="w-full h-20 object-cover" />
                 <span className="absolute bottom-0 inset-x-0 bg-black/70 text-[10px] text-white py-0.5">
@@ -444,12 +443,14 @@ export default function RichCommentSection({
                 key={st.id}
                 type="button"
                 onClick={() => {
-                  setSelectedSticker(`${st.emoji} ${st.label}`);
+                  setSelectedSticker(`${st.badge} · ${st.label}`);
                   setShowStickerPicker(false);
                 }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs text-white cursor-pointer"
               >
-                <span className="text-lg">{st.emoji}</span>
+                <span className="text-[10px] font-mono font-bold text-amber-300">
+                  {st.badge}
+                </span>
                 <span>{st.label}</span>
               </button>
             ))}
@@ -463,7 +464,7 @@ export default function RichCommentSection({
             value={imageUrlInput}
             onChange={(e) => setImageUrlInput(e.target.value)}
             placeholder="https://... (Görsel URL'si yapıştırın — Cloudflare Proxy ile gösterilir)"
-            className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 text-xs text-white placeholder-white/40 focus:outline-none focus:border-sky-400"
+            className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 text-xs text-white placeholder-white/40 focus:outline-none focus:border-white/35"
           />
         )}
 
@@ -478,7 +479,7 @@ export default function RichCommentSection({
             fontStyle: isItalic ? 'italic' : 'normal',
           }}
           placeholder="Düşüncelerini, teorilerini veya sahne analizini yaz..."
-          className="w-full px-4 py-3 rounded-xl bg-black/50 border border-white/10 text-sm placeholder-white/35 focus:outline-none focus:border-sky-400"
+          className="w-full px-4 py-3 rounded-xl bg-black/50 border border-white/10 text-sm placeholder-white/35 focus:outline-none focus:border-white/35"
         />
 
         {/* Selected Attachments Preview */}
@@ -497,7 +498,7 @@ export default function RichCommentSection({
               </div>
             )}
             {selectedSticker && (
-              <div className="px-3 py-1.5 rounded-full bg-amber-400/20 border border-amber-400/40 text-sm text-amber-200 flex items-center gap-2">
+              <div className="px-3 py-1.5 rounded-full bg-amber-400/20 border border-amber-400/40 text-xs text-amber-200 flex items-center gap-2">
                 <span>{selectedSticker}</span>
                 <button
                   type="button"
@@ -513,7 +514,7 @@ export default function RichCommentSection({
 
         <div className="flex items-center justify-between pt-1">
           <span className="text-[11px] text-white/45 flex items-center gap-1">
-            <AlertCircle className="w-3.5 h-3.5 text-sky-400" />
+            <AlertCircle className="w-3.5 h-3.5 text-white/60" />
             DOMPurify XSS & SSRF Koruması Aktif
           </span>
           <button
@@ -542,22 +543,31 @@ export default function RichCommentSection({
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2.5">
-                    <img
-                      src={getProxiedImageUrl(c.author_avatar)}
-                      alt={c.author_username}
-                      className="w-8 h-8 rounded-full object-cover border border-white/15"
-                    />
+                    {c.author_avatar ? (
+                      <img
+                        src={getProxiedImageUrl(c.author_avatar)}
+                        alt={c.author_username}
+                        className="w-8 h-8 rounded-full object-cover border border-white/15"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-white/75">
+                        <User className="w-4 h-4" />
+                      </div>
+                    )}
                     <div>
                       <div className="text-xs font-bold text-white flex items-center gap-2">
                         <span>{c.author_username}</span>
                         {c.timestamp_sec && (
-                          <span className="px-2 py-0.5 rounded bg-sky-400/20 text-sky-300 font-mono text-[10px]">
-                            ⏱ {Math.floor(c.timestamp_sec / 60)}:
-                            {String(c.timestamp_sec % 60).padStart(2, '0')}
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white/10 text-white/80 font-mono text-[10px]">
+                            <Clock className="w-2.5 h-2.5" />
+                            <span>
+                              {Math.floor(c.timestamp_sec / 60)}:
+                              {String(c.timestamp_sec % 60).padStart(2, '0')}
+                            </span>
                           </span>
                         )}
                         {c.sticker_id && (
-                          <span className="px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-200 text-[11px]">
+                          <span className="px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-200 text-[10px] font-mono">
                             {c.sticker_id}
                           </span>
                         )}

@@ -15,7 +15,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 export interface MediaItem {
   id: number;
   slug: string;
-  content_type: 'dizi' | 'film' | 'anime' | 'program';
+  content_type: 'dizi' | 'film' | 'anime' | 'program' | string;
+  country?: string;
   country_code: string;
   country_name: string;
   title: string;
@@ -56,6 +57,7 @@ export interface MediaItem {
   last_published_episode?: number | null;
   sources_count: number;
   episodes_available: number;
+  views_count?: number;
   views_total: number;
   views_weekly: number;
   favorites_count: number;
@@ -193,7 +195,6 @@ export function getProxiedImageUrl(url?: string | null, fallback?: string | null
     return '/logo-dark.png';
   }
   if (url.startsWith('/') || url.startsWith('data:')) return url;
-  // Direct fast CDN hosts that support HTTPS & CORS cleanly
   if (
     url.includes('image.tmdb.org') ||
     url.includes('s4.anilist.co') ||
@@ -206,15 +207,31 @@ export function getProxiedImageUrl(url?: string | null, fallback?: string | null
   return `/api/image-proxy?${params.toString()}`;
 }
 
-export const COUNTRY_FLAGS: Record<string, string> = {
-  KR: '🇰🇷',
-  CN: '🇨🇳',
-  JP: '🇯🇵',
-  TH: '🇹🇭',
-  TW: '🇹🇼',
-  HK: '🇭🇰',
-  PH: '🇵🇭',
-  US: '🇺🇸',
-  VN: '🇻🇳',
-  SG: '🇸🇬',
+export const COUNTRY_LABELS: Record<string, string> = {
+  KR: 'KORE',
+  CN: 'ÇİN',
+  JP: 'JAPONYA',
+  TH: 'TAYLAND',
+  TW: 'TAYVAN',
+  HK: 'HONG KONG',
+  PH: 'FİLİPİNLER',
+  US: 'ABD',
+  GB: 'İNGİLTERE',
+  TR: 'TÜRKİYE',
+  GL: 'GLOBAL',
 };
+
+export const COUNTRY_FLAGS: Record<string, string> = COUNTRY_LABELS;
+
+export function formatContentTypeTR(contentType?: string | null, country?: string | null): string {
+  const c = (country || '').toUpperCase();
+  const t = (contentType || 'dizi').toLowerCase();
+  if (t === 'anime') return 'ANİME';
+  if (t === 'film' || t === 'movie') return 'FİLM';
+  if (t === 'program') return 'PROGRAM';
+  if (c === 'KR') return 'K-DRAMA';
+  if (c === 'CN') return 'C-DRAMA';
+  if (c === 'JP') return 'J-DRAMA';
+  if (c === 'TH') return 'THAI DRAMA';
+  return 'DİZİ';
+}

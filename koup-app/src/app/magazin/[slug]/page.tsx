@@ -225,8 +225,9 @@ export default function MagazineArticlePage({
                   />
                   <div>
                     <div className="text-xs font-bold text-white">{p.name}</div>
-                    <div className="text-[10px] font-mono text-pink-300">
-                      ❤️ {p.favorites_count} Favori
+                    <div className="text-[10px] font-mono text-pink-300 flex items-center gap-1 mt-0.5">
+                      <Heart className="w-2.5 h-2.5 fill-pink-400 text-pink-400" />
+                      <span>{p.favorites_count} Favori</span>
                     </div>
                   </div>
                 </Link>
