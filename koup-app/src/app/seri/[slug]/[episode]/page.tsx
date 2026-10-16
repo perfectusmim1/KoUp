@@ -26,6 +26,7 @@ import {
   COUNTRY_LABELS,
   getCountryFlag,
 } from '@/lib/supabase';
+import { cachedQuery } from '@/lib/cache';
 import { useKoUp } from '@/context/KoUpContext';
 import NetflixPlayer from '@/components/NetflixPlayer';
 import CountryFlag from '@/components/CountryFlag';
@@ -89,52 +90,65 @@ export default function EpisodeWatchPage({
       setIsLoading(true);
       const decodedSlug = decodeURIComponent(slug);
 
-      let { data: mData } = await supabase
-        .from('media')
-        .select('*')
-        .eq('slug', decodedSlug)
-        .single();
+      const mediaItem = await cachedQuery<MediaItem | null>(
+        `media_${decodedSlug}`,
+        300_000,
+        async () => {
+          let { data: mData } = await supabase
+            .from('media')
+            .select('*')
+            .eq('slug', decodedSlug)
+            .single();
 
-      if (!mData) {
-        const { data: fallbackRows } = await supabase
-          .from('media')
-          .select('*')
-          .or(`slug.eq.${decodedSlug}-izle,slug.ilike.${decodedSlug}%`)
-          .limit(1);
-        if (fallbackRows && fallbackRows[0]) {
-          mData = fallbackRows[0];
+          if (!mData) {
+            const { data: fallbackRows } = await supabase
+              .from('media')
+              .select('*')
+              .or(`slug.eq.${decodedSlug}-izle,slug.ilike.${decodedSlug}%`)
+              .limit(1);
+            if (fallbackRows && fallbackRows[0]) {
+              mData = fallbackRows[0];
+            }
+          }
+
+          if (!mData && !Number.isNaN(Number(decodedSlug))) {
+            const byId = await supabase
+              .from('media')
+              .select('*')
+              .eq('id', Number(decodedSlug))
+              .single();
+            mData = byId.data;
+          }
+
+          return (mData as MediaItem) || null;
         }
-      }
-
-      if (!mData && !Number.isNaN(Number(decodedSlug))) {
-        const byId = await supabase
-          .from('media')
-          .select('*')
-          .eq('id', Number(decodedSlug))
-          .single();
-        mData = byId.data;
-      }
+      );
 
       if (isCancelled) return;
 
-      if (!mData) {
+      if (!mediaItem) {
         setIsLoading(false);
         return;
       }
 
-      const item = mData as MediaItem;
-      setMedia(item);
+      setMedia(mediaItem);
 
       // Increment view counter non-blockingly
-      supabase.rpc('increment_media_view', { p_media_id: item.id }).then(() => {});
+      supabase.rpc('increment_media_view', { p_media_id: mediaItem.id }).then(() => {});
 
-      // Fetch verified episode sources from edge resolver
+      // Fetch verified episode sources from edge resolver with caching
       try {
-        const res = await fetch(`/api/sources/${item.id}`);
-        const payload = await res.json();
+        const rawEps = await cachedQuery<EpisodeData[]>(
+          `episodes_${mediaItem.id}`,
+          300_000,
+          async () => {
+            const res = await fetch(`/api/sources/${mediaItem.id}`);
+            const payload = await res.json();
+            return payload.episodes || [];
+          }
+        );
         if (isCancelled) return;
 
-        const rawEps: EpisodeData[] = payload.episodes || [];
         // Sort episodes strictly by season then episode number
         const sortedEps = [...rawEps].sort(
           (a, b) =>
@@ -148,10 +162,10 @@ export default function EpisodeWatchPage({
         setCurrentSeason(activeSeason);
 
         // Update watching status in KoUpContext progress map
-        const existingProg = progressMap[item.id];
+        const existingProg = progressMap[mediaItem.id];
         const initialPos = existingProg?.resume_position_sec || 0;
         updateEpisodeProgress(
-          item,
+          mediaItem,
           activeSeason,
           currentEpNum,
           currentEp?.episode_name || `${currentEpNum}. Bölüm`,
@@ -167,7 +181,7 @@ export default function EpisodeWatchPage({
         });
 
         // Load user's persisted single-vote reaction for this episode
-        const savedVote = localStorage.getItem(`koup_reaction_${item.id}_${currentEpNum}`);
+        const savedVote = localStorage.getItem(`koup_reaction_${mediaItem.id}_${currentEpNum}`);
         if (savedVote === 'fire' || savedVote === 'cry' || savedVote === 'shock') {
           setUserReaction(savedVote);
         } else {
@@ -197,8 +211,8 @@ export default function EpisodeWatchPage({
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center pt-24 bg-[#080808]">
-        <div className="text-sm font-mono text-emerald-400 animate-pulse flex items-center gap-2">
-          <Film className="w-4 h-4 animate-spin text-emerald-400" />
+        <div className="text-sm font-mono text-sky-400 animate-pulse flex items-center gap-2">
+          <Film className="w-4 h-4 animate-spin text-sky-400" />
           <span>Sinema Oynatıcısı ve Kaynaklar Yükleniyor...</span>
         </div>
       </div>
@@ -214,7 +228,7 @@ export default function EpisodeWatchPage({
         </p>
         <Link
           href="/kesfet"
-          className="px-6 py-3 rounded-full bg-emerald-500 text-black font-bold text-xs hover:bg-emerald-400 transition-colors shadow-lg"
+          className="px-6 py-3 rounded-full bg-[#2997ff] text-white font-bold text-xs hover:bg-sky-400 transition-colors shadow-lg shadow-blue-500/25"
         >
           Kataloğa Dön
         </Link>
@@ -357,7 +371,7 @@ export default function EpisodeWatchPage({
               </span>
             </span>
 
-            <span className="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 font-mono text-xs font-bold">
+            <span className="px-3 py-1 rounded-full bg-sky-500/15 border border-sky-400/30 text-sky-300 font-mono text-xs font-bold">
               S{currentSeason} : B{currentEpNum}
             </span>
           </div>
@@ -406,14 +420,14 @@ export default function EpisodeWatchPage({
                       onClick={() => setSelectedSourceIdx(idx)}
                       className={`shrink-0 flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-mono font-medium transition-all cursor-pointer border ${
                         active
-                          ? 'bg-emerald-500 text-black font-bold border-emerald-400 shadow-[0_0_18px_rgba(16,185,129,0.45)] scale-[1.03]'
+                          ? 'bg-[#2997ff] text-white font-bold border-sky-400 shadow-[0_0_18px_rgba(41,151,255,0.45)] scale-[1.03]'
                           : 'bg-white/[0.05] hover:bg-white/[0.12] text-white/80 border-white/10 hover:text-white'
                       }`}
                     >
                       <span
                         className={`w-2 h-2 rounded-full ${
-                          isNative ? 'bg-emerald-400' : 'bg-sky-400'
-                        } ${active ? 'bg-black' : ''}`}
+                          isNative ? 'bg-sky-400' : 'bg-blue-400'
+                        } ${active ? 'bg-white' : ''}`}
                       />
                       <span>{src.source_name || `Kaynak ${idx + 1}`}</span>
                       {src.fansub && src.fansub !== 'Varsayılan' && (
@@ -510,7 +524,7 @@ export default function EpisodeWatchPage({
               {nextEp ? (
                 <button
                   onClick={() => router.push(`/seri/${media.slug}/${nextEp.episode_number}`)}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold transition-all shadow-[0_0_15px_rgba(16,185,129,0.35)] cursor-pointer"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white text-xs font-bold transition-all shadow-[0_0_15px_rgba(41,151,255,0.35)] cursor-pointer"
                 >
                   <span>Sonraki Bölüm (B{nextEp.episode_number})</span>
                   <ChevronRight className="w-4 h-4" />
@@ -539,7 +553,7 @@ export default function EpisodeWatchPage({
                 onClick={() => toggleEpisodeWatched(media, currentEpNum)}
                 className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold border transition-all cursor-pointer ${
                   isWatched
-                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
+                    ? 'bg-sky-500/20 border-sky-400 text-sky-300'
                     : 'bg-white/10 border-white/15 text-white/80 hover:text-white hover:bg-white/20'
                 }`}
               >
@@ -568,7 +582,7 @@ export default function EpisodeWatchPage({
           <div className="mt-3 p-4 sm:p-5 rounded-3xl bg-[#141418] border border-white/15 shadow-2xl">
             <div className="flex items-center justify-between pb-3 mb-3 border-b border-white/10">
               <div className="flex items-center gap-2">
-                <Film className="w-4 h-4 text-emerald-400" />
+                <Film className="w-4 h-4 text-sky-400" />
                 <span className="text-xs font-bold text-white">
                   {currentSeason}. Sezon Bölümleri ({currentSeasonEpisodes.length})
                 </span>
@@ -596,7 +610,7 @@ export default function EpisodeWatchPage({
                     }}
                     className={`p-3 rounded-2xl border text-left transition-all cursor-pointer relative ${
                       isCurrent
-                        ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.35)]'
+                        ? 'bg-sky-500/20 border-sky-400 text-sky-300 shadow-[0_0_15px_rgba(41,151,255,0.35)]'
                         : 'bg-white/[0.03] border-white/[0.08] text-white/80 hover:bg-white/[0.08] hover:text-white'
                     }`}
                   >
@@ -605,7 +619,7 @@ export default function EpisodeWatchPage({
                         B{ep.episode_number}
                       </span>
                       {watched && (
-                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                        <CheckCircle2 className="w-3 h-3 text-sky-400" />
                       )}
                     </div>
                     <div className="text-[10px] text-white/50 truncate mt-1">
@@ -667,7 +681,7 @@ export default function EpisodeWatchPage({
                 </h3>
               </div>
               {userReaction && (
-                <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-400/25">
+                <span className="text-[11px] font-semibold text-sky-400 bg-sky-500/10 px-2.5 py-1 rounded-full border border-sky-400/25">
                   ✓ Tepkin Kaydedildi
                 </span>
               )}
@@ -728,7 +742,7 @@ export default function EpisodeWatchPage({
           <div className="p-6 rounded-3xl bg-[#0f0f11] border border-white/[0.08] flex flex-col justify-between">
             <div className="flex items-center justify-between text-[11px] font-mono text-white/60 mb-2">
               <span>Bölüm Kaynak & Etkileşim Dağılımı</span>
-              <span className="text-emerald-400 font-bold">
+              <span className="text-sky-400 font-bold">
                 Aktif: B{currentEpNum} ({currentEpObj?.sources?.length || 0} Kaynak)
               </span>
             </div>
@@ -750,8 +764,8 @@ export default function EpisodeWatchPage({
                     style={{ height: `${hPct}%` }}
                     className={`flex-1 rounded-t-md cursor-pointer transition-all ${
                       active
-                        ? 'bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.7)]'
-                        : 'bg-emerald-500/15 hover:bg-emerald-500/35'
+                        ? 'bg-sky-400 shadow-[0_0_12px_rgba(56,189,248,0.7)]'
+                        : 'bg-sky-500/15 hover:bg-sky-500/35'
                     }`}
                   />
                 );
@@ -761,47 +775,6 @@ export default function EpisodeWatchPage({
               <span>Sezon {currentSeason}</span>
               <span>{currentSeasonEpisodes.length} Bölüm Toplam</span>
             </div>
-          </div>
-        </div>
-
-        {/* Seasons & Episodes Quick Grid */}
-        <div className="mt-8 p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08]">
-          <div className="flex items-center justify-between mb-5">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <Film className="w-5 h-5 text-emerald-400" />
-              <span>Diğer Bölümler ({currentSeasonEpisodes.length})</span>
-            </h3>
-            <span className="text-xs text-white/45">İzlediğiniz bölümler yeşil tik ile işaretlenir</span>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
-            {currentSeasonEpisodes.map((ep) => {
-              const active = ep.episode_number === currentEpNum;
-              const watched = (progressMap[media.id]?.watched_episodes || []).includes(ep.episode_number);
-              return (
-                <button
-                  key={ep.episode_number}
-                  onClick={() => router.push(`/seri/${media.slug}/${ep.episode_number}`)}
-                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
-                    active
-                      ? 'bg-emerald-500 text-black font-bold border-emerald-400 shadow-[0_0_18px_rgba(16,185,129,0.45)] scale-102'
-                      : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/[0.06] text-white/80'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold font-mono">
-                      {ep.episode_number}. Bölüm
-                    </span>
-                    {watched && (
-                      <CheckCircle2 className={`w-3.5 h-3.5 ${active ? 'text-black' : 'text-emerald-400'}`} />
-                    )}
-                  </div>
-                  <div className={`text-[10px] font-mono mt-1 ${active ? 'text-black/70' : 'text-white/45'}`}>
-                    {ep.sources?.length || 0} Kaynak
-                  </div>
-                </button>
-              );
-            })}
           </div>
         </div>
 

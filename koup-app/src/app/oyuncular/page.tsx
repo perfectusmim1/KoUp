@@ -20,6 +20,7 @@ import {
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
 import CustomSelect from '@/components/CustomSelect';
+import { cachedQuery } from '@/lib/cache';
 
 const PERSON_TABS = [
   { id: 'all', label: 'Tüm Yıldızlar & Karakterler', icon: Sparkles },
@@ -48,28 +49,36 @@ export default function ActorsLeaderboardPage() {
   useEffect(() => {
     async function fetchPeople() {
       setIsLoading(true);
-      let query = supabase
-        .from('people')
-        .select('*')
-        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+      try {
+        const cacheKey = `top_people_${filterType}_${sortBy}_${page}_${searchQuery.trim().toLowerCase()}`;
+        const data = await cachedQuery(cacheKey, 300_000, async () => {
+          let query = supabase
+            .from('people')
+            .select('*')
+            .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
-      if (filterType !== 'all') {
-        query = query.eq('person_type', filterType);
-      }
-      if (searchQuery.trim().length >= 2) {
-        query = query.ilike('name', `%${searchQuery.trim()}%`);
-      }
-      if (sortBy === 'favs') {
-        query = query
-          .order('favorites_count', { ascending: false })
-          .order('drama_count', { ascending: false });
-      } else {
-        query = query.order('drama_count', { ascending: false });
-      }
+          if (filterType !== 'all') {
+            query = query.eq('person_type', filterType);
+          }
+          if (searchQuery.trim().length >= 2) {
+            query = query.ilike('name', `%${searchQuery.trim()}%`);
+          }
+          if (sortBy === 'favs') {
+            query = query
+              .order('favorites_count', { ascending: false })
+              .order('drama_count', { ascending: false });
+          } else {
+            query = query.order('drama_count', { ascending: false });
+          }
 
-      const { data } = await query;
-      setPeople((data as PersonItem[]) || []);
-      setIsLoading(false);
+          const { data: resData } = await query;
+          return (resData as PersonItem[]) || [];
+        });
+
+        setPeople(data);
+      } finally {
+        setIsLoading(false);
+      }
     }
 
     const timer = setTimeout(fetchPeople, 140);
@@ -173,7 +182,7 @@ export default function ActorsLeaderboardPage() {
             return (
               <div
                 key={person.id}
-                className="koup-projection-card rounded-3xl p-4 flex flex-col justify-between group"
+                className="koup-projection-card cv-card rounded-3xl p-4 flex flex-col justify-between group"
               >
                 <div>
                   <div className="relative aspect-square rounded-2xl overflow-hidden mb-3 bg-black/50 border border-white/10">
@@ -182,6 +191,7 @@ export default function ActorsLeaderboardPage() {
                         src={getProxiedImageUrl(person.image_url, person.name)}
                         alt={person.name}
                         loading="lazy"
+                        decoding="async"
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       />
                     </Link>
@@ -189,16 +199,28 @@ export default function ActorsLeaderboardPage() {
                     {/* Rank Badge */}
                     <span
                       className={`absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-extrabold border ${
-                        rank <= 3
-                          ? 'bg-white text-black border-white shadow-[0_0_15px_rgba(255,255,255,0.6)]'
-                          : 'bg-black/80 text-white border-white/15'
+                        rank === 1
+                          ? 'bg-amber-400/25 text-amber-300 border-amber-400/50 shadow-[0_0_12px_rgba(245,158,11,0.4)]'
+                          : rank === 2
+                          ? 'bg-slate-300/25 text-slate-100 border-slate-300/50 shadow-[0_0_12px_rgba(203,213,225,0.3)]'
+                          : rank === 3
+                          ? 'bg-amber-700/30 text-amber-300 border-amber-600/50 shadow-[0_0_12px_rgba(180,83,9,0.3)]'
+                          : 'bg-black/80 text-white/90 border-white/15'
                       }`}
                     >
                       #{rank}
                     </span>
 
-                    {/* Type Badge (Clean Text + No Emoji) */}
-                    <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-black/75 backdrop-blur-md text-white/85 border border-white/15">
+                    {/* Type Badge */}
+                    <span
+                      className={`absolute bottom-2 left-2 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider backdrop-blur-md border ${
+                        person.person_type === 'character'
+                          ? 'bg-purple-500/20 text-purple-200 border-purple-400/30'
+                          : person.person_type === 'seiyuu'
+                          ? 'bg-sky-500/20 text-sky-200 border-sky-400/30'
+                          : 'bg-emerald-500/20 text-emerald-200 border-emerald-400/30'
+                      }`}
+                    >
                       {person.person_type === 'character'
                         ? 'Karakter'
                         : person.person_type === 'seiyuu'

@@ -19,6 +19,7 @@ import AccordionMediaCard from '@/components/AccordionMediaCard';
 import CountryFlag from '@/components/CountryFlag';
 import { useKoUp } from '@/context/KoUpContext';
 import CustomSelect from '@/components/CustomSelect';
+import { cachedQuery } from '@/lib/cache';
 
 const CONTENT_TYPES = [
   { id: 'ALL', label: 'Tüm Türler', icon: Layers },
@@ -80,35 +81,43 @@ function DiscoverContent() {
   useEffect(() => {
     async function loadCatalog() {
       setIsLoading(true);
-      let query = supabase.from('media').select('*');
+      try {
+        const cacheKey = `kesfet_${typeFilter}_${countryFilter}_${genreFilter}_${sortBy}_${searchQuery.trim().toLowerCase()}`;
+        const data = await cachedQuery(cacheKey, 120_000, async () => {
+          let query = supabase.from('media').select('*');
 
-      if (typeFilter !== 'ALL') {
-        query = query.eq('content_type', typeFilter);
-      }
-      if (countryFilter !== 'ALL') {
-        query = query.eq('country_code', countryFilter);
-      }
-      if (genreFilter !== 'Tümü') {
-        query = query.contains('categories', [genreFilter]);
-      }
-      if (searchQuery.trim().length >= 2) {
-        query = query.ilike('search_text', `%${searchQuery.trim().toLowerCase()}%`);
-      }
+          if (typeFilter !== 'ALL') {
+            query = query.eq('content_type', typeFilter);
+          }
+          if (countryFilter !== 'ALL') {
+            query = query.eq('country_code', countryFilter);
+          }
+          if (genreFilter !== 'Tümü') {
+            query = query.contains('categories', [genreFilter]);
+          }
+          if (searchQuery.trim().length >= 2) {
+            query = query.ilike('search_text', `%${searchQuery.trim().toLowerCase()}%`);
+          }
 
-      if (sortBy === 'views') {
-        query = query.order('views_total', { ascending: false });
-      } else if (sortBy === 'rating') {
-        query = query.order('site_rating', { ascending: false, nullsFirst: false });
-      } else {
-        query = query.order('release_year', {
-          ascending: false,
-          nullsFirst: false,
+          if (sortBy === 'views') {
+            query = query.order('views_total', { ascending: false });
+          } else if (sortBy === 'rating') {
+            query = query.order('site_rating', { ascending: false, nullsFirst: false });
+          } else {
+            query = query.order('release_year', {
+              ascending: false,
+              nullsFirst: false,
+            });
+          }
+
+          const { data: resData } = await query.limit(72);
+          return (resData as MediaItem[]) || [];
         });
-      }
 
-      const { data } = await query.limit(72);
-      setItems((data as MediaItem[]) || []);
-      setIsLoading(false);
+        setItems(data);
+      } finally {
+        setIsLoading(false);
+      }
     }
 
     loadCatalog();
@@ -145,6 +154,7 @@ function DiscoverContent() {
               value={sortBy}
               onChange={(val) => setSortBy(val as any)}
               variant="pill"
+              aria-label="Sıralama Ölçütü"
               options={[
                 { value: 'views', label: 'En Çok İzlenen & Kaynaklı' },
                 { value: 'rating', label: 'En Yüksek Puanlı (MDL / AL / IMDb)' },
@@ -265,7 +275,7 @@ function DiscoverContent() {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-          className="flex flex-wrap items-center justify-center sm:justify-start gap-4"
+          className="flex flex-wrap items-center justify-center sm:justify-start gap-4 cv-auto"
         >
           {items.map((item) => (
             <AccordionMediaCard key={item.id} item={item} />

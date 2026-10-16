@@ -20,6 +20,30 @@ import {
 } from '@/lib/supabase';
 import RichCommentSection from '@/components/RichCommentSection';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
+import { cachedQuery } from '@/lib/cache';
+
+function getMagCategoryColor(cat: string): string {
+  switch (cat) {
+    case 'Dedikodu':
+      return 'bg-rose-500/20 text-rose-300 border-rose-400/35';
+    case 'Kore':
+      return 'bg-emerald-500/20 text-emerald-300 border-emerald-400/35';
+    case 'Çin':
+      return 'bg-orange-500/20 text-orange-300 border-orange-400/35';
+    case 'Dizi':
+      return 'bg-sky-500/20 text-sky-300 border-sky-400/35';
+    case 'Müzik':
+      return 'bg-purple-500/20 text-purple-300 border-purple-400/35';
+    case 'Film':
+      return 'bg-amber-500/20 text-amber-300 border-amber-400/35';
+    case 'BL GL':
+      return 'bg-pink-500/20 text-pink-300 border-pink-400/35';
+    case 'Tayland':
+      return 'bg-teal-500/20 text-teal-300 border-teal-400/35';
+    default:
+      return 'bg-white/10 text-white/80 border-white/15';
+  }
+}
 
 export default function MagazineArticlePage({
   params,
@@ -40,61 +64,66 @@ export default function MagazineArticlePage({
       setIsLoading(true);
       const decoded = decodeURIComponent(slug);
 
-      let article: MagazinePost | null = null;
-      const { data } = await supabase
-        .from('magazine_posts')
-        .select('*')
-        .eq('slug', decoded)
-        .single();
+      try {
+        const article = await cachedQuery(`magazin_post_${decoded}`, 300_000, async () => {
+          let art: MagazinePost | null = null;
+          const { data } = await supabase
+            .from('magazine_posts')
+            .select('*')
+            .eq('slug', decoded)
+            .single();
 
-      if (data) {
-        article = data as MagazinePost;
-      } else {
-        try {
-          const liveRes = await fetch(`/api/magazin/${encodeURIComponent(decoded)}`);
-          if (liveRes.ok) {
-            const liveJson = await liveRes.json();
-            article = liveJson?.post || null;
+          if (data) {
+            art = data as MagazinePost;
+          } else {
+            try {
+              const liveRes = await fetch(`/api/magazin/${encodeURIComponent(decoded)}`);
+              if (liveRes.ok) {
+                const liveJson = await liveRes.json();
+                art = liveJson?.post || null;
+              }
+            } catch {
+              // ignore
+            }
           }
-        } catch {
-          // ignore
+          return art;
+        });
+
+        if (!article) {
+          setIsLoading(false);
+          return;
         }
-      }
 
-      if (!article) {
+        setPost(article);
+
+        // Load linked media & people
+        if (article.related_media_ids?.length > 0) {
+          const { data: mRows } = await supabase
+            .from('media')
+            .select('*')
+            .in('id', article.related_media_ids);
+          setLinkedMedia((mRows as MediaItem[]) || []);
+        }
+
+        if (article.related_person_ids?.length > 0) {
+          const { data: pRows } = await supabase
+            .from('people')
+            .select('*')
+            .in('id', article.related_person_ids);
+          setLinkedPeople((pRows as PersonItem[]) || []);
+        }
+
+        // Load more articles
+        const { data: more } = await supabase
+          .from('magazine_posts')
+          .select('*')
+          .neq('id', article.id)
+          .order('published_at', { ascending: false })
+          .limit(4);
+        setMorePosts((more as MagazinePost[]) || []);
+      } finally {
         setIsLoading(false);
-        return;
       }
-
-      setPost(article);
-
-      // Load linked media & people
-      if (article.related_media_ids?.length > 0) {
-        const { data: mRows } = await supabase
-          .from('media')
-          .select('*')
-          .in('id', article.related_media_ids);
-        setLinkedMedia((mRows as MediaItem[]) || []);
-      }
-
-      if (article.related_person_ids?.length > 0) {
-        const { data: pRows } = await supabase
-          .from('people')
-          .select('*')
-          .in('id', article.related_person_ids);
-        setLinkedPeople((pRows as PersonItem[]) || []);
-      }
-
-      // Load more articles
-      const { data: more } = await supabase
-        .from('magazine_posts')
-        .select('*')
-        .neq('id', article.id)
-        .order('published_at', { ascending: false })
-        .limit(4);
-      setMorePosts((more as MagazinePost[]) || []);
-
-      setIsLoading(false);
     }
 
     loadArticle();
@@ -141,7 +170,7 @@ export default function MagazineArticlePage({
           {(post.categories || ['Magazin']).map((cat) => (
             <span
               key={cat}
-              className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-400/20 text-amber-300 border border-amber-400/35"
+              className={`px-3 py-1 rounded-full text-xs font-mono font-bold border backdrop-blur-md ${getMagCategoryColor(cat)}`}
             >
               {cat}
             </span>
@@ -165,6 +194,8 @@ export default function MagazineArticlePage({
             <img
               src={getProxiedImageUrl(post.featured_image)}
               alt={post.title}
+              loading="eager"
+              decoding="async"
               className="w-full h-full object-cover"
             />
           </div>
@@ -221,6 +252,10 @@ export default function MagazineArticlePage({
                   <img
                     src={getProxiedImageUrl(p.image_url)}
                     alt={p.name}
+                    width={48}
+                    height={48}
+                    loading="lazy"
+                    decoding="async"
                     className="w-12 h-12 rounded-full object-cover"
                   />
                   <div>
@@ -261,6 +296,10 @@ export default function MagazineArticlePage({
                 <img
                   src={getProxiedImageUrl(mp.featured_image)}
                   alt={mp.title}
+                  width={80}
+                  height={80}
+                  loading="lazy"
+                  decoding="async"
                   className="w-20 h-20 rounded-xl object-cover shrink-0"
                 />
                 <div className="min-w-0">

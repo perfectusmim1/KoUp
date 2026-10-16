@@ -22,6 +22,7 @@ import {
   formatContentTypeTR,
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
+import { cachedQuery } from '@/lib/cache';
 
 interface CalendarScheduleItem {
   id: number;
@@ -73,20 +74,24 @@ export default function CalendarPage() {
     async function loadSchedule() {
       setIsLoading(true);
       try {
-        const params = new URLSearchParams({
-          day: String(selectedDay),
-        });
-        if (selectedSource !== 'all') {
-          params.set('source', selectedSource);
-        }
+        const cacheKey = `takvim_schedules_${selectedDay}_${selectedSource}`;
+        const result = await cachedQuery(cacheKey, 120_000, async () => {
+          const params = new URLSearchParams({
+            day: String(selectedDay),
+          });
+          if (selectedSource !== 'all') {
+            params.set('source', selectedSource);
+          }
 
-        const res = await fetch(`/api/takvim/live?${params.toString()}`);
-        const data = await res.json();
+          const res = await fetch(`/api/takvim/live?${params.toString()}`);
+          return res.json();
+        });
+
         if (cancelled) return;
 
-        if (data.success && Array.isArray(data.schedules)) {
-          setSchedules(data.schedules);
-          setEnabledScrapers(data.enabledScrapers || []);
+        if (result?.success && Array.isArray(result?.schedules)) {
+          setSchedules(result.schedules);
+          setEnabledScrapers(result.enabledScrapers || []);
         } else {
           setSchedules([]);
         }
@@ -248,7 +253,7 @@ export default function CalendarPage() {
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ duration: 0.25 }}
-                  className="group rounded-2xl apple-glass overflow-hidden border border-white/10 hover:border-white/30 transition-all flex flex-col"
+                  className="group rounded-2xl apple-glass cv-card overflow-hidden border border-white/10 hover:border-white/30 transition-all flex flex-col"
                 >
                   {/* Poster Thumbnail */}
                   <Link
@@ -259,6 +264,7 @@ export default function CalendarPage() {
                       src={getProxiedImageUrl(coverImg)}
                       alt={item.title}
                       loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
 

@@ -600,16 +600,16 @@ export default function NetflixPlayer({
         {/* CORE VIDEO AREA: SCHEDULED COUNTDOWN OR NATIVE HLS/MP4 OR LOCKED IFRAME */}
         {currentEpObj?.status === 'scheduled' || availableSources.length === 0 ? (
           <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-gradient-to-b from-[#090D14] to-[#08080A]">
-            <div className="w-14 h-14 rounded-3xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center mb-4">
-              <Clock className="w-7 h-7 text-emerald-400 animate-pulse" />
+            <div className="w-14 h-14 rounded-3xl bg-sky-500/15 border border-sky-400/30 flex items-center justify-center mb-4">
+              <Clock className="w-7 h-7 text-sky-400 animate-pulse" />
             </div>
-            <div className="text-xs font-mono uppercase tracking-widest text-emerald-300 mb-1">
+            <div className="text-xs font-mono uppercase tracking-widest text-sky-300 mb-1">
               Yayın Takvimi · Canlı Geri Sayım
             </div>
             <h3 className="text-2xl sm:text-4xl font-mono font-extrabold text-white tracking-tight mb-4">
               {countdownText}
             </h3>
-            <div className="max-w-lg px-5 py-3 rounded-2xl bg-emerald-950/50 border border-emerald-400/30 text-xs sm:text-sm text-emerald-200 leading-relaxed">
+            <div className="max-w-lg px-5 py-3 rounded-2xl bg-sky-950/50 border border-sky-400/30 text-xs sm:text-sm text-sky-200 leading-relaxed">
               {currentEpObj?.translation_note ||
                 'Çeviri işlemi için bölümün yayınlanması bekleniyor, kaynak geldiği gibi çeviri süreci başlayacaktır.'}
             </div>
@@ -726,7 +726,7 @@ export default function NetflixPlayer({
                     setCurrentTime(val);
                     if (videoRef.current) videoRef.current.currentTime = val;
                   }}
-                  className="w-full h-1.5 accent-emerald-400 bg-white/25 rounded-full cursor-pointer"
+                  className="w-full h-1.5 accent-sky-400 bg-white/25 rounded-full cursor-pointer"
                 />
                 <span className="text-xs font-mono text-white/80 shrink-0">
                   {formatTime(currentTime)} / {formatTime(duration)}
@@ -756,7 +756,7 @@ export default function NetflixPlayer({
                       if (videoRef.current) videoRef.current.currentTime -= 10;
                     }}
                     title="10 Saniye Geri (Sol Ok)"
-                    className="w-9 h-9 rounded-full apple-glass-pill flex items-center justify-center text-white hover:text-emerald-300 cursor-pointer"
+                    className="w-9 h-9 rounded-full apple-glass-pill flex items-center justify-center text-white hover:text-sky-300 cursor-pointer"
                   >
                     <RotateCcw className="w-4 h-4" />
                   </button>
@@ -766,7 +766,7 @@ export default function NetflixPlayer({
                       if (videoRef.current) videoRef.current.currentTime += 10;
                     }}
                     title="10 Saniye İleri (Sağ Ok)"
-                    className="w-9 h-9 rounded-full apple-glass-pill flex items-center justify-center text-white hover:text-emerald-300 cursor-pointer"
+                    className="w-9 h-9 rounded-full apple-glass-pill flex items-center justify-center text-white hover:text-sky-300 cursor-pointer"
                   >
                     <RotateCw className="w-4 h-4" />
                   </button>
@@ -863,7 +863,7 @@ export default function NetflixPlayer({
           <div className="relative w-full h-full bg-black">
             {isResolving && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-20">
-                <div className="text-xs font-mono text-emerald-400 animate-pulse">
+                <div className="text-xs font-mono text-sky-400 animate-pulse">
                   KoUp Stream Köprüsü hazırlanıyor...
                 </div>
               </div>

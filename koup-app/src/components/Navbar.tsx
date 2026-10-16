@@ -24,6 +24,11 @@ import {
   Sparkles,
   CheckCheck,
   ArrowRight,
+  Bookmark,
+  Clock,
+  Settings,
+  LogOut,
+  Library,
 } from 'lucide-react';
 import {
   supabase,
@@ -69,6 +74,7 @@ export default function Navbar() {
     markNotificationRead,
     triggerSound,
     setIsAuthModalOpen,
+    logout,
   } = useKoUp();
 
   const [query, setQuery] = useState('');
@@ -78,10 +84,12 @@ export default function Navbar() {
   const [isSearching, setIsSearching] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
 
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const notifContainerRef = useRef<HTMLDivElement>(null);
+  const profileContainerRef = useRef<HTMLDivElement>(null);
 
   // Instant Omnibox Search (Debounced 160ms)
   useEffect(() => {
@@ -140,6 +148,12 @@ export default function Navbar() {
       ) {
         setNotifOpen(false);
       }
+      if (
+        profileContainerRef.current &&
+        !profileContainerRef.current.contains(e.target as Node)
+      ) {
+        setProfileDropdownOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -156,6 +170,7 @@ export default function Navbar() {
         setSearchOpen(false);
         setNotifOpen(false);
         setMobileMenuOpen(false);
+        setProfileDropdownOpen(false);
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -472,7 +487,7 @@ export default function Navbar() {
                       let catColor = 'bg-purple-500/20 text-purple-300 border-purple-400/30';
                       if (n.type === 'episode') {
                         CatIcon = Tv;
-                        catColor = 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30';
+                        catColor = 'bg-sky-500/20 text-sky-300 border-sky-400/30';
                       } else if (n.type === 'actor') {
                         CatIcon = UserCheck;
                         catColor = 'bg-amber-500/20 text-amber-300 border-amber-400/30';
@@ -579,19 +594,160 @@ export default function Navbar() {
           </Link>
         )}
 
-        {/* User Profile Pill or Login Button */}
+        {/* User Profile Pill with Apple/Netflix-style Popover Dropdown or Login Button */}
         {user ? (
-          <Link
-            href="/profil"
-            className="flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 rounded-full glass-pill hover:border-white/30 transition-all"
-          >
-            <div className="w-7 h-7 rounded-full bg-white/15 border border-white/20 flex items-center justify-center text-white text-xs font-bold shrink-0">
-              <User className="w-3.5 h-3.5 text-white" />
-            </div>
-            <span className="hidden md:inline text-xs font-semibold text-white max-w-[110px] truncate">
-              {user.display_name || user.username || 'Profilim'}
-            </span>
-          </Link>
+          <div ref={profileContainerRef} className="relative">
+            <button
+              onClick={() => {
+                triggerSound('click');
+                setProfileDropdownOpen((v) => !v);
+                setNotifOpen(false);
+                setSearchOpen(false);
+              }}
+              className="flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 rounded-full glass-pill hover:border-white/30 transition-all cursor-pointer relative"
+              aria-label="Kullanıcı Menüsü"
+              aria-expanded={profileDropdownOpen}
+            >
+              <div className="w-7 h-7 rounded-full bg-white/15 border border-white/20 flex items-center justify-center text-white text-xs font-bold shrink-0 overflow-hidden shadow-xs">
+                {user.avatar_url ? (
+                  <img
+                    src={getProxiedImageUrl(user.avatar_url, user.display_name || user.username)}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <User className="w-3.5 h-3.5 text-white" />
+                )}
+              </div>
+              <span className="hidden md:inline text-xs font-semibold text-white max-w-[110px] truncate">
+                {user.display_name || user.username || 'Profilim'}
+              </span>
+            </button>
+
+            {/* Apple/Netflix-Style Glass Popover Dropdown */}
+            <AnimatePresence>
+              {profileDropdownOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 6, scale: 0.96 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  className="absolute right-0 mt-3 w-64 rounded-3xl bg-[#0f0f12]/95 backdrop-blur-2xl p-3 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.15)] border border-white/15 z-50 flex flex-col gap-1"
+                >
+                  {/* User Header */}
+                  <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/[0.06] flex items-center gap-3 mb-1">
+                    <div className="w-10 h-10 rounded-full bg-[#1c1c22] border border-white/20 flex items-center justify-center shrink-0 overflow-hidden shadow-inner">
+                      {user.avatar_url ? (
+                        <img
+                          src={getProxiedImageUrl(user.avatar_url, user.display_name || user.username)}
+                          alt={user.display_name || user.username}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <User className="w-5 h-5 text-white/80" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-bold text-white truncate">
+                        {user.display_name || user.username}
+                      </div>
+                      <div className="text-[10px] font-mono text-white/50 truncate">
+                        @{user.username}
+                      </div>
+                      {user.role === 'admin' ? (
+                        <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                          Yönetici
+                        </span>
+                      ) : (
+                        <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[9px] font-mono bg-white/10 text-white/70 border border-white/10">
+                          Üye
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Navigation Options */}
+                  <Link
+                    href={`/profil/${encodeURIComponent(user.username)}`}
+                    onClick={() => {
+                      triggerSound('click');
+                      setProfileDropdownOpen(false);
+                    }}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.08] transition-colors"
+                  >
+                    <User className="w-4 h-4 text-sky-400" />
+                    <span>Profilim</span>
+                  </Link>
+
+                  <Link
+                    href={`/profil/${encodeURIComponent(user.username)}?tab=library`}
+                    onClick={() => {
+                      triggerSound('click');
+                      setProfileDropdownOpen(false);
+                    }}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.08] transition-colors"
+                  >
+                    <Bookmark className="w-4 h-4 text-sky-400" />
+                    <span>Kütüphanem</span>
+                  </Link>
+
+                  <Link
+                    href={`/profil/${encodeURIComponent(user.username)}?tab=history`}
+                    onClick={() => {
+                      triggerSound('click');
+                      setProfileDropdownOpen(false);
+                    }}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.08] transition-colors"
+                  >
+                    <Clock className="w-4 h-4 text-sky-400" />
+                    <span>İzleme Geçmişim</span>
+                  </Link>
+
+                  <Link
+                    href={`/profil/${encodeURIComponent(user.username)}?tab=settings`}
+                    onClick={() => {
+                      triggerSound('click');
+                      setProfileDropdownOpen(false);
+                    }}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.08] transition-colors"
+                  >
+                    <Settings className="w-4 h-4 text-sky-400" />
+                    <span>Ayarlar</span>
+                  </Link>
+
+                  {user.role === 'admin' && (
+                    <Link
+                      href="/admin"
+                      onClick={() => {
+                        triggerSound('click');
+                        setProfileDropdownOpen(false);
+                      }}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-amber-300 hover:text-amber-200 hover:bg-amber-400/10 transition-colors"
+                    >
+                      <ShieldCheck className="w-4 h-4 text-amber-400" />
+                      <span>Admin Paneli</span>
+                    </Link>
+                  )}
+
+                  {/* Divider line */}
+                  <div className="h-px bg-white/10 my-1" />
+
+                  {/* Logout button */}
+                  <button
+                    onClick={() => {
+                      triggerSound('click');
+                      setProfileDropdownOpen(false);
+                      logout();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-300 hover:text-rose-200 hover:bg-rose-500/15 transition-colors cursor-pointer text-left"
+                  >
+                    <LogOut className="w-4 h-4 text-rose-400" />
+                    <span>Çıkış Yap</span>
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         ) : (
           <button
             onClick={() => setIsAuthModalOpen(true)}

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import {
   Bold,
   Italic,
@@ -12,6 +13,10 @@ import {
   Smile,
   Sparkles,
   Heart,
+  HeartCrack,
+  MessageSquare,
+  Flag,
+  Link2,
   Reply,
   Send,
   User,
@@ -186,6 +191,30 @@ function parseCommentTextToHtml(
   };line-height:1.6;">${escaped}</div>`;
 }
 
+function getRelativeTime(dateString: string): string {
+  try {
+    const now = Date.now();
+    const past = new Date(dateString).getTime();
+    if (Number.isNaN(past)) return '';
+    const diffSec = Math.floor((now - past) / 1000);
+
+    if (diffSec < 60) return 'az önce';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin} dk önce`;
+    const diffHour = Math.floor(diffMin / 60);
+    if (diffHour < 24) return `${diffHour} saat önce`;
+    const diffDay = Math.floor(diffHour / 24);
+    if (diffDay < 7) return `${diffDay} gün önce`;
+    const diffWeek = Math.floor(diffDay / 7);
+    if (diffWeek < 4) return `${diffWeek} hafta önce`;
+    const diffMonth = Math.floor(diffDay / 30);
+    if (diffMonth < 12) return `${diffMonth} ay önce`;
+    return `${Math.floor(diffDay / 365)} yıl önce`;
+  } catch {
+    return '';
+  }
+}
+
 interface RichCommentSectionProps {
   targetType: 'media' | 'episode' | 'person' | 'magazine';
   mediaId?: number;
@@ -233,6 +262,13 @@ export default function RichCommentSection({
   const [revealedSpoilers, setRevealedSpoilers] = useState<Record<string, boolean>>({});
   const [likedIds, setLikedIds] = useState<Record<string, boolean>>({});
   const [likingId, setLikingId] = useState<string | null>(null);
+  const [dislikedIds, setDislikedIds] = useState<Record<string, boolean>>({});
+
+  // Inline Reply state (render reply box directly beneath comment)
+  const [inlineReplyId, setInlineReplyId] = useState<string | null>(null);
+  const [inlineReplyText, setInlineReplyText] = useState('');
+  const [inlineReplySpoiler, setInlineReplySpoiler] = useState(false);
+  const [isSubmittingInline, setIsSubmittingInline] = useState(false);
 
   // Anti-spam / Cooldown / Double Click Protection
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -520,6 +556,7 @@ export default function RichCommentSection({
       const freshComment = createdRow as CommentRow;
       setComments((prev) => [freshComment, ...prev]);
       setTotalCount((c) => c + 1);
+      invalidateCache('comments');
 
       // Start anti-spam cooldown
       setCooldownSec(15);
@@ -660,6 +697,7 @@ export default function RichCommentSection({
       );
 
       setEditingCommentId(null);
+      invalidateCache('comments');
       pushNotification('Yorum Güncellendi', 'Değişikliklerin kaydedildi.', 'success');
     } finally {
       setIsSavingEdit(false);
@@ -692,6 +730,7 @@ export default function RichCommentSection({
 
       setComments((prev) => prev.filter((item) => item.id !== c.id));
       setTotalCount((n) => Math.max(0, n - 1));
+      invalidateCache('comments');
       pushNotification('Yorum Silindi', 'Topluluk yorumunuz kaldırıldı.', 'info');
     } catch (err: any) {
       pushNotification('Hata', err?.message || 'İşlem gerçekleştirilemedi.', 'info');
@@ -767,12 +806,168 @@ export default function RichCommentSection({
     );
   };
 
+  const handleDislike = (c: CommentRow) => {
+    if (!user) {
+      pushNotification('Giriş Yapmalısınız', 'Görüş belirtmek için lütfen giriş yapın.', 'info');
+      setIsAuthModalOpen(true);
+      return;
+    }
+    setDislikedIds((prev) => {
+      const wasDisliked = Boolean(prev[c.id]);
+      return { ...prev, [c.id]: !wasDisliked };
+    });
+    if (likedIds[c.id]) {
+      toggleLike(c);
+    }
+  };
+
+  const handleReportComment = async (c: CommentRow) => {
+    if (!user) {
+      pushNotification('Giriş Yapmalısınız', 'Yorum bildirmek için lütfen giriş yapın.', 'info');
+      setIsAuthModalOpen(true);
+      return;
+    }
+    const reason = window.prompt(
+      'Bu yorumla ilgili sorunu belirtin (Spoiler, Spam, Hakaret, vb.):',
+      'Spoiler / Kural İhlali'
+    );
+    if (!reason || !reason.trim()) return;
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const uid = sessionData?.session?.user?.id || user.id;
+
+      await supabase.from('issue_reports').insert({
+        reporter_id: uid,
+        target_type: 'comment',
+        media_id: mediaId || null,
+        season_number: seasonNumber || null,
+        episode_number: episodeNumber || null,
+        issue_category: 'Topluluk Yorum Bildirimi',
+        details: `Yorum ID: ${c.id} - Yazar: ${c.author_username || 'Bilinmiyor'} - Gerekçe: ${reason.trim()}`,
+        status: 'open',
+      });
+      pushNotification('Bildirim Alındı', 'Yorum incelenmek üzere moderatör ekibine iletildi.', 'info');
+    } catch {
+      pushNotification('Bildirim Alındı', 'Bildiriminiz kaydedildi.', 'info');
+    }
+  };
+
+  const handleCopyLink = (commentId: string) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
+    const link = `${origin}${pathname}#comment-${commentId}`;
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(link).then(() => {
+        pushNotification('Bağlantı Kopyalandı', 'Yorum bağlantısı panoya kopyalandı.', 'success');
+      }).catch(() => {
+        pushNotification('Bağlantı', link, 'info');
+      });
+    } else {
+      pushNotification('Bağlantı', link, 'info');
+    }
+  };
+
+  const handleOpenInlineReply = (c: CommentRow) => {
+    if (!user) {
+      pushNotification('Giriş Yapmalısınız', 'Yanıt vermek için lütfen giriş yapın.', 'info');
+      setIsAuthModalOpen(true);
+      return;
+    }
+    const targetUsername = c.profiles?.username || c.author_username || 'kullanici';
+    if (inlineReplyId === c.id) {
+      setInlineReplyId(null);
+      setInlineReplyText('');
+      setInlineReplySpoiler(false);
+    } else {
+      setInlineReplyId(c.id);
+      setInlineReplyText(`@${targetUsername} `);
+      setInlineReplySpoiler(false);
+    }
+  };
+
+  const handleSubmitInlineReply = async (parentComment: CommentRow) => {
+    if (!user) {
+      setIsAuthModalOpen(true);
+      return;
+    }
+    if (!inlineReplyText.trim()) return;
+    if (isSubmittingInline) return;
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const realUid = sessionData?.session?.user?.id || user.id;
+
+    setIsSubmittingInline(true);
+    try {
+      const formattedHtml = parseCommentTextToHtml(
+        inlineReplyText,
+        '#FFFFFF',
+        false,
+        false,
+        false
+      );
+
+      const insertPayload = {
+        user_id: realUid,
+        target_type: targetType,
+        media_id: mediaId || null,
+        season_number: seasonNumber || null,
+        episode_number: episodeNumber || null,
+        person_id: personId || null,
+        magazine_id: magazineId || null,
+        parent_id: parentComment.id,
+        author_username: user.display_name || user.username || 'KoUp Üyesi',
+        author_avatar: user.avatar_url || null,
+        title: null,
+        content_html: formattedHtml,
+        content_json: {
+          raw: inlineReplyText,
+          color: '#FFFFFF',
+          isBold: false,
+          isItalic: false,
+          isHeading: false,
+        },
+        has_spoiler: inlineReplySpoiler,
+        likes_count: 0,
+      };
+
+      const { data: createdRow, error } = await supabase
+        .from('comments')
+        .insert(insertPayload)
+        .select('*, profiles:user_id(id, username, display_name, avatar_url, role)')
+        .single();
+
+      if (error) {
+        pushNotification('Yanıt Gönderilemedi', error.message || 'Hata oluştu', 'info');
+        return;
+      }
+
+      const freshComment = createdRow as CommentRow;
+      setComments((prev) => [freshComment, ...prev]);
+      setTotalCount((c) => c + 1);
+      invalidateCache('comments');
+      setInlineReplyId(null);
+      setInlineReplyText('');
+      setInlineReplySpoiler(false);
+
+      pushNotification(
+        'Yanıtınız Gönderildi',
+        `@${parentComment.author_username || 'Kullanıcı'} yorumuna yanıtınız eklendi.`,
+        'reply'
+      );
+    } catch (err: any) {
+      pushNotification('Hata', err?.message || 'Yanıt iletilemedi', 'info');
+    } finally {
+      setIsSubmittingInline(false);
+    }
+  };
+
   return (
     <section className="mt-10 rounded-3xl apple-glass p-6 sm:p-8 border border-white/10">
       <div className="flex flex-wrap items-center justify-between gap-3 pb-5 mb-6 border-b border-white/10">
         <div>
           <h3 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-emerald-400" />
+            <Sparkles className="w-5 h-5 text-sky-400" />
             <span>Topluluk Yorumları & Tartışma ({totalCount})</span>
           </h3>
           <p className="text-xs text-white/55 mt-0.5">
@@ -784,7 +979,7 @@ export default function RichCommentSection({
       {/* REQUIRE AUTHENTICATION GATE */}
       {!user ? (
         <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-6 sm:p-8 text-center space-y-4 mb-8">
-          <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-400/25 flex items-center justify-center mx-auto text-emerald-400">
+          <div className="w-12 h-12 rounded-2xl bg-sky-500/10 border border-sky-400/25 flex items-center justify-center mx-auto text-sky-400">
             <Lock className="w-5 h-5" />
           </div>
           <div className="max-w-md mx-auto space-y-1">
@@ -798,7 +993,7 @@ export default function RichCommentSection({
           <button
             type="button"
             onClick={() => setIsAuthModalOpen(true)}
-            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs shadow-[0_0_20px_rgba(16,185,129,0.4)] transition-all cursor-pointer active:scale-95"
+            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white font-bold text-xs shadow-[0_0_20px_rgba(41,151,255,0.4)] transition-all cursor-pointer active:scale-95"
           >
             <User className="w-3.5 h-3.5" />
             <span>Giriş Yap / Ücretsiz Kayıt Ol</span>
@@ -955,7 +1150,7 @@ export default function RichCommentSection({
               className="flex items-center gap-1.5 ml-auto bg-white/[0.06] hover:bg-white/10 px-2.5 py-1 rounded-lg border border-white/15 transition-all"
               title="Bahsettiğin sahnenin dakikasını yaz (örn: 14:20). Yorumuna tıklayanlar doğrudan o saniyeye atlar!"
             >
-              <Clock className="w-3 h-3 text-emerald-400" />
+              <Clock className="w-3 h-3 text-sky-400" />
               <input
                 type="text"
                 value={timestampInput}
@@ -1078,7 +1273,7 @@ export default function RichCommentSection({
               className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition-all ${
                 isSubmitting || cooldownSec > 0 || (!bodyText.trim() && !selectedGif && !selectedSticker)
                   ? 'bg-white/20 text-white/50 cursor-not-allowed'
-                  : 'bg-emerald-500 hover:bg-emerald-400 text-black hover:scale-105 active:scale-95 shadow-[0_0_15px_rgba(16,185,129,0.35)] cursor-pointer'
+                  : 'bg-[#2997ff] hover:bg-sky-400 text-white hover:scale-105 active:scale-95 shadow-[0_0_15px_rgba(41,151,255,0.35)] cursor-pointer'
               }`}
             >
               <Send className="w-3.5 h-3.5" />
@@ -1097,7 +1292,7 @@ export default function RichCommentSection({
       {/* COMMENTS LIST */}
       <div className="space-y-4">
         {isLoadingComments ? (
-          <div className="py-12 text-center text-sm font-mono text-emerald-400 animate-pulse">
+          <div className="py-12 text-center text-sm font-mono text-sky-400 animate-pulse">
             Topluluk yorumları yükleniyor...
           </div>
         ) : comments.length === 0 ? (
@@ -1141,256 +1336,399 @@ export default function RichCommentSection({
               c.profiles?.username ||
               c.author_username ||
               'KoUp Üyesi';
+            const authorUsername =
+              c.profiles?.username ||
+              c.author_username ||
+              authorName;
             const authorAvatar = c.profiles?.avatar_url || c.author_avatar;
             const isAuthorAdmin = c.profiles?.role === 'admin' || c.profiles?.role === 'editor';
+            const profileUrl = `/profil/${encodeURIComponent(authorUsername)}`;
 
             return (
               <div
                 key={c.id}
-                className={`p-4 sm:p-5 rounded-2xl border transition-all space-y-3 ${
+                id={`comment-${c.id}`}
+                className={`p-4 sm:p-5 rounded-2xl border transition-all ${
                   isHiddenByModeration
                     ? 'bg-rose-950/20 border-rose-500/30'
-                    : 'bg-white/[0.03] border-white/[0.08]'
+                    : 'bg-white/[0.03] border-white/[0.08] hover:border-white/[0.14]'
                 }`}
               >
                 {/* Moderation Alert Banner for Owner/Admin */}
                 {isHiddenByModeration && (
-                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-500/15 border border-rose-400/30 text-[11px] text-rose-300">
+                  <div className="flex items-center gap-1.5 px-3 py-1 mb-3 rounded-lg bg-rose-500/15 border border-rose-400/30 text-[11px] text-rose-300">
                     <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
                     <span>Bu yorum moderasyon tarafından gizlendi. Sadece siz görebiliyorsunuz.</span>
                   </div>
                 )}
 
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2.5">
+                {/* Main Comment Row: Left Avatar, Right Content */}
+                <div className="flex items-start gap-3.5">
+                  {/* Author Avatar (Clickable Link to User Profile) */}
+                  <Link
+                    href={profileUrl}
+                    className="shrink-0 group block mt-0.5"
+                    title={`${authorName} Profilini Görüntüle`}
+                  >
                     {authorAvatar ? (
                       <img
                         src={getProxiedImageUrl(authorAvatar)}
                         alt={authorName}
-                        className="w-8 h-8 rounded-full object-cover border border-white/15"
+                        className="w-10 h-10 rounded-full object-cover border border-white/15 group-hover:border-sky-400 group-hover:scale-105 transition-all shadow-md"
                       />
                     ) : (
-                      <div className="w-8 h-8 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-white/75">
-                        <User className="w-4 h-4" />
+                      <div className="w-10 h-10 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-white/75 group-hover:border-sky-400 group-hover:scale-105 transition-all shadow-md">
+                        <User className="w-5 h-5" />
                       </div>
                     )}
-                    <div>
-                      <div className="text-xs font-bold text-white flex items-center gap-2 flex-wrap">
-                        <span>{authorName}</span>
+                  </Link>
 
+                  {/* Right Column: Header, Body, Action Bar */}
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    {/* Top Header Row: Username + Mini Badges + Relative Time */}
+                    <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
+                      <Link
+                        href={profileUrl}
+                        className="text-white font-bold text-sm hover:underline hover:text-sky-300 transition-colors"
+                      >
+                        {authorName}
+                      </Link>
+
+                      {/* Cute Mini Supporter & Rank Badges */}
+                      <div className="inline-flex items-center gap-1">
                         {isAuthorAdmin && (
-                          <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/30 text-[9px] font-mono font-bold text-emerald-300 uppercase">
+                          <span className="px-1.5 py-0.5 rounded-full bg-blue-500/20 border border-blue-400/30 text-[9px] font-mono font-bold text-sky-300 uppercase">
                             Yönetici
                           </span>
                         )}
-
-                        {/* Functional Timestamp Badge: Clickable Seek to Video */}
-                        {c.timestamp_sec !== undefined && c.timestamp_sec !== null && (
-                          <button
-                            type="button"
-                            onClick={() => handleSeekScene(c.timestamp_sec!)}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-300 border border-emerald-400/35 font-mono text-[10px] cursor-pointer transition-all hover:scale-105 active:scale-95"
-                            title="Tıklayarak doğrudan bu sahneye atla"
-                          >
-                            <Clock className="w-2.5 h-2.5 text-emerald-400" />
-                            <span>
-                              {Math.floor(c.timestamp_sec / 60)}:
-                              {String(c.timestamp_sec % 60).padStart(2, '0')} (Sahneye Git)
-                            </span>
-                          </button>
-                        )}
-
-                        {c.sticker_id && (
-                          <span className="px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-200 text-[10px] font-mono">
-                            {c.sticker_id}
-                          </span>
-                        )}
-
-                        {isEditedFlag && (
-                          <span className="text-[10px] text-white/40 italic">
-                            (düzenlendi)
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[10px] font-mono text-white/40">
-                        {new Date(c.created_at).toLocaleDateString('tr-TR', {
-                          day: 'numeric',
-                          month: 'short',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Actions: Edit (10 min), Delete, Like, Reply */}
-                  <div className="flex items-center gap-2">
-                    {canEdit && !isEditingThis && (
-                      <button
-                        type="button"
-                        onClick={() => handleStartEdit(c)}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/[0.05] hover:bg-white/15 border border-white/10 text-xs text-amber-300 hover:text-amber-200 cursor-pointer transition-all"
-                        title={
-                          isAdmin
-                            ? 'Admin Düzenleme Yetkisi'
-                            : `Yorumu düzenle (Kalan: ${remainingMins} dk)`
-                        }
-                      >
-                        <Pencil className="w-3 h-3" />
-                        <span className="hidden sm:inline">
-                          Düzenle {isAdmin ? '(Admin)' : `(${remainingMins} dk)`}
+                        <span
+                          className="w-5 h-5 rounded-full bg-pink-500/15 border border-pink-400/30 flex items-center justify-center text-[11px] select-none shadow-sm hover:scale-110 transition-transform"
+                          title="KoUp Çilekli Süt Rozeti"
+                        >
+                          🍓
                         </span>
-                      </button>
+                        <span
+                          className="w-5 h-5 rounded-full bg-sky-500/15 border border-sky-400/30 flex items-center justify-center text-[11px] select-none shadow-sm hover:scale-110 transition-transform"
+                          title="KoUp Destekçisi"
+                        >
+                          🥛
+                        </span>
+                      </div>
+
+                      {/* Functional Timestamp Badge (Seek to Video) */}
+                      {c.timestamp_sec !== undefined && c.timestamp_sec !== null && (
+                        <button
+                          type="button"
+                          onClick={() => handleSeekScene(c.timestamp_sec!)}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-500/20 hover:bg-sky-500/35 text-sky-300 border border-sky-400/35 font-mono text-[10px] cursor-pointer transition-all hover:scale-105 active:scale-95"
+                          title="Tıklayarak doğrudan bu sahneye atla"
+                        >
+                          <Clock className="w-2.5 h-2.5 text-sky-400" />
+                          <span>
+                            {Math.floor(c.timestamp_sec / 60)}:
+                            {String(c.timestamp_sec % 60).padStart(2, '0')}
+                          </span>
+                        </button>
+                      )}
+
+                      {c.sticker_id && (
+                        <span className="px-2 py-0.5 rounded-full bg-amber-400/15 border border-amber-400/30 text-amber-200 text-[10px] font-mono">
+                          {c.sticker_id}
+                        </span>
+                      )}
+
+                      {isEditedFlag && (
+                        <span className="text-[10px] text-white/40 italic">
+                          (düzenlendi)
+                        </span>
+                      )}
+
+                      {c.is_hidden && (
+                        <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-400/30 text-[10px] font-mono font-bold">
+                          Gizlendi
+                        </span>
+                      )}
+
+                      {/* Relative time */}
+                      <span className="text-xs text-white/40 select-none">
+                        {getRelativeTime(c.created_at)}
+                      </span>
+                    </div>
+
+                    {/* Editing Form (if editing this comment) */}
+                    {isEditingThis ? (
+                      <div className="p-3.5 rounded-xl bg-black/60 border border-amber-400/30 space-y-2.5 my-2">
+                        <input
+                          type="text"
+                          value={editTitle}
+                          maxLength={120}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          placeholder="Başlık (Opsiyonel)"
+                          className="w-full px-3 py-1.5 rounded-lg bg-black border border-white/15 text-xs text-white focus:outline-none"
+                        />
+                        <textarea
+                          rows={3}
+                          maxLength={2000}
+                          value={editBodyText}
+                          onChange={(e) => setEditBodyText(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg bg-black border border-white/15 text-xs text-white focus:outline-none"
+                        />
+                        <div className="flex items-center justify-between text-xs pt-1">
+                          <span className="text-[11px] text-amber-300/80">
+                            {isAdmin
+                              ? 'Yönetici düzenleme modu'
+                              : `⏱ Kalan düzenleme süresi: ~${remainingMins} dakika`}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setEditingCommentId(null)}
+                              className="flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 text-white/70 hover:text-white cursor-pointer"
+                            >
+                              <X className="w-3 h-3" />
+                              <span>Vazgeç</span>
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isSavingEdit}
+                              onClick={() => handleSaveEdit(c.id)}
+                              className="flex items-center gap-1 px-3 py-1 rounded-full bg-amber-400 text-black font-bold hover:scale-105 transition-all cursor-pointer"
+                            >
+                              <Check className="w-3 h-3" />
+                              <span>{isSavingEdit ? 'Kaydediliyor...' : 'Kaydet'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Comment Body */
+                      <div className="space-y-2 pt-0.5">
+                        {c.title && (
+                          <h4 className="text-sm font-bold text-white">{c.title}</h4>
+                        )}
+
+                        {isSpoilerHidden ? (
+                          <button
+                            onClick={() =>
+                              setRevealedSpoilers((prev) => ({ ...prev, [c.id]: true }))
+                            }
+                            className="w-full py-2.5 px-4 rounded-xl bg-rose-950/30 border border-rose-400/30 text-xs text-rose-200 flex items-center justify-center gap-2 cursor-pointer hover:bg-rose-950/50 transition-all"
+                          >
+                            <EyeOff className="w-4 h-4" />
+                            <span>Bu yorum Spoiler içeriyor · Görmek için tıkla</span>
+                          </button>
+                        ) : (
+                          <>
+                            <div
+                              className="text-sm text-white/90 leading-relaxed font-normal break-words"
+                              dangerouslySetInnerHTML={{ __html: sanitizeHtml(c.content_html) }}
+                            />
+
+                            {c.has_spoiler && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setRevealedSpoilers((prev) => ({ ...prev, [c.id]: false }))
+                                }
+                                className="inline-flex items-center gap-1 text-[10px] text-white/40 hover:text-white/70 cursor-pointer pt-0.5"
+                              >
+                                <Eye className="w-3 h-3" />
+                                <span>Spoiler içeriği tekrar gizle</span>
+                              </button>
+                            )}
+
+                            {c.gif_url && (
+                              <img
+                                src={c.gif_url}
+                                alt="Yorum GIF"
+                                loading="lazy"
+                                className="max-h-44 rounded-xl border border-white/10 object-contain mt-2"
+                              />
+                            )}
+
+                            {c.image_url && c.image_url.startsWith('https://') && (
+                              <img
+                                src={getProxiedImageUrl(c.image_url)}
+                                alt="Yorum Görseli"
+                                loading="lazy"
+                                className="max-h-60 rounded-xl border border-white/10 object-contain mt-2"
+                              />
+                            )}
+                          </>
+                        )}
+                      </div>
                     )}
 
-                    {canDelete && (
+                    {/* Action Toolbar Row */}
+                    <div className="flex items-center flex-wrap gap-2.5 pt-1 text-white/60">
+                      {/* Like Button */}
                       <button
                         type="button"
-                        onClick={() => handleDeleteComment(c)}
-                        className="p-1.5 rounded-full bg-white/[0.05] hover:bg-rose-500/20 border border-white/10 text-white/60 hover:text-rose-300 cursor-pointer transition-all"
-                        title="Yorumu Sil"
+                        onClick={() => toggleLike(c)}
+                        disabled={likingId === c.id}
+                        className={`flex items-center gap-1.5 text-xs py-1 px-1.5 rounded-lg transition-colors cursor-pointer ${
+                          likedIds[c.id]
+                            ? 'text-rose-400 font-bold'
+                            : 'hover:text-rose-400'
+                        }`}
+                        title="Beğen"
                       >
-                        <Trash2 className="w-3 h-3" />
+                        <Heart
+                          className={`w-3.5 h-3.5 transition-transform active:scale-125 ${
+                            likedIds[c.id] ? 'fill-rose-500 text-rose-500' : ''
+                          }`}
+                        />
+                        <span className="font-mono text-xs">{c.likes_count || 0}</span>
                       </button>
+
+                      {/* Broken Heart / Dislike Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleDislike(c)}
+                        className={`p-1 rounded-lg transition-colors cursor-pointer ${
+                          dislikedIds[c.id]
+                            ? 'text-pink-400 font-bold'
+                            : 'text-white/40 hover:text-white/70'
+                        }`}
+                        title="Beğenmedim"
+                      >
+                        <HeartCrack className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Reply Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenInlineReply(c)}
+                        className="flex items-center gap-1 text-xs text-white/50 hover:text-white transition-colors cursor-pointer py-1 px-1.5 rounded-lg hover:bg-white/[0.04]"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>Yanıt</span>
+                      </button>
+
+                      {/* Report Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleReportComment(c)}
+                        className="flex items-center gap-1 text-xs text-white/40 hover:text-amber-300 transition-colors cursor-pointer py-1 px-1.5 rounded-lg hover:bg-white/[0.04]"
+                        title="Sorun Bildir"
+                      >
+                        <Flag className="w-3.5 h-3.5" />
+                        <span>Bildir</span>
+                      </button>
+
+                      {/* Copy Link Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleCopyLink(c.id)}
+                        className="p-1 rounded-lg text-white/40 hover:text-sky-300 transition-colors cursor-pointer hover:bg-white/[0.04]"
+                        title="Yorum Bağlantısını Kopyala"
+                      >
+                        <Link2 className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Edit Button (if within 10 min or admin) */}
+                      {canEdit && !isEditingThis && (
+                        <button
+                          type="button"
+                          onClick={() => handleStartEdit(c)}
+                          className="flex items-center gap-1 text-xs text-amber-300/80 hover:text-amber-200 transition-colors cursor-pointer py-1 px-1.5 rounded-lg hover:bg-white/[0.04]"
+                          title={
+                            isAdmin
+                              ? 'Admin Düzenleme Yetkisi'
+                              : `Yorumu düzenle (Kalan: ${remainingMins} dk)`
+                          }
+                        >
+                          <Pencil className="w-3 h-3" />
+                          <span className="hidden sm:inline">
+                            Düzenle ({remainingMins} dk)
+                          </span>
+                        </button>
+                      )}
+
+                      {/* Delete Button (if author or admin) */}
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteComment(c)}
+                          className="p-1 rounded-lg text-white/35 hover:text-rose-400 transition-colors cursor-pointer hover:bg-white/[0.04]"
+                          title="Yorumu Sil"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Inline Reply Box (Image 2) */}
+                    {inlineReplyId === c.id && (
+                      <div className="mt-3.5 pt-3 border-t border-white/[0.08] flex items-start gap-3">
+                        {/* Current user's avatar */}
+                        <div className="shrink-0 pt-0.5">
+                          {user?.avatar_url ? (
+                            <img
+                              src={getProxiedImageUrl(user.avatar_url)}
+                              alt={user.display_name || user.username || 'Ben'}
+                              className="w-9 h-9 rounded-full object-cover border border-white/15"
+                            />
+                          ) : (
+                            <div className="w-9 h-9 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-white/70">
+                              <User className="w-4 h-4" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Right: Textarea container, spoiler checkbox, Send button */}
+                        <div className="flex-1 space-y-2.5">
+                          <div className="bg-[#121216] border border-white/10 rounded-2xl p-3 focus-within:border-sky-500/50 focus-within:ring-1 focus-within:ring-sky-500/30 transition-all">
+                            <textarea
+                              rows={2}
+                              value={inlineReplyText}
+                              onChange={(e) => setInlineReplyText(e.target.value)}
+                              placeholder={`@${authorUsername} kullanıcısına yanıt yaz...`}
+                              className="w-full bg-transparent text-white text-sm focus:outline-none resize-none placeholder-white/30"
+                              autoFocus
+                            />
+                          </div>
+
+                          {/* Spoiler Notice Checkbox */}
+                          <label className="flex items-center gap-2 cursor-pointer text-xs text-white/60 hover:text-white/80 select-none">
+                            <input
+                              type="checkbox"
+                              checked={inlineReplySpoiler}
+                              onChange={(e) => setInlineReplySpoiler(e.target.checked)}
+                              className="rounded border-white/20 bg-white/5 text-sky-500 focus:ring-0 w-3.5 h-3.5 cursor-pointer accent-[#2997ff]"
+                            />
+                            <span>Yorumunuz spoiler içeriyorsa mutlaka işaretleyin aksi halde kısıtlanabilirsiniz.</span>
+                          </label>
+
+                          {/* Send & Cancel buttons */}
+                          <div className="flex items-center gap-2 pt-1">
+                            <button
+                              type="button"
+                              disabled={isSubmittingInline || !inlineReplyText.trim()}
+                              onClick={() => handleSubmitInlineReply(c)}
+                              className={`inline-flex items-center gap-2 px-5 py-2 rounded-2xl text-xs font-bold transition-all shadow-md cursor-pointer ${
+                                isSubmittingInline || !inlineReplyText.trim()
+                                  ? 'bg-white/10 text-white/40 cursor-not-allowed'
+                                  : 'bg-[#2997ff] hover:bg-sky-400 text-white shadow-blue-500/25 active:scale-95'
+                              }`}
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                              <span>{isSubmittingInline ? 'Gönderiliyor...' : 'Gönder'}</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setInlineReplyId(null)}
+                              className="px-4 py-2 rounded-2xl text-xs text-white/50 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
+                            >
+                              Vazgeç
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     )}
-
-                    <button
-                      onClick={() => toggleLike(c)}
-                      disabled={likingId === c.id}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border transition-all cursor-pointer ${
-                        likedIds[c.id]
-                          ? 'bg-rose-500/20 border-rose-400 text-rose-300'
-                          : 'bg-white/[0.05] border-white/10 text-white/70 hover:text-white'
-                      }`}
-                    >
-                      <Heart
-                        className={`w-3.5 h-3.5 ${likedIds[c.id] ? 'fill-rose-400 text-rose-400' : ''}`}
-                      />
-                      <span>{c.likes_count}</span>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        if (!user) {
-                          pushNotification('Giriş Yapmalısınız', 'Yanıt vermek için lütfen giriş yapın.', 'info');
-                          setIsAuthModalOpen(true);
-                          return;
-                        }
-                        setReplyTo(c);
-                        textareaRef.current?.focus();
-                      }}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/[0.05] hover:bg-white/10 border border-white/10 text-xs text-white/70 hover:text-white cursor-pointer"
-                    >
-                      <Reply className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Yanıtla</span>
-                    </button>
                   </div>
                 </div>
-
-                {/* Inline Editing Form */}
-                {isEditingThis ? (
-                  <div className="p-3.5 rounded-xl bg-black/60 border border-amber-400/30 space-y-2.5">
-                    <input
-                      type="text"
-                      value={editTitle}
-                      maxLength={120}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      placeholder="Başlık (Opsiyonel)"
-                      className="w-full px-3 py-1.5 rounded-lg bg-black border border-white/15 text-xs text-white focus:outline-none"
-                    />
-                    <textarea
-                      rows={3}
-                      maxLength={2000}
-                      value={editBodyText}
-                      onChange={(e) => setEditBodyText(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg bg-black border border-white/15 text-xs text-white focus:outline-none"
-                    />
-                    <div className="flex items-center justify-between text-xs pt-1">
-                      <span className="text-[11px] text-amber-300/80">
-                        {isAdmin
-                          ? 'Yönetici düzenleme modu'
-                          : `⏱ Kalan düzenleme süresi: ~${remainingMins} dakika`}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setEditingCommentId(null)}
-                          className="flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 text-white/70 hover:text-white cursor-pointer"
-                        >
-                          <X className="w-3 h-3" />
-                          <span>Vazgeç</span>
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isSavingEdit}
-                          onClick={() => handleSaveEdit(c.id)}
-                          className="flex items-center gap-1 px-3 py-1 rounded-full bg-amber-400 text-black font-bold hover:scale-105 transition-all cursor-pointer"
-                        >
-                          <Check className="w-3 h-3" />
-                          <span>{isSavingEdit ? 'Kaydediliyor...' : 'Kaydet'}</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    {c.title && (
-                      <h4 className="text-sm font-bold text-white pt-1">{c.title}</h4>
-                    )}
-
-                    {isSpoilerHidden ? (
-                      <button
-                        onClick={() =>
-                          setRevealedSpoilers((prev) => ({ ...prev, [c.id]: true }))
-                        }
-                        className="w-full py-3 px-4 rounded-xl bg-rose-950/30 border border-rose-400/30 text-xs text-rose-200 flex items-center justify-center gap-2 cursor-pointer hover:bg-rose-950/50 transition-all"
-                      >
-                        <EyeOff className="w-4 h-4" />
-                        <span>Bu yorum Spoiler içeriyor · Görmek için tıkla</span>
-                      </button>
-                    ) : (
-                      <div className="space-y-2">
-                        {/* XSS Sanitized HTML Body */}
-                        <div
-                          className="text-sm leading-relaxed"
-                          dangerouslySetInnerHTML={{ __html: sanitizeHtml(c.content_html) }}
-                        />
-
-                        {c.has_spoiler && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setRevealedSpoilers((prev) => ({ ...prev, [c.id]: false }))
-                            }
-                            className="inline-flex items-center gap-1 text-[10px] text-white/40 hover:text-white/70 cursor-pointer pt-1"
-                          >
-                            <Eye className="w-3 h-3" />
-                            <span>Spoiler içeriği tekrar gizle</span>
-                          </button>
-                        )}
-
-                        {c.gif_url && (
-                          <img
-                            src={c.gif_url}
-                            alt="Yorum GIF"
-                            loading="lazy"
-                            className="max-h-44 rounded-xl border border-white/10 object-contain"
-                          />
-                        )}
-
-                        {c.image_url && c.image_url.startsWith('https://') && (
-                          <img
-                            src={getProxiedImageUrl(c.image_url)}
-                            alt="Yorum Görseli"
-                            loading="lazy"
-                            className="max-h-60 rounded-xl border border-white/10 object-contain"
-                          />
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
               </div>
             );
           })

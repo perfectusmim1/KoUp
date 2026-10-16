@@ -17,9 +17,16 @@ import {
   CastMember,
   getProxiedImageUrl,
 } from '@/lib/supabase';
+import { cachedQuery } from '@/lib/cache';
 import { useKoUp } from '@/context/KoUpContext';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 import RichCommentSection from '@/components/RichCommentSection';
+
+interface PersonBundle {
+  person: PersonItem | null;
+  credits: CastMember[];
+  coStars: PersonItem[];
+}
 
 export default function PersonDetailPage({
   params,
@@ -40,75 +47,110 @@ export default function PersonDetailPage({
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let isCancelled = false;
+
     async function loadPerson() {
       setIsLoading(true);
       const decoded = decodeURIComponent(slug);
 
-      let { data: pData } = await supabase
-        .from('people')
-        .select('*')
-        .eq('slug', decoded)
-        .single();
+      try {
+        const bundle = await cachedQuery<PersonBundle>(
+          `person_${decoded}`,
+          300_000,
+          async () => {
+            let { data: pData } = await supabase
+              .from('people')
+              .select('*')
+              .eq('slug', decoded)
+              .single();
 
-      if (!pData && !Number.isNaN(Number(decoded))) {
-        const byId = await supabase
-          .from('people')
-          .select('*')
-          .eq('id', Number(decoded))
-          .single();
-        pData = byId.data;
-      }
+            if (!pData && !Number.isNaN(Number(decoded))) {
+              const byId = await supabase
+                .from('people')
+                .select('*')
+                .eq('id', Number(decoded))
+                .single();
+              pData = byId.data;
+            }
 
-      if (!pData) {
-        setIsLoading(false);
-        return;
-      }
+            if (!pData) {
+              return { person: null, credits: [], coStars: [] };
+            }
 
-      const item = pData as PersonItem;
-      setPerson(item);
+            const item = pData as PersonItem;
 
-      // Fetch all dramas/anime/movies this person or character appears in
-      const { data: castRows } = await supabase
-        .from('media_cast')
-        .select('*, media(*)')
-        .eq('person_id', item.id)
-        .limit(40);
+            // Fetch cast appearances
+            const { data: castRows } = await supabase
+              .from('media_cast')
+              .select('*, media(*)')
+              .eq('person_id', item.id)
+              .limit(40);
 
-      const validCredits = ((castRows as CastMember[]) || []).filter(
-        (c) => c.media
-      );
-      setCredits(validCredits);
+            const validCredits = ((castRows as CastMember[]) || []).filter(
+              (c) => c.media
+            );
 
-      // Build Actor Relationship Network (Co-Stars in same dramas)
-      const mediaIds = validCredits.map((c) => c.media_id).slice(0, 10);
-      if (mediaIds.length > 0) {
-        const { data: coRows } = await supabase
-          .from('media_cast')
-          .select('people(*)')
-          .in('media_id', mediaIds)
-          .neq('person_id', item.id)
-          .limit(12);
+            // Fetch co-star peer connections
+            const mediaIds = validCredits.map((c) => c.media_id).slice(0, 10);
+            let peers: PersonItem[] = [];
 
-        const uniquePeers = new Map<number, PersonItem>();
-        for (const r of (coRows as unknown as Array<{ people: PersonItem }>) || []) {
-          if (r.people && !uniquePeers.has(r.people.id)) {
-            uniquePeers.set(r.people.id, r.people);
+            if (mediaIds.length > 0) {
+              const { data: coRows } = await supabase
+                .from('media_cast')
+                .select('people(*)')
+                .in('media_id', mediaIds)
+                .neq('person_id', item.id)
+                .limit(12);
+
+              const uniquePeers = new Map<number, PersonItem>();
+              for (const r of (coRows as unknown as Array<{ people: PersonItem }>) || []) {
+                if (r.people && !uniquePeers.has(r.people.id)) {
+                  uniquePeers.set(r.people.id, r.people);
+                }
+              }
+              peers = Array.from(uniquePeers.values()).slice(0, 8);
+            }
+
+            return {
+              person: item,
+              credits: validCredits,
+              coStars: peers,
+            };
           }
-        }
-        setCoStars(Array.from(uniquePeers.values()).slice(0, 8));
-      }
+        );
 
-      setIsLoading(false);
+        if (isCancelled) return;
+
+        setPerson(bundle.person);
+        setCredits(bundle.credits);
+        setCoStars(bundle.coStars);
+      } catch (err) {
+        console.error('Error loading person profile:', err);
+      } finally {
+        if (!isCancelled) setIsLoading(false);
+      }
     }
 
     loadPerson();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [slug]);
+
+  // Dynamic document title
+  useEffect(() => {
+    if (person?.name) {
+      document.title = `${person.name} • Filmografi & Profil • KoUp`;
+    }
+  }, [person?.name]);
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center pt-24">
-        <div className="text-sm font-mono text-sky-400 animate-pulse">
-          Oyuncu / Karakter Profili ve İlişki Ağı Yükleniyor...
+      <div className="min-h-screen flex items-center justify-center pt-24 bg-[#080808]">
+        <div className="text-sm font-mono text-sky-400 animate-pulse flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-sky-400" />
+          <span>Oyuncu / Karakter Profili ve İlişki Ağı Yükleniyor...</span>
         </div>
       </div>
     );
@@ -116,13 +158,16 @@ export default function PersonDetailPage({
 
   if (!person) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center pt-24 text-center px-4">
+      <div className="min-h-screen flex flex-col items-center justify-center pt-24 text-center px-4 bg-[#080808]">
         <h1 className="text-2xl font-bold text-white mb-2">
           Oyuncu veya Karakter Bulunamadı
         </h1>
+        <p className="text-sm text-white/60 mb-6">
+          Aradığınız sanatçı arşive henüz eklenmemiş olabilir.
+        </p>
         <Link
           href="/oyuncular"
-          className="px-6 py-3 rounded-full bg-white text-black font-bold text-xs mt-4"
+          className="px-6 py-3 rounded-full bg-emerald-500 text-black font-bold text-xs hover:bg-emerald-400 transition-colors shadow-lg"
         >
           Oyuncular Sıralamasına Dön
         </Link>
@@ -135,7 +180,7 @@ export default function PersonDetailPage({
   const totalFavs = person.favorites_count + (isFav ? 1 : 0);
 
   return (
-    <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-4 sm:px-8 lg:px-14 space-y-12">
+    <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-4 sm:px-8 lg:px-14 space-y-12 bg-[#080808] text-white">
       {/* 1. ACTOR / CHARACTER HERO PROFILE CARD */}
       <div className="rounded-3xl apple-glass p-6 sm:p-10 border border-white/15 flex flex-col md:flex-row gap-8 items-center md:items-start">
         <div className="w-44 h-44 sm:w-56 sm:h-56 rounded-3xl overflow-hidden border-2 border-white/15 shadow-2xl shrink-0">
@@ -309,9 +354,7 @@ export default function PersonDetailPage({
         </section>
       )}
 
-
-
-      {/* 5. ACTOR & ANIME CHARACTER RICH COMMENTS */}
+      {/* 4. ACTOR & ANIME CHARACTER RICH COMMENTS */}
       <RichCommentSection
         targetType="person"
         personId={person.id}

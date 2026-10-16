@@ -989,6 +989,8 @@ export default function AdminDashboardPage() {
 
       setEpModalOpen(false);
       setEditingEp(null);
+      invalidateCache('media_');
+      invalidateCache('home_');
       pushNotification('Bölüm Kaydedildi', `${payload.season_number}. Sezon ${payload.episode_number}. Bölüm güncellendi.`, 'success');
     } catch (err: any) {
       pushNotification('Bölüm Kayıt Hatası', err.message, 'info');
@@ -1015,6 +1017,8 @@ export default function AdminDashboardPage() {
           (e) => !(e.season_number === ep.season_number && e.episode_number === ep.episode_number)
         )
       );
+      invalidateCache('media_');
+      invalidateCache('home_');
       pushNotification('Bölüm Silindi', `${ep.season_number}. Sezon ${ep.episode_number}. Bölüm kaldırıldı.`, 'info');
     } catch (err: any) {
       pushNotification('Bölüm Silinemedi', err.message || 'Veritabanı hatası.', 'info');
@@ -1063,6 +1067,8 @@ export default function AdminDashboardPage() {
 
       setNewSourceModalOpen(false);
       setSourceUrl('');
+      invalidateCache('media_');
+      invalidateCache('home_');
       pushNotification('Kaynak Eklendi', `${sourceProvider} akış kaynağı bölüme bağlandı.`, 'success');
     } catch (err: any) {
       pushNotification('Kaynak Hatası', err.message, 'info');
@@ -1094,6 +1100,8 @@ export default function AdminDashboardPage() {
             : e
         )
       );
+      invalidateCache('media_');
+      invalidateCache('home_');
       pushNotification('Kaynak Kaldırıldı', 'Video akış kaynağı temizlendi.', 'info');
     } catch (err: any) {
       pushNotification('Kaynak Silinemedi', err.message, 'info');

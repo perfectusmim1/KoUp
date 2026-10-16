@@ -34,6 +34,7 @@ import {
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
+import { cachedQuery } from '@/lib/cache';
 
 type QuickFilter = 'ALL' | 'KR' | 'CN' | 'ANIME' | 'GLOBAL';
 
@@ -93,75 +94,84 @@ export default function HomePage() {
 
   useEffect(() => {
     async function fetchHomeData() {
-      const [
-        featRes,
-        kdRes,
-        cdRes,
-        anRes,
-        glRes,
-        epRes,
-        peopRes,
-        magRes,
-      ] = await Promise.all([
-        supabase
-          .from('media')
-          .select('*')
-          .not('backdrop_image', 'is', null)
-          .order('mdl_rating', { ascending: false, nullsFirst: false })
-          .order('imdb_rating', { ascending: false, nullsFirst: false })
-          .limit(12),
-        supabase
-          .from('media')
-          .select('*')
-          .eq('country_code', 'KR')
-          .order('mdl_rating', { ascending: false, nullsFirst: false })
-          .limit(16),
-        supabase
-          .from('media')
-          .select('*')
-          .eq('country_code', 'CN')
-          .order('mdl_rating', { ascending: false, nullsFirst: false })
-          .limit(16),
-        supabase
-          .from('media')
-          .select('*')
-          .eq('content_type', 'anime')
-          .not('anilist_rating', 'is', null)
-          .order('anilist_rating', { ascending: false })
-          .limit(16),
-        supabase
-          .from('media')
-          .select('*')
-          .in('country_code', ['US', 'TH', 'TW', 'JP'])
-          .neq('content_type', 'anime')
-          .order('imdb_rating', { ascending: false, nullsFirst: false })
-          .order('mdl_rating', { ascending: false, nullsFirst: false })
-          .limit(16),
-        supabase
-          .from('episodes')
-          .select(
-            'id, media_id, season_number, episode_number, episode_name, published_at, status, scheduled_release_at, translation_note, react_fire'
-          )
-          .order('id', { ascending: false })
-          .limit(12),
-        supabase
-          .from('people')
-          .select('*')
-          .order('favorites_count', { ascending: false })
-          .order('drama_count', { ascending: false })
-          .limit(12),
-        supabase
-          .from('magazine_posts')
-          .select('*')
-          .order('published_at', { ascending: false })
-          .limit(8),
-      ]);
+      const homeData = await cachedQuery('home_catalog_bundle', 180_000, async () => {
+        const [
+          featRes,
+          kdRes,
+          cdRes,
+          anRes,
+          glRes,
+          epRes,
+          peopRes,
+          magRes,
+        ] = await Promise.all([
+          supabase
+            .from('media')
+            .select('*')
+            .not('backdrop_image', 'is', null)
+            .order('mdl_rating', { ascending: false, nullsFirst: false })
+            .order('imdb_rating', { ascending: false, nullsFirst: false })
+            .limit(12),
+          supabase
+            .from('media')
+            .select('*')
+            .eq('country_code', 'KR')
+            .order('mdl_rating', { ascending: false, nullsFirst: false })
+            .limit(16),
+          supabase
+            .from('media')
+            .select('*')
+            .eq('country_code', 'CN')
+            .order('mdl_rating', { ascending: false, nullsFirst: false })
+            .limit(16),
+          supabase
+            .from('media')
+            .select('*')
+            .eq('content_type', 'anime')
+            .not('anilist_rating', 'is', null)
+            .order('anilist_rating', { ascending: false })
+            .limit(16),
+          supabase
+            .from('media')
+            .select('*')
+            .in('country_code', ['US', 'TH', 'TW', 'JP'])
+            .neq('content_type', 'anime')
+            .order('imdb_rating', { ascending: false, nullsFirst: false })
+            .order('mdl_rating', { ascending: false, nullsFirst: false })
+            .limit(16),
+          supabase
+            .from('episodes')
+            .select(
+              'id, media_id, season_number, episode_number, episode_name, published_at, status, scheduled_release_at, translation_note, react_fire'
+            )
+            .order('id', { ascending: false })
+            .limit(12),
+          supabase
+            .from('people')
+            .select('*')
+            .order('favorites_count', { ascending: false })
+            .order('drama_count', { ascending: false })
+            .limit(12),
+          supabase
+            .from('magazine_posts')
+            .select('*')
+            .order('published_at', { ascending: false })
+            .limit(8),
+        ]);
 
-      const feats = (featRes.data as MediaItem[]) || [];
-      const kds = (kdRes.data as MediaItem[]) || [];
-      const cds = (cdRes.data as MediaItem[]) || [];
-      const ans = (anRes.data as MediaItem[]) || [];
-      const gls = (glRes.data as MediaItem[]) || [];
+        return {
+          feats: (featRes.data as MediaItem[]) || [],
+          kds: (kdRes.data as MediaItem[]) || [],
+          cds: (cdRes.data as MediaItem[]) || [],
+          ans: (anRes.data as MediaItem[]) || [],
+          gls: (glRes.data as MediaItem[]) || [],
+          episodes: epRes.data || [],
+          people: (peopRes.data as PersonItem[]) || [],
+          magPosts: (magRes.data as MagazinePost[]) || [],
+        };
+      });
+
+      const { feats, kds, cds, ans, gls, episodes, people, magPosts: initialMagPosts } = homeData;
 
       setHeroItems(feats.length > 0 ? feats.slice(0, 6) : kds.slice(0, 6));
       setTop10Items([...kds.slice(0, 4), ...ans.slice(0, 4), ...cds.slice(0, 2)]);
@@ -170,8 +180,8 @@ export default function HomePage() {
       setAnimeItems(ans);
       setGlobalItems(gls);
       setFilteredRail([...kds.slice(0, 5), ...ans.slice(0, 5), ...cds.slice(0, 4)]);
-      setTopPeople((peopRes.data as PersonItem[]) || []);
-      setMagPosts((magRes.data as MagazinePost[]) || []);
+      setTopPeople(people);
+      setMagPosts(initialMagPosts);
 
       // Canlı AsyaMag API Güncellemesi
       fetch('/api/magazin/live?limit=8')
@@ -183,17 +193,17 @@ export default function HomePage() {
         })
         .catch(() => {});
 
-      if (epRes.data && epRes.data.length > 0) {
-        const mIds = Array.from(new Set(epRes.data.map((e) => e.media_id)));
+      if (episodes && episodes.length > 0) {
+        const mIds = Array.from(new Set(episodes.map((e: any) => e.media_id)));
         const { data: mRows } = await supabase
           .from('media')
           .select('*')
           .in('id', mIds);
         const mMap = new Map(((mRows as MediaItem[]) || []).map((m) => [m.id, m]));
         setRecentEpisodes(
-          epRes.data
-            .map((e) => ({ ...e, media: mMap.get(e.media_id) }))
-            .filter((e) => e.media)
+          episodes
+            .map((e: any) => ({ ...e, media: mMap.get(e.media_id) }))
+            .filter((e: any) => e.media)
         );
       }
     }
@@ -360,7 +370,7 @@ export default function HomePage() {
                     >
                       {progressMap[activeHero.id] ? (
                         <>
-                          <Check className="w-4 h-4 text-emerald-400" />
+                          <Check className="w-4 h-4 text-sky-400" />
                           <span>Listemde</span>
                         </>
                       ) : (

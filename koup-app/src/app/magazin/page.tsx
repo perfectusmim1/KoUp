@@ -13,6 +13,30 @@ import {
   MagazinePost,
   getProxiedImageUrl,
 } from '@/lib/supabase';
+import { cachedQuery, invalidateCache } from '@/lib/cache';
+
+function getMagCategoryColor(cat: string): string {
+  switch (cat) {
+    case 'Dedikodu':
+      return 'bg-rose-500/20 text-rose-300 border-rose-400/35';
+    case 'Kore':
+      return 'bg-emerald-500/20 text-emerald-300 border-emerald-400/35';
+    case 'Çin':
+      return 'bg-orange-500/20 text-orange-300 border-orange-400/35';
+    case 'Dizi':
+      return 'bg-sky-500/20 text-sky-300 border-sky-400/35';
+    case 'Müzik':
+      return 'bg-purple-500/20 text-purple-300 border-purple-400/35';
+    case 'Film':
+      return 'bg-amber-500/20 text-amber-300 border-amber-400/35';
+    case 'BL GL':
+      return 'bg-pink-500/20 text-pink-300 border-pink-400/35';
+    case 'Tayland':
+      return 'bg-teal-500/20 text-teal-300 border-teal-400/35';
+    default:
+      return 'bg-white/10 text-white/80 border-white/15';
+  }
+}
 
 const MAGAZINE_CATEGORIES = [
   'Tümü',
@@ -35,27 +59,36 @@ export default function MagazineHubPage() {
   const [sourceMode, setSourceMode] = useState<'live_api' | 'supabase_cache'>('live_api');
 
   const loadMagazine = useCallback(async (forceFresh = false) => {
-    if (forceFresh) setIsRefreshing(true);
-    else setIsLoading(true);
+    if (forceFresh) {
+      setIsRefreshing(true);
+      invalidateCache('magazin_');
+    } else {
+      setIsLoading(true);
+    }
 
     try {
       // 1. Canlı AsyaMag WordPress REST API akışını çek
-      const liveRes = await fetch(`/api/magazin/live?limit=30${forceFresh ? '&fresh=1' : ''}`);
-      const liveJson = await liveRes.json();
+      const liveJson = await cachedQuery('magazin_live_posts', 180_000, async () => {
+        const liveRes = await fetch(`/api/magazin/live?limit=30${forceFresh ? '&fresh=1' : ''}`);
+        return liveRes.json();
+      });
       const livePosts: MagazinePost[] = liveJson?.posts || [];
       if (liveJson?.source) setSourceMode(liveJson.source);
 
       // 2. Supabase arşivindeki haberlerle birleştir (mükerrer slug'ları tekilleştir)
-      const { data: dbData } = await supabase
-        .from('magazine_posts')
-        .select('*')
-        .order('published_at', { ascending: false })
-        .limit(75);
+      const dbData = await cachedQuery('magazin_db_posts', 300_000, async () => {
+        const { data } = await supabase
+          .from('magazine_posts')
+          .select('*')
+          .order('published_at', { ascending: false })
+          .limit(75);
+        return (data as MagazinePost[]) || [];
+      });
 
       const seenSlugs = new Set<string>();
       const merged: MagazinePost[] = [];
 
-      for (const p of [...livePosts, ...((dbData as MagazinePost[]) || [])]) {
+      for (const p of [...livePosts, ...(dbData || [])]) {
         if (!p?.slug || seenSlugs.has(p.slug)) continue;
         seenSlugs.add(p.slug);
         merged.push(p);
@@ -183,6 +216,8 @@ export default function MagazineHubPage() {
                 <img
                   src={getProxiedImageUrl(featuredPost.featured_image)}
                   alt={featuredPost.title}
+                  loading="eager"
+                  decoding="async"
                   className="w-full h-full object-cover"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#121216] via-transparent to-transparent lg:hidden" />
@@ -193,7 +228,7 @@ export default function MagazineHubPage() {
                     {(featuredPost.categories || ['Magazin']).map((c) => (
                       <span
                         key={c}
-                        className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-400/20 text-amber-300 border border-amber-400/35"
+                        className={`px-3 py-1 rounded-full text-xs font-mono font-bold border backdrop-blur-md ${getMagCategoryColor(c)}`}
                       >
                         {c}
                       </span>
@@ -229,20 +264,21 @@ export default function MagazineHubPage() {
               <Link
                 key={post.slug}
                 href={`/magazin/${post.slug}`}
-                className="koup-projection-card rounded-3xl overflow-hidden bg-[#121216] border border-white/10 flex flex-col group"
+                className="koup-projection-card cv-card rounded-3xl overflow-hidden bg-[#121216] border border-white/10 flex flex-col group"
               >
                 <div className="relative h-52 overflow-hidden">
                   <img
                     src={getProxiedImageUrl(post.featured_image)}
                     alt={post.title}
                     loading="lazy"
+                    decoding="async"
                     className="w-full h-full object-cover"
                   />
                   <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
                     {(post.categories || ['Magazin']).slice(0, 2).map((cat) => (
                       <span
                         key={cat}
-                        className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-black/75 backdrop-blur-md text-amber-300 border border-amber-400/30"
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border backdrop-blur-md ${getMagCategoryColor(cat)}`}
                       >
                         {cat}
                       </span>
