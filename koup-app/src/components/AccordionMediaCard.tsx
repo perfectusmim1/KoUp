@@ -53,10 +53,12 @@ function AccordionMediaCard({
   const cardRef = useRef<HTMLDivElement>(null);
   const prefetchRef = useRef(false);
   const hoverTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const leaveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     return () => {
       if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+      if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
     };
   }, []);
 
@@ -73,6 +75,10 @@ function AccordionMediaCard({
       if (isTouchOrMobile) return;
     }
 
+    if (leaveTimerRef.current) {
+      clearTimeout(leaveTimerRef.current);
+      leaveTimerRef.current = null;
+    }
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
 
     hoverTimerRef.current = setTimeout(() => {
@@ -84,16 +90,12 @@ function AccordionMediaCard({
 
       if (cardRef.current && typeof window !== 'undefined') {
         const rect = cardRef.current.getBoundingClientRect();
-        if (rect.right + 190 > window.innerWidth) {
-          setIsNearRight(true);
-        } else {
-          setIsNearRight(false);
-        }
+        setIsNearRight(rect.right + 190 > window.innerWidth);
       }
 
       setIsExpanded(true);
       triggerSound('expand');
-    }, 70);
+    }, 180);
   };
 
   const handleMouseLeave = () => {
@@ -101,7 +103,11 @@ function AccordionMediaCard({
       clearTimeout(hoverTimerRef.current);
       hoverTimerRef.current = null;
     }
-    setIsExpanded(false);
+    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+
+    leaveTimerRef.current = setTimeout(() => {
+      setIsExpanded(false);
+    }, 100);
   };
 
   const posterSrc = getProxiedImageUrl(item.cover_image, item.title);
@@ -141,8 +147,8 @@ function AccordionMediaCard({
         maxWidth: isExpanded ? 'calc(100vw - 32px)' : undefined,
         transformOrigin: isNearRight ? 'right center' : 'left center',
         transition:
-          'width 0.35s cubic-bezier(0.25, 1, 0.5, 1), transform 0.35s cubic-bezier(0.25, 1, 0.5, 1)',
-        willChange: 'width, transform',
+          'width 0.48s cubic-bezier(0.16, 1, 0.3, 1), min-width 0.48s cubic-bezier(0.16, 1, 0.3, 1), max-width 0.48s cubic-bezier(0.16, 1, 0.3, 1), transform 0.48s cubic-bezier(0.16, 1, 0.3, 1)',
+        willChange: 'width, min-width, transform',
       }}
       className={`koup-accordion-card relative shrink-0 rounded-2xl overflow-hidden cursor-pointer select-none h-[306px] group ${
         fluidWidth
@@ -276,9 +282,9 @@ function AccordionMediaCard({
 
         {/* Smoothly Animated Expanded Details Drawer with Intrinsic Grid Rows */}
         <div
-          className={`grid transition-[grid-template-rows,opacity] duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          className={`grid transition-[grid-template-rows,opacity] duration-450 ease-[cubic-bezier(0.16,1,0.3,1)] ${
             isExpanded
-              ? 'grid-rows-[1fr] opacity-100 mt-2'
+              ? 'grid-rows-[1fr] opacity-100 mt-2 delay-75'
               : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
           }`}
         >
