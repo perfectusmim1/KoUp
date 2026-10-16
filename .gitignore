@@ -1,0 +1,33 @@
+# Node / Next.js
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+out/
+**/out/
+
+# Local Secrets & Environment
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Large Local SQLite Archive & Cache (>100MB GitHub limit)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+anilist_cache.json
+plan.pdf
+__pycache__/
+**/__pycache__/
+*.pyc
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+*.tsbuildinfo
+next-env.d.ts
