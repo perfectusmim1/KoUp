@@ -19,10 +19,25 @@
   --glass-bg: rgba(14, 14, 16, 0.82);
   --glass-border: rgba(255, 255, 255, 0.1);
   --glass-highlight: rgba(255, 255, 255, 0.18);
+
+  /* Lumina Cinema & Asian Media Palette */
   --accent-blue: #2997ff;
+  --accent-cyan: #38bdf8;
   --accent-amber: #e5a93c;
   --imdb-gold: #f5c518;
+  --accent-emerald: #10b981;
+  --accent-crimson: #f43f5e;
+  --accent-violet: #a855f7;
+  --accent-rose: #fb7185;
+  --accent-indigo: #6366f1;
+
+  /* Cinema Spring Timing & Easings */
   --spring-apple: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-cinema: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-quad: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --dur-fast: 160ms;
+  --dur-normal: 260ms;
+  --dur-smooth: 420ms;
 }
 
 * {
@@ -34,7 +49,7 @@ html {
   padding: 0;
   background-color: #080808;
   color: #e5e2e1;
-  font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans), "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
   scroll-behavior: smooth;
   overflow-x: hidden;
   overflow-y: auto;
@@ -46,7 +61,7 @@ body {
   padding: 0;
   background-color: #080808;
   color: #e5e2e1;
-  font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans), "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
   overflow-x: hidden;
   overflow-y: visible;
   min-height: 100vh;
@@ -146,7 +161,8 @@ body {
   border-color: rgba(255, 255, 255, 0.26);
   box-shadow:
     0 24px 48px -12px rgba(0, 0, 0, 0.9),
-    0 0 28px -6px rgba(255, 255, 255, 0.12);
+    0 0 28px -6px rgba(41, 151, 255, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
 /* Accordion Poster-to-Widescreen Expansion — Fluid Width + Sibling Slide */
@@ -167,7 +183,84 @@ body {
   border-color: rgba(255, 255, 255, 0.32);
   box-shadow:
     0 26px 54px -10px rgba(0, 0, 0, 0.92),
-    0 0 32px -8px rgba(255, 255, 255, 0.16);
+    0 0 32px -8px rgba(41, 151, 255, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+/* Subtle Cinema Focus Ring */
+.koup-focus-ring:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #080808, 0 0 0 4px rgba(41, 151, 255, 0.7), 0 0 16px -2px rgba(41, 151, 255, 0.4);
+}
+
+/* Content Type Badges — Subtle, Film-Graded Accents (DESIGN.md) */
+.badge-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: all 200ms ease;
+  line-height: 1.2;
+}
+
+.badge-kdrama {
+  background: rgba(16, 185, 129, 0.12);
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  box-shadow: 0 0 10px -2px rgba(16, 185, 129, 0.2);
+}
+
+.badge-cdrama {
+  background: rgba(244, 63, 94, 0.12);
+  color: #fda4af;
+  border: 1px solid rgba(244, 63, 94, 0.28);
+  box-shadow: 0 0 10px -2px rgba(244, 63, 94, 0.2);
+}
+
+.badge-anime {
+  background: rgba(168, 85, 247, 0.12);
+  color: #d8b4fe;
+  border: 1px solid rgba(168, 85, 247, 0.28);
+  box-shadow: 0 0 10px -2px rgba(168, 85, 247, 0.2);
+}
+
+.badge-movie {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  box-shadow: 0 0 10px -2px rgba(245, 158, 11, 0.2);
+}
+
+.badge-variety {
+  background: rgba(236, 72, 153, 0.12);
+  color: #f472b6;
+  border: 1px solid rgba(236, 72, 153, 0.28);
+  box-shadow: 0 0 10px -2px rgba(236, 72, 153, 0.2);
+}
+
+.badge-global {
+  background: rgba(99, 102, 241, 0.12);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.28);
+  box-shadow: 0 0 10px -2px rgba(99, 102, 241, 0.2);
+}
+
+/* Performance: Deferred rendering for heavy sections strictly below the fold */
+.cv-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: auto none auto 380px;
+}
+
+.cv-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto none auto 300px;
 }
 
 /* Exact ui/code.html Top 10 Stroke Numerals */
@@ -244,3 +337,16 @@ body {
   color: rgba(255, 255, 255, 0.75);
   margin: 1.5rem 0;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .koup-projection-card,
+  .koup-accordion-card,
+  .apple-glass-pill {
+    transition-duration: 0.01ms !important;
+    transform: none !important;
+  }
+}
+

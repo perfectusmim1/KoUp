@@ -1,21 +1,61 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const BLOCKED_HOSTS = [
-  'localhost',
-  '127.0.0.1',
-  '0.0.0.0',
-  '::1',
-  '169.254.169.254',
-  'metadata.google.internal',
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB max to prevent memory exhaustion
+
+const BLOCKED_HOST_PATTERNS = [
+  /^localhost$/i,
+  /\.local$/i,
+  /\.internal$/i,
+  /\.lan$/i,
+  /\.home$/i,
+  /\.arpa$/i,
+  /^metadata\.google\.internal$/i,
+  /^instance-data$/i,
 ];
 
-function isPrivateIp(hostname: string): boolean {
-  if (BLOCKED_HOSTS.includes(hostname.toLowerCase())) return true;
-  if (/^(10\.|127\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|169\.254\.)/.test(hostname)) {
+function isBlockedIpOrHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().trim();
+
+  // Explicit host patterns
+  for (const pattern of BLOCKED_HOST_PATTERNS) {
+    if (pattern.test(host)) return true;
+  }
+
+  // Exact IP / hostname blocks
+  if (['127.0.0.1', '0.0.0.0', '::1', '169.254.169.254', 'metadata'].includes(host)) {
     return true;
   }
+
+  // IPv4 Private & Loopback & Link-Local & CGNAT regex
+  // 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10, 0.0.0.0/8
+  const ipv4PrivateRegex =
+    /^(?:127\.|10\.|192\.168\.|172\.(?:1[6-9]|2[0-9]|3[0-1])\.|169\.254\.|100\.(?:6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\.|0\.)/;
+  if (ipv4PrivateRegex.test(host)) {
+    return true;
+  }
+
+  // IPv6 Private & Loopback (fc00::/7, fe80::/10, ::1, ::ffff:127.0.0.1)
+  if (host.startsWith('::') || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80')) {
+    return true;
+  }
+
+  // Obfuscated / integer decimal IP format (e.g. 2130706433 or 0x7f000001)
+  if (/^(?:0x[0-9a-f]+|\d+)$/i.test(host)) {
+    return true;
+  }
+
   return false;
 }
+
+const ALLOWED_CONTENT_TYPES = new Set([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'image/avif',
+  'image/gif',
+  'image/svg+xml',
+]);
 
 const FALLBACK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900">
   <defs>
@@ -36,6 +76,8 @@ const FALLBACK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height
   <text x="300" y="495" text-anchor="middle" fill="#a1a1aa" fill-opacity="0.6" font-family="sans-serif" font-weight="500" font-size="18" letter-spacing="4">CINEMA ARCHIVE</text>
 </svg>`;
 
+export const revalidate = 2592000; // 30 days
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const targetUrl = searchParams.get('url');
@@ -43,7 +85,11 @@ export async function GET(req: NextRequest) {
 
   if (!targetUrl) {
     return new NextResponse(FALLBACK_SVG, {
-      headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' },
+      headers: {
+        'Content-Type': 'image/svg+xml',
+        'Cache-Control': 'public, max-age=2592000, immutable',
+        'X-Content-Type-Options': 'nosniff',
+      },
     });
   }
 
@@ -55,8 +101,21 @@ export async function GET(req: NextRequest) {
   for (const rawUrl of urlsToTry) {
     try {
       const parsed = new URL(rawUrl);
-      if (!['http:', 'https:'].includes(parsed.protocol)) continue;
-      if (isPrivateIp(parsed.hostname)) continue;
+
+      // 1. Restrict protocols
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        continue;
+      }
+
+      // 2. Restrict ports (only standard HTTP/HTTPS ports)
+      if (parsed.port && !['80', '443'].includes(parsed.port)) {
+        continue;
+      }
+
+      // 3. Block private IPs & localhost (SSRF protection)
+      if (isBlockedIpOrHost(parsed.hostname)) {
+        continue;
+      }
 
       const resp = await fetch(parsed.toString(), {
         headers: {
@@ -65,28 +124,50 @@ export async function GET(req: NextRequest) {
           Referer: `${parsed.protocol}//${parsed.hostname}/`,
           Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
         },
-        signal: AbortSignal.timeout(7000),
+        signal: AbortSignal.timeout(6000),
       });
 
       if (!resp.ok) continue;
-      const contentType = resp.headers.get('content-type') || '';
-      if (!contentType.startsWith('image/') && !contentType.includes('octet-stream')) {
+
+      // 4. Validate Content-Length before downloading large buffers
+      const contentLengthHeader = resp.headers.get('content-length');
+      if (contentLengthHeader) {
+        const contentLength = parseInt(contentLengthHeader, 10);
+        if (contentLength > MAX_IMAGE_SIZE_BYTES) {
+          continue;
+        }
+      }
+
+      // 5. Validate Content-Type
+      const rawContentType = (resp.headers.get('content-type') || '').toLowerCase().split(';')[0].trim();
+      const isAllowedType = ALLOWED_CONTENT_TYPES.has(rawContentType) || rawContentType.startsWith('image/');
+      if (!isAllowedType) {
         continue;
       }
 
       const buf = await resp.arrayBuffer();
-      if (buf.byteLength < 100) continue;
+      if (buf.byteLength < 100 || buf.byteLength > MAX_IMAGE_SIZE_BYTES) {
+        continue;
+      }
+
+      // If SVG, ensure it is sanitized/sandboxed
+      const headers: Record<string, string> = {
+        'Content-Type': rawContentType.startsWith('image/') ? rawContentType : 'image/jpeg',
+        'Cache-Control': 'public, max-age=2592000, stale-while-revalidate=86400, immutable',
+        'X-Content-Type-Options': 'nosniff',
+        'Access-Control-Allow-Origin': '*',
+      };
+
+      if (rawContentType === 'image/svg+xml') {
+        headers['Content-Security-Policy'] = "default-src 'none'; sandbox";
+      }
 
       return new NextResponse(buf, {
         status: 200,
-        headers: {
-          'Content-Type': contentType.startsWith('image/') ? contentType : 'image/jpeg',
-          'Cache-Control': 'public, max-age=2592000, stale-while-revalidate=86400, immutable',
-          'Access-Control-Allow-Origin': '*',
-        },
+        headers,
       });
     } catch {
-      // Try next URL in fallback chain
+      // Try next fallback
     }
   }
 
@@ -94,7 +175,8 @@ export async function GET(req: NextRequest) {
     status: 200,
     headers: {
       'Content-Type': 'image/svg+xml',
-      'Cache-Control': 'public, max-age=3600',
+      'Cache-Control': 'public, max-age=86400, stale-while-revalidate=3600',
+      'X-Content-Type-Options': 'nosniff',
     },
   });
 }

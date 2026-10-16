@@ -48,12 +48,19 @@ export async function GET(req: Request) {
       return enabledSites.has(s.source_site);
     });
 
-    return NextResponse.json({
-      success: true,
-      count: filtered.length,
-      enabledScrapers: Array.from(enabledSites),
-      schedules: filtered,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        count: filtered.length,
+        enabledScrapers: Array.from(enabledSites),
+        schedules: filtered,
+      },
+      {
+        headers: {
+          'Cache-Control': 'public, max-age=60, s-maxage=60, stale-while-revalidate=300',
+        },
+      }
+    );
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Internal error' }, { status: 500 });
   }

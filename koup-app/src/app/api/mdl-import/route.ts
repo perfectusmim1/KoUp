@@ -4,19 +4,28 @@ import { supabase } from '@/lib/supabase';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { platform, username } = body as {
-      platform: 'mdl' | 'anilist';
-      username: string;
-    };
+    const platform = (body.platform || body.source || 'mdl').toLowerCase() as 'mdl' | 'anilist';
+    const rawUsername = body.username as string | undefined;
 
-    if (!username || username.trim().length < 2) {
+    if (!rawUsername || rawUsername.trim().length < 2) {
       return NextResponse.json(
-        { error: 'Geçerli bir kullanıcı adı giriniz.' },
+        { success: false, error: 'Geçerli bir kullanıcı adı giriniz.' },
         { status: 400 }
       );
     }
 
-    const cleanUser = username.trim();
+    const cleanUser = rawUsername.trim();
+
+    // Optional user authentication check to link username to profile
+    let authenticatedUserId: string | null = null;
+    const authHeader = req.headers.get('authorization');
+    if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+      const token = authHeader.slice(7).trim();
+      const { data } = await supabase.auth.getUser(token);
+      if (data?.user) {
+        authenticatedUserId = data.user.id;
+      }
+    }
 
     if (platform === 'anilist') {
       // Official AniList GraphQL public MediaListCollection query
@@ -49,7 +58,7 @@ export async function POST(req: NextRequest) {
 
       if (!resp.ok) {
         return NextResponse.json(
-          { error: 'AniList kullanıcısı bulunamadı veya profil gizli.' },
+          { success: false, error: 'AniList kullanıcısı bulunamadı veya profil gizli.' },
           { status: 404 }
         );
       }
@@ -91,11 +100,23 @@ export async function POST(req: NextRequest) {
         .select('id, slug, title, cover_image, anilist_id, episode_count')
         .in('anilist_id', alIds);
 
+      // If user is authenticated, update anilist_username in profile
+      if (authenticatedUserId) {
+        await supabase
+          .from('profiles')
+          .update({ anilist_username: cleanUser })
+          .eq('id', authenticatedUserId);
+      }
+
+      const matchedCount = matchedMedia?.length || 0;
+
       return NextResponse.json({
+        success: true,
+        message: `${cleanUser} AniList kütüphanesi başarıyla senkronize edildi.`,
         platform: 'anilist',
         username: cleanUser,
         totalFound: entries.length,
-        matchedCount: matchedMedia?.length || 0,
+        matchedCount,
         matchedItems: (matchedMedia || []).map((m) => {
           const src = entries.find((e) => e.anilist_id === m.anilist_id);
           return {
@@ -156,11 +177,23 @@ export async function POST(req: NextRequest) {
       matchedMedia = data || [];
     }
 
+    // If user is authenticated, update mdl_username in profile
+    if (authenticatedUserId) {
+      await supabase
+        .from('profiles')
+        .update({ mdl_username: cleanUser })
+        .eq('id', authenticatedUserId);
+    }
+
+    const matchedCount = matchedMedia.length;
+
     return NextResponse.json({
+      success: true,
+      message: `${cleanUser} MyDramaList izleme listesi başarıyla aktarıldı.`,
       platform: 'mdl',
       username: cleanUser,
-      totalFound: Math.max(mdlSlugs.size, matchedMedia.length),
-      matchedCount: matchedMedia.length,
+      totalFound: Math.max(mdlSlugs.size, matchedCount),
+      matchedCount,
       matchedItems: matchedMedia.map((m, idx) => ({
         media: m,
         status: idx < 3 ? 'watching' : 'completed',
@@ -171,7 +204,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('MDL/AniList import error:', err);
     return NextResponse.json(
-      { error: 'İçe aktarma sırasında bir hata oluştu.' },
+      { success: false, error: 'İçe aktarma sırasında bir hata oluştu.' },
       { status: 500 }
     );
   }

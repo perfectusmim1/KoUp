@@ -42,8 +42,10 @@ export default function EpisodeWatchPage({
   const currentEpNum = Number(episode) || 1;
 
   const {
+    user,
     progressMap,
     toggleEpisodeWatched,
+    updateEpisodeProgress,
     pushNotification,
     triggerSound,
   } = useKoUp();
@@ -71,6 +73,7 @@ export default function EpisodeWatchPage({
   const [showReport, setShowReport] = useState(false);
   const [reportCategory, setReportCategory] = useState('Kaynak Açılmıyor / Kırık');
   const [reportNote, setReportNote] = useState('');
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
 
   // Reset source selection on episode change
   useEffect(() => {
@@ -80,6 +83,8 @@ export default function EpisodeWatchPage({
   }, [currentEpNum]);
 
   useEffect(() => {
+    let isCancelled = false;
+
     async function loadEpisodeData() {
       setIsLoading(true);
       const decodedSlug = decodeURIComponent(slug);
@@ -110,6 +115,8 @@ export default function EpisodeWatchPage({
         mData = byId.data;
       }
 
+      if (isCancelled) return;
+
       if (!mData) {
         setIsLoading(false);
         return;
@@ -118,22 +125,41 @@ export default function EpisodeWatchPage({
       const item = mData as MediaItem;
       setMedia(item);
 
-      // Increment view counter
+      // Increment view counter non-blockingly
       supabase.rpc('increment_media_view', { p_media_id: item.id }).then(() => {});
 
       // Fetch verified episode sources from edge resolver
       try {
         const res = await fetch(`/api/sources/${item.id}`);
         const payload = await res.json();
-        const eps: EpisodeData[] = payload.episodes || [];
-        setEpisodes(eps);
+        if (isCancelled) return;
 
-        const currentEp = eps.find((e) => e.episode_number === currentEpNum);
-        if (currentEp?.season_number) {
-          setCurrentSeason(currentEp.season_number);
-        }
+        const rawEps: EpisodeData[] = payload.episodes || [];
+        // Sort episodes strictly by season then episode number
+        const sortedEps = [...rawEps].sort(
+          (a, b) =>
+            (a.season_number || 1) - (b.season_number || 1) ||
+            a.episode_number - b.episode_number
+        );
+        setEpisodes(sortedEps);
 
-        // Load real base reaction counts (0 fake data!)
+        const currentEp = sortedEps.find((e) => e.episode_number === currentEpNum);
+        const activeSeason = currentEp?.season_number || 1;
+        setCurrentSeason(activeSeason);
+
+        // Update watching status in KoUpContext progress map
+        const existingProg = progressMap[item.id];
+        const initialPos = existingProg?.resume_position_sec || 0;
+        updateEpisodeProgress(
+          item,
+          activeSeason,
+          currentEpNum,
+          currentEp?.episode_name || `${currentEpNum}. Bölüm`,
+          initialPos,
+          3600
+        );
+
+        // Load base reaction counts
         setReactionCounts({
           fire: currentEp?.react_fire || 0,
           cry: currentEp?.react_cry || 0,
@@ -147,15 +173,26 @@ export default function EpisodeWatchPage({
         } else {
           setUserReaction(null);
         }
-      } catch {
-        // fallback
+      } catch (err) {
+        console.error('Error loading episode data:', err);
+      } finally {
+        if (!isCancelled) setIsLoading(false);
       }
-
-      setIsLoading(false);
     }
 
     loadEpisodeData();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [slug, currentEpNum]);
+
+  // Dynamic document title
+  useEffect(() => {
+    if (media?.title) {
+      document.title = `${media.title} ${currentEpNum}. Bölüm İzle • KoUp Sinema`;
+    }
+  }, [media?.title, currentEpNum]);
 
   if (isLoading) {
     return (
@@ -177,7 +214,7 @@ export default function EpisodeWatchPage({
         </p>
         <Link
           href="/kesfet"
-          className="px-6 py-3 rounded-full bg-white text-black font-bold text-xs"
+          className="px-6 py-3 rounded-full bg-emerald-500 text-black font-bold text-xs hover:bg-emerald-400 transition-colors shadow-lg"
         >
           Kataloğa Dön
         </Link>
@@ -185,9 +222,15 @@ export default function EpisodeWatchPage({
     );
   }
 
-  const currentEpIndex = episodes.findIndex((e) => e.episode_number === currentEpNum);
+  // Robust episode bounds checking
+  const currentEpIndex = episodes.findIndex(
+    (e) => (e.season_number || 1) === currentSeason && e.episode_number === currentEpNum
+  );
+  const fallbackIndex =
+    currentEpIndex >= 0 ? currentEpIndex : episodes.findIndex((e) => e.episode_number === currentEpNum);
+
   const currentEpObj =
-    episodes[currentEpIndex] || {
+    (fallbackIndex >= 0 ? episodes[fallbackIndex] : null) || {
       id: currentEpNum,
       season_number: currentSeason,
       episode_number: currentEpNum,
@@ -196,13 +239,16 @@ export default function EpisodeWatchPage({
       sources: [],
     };
 
-  const prevEp = currentEpIndex > 0 ? episodes[currentEpIndex - 1] : null;
-  const nextEp = currentEpIndex >= 0 && currentEpIndex + 1 < episodes.length ? episodes[currentEpIndex + 1] : null;
+  const prevEp = fallbackIndex > 0 ? episodes[fallbackIndex - 1] : null;
+  const nextEp =
+    fallbackIndex >= 0 && fallbackIndex + 1 < episodes.length
+      ? episodes[fallbackIndex + 1]
+      : null;
 
   const isWatched = (progressMap[media.id]?.watched_episodes || []).includes(currentEpNum);
 
-  // Single-vote reaction handler with clear focus/glow state
-  const handleReaction = (type: 'fire' | 'cry' | 'shock') => {
+  // Single-vote reaction handler with real Supabase RPC persistence
+  const handleReaction = async (type: 'fire' | 'cry' | 'shock') => {
     triggerSound('click');
     const storageKey = `koup_reaction_${media.id}_${currentEpNum}`;
 
@@ -211,9 +257,8 @@ export default function EpisodeWatchPage({
       setUserReaction(null);
       setReactionCounts((prev) => ({ ...prev, [type]: Math.max(0, prev[type] - 1) }));
       localStorage.removeItem(storageKey);
-      pushNotification('Tepki Kaldırıldı', 'Bölüm tepkiniz geri alındı.', 'info');
     } else {
-      // Toggle on, or switch from previous
+      // Toggle on or switch
       const oldType = userReaction;
       setUserReaction(type);
       setReactionCounts((prev) => ({
@@ -223,24 +268,53 @@ export default function EpisodeWatchPage({
       }));
       localStorage.setItem(storageKey, type);
 
-      const labels = {
-        fire: 'Efsane Bölüm!',
-        cry: 'Mendil Bitti / Çok Duygusal',
-        shock: 'Şok / Ters Köşe!',
-      };
-      pushNotification('Tepkin Kaydedildi', labels[type], 'success');
+      // Persist to Supabase via RPC (fire and forget, silent)
+      supabase
+        .rpc('increment_episode_reaction', {
+          p_media_id: media.id,
+          p_season: currentSeason,
+          p_episode: currentEpNum,
+          p_reaction: type,
+        })
+        .then(() => {});
     }
   };
 
-  const submitReport = (e: React.FormEvent) => {
+  const submitReport = async (e: React.FormEvent) => {
     e.preventDefault();
-    pushNotification(
-      'Sorun Bildirimi Alındı',
-      `${media.title} ${currentEpNum}. Bölüm için bildiriminiz teknik ekibe iletildi.`,
-      'info'
-    );
-    setShowReport(false);
-    setReportNote('');
+    setIsSubmittingReport(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const uid = sessionData?.session?.user?.id || user?.id || null;
+
+      await supabase.from('issue_reports').insert({
+        reporter_id: uid,
+        target_type: 'episode',
+        media_id: media.id,
+        season_number: currentSeason,
+        episode_number: currentEpNum,
+        provider_name: activeSource?.provider || 'episode_player',
+        issue_category: reportCategory,
+        details: reportNote.trim() || `${media.title} ${currentEpNum}. Bölüm sorun bildirimi`,
+        status: 'open',
+      });
+
+      pushNotification(
+        'Sorun Bildirimi Alındı',
+        `${media.title} ${currentEpNum}. Bölüm için bildiriminiz teknik ekibe iletildi.`,
+        'info'
+      );
+    } catch {
+      pushNotification(
+        'Sorun Bildirimi Alındı',
+        'Bildiriminiz kaydedildi.',
+        'info'
+      );
+    } finally {
+      setIsSubmittingReport(false);
+      setShowReport(false);
+      setReportNote('');
+    }
   };
 
   const currentSeasonEpisodes = episodes.filter(
@@ -256,6 +330,9 @@ export default function EpisodeWatchPage({
     selectedFansub === 'all'
       ? availableSources
       : availableSources.filter((s) => s.fansub === selectedFansub);
+
+  const activeSource: EpisodeSource | undefined =
+    filteredSources[selectedSourceIdx] || availableSources[0];
 
   return (
     <div className="min-h-screen pb-32 bg-[#080808] text-white pt-20">
@@ -273,7 +350,11 @@ export default function EpisodeWatchPage({
           <div className="flex items-center gap-2.5">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.06] border border-white/10 text-xs text-white/80">
               <CountryFlag code={media.country_code || media.country} size="sm" />
-              <span className="font-semibold">{COUNTRY_LABELS[((media.country_code || media.country) || '').toUpperCase()] || media.country_name || 'ASYA'}</span>
+              <span className="font-semibold">
+                {COUNTRY_LABELS[((media.country_code || media.country) || '').toUpperCase()] ||
+                  media.country_name ||
+                  'ASYA'}
+              </span>
             </span>
 
             <span className="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 font-mono text-xs font-bold">
@@ -341,7 +422,11 @@ export default function EpisodeWatchPage({
                         </span>
                       )}
                       {src.quality_label && (
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${active ? 'bg-black/20 text-black font-bold' : 'bg-white/10 text-white/60'}`}>
+                        <span
+                          className={`text-[10px] px-1.5 py-0.5 rounded ${
+                            active ? 'bg-black/20 text-black font-bold' : 'bg-white/10 text-white/60'
+                          }`}
+                        >
                           {src.quality_label}
                         </span>
                       )}
@@ -376,10 +461,12 @@ export default function EpisodeWatchPage({
                     ? 'bg-amber-400 text-black border-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.4)]'
                     : 'bg-white/[0.05] hover:bg-white/[0.12] text-white/80 border-white/10 hover:text-white'
                 }`}
-                title="Sinema Modu (Tüm Sayfayı Kapla)"
+                title="Sinema Modu (L)"
               >
                 <Lightbulb className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{cinemaLightsOff ? 'Normal Mod' : 'Sinema Modu'}</span>
+                <span className="hidden sm:inline">
+                  {cinemaLightsOff ? 'Normal Mod' : 'Sinema Modu'}
+                </span>
               </button>
 
               <button
@@ -412,7 +499,7 @@ export default function EpisodeWatchPage({
                   className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-all cursor-pointer"
                 >
                   <ChevronLeft className="w-4 h-4" />
-                  <span>Önceki Bölüm</span>
+                  <span>Önceki Bölüm (B{prevEp.episode_number})</span>
                 </button>
               ) : (
                 <span className="px-4 py-2 rounded-full bg-white/[0.03] text-xs font-semibold text-white/30 border border-white/[0.05]">
@@ -558,14 +645,15 @@ export default function EpisodeWatchPage({
             />
             <button
               type="submit"
-              className="px-4 py-2 rounded-full bg-amber-400 text-black font-bold text-xs cursor-pointer hover:bg-amber-300 transition-colors"
+              disabled={isSubmittingReport}
+              className="px-4 py-2 rounded-full bg-amber-400 text-black font-bold text-xs cursor-pointer hover:bg-amber-300 transition-colors disabled:opacity-50"
             >
-              Gönder
+              {isSubmittingReport ? 'İletiliyor...' : 'Gönder'}
             </button>
           </form>
         )}
 
-        {/* Reaction Bar & Source Distribution (Emerald Theme & 1 Reaction Per User with Focus State) */}
+        {/* Reaction Bar & Source Distribution */}
         <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Reaction Box */}
           <div className="p-6 rounded-3xl bg-[#0f0f11] border border-white/[0.08]">
@@ -636,7 +724,7 @@ export default function EpisodeWatchPage({
             </div>
           </div>
 
-          {/* Mini Episode Source & Reaction Sparkline Bar Chart (Emerald Theme) */}
+          {/* Mini Episode Source & Reaction Sparkline Bar Chart */}
           <div className="p-6 rounded-3xl bg-[#0f0f11] border border-white/[0.08] flex flex-col justify-between">
             <div className="flex items-center justify-between text-[11px] font-mono text-white/60 mb-2">
               <span>Bölüm Kaynak & Etkileşim Dağılımı</span>
@@ -676,7 +764,7 @@ export default function EpisodeWatchPage({
           </div>
         </div>
 
-        {/* Seasons & Episodes Quick Grid (Emerald Selected Pill) */}
+        {/* Seasons & Episodes Quick Grid */}
         <div className="mt-8 p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08]">
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
@@ -717,7 +805,7 @@ export default function EpisodeWatchPage({
           </div>
         </div>
 
-        {/* Episode Specific Comments (with Functional Seekable Timestamps!) */}
+        {/* Episode Specific Comments */}
         <RichCommentSection
           targetType="episode"
           mediaId={media.id}

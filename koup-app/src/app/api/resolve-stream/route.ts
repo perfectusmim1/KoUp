@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const revalidate = 3600;
+
+const CACHE_HEADERS = {
+  'Cache-Control': 'public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400',
+};
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const url = searchParams.get('url') || '';
@@ -7,6 +13,16 @@ export async function GET(req: NextRequest) {
 
   if (!url) {
     return NextResponse.json({ error: 'Missing url' }, { status: 400 });
+  }
+
+  // Validate URL protocol
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return NextResponse.json({ error: 'Invalid URL protocol' }, { status: 400 });
+    }
+  } catch {
+    return NextResponse.json({ error: 'Malformed URL' }, { status: 400 });
   }
 
   // 1. Tau-Video Direct MP4/HLS Quality Resolver (for AnimeciX / Tau-Video sources)
@@ -23,6 +39,7 @@ export async function GET(req: NextRequest) {
             Accept: 'application/json',
           },
           signal: AbortSignal.timeout(6000),
+          next: { revalidate: 3600 },
         });
         if (apiResp.ok) {
           const data = await apiResp.json();
@@ -34,15 +51,18 @@ export async function GET(req: NextRequest) {
               const qb = parseInt(b.label || '0', 10);
               return qb - qa;
             });
-            return NextResponse.json({
-              mode: 'native_mp4',
-              qualities: sorted.map((q) => ({
-                label: q.label || '1080p',
-                url: q.url,
-              })),
-              streamUrl: sorted[0].url,
-              fallbackIframe: url,
-            });
+            return NextResponse.json(
+              {
+                mode: 'native_mp4',
+                qualities: sorted.map((q) => ({
+                  label: q.label || '1080p',
+                  url: q.url,
+                })),
+                streamUrl: sorted[0].url,
+                fallbackIframe: url,
+              },
+              { headers: CACHE_HEADERS }
+            );
           }
         }
       }
@@ -51,17 +71,20 @@ export async function GET(req: NextRequest) {
       try {
         const edgeRes = await fetch(
           `https://koup-edge-worker.caganhuseyinerdil.workers.dev/tau?key=${url.split('/').pop()}`,
-          { signal: AbortSignal.timeout(4000) }
+          { signal: AbortSignal.timeout(4000), next: { revalidate: 3600 } }
         );
         if (edgeRes.ok) {
           const edgeData = await edgeRes.json();
           if (edgeData?.urls?.length > 0) {
-            return NextResponse.json({
-              mode: 'native_mp4',
-              qualities: edgeData.urls,
-              streamUrl: edgeData.urls[0].url,
-              fallbackIframe: url,
-            });
+            return NextResponse.json(
+              {
+                mode: 'native_mp4',
+                qualities: edgeData.urls,
+                streamUrl: edgeData.urls[0].url,
+                fallbackIframe: url,
+              },
+              { headers: CACHE_HEADERS }
+            );
           }
         }
       } catch {
@@ -72,23 +95,32 @@ export async function GET(req: NextRequest) {
 
   // 2. Direct HLS / MP4 pass-through
   if (url.includes('.m3u8') || url.includes('master.txt')) {
-    return NextResponse.json({
-      mode: 'native_hls',
-      streamUrl: url,
-      qualities: [{ label: 'Auto (1080p HLS)', url }],
-    });
+    return NextResponse.json(
+      {
+        mode: 'native_hls',
+        streamUrl: url,
+        qualities: [{ label: 'Auto (1080p HLS)', url }],
+      },
+      { headers: CACHE_HEADERS }
+    );
   }
   if (url.endsWith('.mp4') || url.includes('.mp4?')) {
-    return NextResponse.json({
-      mode: 'native_mp4',
-      streamUrl: url,
-      qualities: [{ label: '1080p Direct', url }],
-    });
+    return NextResponse.json(
+      {
+        mode: 'native_mp4',
+        streamUrl: url,
+        qualities: [{ label: '1080p Direct', url }],
+      },
+      { headers: CACHE_HEADERS }
+    );
   }
 
   // 3. Default to iframe shell with KoUp Netflix Top Control Dock
-  return NextResponse.json({
-    mode: 'iframe',
-    iframeUrl: url,
-  });
+  return NextResponse.json(
+    {
+      mode: 'iframe',
+      iframeUrl: url,
+    },
+    { headers: CACHE_HEADERS }
+  );
 }

@@ -34,6 +34,7 @@ import {
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
 import AuthModal from '@/components/AuthModal';
+import { cachedQuery } from '@/lib/cache';
 
 const NAV_LINKS = [
   { href: '/', label: 'Ana Sayfa', icon: Home },
@@ -42,6 +43,18 @@ const NAV_LINKS = [
   { href: '/magazin', label: 'Magazin', icon: Newspaper },
   { href: '/takvim', label: 'Takvim', icon: Calendar },
 ];
+
+function getNavTypeBadgeClass(contentType?: string, countryCode?: string): string {
+  const ct = (contentType || '').toLowerCase();
+  const cc = (countryCode || '').toUpperCase();
+  if (ct === 'anime') return 'badge-type badge-anime';
+  if (ct === 'movie' || ct === 'film') return 'badge-type badge-movie';
+  if (ct === 'program' || ct === 'variety') return 'badge-type badge-variety';
+  if (cc === 'KR') return 'badge-type badge-kdrama';
+  if (cc === 'CN') return 'badge-type badge-cdrama';
+  if (cc === 'JP') return 'badge-type badge-anime';
+  return 'badge-type badge-global';
+}
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -82,20 +95,28 @@ export default function Navbar() {
     const timer = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const [mRes, pRes] = await Promise.all([
-          supabase.rpc('search_catalog', {
-            p_query: trimmed,
-            p_limit: 8,
-          }),
-          supabase
-            .from('people')
-            .select('id, slug, name, native_name, person_type, image_url, favorites_count')
-            .ilike('name', `%${trimmed}%`)
-            .order('favorites_count', { ascending: false })
-            .limit(4),
-        ]);
-        setMediaResults((mRes.data as MediaItem[]) || []);
-        setPersonResults((pRes.data as PersonItem[]) || []);
+        const cacheKey = `omnibox_${trimmed.toLowerCase()}`;
+        const [mList, pList] = await cachedQuery(cacheKey, 60_000, async () => {
+          const [mRes, pRes] = await Promise.all([
+            supabase.rpc('search_catalog', {
+              p_query: trimmed,
+              p_limit: 8,
+            }),
+            supabase
+              .from('people')
+              .select('id, slug, name, native_name, person_type, image_url, favorites_count')
+              .ilike('name', `%${trimmed}%`)
+              .order('favorites_count', { ascending: false })
+              .limit(4),
+          ]);
+          return [
+            (mRes.data as MediaItem[]) || [],
+            (pRes.data as PersonItem[]) || [],
+          ] as const;
+        });
+
+        setMediaResults(mList as MediaItem[]);
+        setPersonResults(pList as PersonItem[]);
       } finally {
         setIsSearching(false);
       }
@@ -134,6 +155,7 @@ export default function Navbar() {
       } else if (e.key === 'Escape') {
         setSearchOpen(false);
         setNotifOpen(false);
+        setMobileMenuOpen(false);
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -217,7 +239,7 @@ export default function Navbar() {
       <div className="pointer-events-auto flex items-center gap-2.5">
         {/* Instant Search Bar / Trigger */}
         <div ref={searchContainerRef} className="relative">
-          <div className="flex items-center gap-2 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-white/30 transition-all duration-300 w-44 sm:w-60">
+          <div className="flex items-center gap-2 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/50 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 w-44 sm:w-60 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.25)]">
             <Search className="w-4 h-4 text-white/60 shrink-0" />
             <input
               ref={searchInputRef}
@@ -246,7 +268,7 @@ export default function Navbar() {
             )}
           </div>
 
-          {/* Search Omnibox Dropdown with Spring Animation */}
+          {/* Search Omnibox Dropdown with Spring Animation & Responsive Clamp */}
           <AnimatePresence>
             {searchOpen && query.trim().length >= 2 && (
               <motion.div
@@ -254,7 +276,7 @@ export default function Navbar() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 6, scale: 0.97 }}
                 transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="absolute right-0 mt-3 w-[340px] sm:w-[440px] rounded-3xl bg-[#0f0f12]/95 backdrop-blur-2xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.92)] border border-white/15 z-50"
+                className="absolute right-0 mt-3 w-[calc(100vw-2.5rem)] sm:w-[440px] max-w-[440px] rounded-3xl bg-[#0f0f12]/95 backdrop-blur-2xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.12)] border border-white/15 z-50"
               >
                 <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-white/10">
                   <span className="text-[11px] font-bold uppercase tracking-widest text-white/50">
@@ -263,7 +285,7 @@ export default function Navbar() {
                   <Link
                     href={`/kesfet?q=${encodeURIComponent(query)}`}
                     onClick={() => setSearchOpen(false)}
-                    className="text-xs text-white/80 hover:text-white flex items-center gap-1 font-medium"
+                    className="text-xs text-white/80 hover:text-white flex items-center gap-1 font-medium transition-colors"
                   >
                     <SlidersHorizontal className="w-3 h-3" />
                     <span>Gelişmiş Filtre</span>
@@ -279,7 +301,7 @@ export default function Navbar() {
                     &ldquo;{query}&rdquo; için eşleşen kayıt bulunamadı.
                   </div>
                 ) : (
-                  <div className="space-y-4 max-h-[68vh] overflow-y-auto pr-1">
+                  <div className="space-y-4 max-h-[68vh] overflow-y-auto pr-1 no-scrollbar">
                     {mediaResults.length > 0 && (
                       <div>
                         <div className="text-[10px] font-bold uppercase tracking-wider text-white/40 mb-2 px-1">
@@ -298,14 +320,20 @@ export default function Navbar() {
                               <img
                                 src={getProxiedImageUrl(m.cover_image, m.title)}
                                 alt={m.title}
+                                width={40}
+                                height={56}
+                                loading="lazy"
+                                decoding="async"
                                 className="w-10 h-14 object-cover rounded-lg border border-white/10 shrink-0"
                               />
                               <div className="min-w-0 flex-1">
                                 <div className="text-sm font-semibold text-white group-hover:text-white truncate">
                                   {m.title}
                                 </div>
-                                <div className="text-[11px] text-white/50 flex items-center gap-2 mt-0.5">
-                                  <span>{formatContentTypeTR(m.content_type, m.country_code || (m as any).country)}</span>
+                                <div className="text-[11px] text-white/50 flex flex-wrap items-center gap-2 mt-1">
+                                  <span className={getNavTypeBadgeClass(m.content_type, m.country_code || (m as any).country)}>
+                                    {formatContentTypeTR(m.content_type, m.country_code || (m as any).country)}
+                                  </span>
                                   {m.release_year && <span>• {m.release_year}</span>}
                                   {m.mdl_rating && (
                                     <span className="text-amber-300 font-mono">
@@ -343,6 +371,10 @@ export default function Navbar() {
                               <img
                                 src={getProxiedImageUrl(p.image_url, p.name)}
                                 alt={p.name}
+                                width={36}
+                                height={36}
+                                loading="lazy"
+                                decoding="async"
                                 className="w-9 h-9 rounded-full object-cover border border-white/15 shrink-0"
                               />
                               <div className="min-w-0">
@@ -373,7 +405,7 @@ export default function Navbar() {
         <div ref={notifContainerRef} className="relative">
           <button
             onClick={() => setNotifOpen((v) => !v)}
-            className="w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white/80 hover:text-white relative cursor-pointer transition-all"
+            className="w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white/80 hover:text-white relative cursor-pointer transition-all hover:border-[var(--accent-blue)]/40 hover:shadow-[0_0_15px_rgba(41,151,255,0.2)]"
             aria-label="Bildirimler"
           >
             <Bell className="w-4 h-4" />
@@ -391,7 +423,7 @@ export default function Navbar() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 6, scale: 0.96 }}
                 transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="absolute right-0 mt-3 w-84 sm:w-[410px] rounded-3xl bg-[#0f0f12]/95 backdrop-blur-2xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.92)] border border-white/15 z-50 flex flex-col gap-3"
+                className="absolute right-0 mt-3 w-[calc(100vw-2.5rem)] sm:w-[410px] max-w-[410px] rounded-3xl bg-[#0f0f12]/95 backdrop-blur-2xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.12)] border border-white/15 z-50 flex flex-col gap-3"
               >
                 {/* Header */}
                 <div className="flex items-center justify-between pb-2.5 border-b border-white/10">
@@ -571,36 +603,45 @@ export default function Navbar() {
         )}
       </div>
 
-      {/* Mobile Navigation Drawer */}
+      {/* Mobile Navigation Drawer with Backdrop */}
       <AnimatePresence>
         {mobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="pointer-events-auto lg:hidden fixed top-20 left-4 right-4 rounded-3xl bg-[#0f0f12]/95 backdrop-blur-2xl p-4 border border-white/15 shadow-2xl z-50 grid grid-cols-2 gap-2"
-          >
-            {NAV_LINKS.map((item) => {
-              const Icon = item.icon;
-              const active = isNavActive(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl text-xs font-semibold transition-all ${
-                    active
-                      ? 'bg-white text-black'
-                      : 'bg-white/[0.05] text-white/80 hover:text-white'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span>{item.label}</span>
-                </Link>
-              );
-            })}
-          </motion.div>
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setMobileMenuOpen(false)}
+              className="pointer-events-auto fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
+            />
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="pointer-events-auto lg:hidden fixed top-20 left-4 right-4 rounded-3xl bg-[#0f0f12]/95 backdrop-blur-2xl p-4 border border-white/15 shadow-2xl z-50 grid grid-cols-2 gap-2"
+            >
+              {NAV_LINKS.map((item) => {
+                const Icon = item.icon;
+                const active = isNavActive(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl text-xs font-semibold transition-all ${
+                      active
+                        ? 'bg-white text-black'
+                        : 'bg-white/[0.05] text-white/80 hover:text-white'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
 

@@ -2,6 +2,27 @@
 
 export type SoundTone = 'apple_glass' | 'soft_chime' | 'minimal_pop';
 
+let sharedAudioCtx: AudioContext | null = null;
+
+function getAudioContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return null;
+    if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
+      sharedAudioCtx = new AudioCtx();
+    }
+    if (sharedAudioCtx.state === 'suspended') {
+      sharedAudioCtx.resume().catch(() => {});
+    }
+    return sharedAudioCtx;
+  } catch {
+    return null;
+  }
+}
+
 export function playNotificationChime(
   tone: SoundTone = 'apple_glass',
   volume = 0.7,
@@ -11,8 +32,9 @@ export function playNotificationChime(
   if (muteDuringFullscreen && document.fullscreenElement) return;
 
   try {
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const ctx = new AudioCtx();
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
     const now = ctx.currentTime;
     const gain = ctx.createGain();
     gain.connect(ctx.destination);

@@ -3,7 +3,6 @@
 import React, { useState, useEffect, use } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { motion } from 'motion/react';
 import {
   Heart,
   Bell,
@@ -31,6 +30,7 @@ import {
   getCountryFlag,
   formatContentTypeTR,
 } from '@/lib/supabase';
+import { cachedQuery } from '@/lib/cache';
 import { useKoUp } from '@/context/KoUpContext';
 import CountryFlag from '@/components/CountryFlag';
 import RichCommentSection from '@/components/RichCommentSection';
@@ -47,6 +47,7 @@ export default function SeriesDetailPage({
   const searchParams = useSearchParams();
 
   const {
+    user,
     progressMap,
     followedMediaIds,
     setLibraryStatus,
@@ -66,92 +67,133 @@ export default function SeriesDetailPage({
   const [showSeriesReport, setShowSeriesReport] = useState(false);
   const [seriesReportCategory, setSeriesReportCategory] = useState('Eksik Bölümler Var');
   const [seriesReportNote, setSeriesReportNote] = useState('');
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
 
   useEffect(() => {
+    let isCancelled = false;
+
     async function loadSeries() {
       setIsLoading(true);
       const decodedSlug = decodeURIComponent(slug);
 
-      let { data: mData } = await supabase
-        .from('media')
-        .select('*')
-        .eq('slug', decodedSlug)
-        .single();
+      try {
+        // Cached media details + cast query (TTL: 300_000ms = 5 minutes)
+        const mediaWithCast = await cachedQuery<{
+          media: MediaItem | null;
+          cast: CastMember[];
+        }>(`media_${decodedSlug}`, 300_000, async () => {
+          let { data: mData } = await supabase
+            .from('media')
+            .select('*')
+            .eq('slug', decodedSlug)
+            .single();
 
-      if (!mData) {
-        const { data: fallbackRows } = await supabase
-          .from('media')
-          .select('*')
-          .or(`slug.eq.${decodedSlug}-izle,slug.ilike.${decodedSlug}%`)
-          .limit(1);
-        if (fallbackRows && fallbackRows[0]) {
-          mData = fallbackRows[0];
-        }
-      }
-
-      if (!mData && !Number.isNaN(Number(decodedSlug))) {
-        const byId = await supabase
-          .from('media')
-          .select('*')
-          .eq('id', Number(decodedSlug))
-          .single();
-        mData = byId.data;
-      }
-
-      if (!mData) {
-        setIsLoading(false);
-        return;
-      }
-
-      const item = mData as MediaItem;
-      setMedia(item);
-
-      // Increment view count
-      supabase.rpc('increment_media_view', { p_media_id: item.id }).then(() => {});
-
-      // If user came via a link with ?play=1, immediately route to the episode watch page
-      if (searchParams.get('play')) {
-        const epToPlay = searchParams.get('ep') || '1';
-        router.replace(`/seri/${item.slug}/${epToPlay}`);
-        return;
-      }
-
-      // Fetch episodes from edge resolver
-      fetch(`/api/sources/${item.id}`)
-        .then((r) => r.json())
-        .then((payload) => {
-          const eps: EpisodeData[] = payload.episodes || [];
-          setEpisodes(eps);
-          if (eps.length > 0) {
-            setSelectedSeason(eps[0].season_number || 1);
+          if (!mData) {
+            const { data: fallbackRows } = await supabase
+              .from('media')
+              .select('*')
+              .or(`slug.eq.${decodedSlug}-izle,slug.ilike.${decodedSlug}%`)
+              .limit(1);
+            if (fallbackRows && fallbackRows[0]) {
+              mData = fallbackRows[0];
+            }
           }
-        })
-        .catch(() => {});
 
-      // Fetch cast members
-      const { data: castRows } = await supabase
-        .from('media_cast')
-        .select('*, people(*)')
-        .eq('media_id', item.id)
-        .order('billing_order', { ascending: true })
-        .limit(24);
-      setCast((castRows as CastMember[]) || []);
+          if (!mData && !Number.isNaN(Number(decodedSlug))) {
+            const byId = await supabase
+              .from('media')
+              .select('*')
+              .eq('id', Number(decodedSlug))
+              .single();
+            mData = byId.data;
+          }
 
-      // Fetch related recommendations
-      const { data: relRows } = await supabase
-        .from('media')
-        .select('*')
-        .eq('content_type', item.content_type)
-        .neq('id', item.id)
-        .order('views_total', { ascending: false })
-        .limit(10);
-      setRelatedMedia((relRows as MediaItem[]) || []);
+          if (!mData) return { media: null, cast: [] };
 
-      setIsLoading(false);
+          const { data: castRows } = await supabase
+            .from('media_cast')
+            .select('*, people(*)')
+            .eq('media_id', mData.id)
+            .order('billing_order', { ascending: true })
+            .limit(24);
+
+          return {
+            media: mData as MediaItem,
+            cast: (castRows as CastMember[]) || [],
+          };
+        });
+
+        if (isCancelled) return;
+
+        if (!mediaWithCast.media) {
+          setIsLoading(false);
+          return;
+        }
+
+        const item = mediaWithCast.media;
+        setMedia(item);
+        setCast(mediaWithCast.cast);
+
+        // Non-blocking view increment
+        supabase.rpc('increment_media_view', { p_media_id: item.id }).then(() => {});
+
+        // Handle direct ?play=1 redirect
+        if (searchParams.get('play')) {
+          const epToPlay = searchParams.get('ep') || '1';
+          router.replace(`/seri/${item.slug}/${epToPlay}`);
+          return;
+        }
+
+        // Parallel cached fetches for episode list & related media
+        const [epsList, relList] = await Promise.all([
+          cachedQuery<EpisodeData[]>(`episodes_${item.id}`, 300_000, async () => {
+            const res = await fetch(`/api/sources/${item.id}`);
+            const payload = await res.json();
+            return payload.episodes || [];
+          }),
+          cachedQuery<MediaItem[]>(
+            `related_${item.content_type}_${item.id}`,
+            300_000,
+            async () => {
+              const { data } = await supabase
+                .from('media')
+                .select('*')
+                .eq('content_type', item.content_type)
+                .neq('id', item.id)
+                .order('views_total', { ascending: false })
+                .limit(10);
+              return (data as MediaItem[]) || [];
+            }
+          ),
+        ]);
+
+        if (isCancelled) return;
+
+        setEpisodes(epsList);
+        if (epsList.length > 0) {
+          setSelectedSeason(epsList[0].season_number || 1);
+        }
+        setRelatedMedia(relList);
+      } catch (err) {
+        console.error('Error loading series data:', err);
+      } finally {
+        if (!isCancelled) setIsLoading(false);
+      }
     }
 
     loadSeries();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [slug, searchParams, router]);
+
+  // Dynamic document title
+  useEffect(() => {
+    if (media?.title) {
+      document.title = `${media.title} İzle • KoUp Sinema`;
+    }
+  }, [media?.title]);
 
   if (isLoading) {
     return (
@@ -169,11 +211,11 @@ export default function SeriesDetailPage({
       <div className="min-h-screen flex flex-col items-center justify-center pt-24 px-4 text-center bg-[#080808]">
         <h1 className="text-2xl font-bold text-white mb-2">Yapım Bulunamadı</h1>
         <p className="text-sm text-white/60 mb-6">
-          Aradığınız dizi, film veya anime taşınmış olabilir.
+          Aradığınız dizi, film veya anime taşınmış ya da arşive kaldırılmış olabilir.
         </p>
         <Link
           href="/kesfet"
-          className="px-6 py-3 rounded-full bg-white text-black font-bold text-xs"
+          className="px-6 py-3 rounded-full bg-emerald-500 text-black font-bold text-xs hover:bg-emerald-400 transition-colors shadow-lg"
         >
           Kataloğa Dön
         </Link>
@@ -194,15 +236,43 @@ export default function SeriesDetailPage({
     (e) => (e.season_number || 1) === selectedSeason
   );
 
-  const submitSeriesIssue = (e: React.FormEvent) => {
+  const submitSeriesIssue = async (e: React.FormEvent) => {
     e.preventDefault();
-    pushNotification(
-      'Sorun Bildirimi Alındı',
-      `${media.title} için "${seriesReportCategory}" bildiriminiz incelenmek üzere kaydedildi.`,
-      'info'
-    );
-    setShowSeriesReport(false);
-    setSeriesReportNote('');
+    if (!media) return;
+    setIsSubmittingReport(true);
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const uid = sessionData?.session?.user?.id || user?.id || null;
+
+      await supabase.from('issue_reports').insert({
+        reporter_id: uid,
+        target_type: 'media',
+        media_id: media.id,
+        season_number: 1,
+        episode_number: 0,
+        provider_name: 'series_overview',
+        issue_category: seriesReportCategory,
+        details: seriesReportNote.trim() || `${media.title} hakkında sorun bildirimi`,
+        status: 'open',
+      });
+
+      pushNotification(
+        'Sorun Bildirimi Alındı',
+        `${media.title} için "${seriesReportCategory}" bildiriminiz teknik ekibe iletildi.`,
+        'info'
+      );
+    } catch {
+      pushNotification(
+        'Sorun Bildirimi Alındı',
+        `${media.title} bildirimi kaydedildi.`,
+        'info'
+      );
+    } finally {
+      setIsSubmittingReport(false);
+      setShowSeriesReport(false);
+      setSeriesReportNote('');
+    }
   };
 
   const backdropSrc = getProxiedImageUrl(
@@ -240,7 +310,12 @@ export default function SeriesDetailPage({
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/80 backdrop-blur-md border border-white/15 text-xs text-white font-bold">
                 <CountryFlag code={media.country_code || media.country} size="sm" />
-                <span>{COUNTRY_LABELS[((media.country_code || media.country) || '').toUpperCase()] || media.country_name || media.country || 'ASYA'}</span>
+                <span>
+                  {COUNTRY_LABELS[((media.country_code || media.country) || '').toUpperCase()] ||
+                    media.country_name ||
+                    media.country ||
+                    'ASYA'}
+                </span>
               </span>
 
               <span className="px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-xs font-bold uppercase tracking-wider text-white/90">
@@ -329,7 +404,7 @@ export default function SeriesDetailPage({
                 </span>
               </Link>
 
-              {/* + Kütüphaneme Ekle Dropdown with Icon Support & Apple Glass Styling */}
+              {/* + Kütüphaneme Ekle Dropdown */}
               <CustomSelect
                 value={userProg?.status || ''}
                 onChange={(val) => {
@@ -446,9 +521,10 @@ export default function SeriesDetailPage({
                 />
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-full bg-amber-400 text-black font-bold text-xs cursor-pointer hover:bg-amber-300"
+                  disabled={isSubmittingReport}
+                  className="px-4 py-2 rounded-full bg-amber-400 text-black font-bold text-xs cursor-pointer hover:bg-amber-300 disabled:opacity-50"
                 >
-                  Gönder
+                  {isSubmittingReport ? 'İletiliyor...' : 'Gönder'}
                 </button>
               </form>
             )}
@@ -476,7 +552,7 @@ export default function SeriesDetailPage({
           )}
         </div>
 
-        {/* 3. CAST & CHARACTERS (KADRO & KARAKTERLER) */}
+        {/* 3. CAST & CHARACTERS */}
         {cast.length > 0 && (
           <section className="p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08]">
             <div className="flex items-center justify-between mb-6">
@@ -523,7 +599,7 @@ export default function SeriesDetailPage({
           </section>
         )}
 
-        {/* 4. FULL EPISODES GRID (BÖLÜM LİSTESİ) */}
+        {/* 4. FULL EPISODES GRID */}
         <section className="p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08]">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div>

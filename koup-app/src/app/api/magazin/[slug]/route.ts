@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchLiveAsyaMagPostBySlug } from '@/lib/asyamag-live';
 
+export const revalidate = 120;
+
 export async function GET(
   _req: NextRequest,
   context: { params: Promise<{ slug: string }> }

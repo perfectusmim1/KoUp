@@ -32,7 +32,19 @@ const COUNTRY_SHORT_TR: Record<string, string> = {
   GL: 'GLOBAL',
 };
 
-export default function AccordionMediaCard({
+function getTypeBadgeClass(contentType?: string, countryCode?: string): string {
+  const ct = (contentType || '').toLowerCase();
+  const cc = (countryCode || '').toUpperCase();
+  if (ct === 'anime') return 'badge-type badge-anime';
+  if (ct === 'movie' || ct === 'film') return 'badge-type badge-movie';
+  if (ct === 'program' || ct === 'variety') return 'badge-type badge-variety';
+  if (cc === 'KR') return 'badge-type badge-kdrama';
+  if (cc === 'CN') return 'badge-type badge-cdrama';
+  if (cc === 'JP') return 'badge-type badge-anime';
+  return 'badge-type badge-global';
+}
+
+function AccordionMediaCard({
   item,
   rank,
   priority = false,
@@ -125,8 +137,11 @@ export default function AccordionMediaCard({
       <img
         src={posterSrc}
         alt={item.title}
+        width={390}
+        height={306}
         loading={priority ? undefined : 'lazy'}
         fetchPriority={priority ? 'high' : undefined}
+        decoding="async"
         className={`absolute inset-0 w-full h-full object-cover transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           isExpanded ? 'opacity-0 scale-105' : 'opacity-100 scale-100'
         }`}
@@ -136,7 +151,10 @@ export default function AccordionMediaCard({
       <img
         src={backdropSrc}
         alt={item.title}
+        width={390}
+        height={306}
         loading="lazy"
+        decoding="async"
         className={`absolute inset-0 w-full h-full object-cover transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           isExpanded ? 'opacity-100 scale-105' : 'opacity-0 scale-100'
         }`}
@@ -211,7 +229,9 @@ export default function AccordionMediaCard({
       <div className="absolute bottom-0 left-0 right-0 p-4 z-10 flex flex-col justify-end">
         <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 mb-1">
           <span>{getCountryFlag(countryCode)}</span>
-          <span>{formatContentTypeTR(item.content_type, countryCode)}</span>
+          <span className={getTypeBadgeClass(item.content_type, countryCode)}>
+            {formatContentTypeTR(item.content_type, countryCode)}
+          </span>
           {item.release_year && <span>• {item.release_year}</span>}
           {item.episode_count > 0 && <span>• {item.episode_count} Bölüm</span>}
         </div>
@@ -220,33 +240,34 @@ export default function AccordionMediaCard({
           {item.title}
         </h3>
 
-        {/* Smoothly Animated Expanded Details Drawer */}
+        {/* Smoothly Animated Expanded Details Drawer with Intrinsic Grid Rows */}
         <div
-          className={`overflow-hidden transition-all duration-400 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          className={`grid transition-[grid-template-rows,opacity] duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] ${
             isExpanded
-              ? 'max-h-44 opacity-100 translate-y-0 mt-2'
-              : 'max-h-0 opacity-0 translate-y-2 mt-0'
+              ? 'grid-rows-[1fr] opacity-100 mt-2'
+              : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
           }`}
         >
-          {item.overview && (
-            <p className="text-xs text-white/75 line-clamp-2 leading-relaxed">
-              {item.overview}
-            </p>
-          )}
+          <div className="overflow-hidden space-y-2">
+            {item.overview && (
+              <p className="text-xs text-white/75 line-clamp-2 leading-relaxed">
+                {item.overview}
+              </p>
+            )}
 
-          {/* Genre Chips */}
-          {item.categories && item.categories.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {item.categories.slice(0, 3).map((cat) => (
-                <span
-                  key={cat}
-                  className="text-[10px] px-2 py-0.5 rounded-md bg-white/[0.08] text-white/80 border border-white/10"
-                >
-                  {cat}
-                </span>
-              ))}
-            </div>
-          )}
+            {/* Genre Chips */}
+            {item.categories && item.categories.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-0.5">
+                {item.categories.slice(0, 3).map((cat) => (
+                  <span
+                    key={cat}
+                    className="text-[10px] px-2 py-0.5 rounded-md bg-white/[0.08] text-white/80 border border-white/10"
+                  >
+                    {cat}
+                  </span>
+                ))}
+              </div>
+            )}
 
           {/* Quick Action Bar (Events isolated so clicking buttons does NOT trigger series page navigation!) */}
           <div
@@ -338,6 +359,10 @@ export default function AccordionMediaCard({
           </div>
         </div>
       </div>
+      </div>
     </div>
   );
 }
+
+export default React.memo(AccordionMediaCard);
+

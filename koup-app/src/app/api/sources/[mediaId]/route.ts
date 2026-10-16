@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { supabase } from '@/lib/supabase';
 
+export const revalidate = 60;
+
 let archiveDb: DatabaseSync | null = null;
 
 function getArchiveDb(): DatabaseSync | null {

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchLiveAsyaMagPosts } from '@/lib/asyamag-live';
 
+export const revalidate = 120;
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const limit = Math.min(Number(searchParams.get('limit') || 28), 50);

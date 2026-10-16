@@ -144,16 +144,54 @@ export default function NetflixPlayer({
     setNextCountdown(null);
   }, [currentSeason, currentEpisode]);
 
+  // Fullscreen change synchronization with browser events (e.g. Esc key)
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const activeFs = Boolean(
+        document.fullscreenElement ||
+          (document as any).webkitFullscreenElement ||
+          (document as any).mozFullScreenElement
+      );
+      setIsFullscreen(activeFs);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  // Global unmount cleanup: destroy HLS, pause video, clear timers
+  useEffect(() => {
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.stopLoad();
+        hlsRef.current.detachMedia();
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.pause();
+        videoRef.current.removeAttribute('src');
+        videoRef.current.load();
+      }
+      if (hideControlsTimer.current) {
+        clearTimeout(hideControlsTimer.current);
+        hideControlsTimer.current = null;
+      }
+    };
+  }, []);
+
   // Fullscreen toggle event listener for external buttons
   useEffect(() => {
     const handleFsTrigger = () => {
       if (!containerRef.current) return;
       if (!document.fullscreenElement) {
         containerRef.current.requestFullscreen().catch(() => {});
-        setIsFullscreen(true);
       } else {
         document.exitFullscreen().catch(() => {});
-        setIsFullscreen(false);
       }
     };
     window.addEventListener('koup-toggle-fullscreen', handleFsTrigger);
@@ -209,12 +247,14 @@ export default function NetflixPlayer({
     };
   }, [activeSource]);
 
-  // Attach HLS.js or direct MP4 when resolvedMode is native
+  // Attach HLS.js or direct MP4 when resolvedMode is native, and clean up properly on change
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !streamUrl) return;
 
     if (hlsRef.current) {
+      hlsRef.current.stopLoad();
+      hlsRef.current.detachMedia();
       hlsRef.current.destroy();
       hlsRef.current = null;
     }
@@ -223,7 +263,12 @@ export default function NetflixPlayer({
 
     if (resolvedMode === 'native_hls') {
       if (Hls.isSupported()) {
-        const hls = new Hls({ enableWorker: true });
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: false,
+          maxBufferLength: 30,
+          maxMaxBufferLength: 60,
+        });
         hlsRef.current = hls;
         hls.loadSource(streamUrl);
         hls.attachMedia(video);
@@ -233,19 +278,33 @@ export default function NetflixPlayer({
         });
         hls.on(Hls.Events.ERROR, (_ev, errData) => {
           if (errData.fatal) {
-            // Auto-failover to next working source!
-            if (selectedSourceIdx + 1 < filteredSources.length) {
-              pushNotification(
-                'Otomatik Yedek Kaynağa Geçildi',
-                `${activeSource?.source_name} yanıt vermedi, sıradaki kaynağa geçiliyor.`,
-                'info'
-              );
-              setSelectedSourceIdx(selectedSourceIdx + 1);
+            switch (errData.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                hls.startLoad();
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                hls.recoverMediaError();
+                break;
+              default:
+                // Auto-failover to next working source
+                if (selectedSourceIdx + 1 < filteredSources.length) {
+                  pushNotification(
+                    'Otomatik Yedek Kaynağa Geçildi',
+                    `${activeSource?.source_name} yanıt vermedi, sıradaki kaynağa geçiliyor.`,
+                    'info'
+                  );
+                  setSelectedSourceIdx(selectedSourceIdx + 1);
+                } else {
+                  setResolvedMode('iframe');
+                }
+                break;
             }
           }
         });
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = streamUrl;
+        if (savedResume > 15) video.currentTime = savedResume;
+        video.play().catch(() => {});
       }
     } else if (resolvedMode === 'native_mp4') {
       video.src = streamUrl;
@@ -255,8 +314,15 @@ export default function NetflixPlayer({
 
     return () => {
       if (hlsRef.current) {
+        hlsRef.current.stopLoad();
+        hlsRef.current.detachMedia();
         hlsRef.current.destroy();
         hlsRef.current = null;
+      }
+      if (video) {
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
       }
     };
   }, [resolvedMode, streamUrl]);
@@ -332,43 +398,71 @@ export default function NetflixPlayer({
     if (!el) return;
     if (!document.fullscreenElement) {
       await el.requestFullscreen().catch(() => {});
-      setIsFullscreen(true);
     } else {
       await document.exitFullscreen().catch(() => {});
-      setIsFullscreen(false);
     }
   };
 
-  // Keyboard shortcuts (F fullscreen, Space play/pause, ArrowLeft/Right 10s, L Cinema Mode, N Next Episode)
+  // Keyboard shortcuts with strict input isolation:
+  // F fullscreen, Space play/pause, ArrowLeft/Right 10s, L Cinema Mode, N Next Episode
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      // 1. Ignore if typing in ANY input, textarea, contenteditable, select, or role="textbox"
+      const targetEl = e.target as HTMLElement | null;
+      if (
+        targetEl &&
+        (targetEl.closest('input, textarea, select, [contenteditable="true"], [role="textbox"], form') ||
+          targetEl.isContentEditable ||
+          ['INPUT', 'TEXTAREA', 'SELECT'].includes(targetEl.tagName))
+      ) {
+        return;
+      }
 
-      if (e.key.toLowerCase() === 'f') {
+      const activeEl = document.activeElement as HTMLElement | null;
+      if (
+        activeEl &&
+        (activeEl.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]') ||
+          activeEl.isContentEditable ||
+          ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName))
+      ) {
+        return;
+      }
+
+      // 2. Ignore browser modifier shortcuts (Ctrl+F, Cmd+F, Alt+Tab, etc.)
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      const key = e.key.toLowerCase();
+
+      if (key === 'f') {
         e.preventDefault();
         toggleFullscreen();
-      } else if (e.key.toLowerCase() === 'l') {
+      } else if (key === 'l') {
         e.preventDefault();
         setCinemaLightsOff((v) => !v);
-      } else if (e.key.toLowerCase() === 'n') {
+      } else if (key === 'n') {
         e.preventDefault();
         handleNextEpisode();
       } else if (resolvedMode !== 'iframe' && videoRef.current) {
-        if (e.key === ' ') {
+        if (key === ' ' || e.code === 'Space') {
           e.preventDefault();
-          if (videoRef.current.paused) videoRef.current.play();
+          if (videoRef.current.paused) videoRef.current.play().catch(() => {});
           else videoRef.current.pause();
-        } else if (e.key === 'ArrowRight') {
-          videoRef.current.currentTime += 10;
-        } else if (e.key === 'ArrowLeft') {
-          videoRef.current.currentTime -= 10;
+        } else if (key === 'arrowright') {
+          e.preventDefault();
+          videoRef.current.currentTime = Math.min(
+            videoRef.current.duration || 3600,
+            videoRef.current.currentTime + 10
+          );
+        } else if (key === 'arrowleft') {
+          e.preventDefault();
+          videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 10);
         }
       }
     };
+
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [resolvedMode, currentSeason, currentEpisode]);
+  }, [resolvedMode, currentSeason, currentEpisode, nextCountdown]);
 
   const currentEpIndex = episodes.findIndex(
     (e) =>
@@ -443,7 +537,7 @@ export default function NetflixPlayer({
                       onToggleCinemaLights?.();
                     }}
                     className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white text-xs font-semibold backdrop-blur-md transition-all cursor-pointer shadow-lg"
-                    title="Sinema Modundan Çık (Esc)"
+                    title="Sinema Modundan Çık (Esc veya L)"
                   >
                     <X className="w-3.5 h-3.5" />
                     <span>Sinema Modundan Çık (ESC)</span>
@@ -455,7 +549,7 @@ export default function NetflixPlayer({
                       toggleFullscreen();
                     }}
                     className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all cursor-pointer"
-                    title="Tam Ekrandan Çık (Esc)"
+                    title="Tam Ekrandan Çık (Esc veya F)"
                   >
                     <Minimize className="w-4 h-4" />
                   </button>
@@ -481,7 +575,7 @@ export default function NetflixPlayer({
                       toggleFullscreen();
                     }}
                     className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-md transition-all cursor-pointer"
-                    title="Tam Ekran"
+                    title="Tam Ekran (F)"
                   >
                     <Maximize className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">Tam Ekran</span>
@@ -493,7 +587,7 @@ export default function NetflixPlayer({
                       toggleFullscreen();
                     }}
                     className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all cursor-pointer"
-                    title="Tam Ekrandan Çık"
+                    title="Tam Ekrandan Çık (F)"
                   >
                     <Minimize className="w-4 h-4" />
                   </button>
@@ -502,7 +596,6 @@ export default function NetflixPlayer({
             </div>
           </div>
         )}
-
 
         {/* CORE VIDEO AREA: SCHEDULED COUNTDOWN OR NATIVE HLS/MP4 OR LOCKED IFRAME */}
         {currentEpObj?.status === 'scheduled' || availableSources.length === 0 ? (
@@ -573,7 +666,6 @@ export default function NetflixPlayer({
                 }
               }}
               onError={() => {
-                // If direct stream encounters CORS/token error, fallback seamlessly to iframe
                 setResolvedMode('iframe');
               }}
               className="w-full h-full object-contain"
@@ -634,7 +726,7 @@ export default function NetflixPlayer({
                     setCurrentTime(val);
                     if (videoRef.current) videoRef.current.currentTime = val;
                   }}
-                  className="w-full h-1.5 accent-sky-400 bg-white/25 rounded-full cursor-pointer"
+                  className="w-full h-1.5 accent-emerald-400 bg-white/25 rounded-full cursor-pointer"
                 />
                 <span className="text-xs font-mono text-white/80 shrink-0">
                   {formatTime(currentTime)} / {formatTime(duration)}
@@ -647,7 +739,7 @@ export default function NetflixPlayer({
                     onClick={() => {
                       const v = videoRef.current;
                       if (!v) return;
-                      if (v.paused) v.play();
+                      if (v.paused) v.play().catch(() => {});
                       else v.pause();
                     }}
                     className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition-all cursor-pointer"
@@ -663,8 +755,8 @@ export default function NetflixPlayer({
                     onClick={() => {
                       if (videoRef.current) videoRef.current.currentTime -= 10;
                     }}
-                    title="10 Saniye Geri"
-                    className="w-9 h-9 rounded-full apple-glass-pill flex items-center justify-center text-white hover:text-sky-300 cursor-pointer"
+                    title="10 Saniye Geri (Sol Ok)"
+                    className="w-9 h-9 rounded-full apple-glass-pill flex items-center justify-center text-white hover:text-emerald-300 cursor-pointer"
                   >
                     <RotateCcw className="w-4 h-4" />
                   </button>
@@ -673,8 +765,8 @@ export default function NetflixPlayer({
                     onClick={() => {
                       if (videoRef.current) videoRef.current.currentTime += 10;
                     }}
-                    title="10 Saniye İleri"
-                    className="w-9 h-9 rounded-full apple-glass-pill flex items-center justify-center text-white hover:text-sky-300 cursor-pointer"
+                    title="10 Saniye İleri (Sağ Ok)"
+                    className="w-9 h-9 rounded-full apple-glass-pill flex items-center justify-center text-white hover:text-emerald-300 cursor-pointer"
                   >
                     <RotateCw className="w-4 h-4" />
                   </button>
@@ -704,7 +796,10 @@ export default function NetflixPlayer({
                         const v = Number(e.target.value);
                         setVolume(v);
                         setIsMuted(v === 0);
-                        if (videoRef.current) videoRef.current.volume = v;
+                        if (videoRef.current) {
+                          videoRef.current.volume = v;
+                          videoRef.current.muted = v === 0;
+                        }
                       }}
                       className="w-20 h-1 accent-white bg-white/25 rounded-full cursor-pointer"
                     />
@@ -768,7 +863,7 @@ export default function NetflixPlayer({
           <div className="relative w-full h-full bg-black">
             {isResolving && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-20">
-                <div className="text-xs font-mono text-sky-400 animate-pulse">
+                <div className="text-xs font-mono text-emerald-400 animate-pulse">
                   KoUp Stream Köprüsü hazırlanıyor...
                 </div>
               </div>

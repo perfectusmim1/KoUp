@@ -13,18 +13,27 @@ import {
   Trash2,
   Check,
   RotateCcw,
-  ExternalLink,
   ChevronRight,
-  Filter,
-  Eye,
-  SlidersHorizontal,
-  Flame,
   ArrowRight,
-  ShieldAlert,
 } from 'lucide-react';
 import { useKoUp, ToastNotification } from '@/context/KoUpContext';
 
 type CategoryFilter = 'all' | 'episode' | 'actor' | 'reply' | 'info';
+
+function formatNotificationDate(dateStr?: string): string {
+  if (!dateStr) return 'Şimdi';
+  if (dateStr.includes('önce') || dateStr === 'Şimdi' || dateStr === 'Bugün') {
+    return dateStr;
+  }
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return dateStr;
+  const diffSec = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (diffSec < 60) return 'Az önce';
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)} dk önce`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} saat önce`;
+  if (diffSec < 604800) return `${Math.floor(diffSec / 86400)} gün önce`;
+  return date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
+}
 
 export default function NotificationsPage() {
   const router = useRouter();
@@ -42,9 +51,14 @@ export default function NotificationsPage() {
   const [selectedFilter, setSelectedFilter] = useState<CategoryFilter>('all');
   const [unreadOnly, setUnreadOnly] = useState<boolean>(false);
 
-  // Filtered notifications
+  // Filtered and deduplicated notifications
   const filteredNotifications = useMemo(() => {
+    const seen = new Set<string>();
     return notifications.filter((n) => {
+      if (!n || !n.id) return false;
+      if (seen.has(n.id)) return false;
+      seen.add(n.id);
+
       // Category filter
       if (selectedFilter !== 'all') {
         if (selectedFilter === 'info') {
@@ -61,18 +75,19 @@ export default function NotificationsPage() {
     });
   }, [notifications, selectedFilter, unreadOnly]);
 
-  // Counts per category
+  // Counts per category (deduplicated)
   const counts = useMemo(() => {
+    const unique = Array.from(new Map(notifications.map((n) => [n.id, n])).values());
     return {
-      all: notifications.length,
-      episode: notifications.filter((n) => n.type === 'episode').length,
-      actor: notifications.filter((n) => n.type === 'actor').length,
-      reply: notifications.filter((n) => n.type === 'reply').length,
-      info: notifications.filter((n) => n.type === 'info' || n.type === 'success').length,
+      all: unique.length,
+      episode: unique.filter((n) => n.type === 'episode').length,
+      actor: unique.filter((n) => n.type === 'actor').length,
+      reply: unique.filter((n) => n.type === 'reply').length,
+      info: unique.filter((n) => n.type === 'info' || n.type === 'success').length,
     };
   }, [notifications]);
 
-  // Seed sample notifications if empty
+  // Seed sample notifications only upon user request
   const handleLoadDemoNotifications = () => {
     pushNotification(
       'Yorumuna Yeni Yanıt Geldi',
@@ -90,7 +105,7 @@ export default function NotificationsPage() {
       'Takip Ettiğin Oyuncudan Yeni Proje!',
       'Song Joong-ki kadrosunda yer aldığı "Reborn Rich" yayına girdi.',
       'actor',
-      '/oyuncu/song-joong-ki'
+      '/oyuncular'
     );
     pushNotification(
       'Haftalık Yayın Takvimi Güncellendi',
@@ -424,7 +439,7 @@ export default function NotificationsPage() {
                         )}
 
                         <span className="text-[11px] font-mono text-white/40 ml-auto sm:ml-0">
-                          {n.createdAt}
+                          {formatNotificationDate(n.createdAt)}
                         </span>
                       </div>
 
@@ -463,7 +478,7 @@ export default function NotificationsPage() {
                       }`}
                       title={isUnread ? 'Okundu İşaretle' : 'Okunmadı Olarak İşaretle'}
                     >
-                      {isUnread ? <Check className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {isUnread ? <Check className="w-4 h-4" /> : <RotateCcw className="w-4 h-4" />}
                     </button>
 
                     {/* Delete Item */}
@@ -479,7 +494,8 @@ export default function NotificationsPage() {
                     {link && (
                       <Link
                         href={link}
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           if (isUnread) markNotificationRead(n.id);
                         }}
                         className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-white/90 text-black text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-lg group/link"

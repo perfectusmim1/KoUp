@@ -1,13 +1,52 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
+import { Plus_Jakarta_Sans, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import { KoUpProvider } from '@/context/KoUpContext';
 import Navbar from '@/components/Navbar';
 import Link from 'next/link';
 
+const plusJakartaSans = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700', '800'],
+  variable: '--font-sans',
+  display: 'swap',
+  preload: true,
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500', '700', '800'],
+  variable: '--font-mono',
+  display: 'swap',
+  preload: false,
+});
+
+export const viewport: Viewport = {
+  themeColor: '#080808',
+  colorScheme: 'dark',
+  width: 'device-width',
+  initialScale: 1,
+};
+
 export const metadata: Metadata = {
-  title: 'KoUp | Asya Dizileri, Anime & Global Sinema Platformu',
+  title: {
+    default: 'KoUp | Asya Dizileri, Anime & Global Sinema Platformu',
+    template: '%s | KoUp Cinema',
+  },
   description:
     '17.509 K-Drama, C-Drama, Anime ve Global Sinema yapımı. MyDramaList, AniList, IMDb ve AsyaMag entegrasyonlu Apple TV+ & Netflix deneyimi.',
+  icons: {
+    icon: '/logo-dark.png',
+    apple: '/logo-dark.png',
+  },
+  openGraph: {
+    title: 'KoUp | Asya Dizileri, Anime & Global Sinema Platformu',
+    description:
+      '17.509 K-Drama, C-Drama, Anime ve Global Sinema yapımı. MyDramaList, AniList, IMDb ve AsyaMag entegrasyonlu Apple TV+ & Netflix deneyimi.',
+    siteName: 'KoUp Cinema',
+    locale: 'tr_TR',
+    type: 'website',
+  },
 };
 
 export default function RootLayout({
@@ -16,20 +55,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="tr" className="dark">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link
-          rel="preconnect"
-          href="https://fonts.gstatic.com"
-          crossOrigin="anonymous"
-        />
-        <link
-          href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap"
-          rel="stylesheet"
-        />
-      </head>
-      <body className="bg-[#080808] text-[#F4F4F6] min-h-screen flex flex-col selection:bg-white selection:text-black">
+    <html
+      lang="tr"
+      className={`dark ${plusJakartaSans.variable} ${jetbrainsMono.variable}`}
+      suppressHydrationWarning
+    >
+      <body
+        className={`${plusJakartaSans.className} bg-[#080808] text-[#F4F4F6] min-h-screen flex flex-col selection:bg-white selection:text-black antialiased`}
+      >
         <KoUpProvider>
           <Navbar />
           <main className="flex-1">{children}</main>

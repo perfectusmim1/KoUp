@@ -19,7 +19,7 @@ const FLAG_MAP: Record<string, string> = {
   PH: '/flags/ph.svg',
 };
 
-export default function CountryFlag({
+function CountryFlag({
   code,
   className = '',
   size = 'md',
@@ -62,12 +62,24 @@ export default function CountryFlag({
     lg: 'w-6 h-4',
   }[size];
 
+  const dimensions = {
+    sm: { width: 16, height: 12 },
+    md: { width: 20, height: 14 },
+    lg: { width: 24, height: 16 },
+  }[size];
+
   return (
     <img
       src={src}
-      alt={normalizedCode}
-      className={`inline-block object-cover rounded-xs shrink-0 shadow-xs border border-white/10 ${sizeClasses} ${className}`}
+      alt={`${normalizedCode} bayrağı`}
+      width={dimensions.width}
+      height={dimensions.height}
       loading="lazy"
+      decoding="async"
+      className={`inline-block object-cover rounded-xs shrink-0 shadow-xs border border-white/10 ${sizeClasses} ${className}`}
     />
   );
 }
+
+export default React.memo(CountryFlag);
+

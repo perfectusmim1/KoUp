@@ -57,6 +57,18 @@ const AWARD_BADGES = [
   'Öne Çıkan Yapım',
 ];
 
+function getTypeBadgeClass(contentType?: string, countryCode?: string): string {
+  const ct = (contentType || '').toLowerCase();
+  const cc = (countryCode || '').toUpperCase();
+  if (ct === 'anime') return 'badge-type badge-anime';
+  if (ct === 'movie' || ct === 'film') return 'badge-type badge-movie';
+  if (ct === 'program' || ct === 'variety') return 'badge-type badge-variety';
+  if (cc === 'KR') return 'badge-type badge-kdrama';
+  if (cc === 'CN') return 'badge-type badge-cdrama';
+  if (cc === 'JP') return 'badge-type badge-anime';
+  return 'badge-type badge-global';
+}
+
 export default function HomePage() {
   const router = useRouter();
   const { progressMap, updateWatchStatus, togglePersonFavorite, personFavorites, triggerSound } =
@@ -260,6 +272,7 @@ export default function HomePage() {
                   )}
                   alt={activeHero.title}
                   fetchPriority="high"
+                  decoding="async"
                   className="absolute inset-0 w-full h-full object-cover object-center"
                 />
               </AnimatePresence>
@@ -279,7 +292,7 @@ export default function HomePage() {
                 >
                   {/* Genuine Metadata */}
                   <div className="flex items-center flex-wrap gap-2.5 text-[11px] font-semibold tracking-[0.14em] uppercase text-white/75">
-                    <span className="px-2.5 py-1 rounded-md glass-pill text-white border border-white/20 tracking-[0.18em] font-bold">
+                    <span className={getTypeBadgeClass(activeHero.content_type, activeHero.country_code || activeHero.country)}>
                       {formatContentTypeTR(activeHero.content_type, activeHero.country_code || activeHero.country)}
                     </span>
                     {activeHero.release_year && (
@@ -487,6 +500,7 @@ export default function HomePage() {
                         )}
                         alt={item.title}
                         loading="lazy"
+                        decoding="async"
                         className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f11] via-black/30 to-transparent" />
@@ -524,7 +538,7 @@ export default function HomePage() {
             3. SIGNATURE APPLE TV+ BILLBOARD FEATURETTES (Exact ui/code.html Section 2)
         ===================================================================== */}
         {featuretteItems.length > 0 && (
-          <section className="w-full px-6 md:px-14">
+          <section className="w-full px-6 md:px-14 cv-auto">
             <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
               <div>
                 <span className="text-[11px] font-bold tracking-[0.2em] uppercase text-white/40">
@@ -553,6 +567,7 @@ export default function HomePage() {
                     )}
                     alt={item.title}
                     loading="lazy"
+                    decoding="async"
                     className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-black/60 to-black/30" />
@@ -572,7 +587,7 @@ export default function HomePage() {
 
                   {/* Bottom Meta & Sleek Controls */}
                   <div className="relative z-10 flex flex-col gap-2.5">
-                    <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-white/50">
+                    <span className={getTypeBadgeClass(item.content_type, item.country_code || item.country)}>
                       {formatContentTypeTR(item.content_type, item.country_code || item.country)}
                     </span>
                     <h3 className="text-2xl font-bold text-white tracking-tight leading-tight line-clamp-1">
@@ -600,7 +615,7 @@ export default function HomePage() {
         {/* =====================================================================
             4. TOP 10 WITH INTEGRATED STROKE OUTLINE NUMERALS (Exact ui/code.html Section 3)
         ===================================================================== */}
-        <section className="w-full px-6 md:px-14">
+        <section className="w-full px-6 md:px-14 cv-auto">
           <div className="flex items-center justify-between mb-8">
             <div>
               <span className="text-[11px] font-bold tracking-[0.2em] uppercase text-white/40">
@@ -652,11 +667,12 @@ export default function HomePage() {
                     src={getProxiedImageUrl(item.cover_image, item.title)}
                     alt={item.title}
                     loading="lazy"
+                    decoding="async"
                     className="absolute inset-0 w-full h-full object-cover"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-black/40 to-transparent" />
                   <div className="relative z-10 flex flex-col">
-                    <span className="text-[10px] font-bold tracking-widest uppercase text-white/60">
+                    <span className={getTypeBadgeClass(item.content_type, item.country_code || item.country)}>
                       {formatContentTypeTR(item.content_type, item.country_code || item.country)}
                     </span>
                     <span className="text-[15px] font-bold text-white truncate mt-0.5">
@@ -757,7 +773,7 @@ export default function HomePage() {
             7. OYUNCULAR, ANİME KARAKTERLERİ & SEİYUU LİDERLİK TABLOSU (No Emojis)
         ===================================================================== */}
         {topPeople.length > 0 && (
-          <section className="w-full px-6 md:px-14">
+          <section className="w-full px-6 md:px-14 cv-auto">
             <div className="rounded-3xl bg-[#0f0f11] p-6 sm:p-8 border border-white/[0.08]">
               <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
                 <div>
@@ -807,6 +823,7 @@ export default function HomePage() {
                             src={getProxiedImageUrl(person.image_url, person.name)}
                             alt={person.name}
                             loading="lazy"
+                            decoding="async"
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                           />
                         </div>
@@ -837,7 +854,7 @@ export default function HomePage() {
             8. CANLI ASYAMAG MAGAZİN & DEDİKODU VİTRİNİ (In-Site Reader)
         ===================================================================== */}
         {magPosts.length > 0 && (
-          <section className="w-full px-6 md:px-14">
+          <section className="w-full px-6 md:px-14 cv-auto">
             <div className="flex items-end justify-between mb-6">
               <div>
                 <div className="flex items-center gap-2 text-[11px] font-semibold tracking-[0.2em] uppercase text-white/50">
@@ -869,6 +886,7 @@ export default function HomePage() {
                       src={getProxiedImageUrl(post.featured_image, post.title)}
                       alt={post.title}
                       loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f11] via-black/25 to-transparent" />
@@ -931,7 +949,7 @@ function AccordionRow({
   if (!items || items.length === 0) return null;
 
   return (
-    <section className="w-full px-6 md:px-14">
+    <section className="w-full px-6 md:px-14 cv-auto">
       <div className="flex items-end justify-between mb-5">
         <div>
           <span className="text-[11px] font-bold tracking-[0.2em] uppercase text-white/40">
