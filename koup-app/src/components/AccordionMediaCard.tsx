@@ -7,7 +7,6 @@ import { Play, Plus, Check, Heart, Bell, Star } from 'lucide-react';
 import {
   MediaItem,
   getProxiedImageUrl,
-  formatContentTypeTR,
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
 import CountryFlag from '@/components/CountryFlag';
@@ -32,18 +31,6 @@ const COUNTRY_SHORT_TR: Record<string, string> = {
   TR: 'TÜRKİYE',
   GL: 'GLOBAL',
 };
-
-function getTypeBadgeClass(contentType?: string, countryCode?: string): string {
-  const ct = (contentType || '').toLowerCase();
-  const cc = (countryCode || '').toUpperCase();
-  if (ct === 'anime') return 'badge-type badge-anime';
-  if (ct === 'movie' || ct === 'film') return 'badge-type badge-movie';
-  if (ct === 'program' || ct === 'variety') return 'badge-type badge-variety';
-  if (cc === 'KR') return 'badge-type badge-kdrama';
-  if (cc === 'CN') return 'badge-type badge-cdrama';
-  if (cc === 'JP') return 'badge-type badge-anime';
-  return 'badge-type badge-global';
-}
 
 function AccordionMediaCard({
   item,
@@ -275,13 +262,13 @@ function AccordionMediaCard({
 
       {/* Bottom Info Content */}
       <div className="absolute bottom-0 left-0 right-0 p-4 z-10 flex flex-col justify-end">
-        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-white/60 mb-1">
-          <span className={getTypeBadgeClass(item.content_type, countryCode)}>
-            {formatContentTypeTR(item.content_type, countryCode)}
-          </span>
-          {item.release_year && <span>• {item.release_year}</span>}
-          {item.episode_count > 0 && <span>• {item.episode_count} Bölüm</span>}
-        </div>
+        {(item.release_year || item.episode_count > 0) && (
+          <div className="flex items-center gap-1.5 text-[11px] font-medium text-white/60 mb-1">
+            {item.release_year && <span>{item.release_year}</span>}
+            {item.release_year && item.episode_count > 0 && <span>•</span>}
+            {item.episode_count > 0 && <span>{item.episode_count} Bölüm</span>}
+          </div>
+        )}
 
         <h3 className="text-[15px] font-bold text-white leading-snug line-clamp-1">
           {item.title}

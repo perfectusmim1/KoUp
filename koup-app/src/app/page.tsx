@@ -653,10 +653,7 @@ export default function HomePage() {
                   </div>
 
                   {/* Bottom Meta & Sleek Controls */}
-                  <div className="relative z-10 flex flex-col gap-2.5">
-                    <span className={getTypeBadgeClass(item.content_type, item.country_code || item.country)}>
-                      {formatContentTypeTR(item.content_type, item.country_code || item.country)}
-                    </span>
+                  <div className="relative z-10 flex flex-col gap-2">
                     <h3 className="text-2xl font-bold text-white tracking-tight leading-tight line-clamp-1">
                       {item.title}
                     </h3>
@@ -740,10 +737,7 @@ export default function HomePage() {
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-black/40 to-transparent" />
                   <div className="relative z-10 flex flex-col">
-                    <span className={getTypeBadgeClass(item.content_type, item.country_code || item.country)}>
-                      {formatContentTypeTR(item.content_type, item.country_code || item.country)}
-                    </span>
-                    <span className="text-[14px] sm:text-[15px] font-bold text-white truncate mt-0.5">
+                    <span className="text-[14px] sm:text-[15px] font-bold text-white truncate">
                       {item.title}
                     </span>
                   </div>
