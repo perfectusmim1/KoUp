@@ -51,6 +51,9 @@ export interface MediaItem {
   mdl_rating?: number | null;
   anilist_rating?: number | null;
   imdb_rating?: number | null;
+  imdb_score?: number | null;
+  tmdb_score?: number | null;
+  vote_average?: number | null;
   air_days: number[];
   air_time?: string | null;
   next_episode_number?: number | null;
@@ -124,6 +127,8 @@ export interface EpisodeData {
   react_fire?: number;
   react_cry?: number;
   react_shock?: number;
+  intro_start_sec?: number | null;
+  intro_end_sec?: number | null;
   sources: EpisodeSource[];
 }
 
@@ -139,6 +144,7 @@ export interface MagazinePost {
   tags: string[];
   is_gossip?: boolean;
   author_name?: string;
+  source_site?: 'AsyaMag' | 'KoreZin' | string;
   related_media_ids: number[];
   related_person_ids: number[];
   source_url?: string | null;
@@ -184,6 +190,12 @@ export interface UserProfile {
   anilist_auto_sync: boolean;
 }
 
+export interface EpisodeProgressEntry {
+  position: number;
+  duration: number;
+  updated_at?: string;
+}
+
 export interface UserMediaProgress {
   user_id?: string;
   media_id: number;
@@ -201,25 +213,232 @@ export interface UserMediaProgress {
   resume_duration_sec: number;
   position_seconds?: number;
   duration_seconds?: number;
+  episode_positions?: Record<string, EpisodeProgressEntry>;
   updated_at: string;
   media?: MediaItem;
 }
 
-export function getProxiedImageUrl(url?: string | null, fallback?: string | null): string {
-  if (!url) {
-    if (fallback) return getProxiedImageUrl(fallback, null);
-    return '/logo-dark.png';
-  }
-  if (url.startsWith('/') || url.startsWith('data:')) return url;
-  if (
-    url.includes('image.tmdb.org') ||
-    url.includes('s4.anilist.co') ||
-    url.includes('lh3.googleusercontent.com')
+/**
+ * Gets progress information for a specific episode of a media.
+ * Checks episode_positions dictionary, localStorage fallback, and main media progress.
+ */
+export function getEpisodeProgress(
+  prog: UserMediaProgress | undefined | null,
+  mediaId: number,
+  seasonNum: number,
+  episodeNum: number
+): {
+  position: number;
+  duration: number;
+  percent: number;
+  isWatched: boolean;
+  remainingMinutes: number;
+} {
+  const isWatched = Array.isArray(prog?.watched_episodes) && prog.watched_episodes.includes(episodeNum);
+  const key1 = `${seasonNum || 1}_${episodeNum}`;
+  const key2 = `s${seasonNum || 1}_e${episodeNum}`;
+
+  let pos = 0;
+  let dur = (prog?.media?.duration_minutes ? prog.media.duration_minutes * 60 : 0) || prog?.resume_duration_sec || 3600;
+
+  // 1. Check prog.episode_positions
+  const epRec = prog?.episode_positions?.[key1] || prog?.episode_positions?.[key2];
+  if (epRec && typeof epRec.position === 'number') {
+    pos = epRec.position;
+    if (epRec.duration && epRec.duration > 0) dur = epRec.duration;
+  } else if (
+    prog &&
+    (prog.last_episode_num === episodeNum && (prog.last_season_num || 1) === (seasonNum || 1))
   ) {
+    // 2. Fallback to main media resume position if this was the last active episode
+    pos = prog.resume_position_sec || 0;
+    dur = prog.resume_duration_sec || dur;
+  }
+
+  // 3. Fallback to localStorage standalone key
+  if (pos === 0 && typeof window !== 'undefined') {
+    try {
+      const localVal = localStorage.getItem(`koup_ep_pos_${mediaId}_${seasonNum || 1}_${episodeNum}`);
+      if (localVal) {
+        const parsed = JSON.parse(localVal);
+        if (typeof parsed === 'number') {
+          pos = parsed;
+        } else if (parsed && typeof parsed.position === 'number') {
+          pos = parsed.position;
+          if (parsed.duration) dur = parsed.duration;
+        }
+      }
+    } catch {}
+  }
+
+  if (isWatched) {
+    return {
+      position: pos,
+      duration: dur,
+      percent: 100,
+      isWatched: true,
+      remainingMinutes: 0,
+    };
+  }
+
+  const safeDur = dur > 0 ? dur : 3600;
+  const rawPct = (pos / safeDur) * 100;
+  const percent = pos > 10 ? Math.min(99, Math.max(5, Math.round(rawPct))) : 0;
+  const remainingSec = Math.max(0, safeDur - pos);
+  const remainingMinutes = Math.ceil(remainingSec / 60);
+
+  return {
+    position: pos,
+    duration: safeDur,
+    percent,
+    isWatched: false,
+    remainingMinutes,
+  };
+}
+
+/**
+ * Calculates the next episode number to watch based on watched_episodes.
+ * For example, if episodes 1 and 2 are marked as watched ([1, 2]), returns 3.
+ */
+export function getNextEpisodeNumber(
+  prog?: UserMediaProgress | null,
+  totalEpisodes?: number | null
+): number {
+  if (!prog) return 1;
+  const watched = Array.isArray(prog.watched_episodes) ? prog.watched_episodes : [];
+  const maxWatched = watched.length > 0 ? Math.max(...watched) : 0;
+  let nextEp = prog.last_episode_num || 1;
+
+  if (watched.length > 0 && (watched.includes(nextEp) || nextEp <= maxWatched)) {
+    nextEp = maxWatched + 1;
+  }
+
+  if (totalEpisodes && totalEpisodes > 0 && nextEp > totalEpisodes) {
+    nextEp = totalEpisodes;
+  }
+
+  return Math.max(1, nextEp);
+}
+
+/**
+ * Computes episode-based progress metrics (next episode, watched count, completion %)
+ * for Continue Watching cards, Series Detail, History, and Profile pages.
+ */
+export function getEpisodeProgressStats(
+  prog?: UserMediaProgress | null,
+  media?: MediaItem | null
+) {
+  const watched = Array.isArray(prog?.watched_episodes) ? prog.watched_episodes : [];
+  const watchedCount = watched.length;
+  const totalEpisodes = media?.episode_count || prog?.media?.episode_count || 0;
+  const season = prog?.last_season_num || 1;
+  const nextEpisode = getNextEpisodeNumber(prog, totalEpisodes);
+  const isCompleted =
+    prog?.status === 'completed' || (totalEpisodes > 0 && watchedCount >= totalEpisodes);
+
+  let progressPercent = 0;
+  if (isCompleted) {
+    progressPercent = 100;
+  } else if (totalEpisodes > 0 && watchedCount > 0) {
+    progressPercent = Math.min(100, Math.max(5, Math.round((watchedCount / totalEpisodes) * 100)));
+  } else if (watchedCount > 0) {
+    progressPercent = Math.min(95, Math.max(8, watchedCount * 8));
+  } else if (nextEpisode > 1 && totalEpisodes > 0) {
+    progressPercent = Math.min(95, Math.max(5, Math.round(((nextEpisode - 1) / totalEpisodes) * 100)));
+  } else if (prog) {
+    progressPercent = 6;
+  }
+
+  return {
+    season,
+    nextEpisode,
+    watchedCount,
+    totalEpisodes,
+    progressPercent,
+    isCompleted,
+    isAllWatched: isCompleted,
+  };
+}
+
+
+function isLikelyUrl(val?: string | null): boolean {
+  if (!val) return false;
+  const trimmed = val.trim();
+  return (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('/') ||
+    trimmed.startsWith('data:')
+  );
+}
+
+export function getProxiedImageUrl(
+  url?: string | null,
+  fallbackOrTitle?: string | null,
+  titleHint?: string | null,
+  tmdbSize: 'w92' | 'w154' | 'w185' | 'w342' | 'w500' | 'w780' | 'w1280' | 'original' = 'w500',
+  type?: 'media' | 'person' | 'character' | 'banner' | 'poster',
+  tmdbId?: number | string | null
+): string {
+  const isFallbackUrl = isLikelyUrl(fallbackOrTitle);
+  const resolvedTitle = titleHint || (!isFallbackUrl ? fallbackOrTitle : null);
+  const typeQuery = type ? `&type=${type}` : '';
+
+  if (!url || !url.trim() || url === '/logo-dark.png') {
+    if (isFallbackUrl && fallbackOrTitle) {
+      return getProxiedImageUrl(fallbackOrTitle, null, resolvedTitle, tmdbSize, type, tmdbId);
+    }
+    if (tmdbId) {
+      return `/api/image-proxy?tmdbId=${encodeURIComponent(String(tmdbId))}${typeQuery}`;
+    }
+    if (resolvedTitle && resolvedTitle.trim()) {
+      return `/api/image-proxy?title=${encodeURIComponent(resolvedTitle.trim())}${typeQuery}`;
+    }
+    return type === 'person' ? '/logo-dark.png' : '/logo-dark.png';
+  }
+
+  if (url.startsWith('/') || url.startsWith('data:')) return url;
+
+  // TMDB resolution: ensure correct size is requested without huge 4K downloads
+  if (url.includes('image.tmdb.org')) {
+    // If person and default w500 was passed, use w185 for clean avatar/card rendering without aliasing
+    const effectiveSize =
+      type === 'person' && tmdbSize === 'w500'
+        ? 'w185'
+        : tmdbSize === 'original'
+          ? 'w1280'
+          : tmdbSize;
+    return url.replace(
+      /\/t\/p\/(original|w1280|w780|w500|w342|w185|w154|w92|h632)\//,
+      `/t/p/${effectiveSize}/`
+    );
+  }
+
+  // Google OAuth Avatars: normalize size to ~192px so high-res avatars don't suffer from downscaling aliasing
+  if (url.includes('lh3.googleusercontent.com')) {
+    if (url.includes('=s')) {
+      return url.replace(/=s\d+(-c)?/, '=s192-c');
+    }
+    return `${url}=s192-c`;
+  }
+
+  if (url.includes('s4.anilist.co')) {
     return url;
   }
+
   const params = new URLSearchParams({ url });
-  if (fallback) params.set('fallback', fallback);
+  if (isFallbackUrl && fallbackOrTitle) {
+    params.set('fallback', fallbackOrTitle);
+  }
+  if (resolvedTitle && resolvedTitle.trim()) {
+    params.set('title', resolvedTitle.trim());
+  }
+  if (type) {
+    params.set('type', type);
+  }
+  if (tmdbId) {
+    params.set('tmdbId', String(tmdbId));
+  }
   return `/api/image-proxy?${params.toString()}`;
 }
 
@@ -238,34 +457,34 @@ export const COUNTRY_LABELS: Record<string, string> = {
 };
 
 export const COUNTRY_FLAG_EMOJIS: Record<string, string> = {
-  KR: '🇰🇷',
-  CN: '🇨🇳',
-  JP: '🇯🇵',
-  TH: '🇹🇭',
-  TW: '🇹🇼',
-  HK: '🇭🇰',
-  PH: '🇵🇭',
-  US: '🇺🇸',
-  GB: '🇬🇧',
-  TR: '🇹🇷',
-  GL: '🌐',
+  KR: 'KR',
+  CN: 'CN',
+  JP: 'JP',
+  TH: 'TH',
+  TW: 'TW',
+  HK: 'HK',
+  PH: 'PH',
+  US: 'US',
+  GB: 'GB',
+  TR: 'TR',
+  GL: 'GL',
 };
 
 export function getCountryFlag(countryCodeOrName?: string | null): string {
-  if (!countryCodeOrName) return '🌐';
+  if (!countryCodeOrName) return 'GL';
   const c = countryCodeOrName.toUpperCase().trim();
   if (COUNTRY_FLAG_EMOJIS[c]) return COUNTRY_FLAG_EMOJIS[c];
-  if (c.includes('KOR')) return '🇰🇷';
-  if (c.includes('ÇIN') || c.includes('CIN') || c.includes('CHINA')) return '🇨🇳';
-  if (c.includes('JAP')) return '🇯🇵';
-  if (c.includes('THAI') || c.includes('TAYL')) return '🇹🇭';
-  if (c.includes('TAIW') || c.includes('TAYV')) return '🇹🇼';
-  if (c.includes('ABD') || c.includes('USA') || c.includes('AMERICA') || c.includes('UNITED STATES')) return '🇺🇸';
-  if (c.includes('TURK') || c.includes('TÜRK')) return '🇹🇷';
-  if (c.includes('UK') || c.includes('BRIT') || c.includes('INGIL')) return '🇬🇧';
-  if (c.includes('PHILIP') || c.includes('FILIP')) return '🇵🇭';
-  if (c.includes('HONG')) return '🇭🇰';
-  return '🌐';
+  if (c.includes('KOR')) return 'KR';
+  if (c.includes('ÇIN') || c.includes('CIN') || c.includes('CHINA')) return 'CN';
+  if (c.includes('JAP')) return 'JP';
+  if (c.includes('THAI') || c.includes('TAYL')) return 'TH';
+  if (c.includes('TAIW') || c.includes('TAYV')) return 'TW';
+  if (c.includes('ABD') || c.includes('USA') || c.includes('AMERICA') || c.includes('UNITED STATES')) return 'US';
+  if (c.includes('TURK') || c.includes('TÜRK')) return 'TR';
+  if (c.includes('UK') || c.includes('BRIT') || c.includes('INGIL')) return 'GB';
+  if (c.includes('PHILIP') || c.includes('FILIP')) return 'PH';
+  if (c.includes('HONG')) return 'HK';
+  return 'GL';
 }
 
 export const COUNTRY_FLAGS: Record<string, string> = COUNTRY_FLAG_EMOJIS;
@@ -283,5 +502,240 @@ export function formatContentTypeTR(contentType?: string | null, country?: strin
   return 'DİZİ';
 }
 
+/**
+ * Sanitizes scraped overview text across all series and pages:
+ * - Converts <br>, <br/>, <br />, </p>, </div> into natural newlines
+ * - Strips any remaining HTML tags (<p>, <span>, <b>, <i>, etc.)
+ * - Unescapes HTML entities (&nbsp;, &amp;, &quot;, &#39;, &lt;, &gt;, &mdash;, etc.)
+ * - Normalizes whitespace, trimming each line, and collapsing 3+ newlines into 2
+ */
+export function cleanOverviewText(raw?: string | null): string {
+  if (!raw) return '';
+  let text = sanitizeMojibake(String(raw));
+
+  // Replace break tags and paragraph/div closing tags with newlines
+  text = text.replace(/<(?:br\s*\/?>|\/(?:p|div)>)/gi, '\n');
+
+  // Strip any remaining HTML tags
+  text = text.replace(/<[^>]+>/g, '');
+
+  // Decode standard HTML entities
+  text = text
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&mdash;/gi, '—')
+    .replace(/&ndash;/gi, '–')
+    .replace(/&#(\d+);/g, (_, dec) => {
+      try {
+        return String.fromCharCode(parseInt(dec, 10));
+      } catch {
+        return '';
+      }
+    });
+
+  // Normalize lines: trim each line, collapse excessive consecutive blank lines
+  const lines = text.split('\n').map((l) => l.trim());
+  return lines
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 // Re-export cache layer utilities for direct import from supabase.ts
 export { cachedQuery, invalidateCache, setCache, getCache, resolveQueryTTL } from '@/lib/cache';
+
+/**
+ * Sanitizes mojibake caused by UTF-8 bytes being mistakenly decoded as Windows-1254 or Latin-1
+ */
+export function sanitizeMojibake(text?: string | null): string {
+  if (!text) return '';
+  let s = String(text);
+
+  if (/[\u00C3\u00C4\u00C5\uFFFD]/.test(s)) {
+    s = s
+      .replace(/\u00C3\u2021/g, 'Ç')
+      .replace(/\u00C3\u2013/g, 'Ö')
+      .replace(/\u00C3\u0153/g, 'Ü')
+      .replace(/\u00C3\u009C/g, 'Ü')
+      .replace(/\u00C3\u00A7/g, 'ç')
+      .replace(/\u00C3\u00B6/g, 'ö')
+      .replace(/\u00C3\u00BC/g, 'ü')
+      .replace(/\u00C3\u00A2/g, 'â')
+      .replace(/\u00C3\u00AE/g, 'î')
+      .replace(/\u00C3\u00A9/g, 'é')
+      .replace(/\u00C4\u00B0/g, 'İ')
+      .replace(/\u00C4\u00B1/g, 'ı')
+      .replace(/\u00C4\u017E/g, 'Ğ')
+      .replace(/\u00C4\u017D/g, 'Ğ')
+      .replace(/\u00C4\u0178/g, 'ğ')
+      .replace(/\u00C4\u011F/g, 'ğ')
+      .replace(/\u00C5\u017E/g, 'Ş')
+      .replace(/\u00C5\u017D/g, 'Ş')
+      .replace(/\u00C5\u0178/g, 'ş')
+      .replace(/\u00C5\uFFFD/g, 'ş')
+      .replace(/\u00C2/g, '')
+      .replace(/\u00C5/g, 'Ş');
+  }
+
+  s = s
+    .replace(/Ã§/g, 'ç')
+    .replace(/Ã‡/g, 'Ç')
+    .replace(/Ã¶/g, 'ö')
+    .replace(/Ã–/g, 'Ö')
+    .replace(/Ã¼/g, 'ü')
+    .replace(/Ãœ/g, 'Ü')
+    .replace(/Ä±/g, 'ı')
+    .replace(/Ä°/g, 'İ')
+    .replace(/ÄŸ/g, 'ğ')
+    .replace(/Äž/g, 'Ğ')
+    .replace(/ÅŸ/g, 'ş')
+    .replace(/Åž/g, 'Ş');
+
+  return s;
+}
+
+/**
+ * Sanitizes polluted scraped media titles (e.g. "Örümcek Adam: Eve Dönüş Yok izleSpider" -> "Örümcek Adam: Eve Dönüş Yok")
+ * - Fixes corrupted mojibake character sequences
+ * - Strips scraper artifacts like "izleSpider", "izle", "filmi izle", "dizi izle"
+ * - Removes glued English subtitles merged into Turkish titles (e.g. "Title izleTitle (2025)")
+ * - Normalizes colon spacing and extra whitespace
+ */
+export function cleanMediaTitle(rawTitle?: string | null): string {
+  if (!rawTitle) return '';
+  let t = sanitizeMojibake(String(rawTitle)).trim();
+
+  // Pattern 1: Title with glued "izleSpider" e.g. "Örümcek Adam: Eve Dönüş Yok izleSpider"
+  t = t.replace(/\s*izle\s*[A-Za-z0-9\s]*Spider\b/i, '');
+
+  // Pattern 2: Title with "izleNative (Year)" or "izle<English Title>"
+  t = t.replace(/\s*izle\s*[A-Za-z0-9\s:,'-]+\(\d{4}\)\s*$/i, '');
+  t = t.replace(/\s+izle\s+[A-Z][a-zA-Z0-9\s:,'-]{3,}$/, '');
+
+  // Pattern 3: Trailing izle / dublaj / altyazılı / tek parça / 1080p suffixes
+  t = t.replace(/\s+(?:izle\s*(?:hd\d*|full\s*hd)?|film\s+izle|dizi\s+izle|türkçe\s+dublajlı?|türkçe\s+altyazılı?|tek\s+parça|1080p|full\s*hd)\s*$/i, '');
+
+  // Pattern 4: Any standalone trailing "izle"
+  t = t.replace(/\s+izle$/i, '');
+
+  // Specific scraper typo fixes
+  t = t.replace(/Asla Vazgeçmemm\b/g, 'Asla Vazgeçmem');
+
+  // Clean trailing punctuation or weird hyphens
+  t = t.replace(/[\s–-]+$/, '').trim();
+
+  return t;
+}
+
+/**
+ * Sanitizes raw quality strings (e.g. "Auto (1080p HLS)", "AUTO 1080P HLS", "1080p Direct") -> "1080p"
+ */
+export function cleanQualityLabel(raw?: string | null): string {
+  if (!raw) return '1080p';
+  const clean = String(raw).trim();
+  if (/otomatik|auto/i.test(clean)) return 'Otomatik';
+  if (/seviye/i.test(clean)) return '1080p';
+  if (/2160p|4k/i.test(clean)) return '4K';
+  if (/1080p?/i.test(clean)) return '1080p';
+  if (/720p?/i.test(clean)) return '720p';
+  if (/480p?/i.test(clean)) return '480p';
+  if (/360p?/i.test(clean)) return '360p';
+  const stripped = clean
+    .replace(/\b(HLS|DIRECT|HD|FHD|DASH)\b/gi, '')
+    .replace(/[()[\]{}]/g, '')
+    .trim();
+  return stripped || '1080p';
+}
+
+/**
+ * Sanitizes polluted scraped episode names (e.g. '1. Sezon 2. Bölüm(Tremor)1 Ocak 2020' -> 'Tremor')
+ * - Strips Turkish & English dates (e.g. '1 Ocak 2020', '15 Mart 2021')
+ * - Strips redundant 'X. Sezon', 'Y. Bölüm', 'Season X Episode Y', 'S1:B2' prefixes
+ * - Cleans collapsed parentheses around episode subtitles e.g. '(Tremor)' -> 'Tremor'
+ * - Removes surrounding quotes and redundant punctuation
+ */
+export function cleanEpisodeName(
+  rawName?: string | null,
+  seasonNum?: number,
+  episodeNum?: number
+): string {
+  if (!rawName) return episodeNum ? `${episodeNum}. Bölüm` : '';
+  let s = sanitizeMojibake(String(rawName)).trim();
+
+  // Strip dates e.g. "1 Ocak 2020", "15 Mart 2021", "January 1, 2020"
+  s = s.replace(
+    /\s*\d{1,2}\s+(?:Ocak|Şubat|Mart|Nisan|Mayıs|Haziran|Temmuz|Ağustos|Eylül|Ekim|Kasım|Aralık|Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{4}\b/gi,
+    ''
+  );
+  s = s.replace(/\s*\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b/g, '');
+  s = s.replace(/\s*\b\d{1,2}[-/.]\d{1,2}[-/.]\d{4}\b/g, '');
+
+  // Strip quotes and edge symbols
+  s = s.replace(/^["'“”«»`]+|["'“”«»`]+$/g, '').trim();
+
+  // Strip redundant leading season/episode prefix, e.g. "1. Sezon 2. Bölüm", "1.Sezon 2.Bölüm", "2. Bölüm", "S1:B2"
+  s = s.replace(/^(?:\d+\s*\.?\s*Sezon\s*)?(?:\d+\s*\.?\s*Bölüm\s*)/i, '').trim();
+  s = s.replace(/^(?:Season\s*\d+\s*)?(?:Episode\s*\d+\s*)/i, '').trim();
+  s = s.replace(/^S\d+[:\s]*B\d+\s*[-:•]?\s*/i, '').trim();
+  s = s.replace(/^Bölüm\s*\d+\s*[-:•]?\s*/i, '').trim();
+
+  // Strip leading punctuation
+  s = s.replace(/^[-:•|~–—\s]+/, '').trim();
+
+  // Handle collapsed parentheses like "(Tremor)" or "(Part 1)"
+  const parenMatch = s.match(/^\(([^)]+)\)$/);
+  if (parenMatch) {
+    s = parenMatch[1].trim();
+  }
+
+  // Strip trailing punctuation
+  s = s.replace(/[-:•|~–—\s]+$/, '').trim();
+  s = s.replace(/^["'“”«»`]+|["'“”«»`]+$/g, '').trim();
+
+  // If the extracted subtitle is empty, generic, or just repeats the episode number
+  if (
+    !s ||
+    /^(?:bölüm|episode|part)\s*\d*$/i.test(s) ||
+    s === `${episodeNum}` ||
+    s === `${episodeNum}. Bölüm`
+  ) {
+    return episodeNum ? `${episodeNum}. Bölüm` : '';
+  }
+
+  return s;
+}
+
+/**
+ * Formats a clean episode display title (e.g. "S1:B2 • Tremor" or "2. Bölüm • Tremor" or "2. Bölüm")
+ */
+export function formatEpisodeTitle(
+  rawName?: string | null,
+  seasonNum: number = 1,
+  episodeNum: number = 1,
+  options?: { includeSeasonPrefix?: boolean; includeEpisodeNum?: boolean }
+): string {
+  const subtitle = cleanEpisodeName(rawName, seasonNum, episodeNum);
+  const isGeneric = !subtitle || subtitle === `${episodeNum}. Bölüm`;
+
+  if (options?.includeSeasonPrefix) {
+    const prefix = `S${seasonNum}:B${episodeNum}`;
+    if (isGeneric) {
+      return `${prefix} • ${episodeNum}. Bölüm`;
+    }
+    return `${prefix} • ${subtitle}`;
+  }
+
+  if (options?.includeEpisodeNum !== false) {
+    if (isGeneric) {
+      return `${episodeNum}. Bölüm`;
+    }
+    return `${episodeNum}. Bölüm • ${subtitle}`;
+  }
+
+  return isGeneric ? `${episodeNum}. Bölüm` : subtitle;
+}
+

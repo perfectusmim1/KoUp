@@ -59,6 +59,10 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  webpack: (config) => {
+    config.resolve.symlinks = false;
+    return config;
+  },
 };
 
 export default nextConfig;

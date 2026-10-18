@@ -15,9 +15,15 @@ import {
   Sparkles,
   ArrowRight,
   RotateCcw,
+  X,
 } from 'lucide-react';
 import { useKoUp } from '@/context/KoUpContext';
-import { getProxiedImageUrl, UserMediaProgress } from '@/lib/supabase';
+import {
+  getProxiedImageUrl,
+  UserMediaProgress,
+  getEpisodeProgressStats,
+  cleanMediaTitle,
+} from '@/lib/supabase';
 
 type HistoryFilter = 'ALL' | 'in_progress' | 'completed';
 
@@ -36,7 +42,13 @@ export default function WatchHistoryPage() {
   // Collect all history items from progressMap that have media or progress
   const allHistoryItems = useMemo(() => {
     return Object.values(progressMap)
-      .filter((item) => item.media || item.resume_position_sec > 0 || (item.watched_episodes && item.watched_episodes.length > 0))
+      .filter(
+        (item) =>
+          item.media ||
+          item.status === 'watching' ||
+          item.status === 'completed' ||
+          (item.watched_episodes && item.watched_episodes.length > 0)
+      )
       .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
   }, [progressMap]);
 
@@ -44,16 +56,13 @@ export default function WatchHistoryPage() {
   const filteredHistory = useMemo(() => {
     return allHistoryItems.filter((item) => {
       const media = item.media;
-      const progressPct =
-        item.resume_duration_sec > 0
-          ? Math.min(100, Math.round((item.resume_position_sec / item.resume_duration_sec) * 100))
-          : 0;
+      const stats = getEpisodeProgressStats(item, media);
 
       // Filter by progress status
       if (filterType === 'in_progress') {
-        if (progressPct >= 95 || item.status === 'completed') return false;
+        if (stats.isAllWatched || item.status === 'completed') return false;
       } else if (filterType === 'completed') {
-        if (progressPct < 95 && item.status !== 'completed') return false;
+        if (!stats.isAllWatched && item.status !== 'completed') return false;
       }
 
       // Search query
@@ -67,13 +76,6 @@ export default function WatchHistoryPage() {
       return true;
     });
   }, [allHistoryItems, filterType, searchQuery]);
-
-  // Helper format seconds
-  const formatTime = (secs: number) => {
-    const mins = Math.floor(secs / 60);
-    const remainingSecs = Math.floor(secs % 60);
-    return `${mins}:${remainingSecs < 10 ? '0' : ''}${remainingSecs}`;
-  };
 
   // If user is not logged in
   if (!user) {
@@ -89,7 +91,7 @@ export default function WatchHistoryPage() {
               İzleme Geçmişim
             </h1>
             <p className="text-xs text-white/60 leading-relaxed max-w-xs mx-auto">
-              Kaldığınız dakikaları senkronize etmek ve geçmişinizi görüntülemek için lütfen giriş yapın.
+              İzlediğiniz bölümleri senkronize etmek ve geçmişinizi görüntülemek için lütfen giriş yapın.
             </p>
           </div>
 
@@ -115,13 +117,13 @@ export default function WatchHistoryPage() {
         <div className="space-y-2">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-400/20 text-sky-400 text-xs font-mono font-semibold">
             <Clock className="w-3.5 h-3.5" />
-            <span>Oynatma İlerlemesi & Geçmiş</span>
+            <span>Bölüm İlerlemesi & Geçmiş</span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
             İzleme Geçmişim
           </h1>
           <p className="text-xs sm:text-sm text-white/55 max-w-2xl">
-            Tüm cihazlarınızda senkronize edilen izleme geçmişiniz, kaldığınız bölüm ve dakika detayları.
+            Tüm cihazlarınızda senkronize edilen izleme geçmişiniz, izlediğiniz bölümler ve sıradaki bölüm detayları.
           </p>
         </div>
 
@@ -144,33 +146,53 @@ export default function WatchHistoryPage() {
             { id: 'ALL' as const, label: `Tüm Geçmiş (${allHistoryItems.length})` },
             { id: 'in_progress' as const, label: 'Kaldığım Yerden Devam Et' },
             { id: 'completed' as const, label: 'Tamamlananlar' },
-          ].map((flt) => (
-            <button
-              key={flt.id}
-              onClick={() => {
-                triggerSound('click');
-                setFilterType(flt.id);
-              }}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer shrink-0 ${
-                filterType === flt.id
-                  ? 'bg-white text-black shadow-md'
-                  : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              {flt.label}
-            </button>
-          ))}
+          ].map((flt) => {
+            const active = filterType === flt.id;
+            return (
+              <button
+                key={flt.id}
+                onClick={() => {
+                  triggerSound('click');
+                  setFilterType(flt.id);
+                }}
+                className={`relative px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors duration-200 cursor-pointer shrink-0 ${
+                  active
+                    ? 'text-black'
+                    : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="gecmis-filter-active-pill"
+                    initial={false}
+                    transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
+                    className="absolute inset-0 rounded-full bg-white shadow-md"
+                  />
+                )}
+                <span className="relative z-10">{flt.label}</span>
+              </button>
+            );
+          })}
         </div>
 
-        <div className="relative min-w-[220px]">
-          <Search className="w-3.5 h-3.5 text-white/40 absolute left-3 top-1/2 -translate-y-1/2" />
+        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] min-w-[220px]">
+          <Search className="w-3.5 h-3.5 text-white/60 shrink-0" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Geçmişte yapım ara..."
-            className="w-full pl-8 pr-3 py-1.5 rounded-full bg-black/60 border border-white/15 text-xs text-white placeholder-white/40 focus:outline-none focus:border-sky-400"
+            className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full font-medium"
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="text-white/40 hover:text-white transition-colors cursor-pointer"
+              aria-label="Aramayı temizle"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -187,7 +209,7 @@ export default function WatchHistoryPage() {
                 : 'Henüz izleme geçmişiniz bulunmuyor'}
             </h3>
             <p className="text-xs text-white/50 max-w-sm mx-auto">
-              Dizilerin bölümlerini oynatmaya başladığınızda kaldığınız dakika ve saniye otomatik olarak burada listelenecektir.
+              Dizilerin bölümlerini izledikçe ve işaretledikçe sıradaki bölümleriniz otomatik olarak burada listelenecektir.
             </p>
           </div>
           <Link
@@ -201,28 +223,21 @@ export default function WatchHistoryPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-          {filteredHistory.map((item) => {
+          {filteredHistory.map((item, idx) => {
             const media = item.media;
-            const progressPct =
-              item.resume_duration_sec > 0
-                ? Math.min(
-                    100,
-                    Math.round((item.resume_position_sec / item.resume_duration_sec) * 100)
-                  )
-                : 0;
-
-            const remainingSec = Math.max(
-              0,
-              (item.resume_duration_sec || 0) - (item.resume_position_sec || 0)
+            const stats = getEpisodeProgressStats(item, media);
+            const barPct = Math.max(
+              stats.watchedCount > 0 ? 6 : 3,
+              stats.progressPercent
             );
 
             const playUrl = media?.slug
-              ? `/seri/${media.slug}/${item.last_episode_num || 1}`
+              ? `/seri/${media.slug}/${stats.nextEpisode}?season=${stats.season}`
               : `/seri/${item.media_id}`;
 
             return (
               <div
-                key={item.media_id}
+                key={`history-${item.media_id}-${stats.season}-${stats.nextEpisode}-${idx}`}
                 className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-4 sm:p-5 flex gap-4 hover:border-white/20 transition-all group relative overflow-hidden shadow-xl"
               >
                 {/* Poster image */}
@@ -256,14 +271,14 @@ export default function WatchHistoryPage() {
                       <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-md bg-white/[0.06] text-white/70">
                         {media?.content_type === 'anime' ? 'ANİME' : 'DİZİ'}
                       </span>
-                      {progressPct >= 95 ? (
+                      {stats.isAllWatched || item.status === 'completed' ? (
                         <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1 font-semibold">
                           <CheckCircle2 className="w-3 h-3" />
-                          <span>Bitti</span>
+                          <span>Tamamlandı</span>
                         </span>
                       ) : (
                         <span className="text-[10px] font-mono text-sky-400 font-semibold">
-                          %{progressPct} İzlendi
+                          {stats.watchedCount}/{stats.totalEpisodes} Bölüm
                         </span>
                       )}
                     </div>
@@ -273,37 +288,27 @@ export default function WatchHistoryPage() {
                       onClick={() => triggerSound('click')}
                       className="block mt-1 text-sm sm:text-base font-bold text-white hover:text-sky-300 transition-colors truncate"
                     >
-                      {media?.title || `Yapım #${item.media_id}`}
+                      {cleanMediaTitle(media?.title) || `Yapım #${item.media_id}`}
                     </Link>
 
-                    <div className="text-xs text-white/60 font-mono mt-0.5">
-                      {item.last_season_num || 1}. Sezon · {item.last_episode_num || 1}. Bölüm
+                    <div className="text-xs text-sky-400 font-mono font-semibold mt-0.5">
+                      {stats.isAllWatched || item.status === 'completed'
+                        ? `${stats.season}. Sezon · Tüm Bölümler İzlendi`
+                        : `Sıradaki: ${stats.season}. Sezon · ${stats.nextEpisode}. Bölüm`}
                     </div>
-
-                    {item.last_episode_title && (
-                      <p className="text-[11px] text-white/45 truncate mt-0.5">
-                        {item.last_episode_title}
-                      </p>
-                    )}
                   </div>
 
                   <div className="space-y-2.5 mt-3">
-                    {/* Progress Bar */}
+                    {/* Episode Progress Bar */}
                     <div className="space-y-1">
                       <div className="flex justify-between text-[10px] font-mono text-white/50">
-                        <span>
-                          {item.resume_position_sec > 0
-                            ? `${formatTime(item.resume_position_sec)} / ${formatTime(
-                                item.resume_duration_sec || 3600
-                              )}`
-                            : 'Başlanmadı'}
-                        </span>
-                        {remainingSec > 0 && <span>{formatTime(remainingSec)} kaldı</span>}
+                        <span>{stats.watchedCount} Bölüm İzlendi</span>
+                        <span>%{stats.progressPercent}</span>
                       </div>
                       <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
                         <div
                           className="h-full bg-sky-400 rounded-full transition-all duration-300"
-                          style={{ width: `${progressPct}%` }}
+                          style={{ width: `${barPct}%` }}
                         />
                       </div>
                     </div>
@@ -312,10 +317,14 @@ export default function WatchHistoryPage() {
                     <Link
                       href={playUrl}
                       onClick={() => triggerSound('click')}
-                      className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all w-fit shadow-md cursor-pointer"
+                      className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all w-fit glow-white cursor-pointer"
                     >
                       <Play className="w-3 h-3 fill-black" />
-                      <span>Kaldığın Yerden Oynat</span>
+                      <span>
+                        {stats.isAllWatched || item.status === 'completed'
+                          ? 'Tekrar İzle'
+                          : `${stats.nextEpisode}. Bölümden Devam Et`}
+                      </span>
                     </Link>
                   </div>
                 </div>

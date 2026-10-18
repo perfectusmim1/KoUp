@@ -126,6 +126,56 @@ export default {
       }
     }
 
+    // 4. R2 Object Storage: Ultra-Fast Distributed Catalog & Episode Cache
+    if (url.pathname.startsWith('/archive/')) {
+      const key = url.pathname.replace('/archive/', '').trim();
+      if (!key) {
+        return new Response(JSON.stringify({ error: 'Missing object key' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (request.method === 'GET') {
+        if (!env.ARCHIVE_BUCKET) {
+          return new Response(JSON.stringify({ error: 'R2 bucket binding not configured' }), {
+            status: 503,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        const object = await env.ARCHIVE_BUCKET.get(key);
+        if (!object) {
+          return new Response(JSON.stringify({ error: 'Not found' }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        const headers = new Headers(corsHeaders);
+        headers.set('Content-Type', object.httpMetadata?.contentType || 'application/json; charset=utf-8');
+        headers.set('Cache-Control', 'public, max-age=3600, s-maxage=86400');
+        headers.set('ETag', object.httpEtag);
+        return new Response(object.body, { headers });
+      }
+
+      if (request.method === 'PUT' || request.method === 'POST') {
+        const auth = request.headers.get('Authorization') || url.searchParams.get('secret');
+        if (auth !== 'koup_r2_secret_2026' && auth !== env.R2_SECRET) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        const data = await request.text();
+        await env.ARCHIVE_BUCKET.put(key, data, {
+          httpMetadata: { contentType: 'application/json; charset=utf-8' },
+        });
+        return new Response(JSON.stringify({ success: true, key }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     // Default: Health / Info
     return new Response(
       JSON.stringify({

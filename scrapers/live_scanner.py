@@ -1,0 +1,1150 @@
+"""
+KoUp Universal Live Scanner
+Handles live scanning and target series synchronization for:
+- DiziKorea (1080p HLS)
+- DiziBox (DBX Pro 1080p HLS)
+- DDizi (HLS & YouTube HD)
+- AnimeciX (Tau-Video Native)
+"""
+
+import sys
+import os
+import re
+import json
+import time
+import argparse
+import urllib.request
+import urllib.parse
+from datetime import datetime
+from bs4 import BeautifulSoup
+import sqlite3
+import base64
+import hashlib
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
+
+try:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    ANIMECIX_KEY = b'i4C7R2fXGocdYgFLzCbDlsJjukf8G58b'
+    ANIMECIX_AES = AESGCM(ANIMECIX_KEY)
+except Exception:
+    ANIMECIX_AES = None
+
+def make_animecix_header(query_str: str) -> str:
+    if not ANIMECIX_AES:
+        return ""
+    iv = os.urandom(12)
+    plaintext = ('{version}' + query_str).encode('utf-8')
+    ciphertext = ANIMECIX_AES.encrypt(iv, plaintext, None)
+    ct_b64 = base64.b64encode(ciphertext).decode('ascii')
+    iv_b64 = base64.b64encode(iv).decode('ascii')
+    return f'{ct_b64}.{iv_b64}'
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace', line_buffering=True)
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace', line_buffering=True)
+
+from database import get_connection
+from scrapers.multisite import (
+    norm_title,
+    build_drama_index,
+    find_in_index,
+    match_or_create_episode,
+    add_source,
+    tag_site,
+    safe_commit,
+    unique_slug
+)
+from scrapers.sync_hdfilm_target import resolve_hdfilm_streams
+from scrapers.translator import resolve_tmdb_metadata, translate_to_turkish
+
+def log(tag: str, msg: str):
+    now = datetime.now().strftime("%H:%M:%S")
+    line = f"[{now}] [{tag}] {msg}"
+    print(line, flush=True)
+
+def fetch_url(url: str, headers: dict = None, timeout: int = 10) -> str:
+    h = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+    }
+    if headers:
+        h.update(headers)
+    req = urllib.request.Request(url, headers=h)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read().decode('utf-8', errors='replace')
+
+# =========================================================================
+# SCANNER: DIZIBOX
+# =========================================================================
+def scan_dizibox(conn, cur, idx, limit=10, target=None):
+    log("BAŞLATILDI", "DiziBox canlı tarama motoru devrede (https://www.dizibox.live)...")
+    headers = {'Referer': 'https://www.dizibox.live/'}
+    
+    ep_links = []
+    if target:
+        log("ARAMA", f'DiziBox üzerinde hedef aranıyor: "{target}"')
+        q = urllib.parse.quote(target)
+        try:
+            s_html = fetch_url(f"https://www.dizibox.live/?s={q}", headers=headers)
+            soup = BeautifulSoup(s_html, 'html.parser')
+            for a in soup.find_all('a', href=True):
+                h = a['href']
+                if '/diziler/' in h or '-izle' in h:
+                    log("BULUNDU", f"Hedef yapım sayfası: {h}")
+                    detail_html = fetch_url(h, headers=headers)
+                    d_soup = BeautifulSoup(detail_html, 'html.parser')
+                    for ea in d_soup.find_all('a', href=True):
+                        eh = ea['href']
+                        if '-sezon-' in eh and '-bolum' in eh:
+                            ep_links.append((ea.get_text(strip=True), eh))
+                    break
+        except Exception as e:
+            log("UYARI", f"Arama hatası: {e}")
+    else:
+        try:
+            home_html = fetch_url("https://www.dizibox.live/", headers=headers)
+            soup = BeautifulSoup(home_html, 'html.parser')
+            seen = set()
+            for a in soup.find_all('a', href=True):
+                h = a['href']
+                if '-sezon-' in h and '-bolum' in h and h not in seen:
+                    seen.add(h)
+                    ep_links.append((a.get_text(strip=True), h))
+                    if len(ep_links) >= limit:
+                        break
+        except Exception as e:
+            log("HATA", f"Ana sayfa alınamadı: {e}")
+            return 0, []
+
+    log("KAYIT", f"{len(ep_links)} adet güncel bölüm bağlantısı ayrıştırıldı.")
+    synced_items = []
+
+    for txt, ep_url in ep_links:
+        try:
+            m = re.search(r'/([^/]+)-(\d+)-sezon-(\d+)-bolum', ep_url)
+            if not m:
+                continue
+            slug_raw = m.group(1)
+            season = int(m.group(2))
+            ep_num = int(m.group(3))
+            drama_title = slug_raw.replace('-', ' ').title()
+
+            # Find or match drama (strictly content_type='dizi')
+            did = find_in_index(idx, drama_title, slug=slug_raw, content_type='dizi')
+            if not did:
+                clean_s = slug_raw.lower()
+                cur.execute("SELECT id, title, slug, cover_image FROM dramas WHERE slug LIKE ? OR title LIKE ?", (f"%{clean_s}%", f"%{drama_title}%"))
+                row = cur.fetchone()
+                if row:
+                    did = row[0]
+                    drama_title = row[1]
+                else:
+                    cur.execute("""
+                        INSERT INTO dramas (title, slug, content_type, country, release_year, status, cover_image, overview)
+                        VALUES (?, ?, 'dizi', 'US', ?, 'ongoing', '/logo-dark.png', ?)
+                    """, (drama_title, unique_slug(cur, slug_raw), datetime.now().year, f"{drama_title} DiziBox üzerinden eklendi."))
+                    did = cur.lastrowid
+                    tag_site(cur, did, 'dizibox')
+                    log("YENİ DİZİ", f'"{drama_title}" arşive yeni eklendi (ID: #{did})')
+
+            # Fetch DBX Pro stream
+            ep_html = fetch_url(ep_url, headers=headers)
+            m_king = re.search(r'src=["\'](https://www\.dizibox\.live/player/king/king\.php\?v=[^"\']+)["\']', ep_html)
+            if not m_king:
+                continue
+            king_url = m_king.group(1)
+            king_html = fetch_url(king_url, headers={'Referer': ep_url})
+            m_moly = re.search(r'src=["\'](https://dbx\.molystream\.org/embed/[^"\']+)["\']', king_html)
+            if not m_moly:
+                continue
+            embed_url = m_moly.group(1)
+            m_id = re.search(r'/embed/([a-zA-Z0-9-]+)', embed_url)
+            if not m_id:
+                continue
+            video_id = m_id.group(1)
+            hls_url = f"https://dbx.molystream.org/embed/sheila/{video_id}"
+
+            ep_id, is_new_ep = match_or_create_episode(cur, did, season, ep_num, f"{season}. Sezon {ep_num}. Bölüm", ep_url)
+            added = add_source(cur, ep_id, "Orijinal", hls_url, "dbx", "dizibox")
+            if added:
+                safe_commit(conn)
+                log("AKINCI", f'"{drama_title}" S{season} B{ep_num} -> DBX Pro 1080p HLS bağlandı.')
+                synced_items.append({
+                    'id': f"dizibox-{did}-{season}-{ep_num}",
+                    'title': drama_title,
+                    'subtitle': f"{season}. Sezon {ep_num}. Bölüm (DBX Pro 1080p)",
+                    'image': '/logo-dark.png',
+                    'link': f"/seri/{slug_raw}/{ep_num}",
+                    'date': datetime.now().isoformat(),
+                    'status': 'Canlı Çözüldü',
+                    'sourceName': 'Orijinal'
+                })
+            else:
+                log("MEVCUT", f'"{drama_title}" S{season} B{ep_num} kaynağı zaten güncel.')
+        except Exception as err:
+            log("HATA", f"{ep_url} çözümlenirken hata: {err}")
+
+    return len(synced_items), synced_items
+
+# =========================================================================
+# SCANNER: DIZIKOREA
+# =========================================================================
+def scan_dizikorea(conn, cur, idx, limit=10, target=None):
+    log("BAŞLATILDI", "DiziKorea canlı tarama motoru devrede (https://dizikorea3.com)...")
+    headers = {'Referer': 'https://dizikorea3.com/'}
+    series_links = []
+
+    if target:
+        log("ARAMA", f'DiziKorea üzerinde hedef aranıyor: "{target}"')
+        q = urllib.parse.quote(target)
+        try:
+            s_html = fetch_url(f"https://dizikorea3.com/?s={q}", headers=headers)
+            soup = BeautifulSoup(s_html, 'html.parser')
+            for a in soup.find_all('a', href=True):
+                h = a['href']
+                if '/dizi/' in h and ('-izle' in h or '-dq' in h):
+                    series_links.append((a.get_text(strip=True), h))
+        except Exception as e:
+            log("UYARI", f"Arama hatası: {e}")
+    else:
+        try:
+            home_html = fetch_url("https://dizikorea3.com/", headers=headers)
+            soup = BeautifulSoup(home_html, 'html.parser')
+            seen = set()
+            for a in soup.find_all('a', href=True):
+                h = a['href']
+                if '/dizi/' in h and ('-izle' in h or '-dq' in h) and h not in seen:
+                    seen.add(h)
+                    series_links.append((a.get_text(strip=True), h))
+                    if len(series_links) >= limit:
+                        break
+        except Exception as e:
+            log("HATA", f"Ana sayfa alınamadı: {e}")
+            return 0, []
+
+    log("KAYIT", f"{len(series_links)} adet Kore dizisi akışı tespit edildi.")
+    synced_items = []
+
+    for raw_title, s_url in series_links:
+        try:
+            s_html = fetch_url(s_url, headers=headers)
+            soup = BeautifulSoup(s_html, 'html.parser')
+            
+            d_title = soup.find('h1')
+            drama_title = d_title.get_text(strip=True) if d_title else raw_title
+            drama_title = re.sub(r'\s*(izle|türkçe altyazılı|kore dizisi).*$', '', drama_title, flags=re.I).strip()
+            
+            slug_cand = s_url.rstrip('/').split('/')[-1].replace('-izle', '')
+
+            did = find_in_index(idx, drama_title, slug=slug_cand, content_type='dizi')
+            if not did:
+                cur.execute("SELECT id, title, slug FROM dramas WHERE title LIKE ? OR slug LIKE ?", (f"%{drama_title}%", f"%{slug_cand}%"))
+                row = cur.fetchone()
+                if row:
+                    did = row[0]
+                    drama_title = row[1]
+                else:
+                    cur.execute("""
+                        INSERT INTO dramas (title, slug, content_type, country, release_year, status, cover_image, overview)
+                        VALUES (?, ?, 'dizi', 'KR', ?, 'ongoing', '/logo-dark.png', ?)
+                    """, (drama_title, unique_slug(cur, slug_cand), datetime.now().year, f"{drama_title} DiziKorea üzerinden eklendi."))
+                    did = cur.lastrowid
+                    tag_site(cur, did, 'dizikorea')
+                    log("YENİ DİZİ", f'"{drama_title}" arşive yeni eklendi (ID: #{did})')
+
+            # Look for episode links
+            ep_anchors = []
+            for a in soup.find_all('a', href=True):
+                h = a['href']
+                if ('bolum' in h or 'bölüm' in a.get_text(strip=True).lower()) and s_url in h:
+                    ep_anchors.append((a.get_text(strip=True), h))
+
+            if not ep_anchors:
+                # Page itself might be episode or single movie
+                ep_anchors = [(f"1. Bölüm", s_url)]
+
+            for ep_txt, ep_url in ep_anchors[:3]:
+                m_ep = re.search(r'(\d+)\s*\.\s*b[öo]l[üu]m', ep_txt, re.I) or re.search(r'bolum-(\d+)', ep_url)
+                ep_num = int(m_ep.group(1)) if m_ep else 1
+                
+                ep_html = fetch_url(ep_url, headers=headers)
+                
+                # Extract playerdkorea HLS or vidmoly
+                sources_found = []
+                m_dk = re.search(r'(https?://(?:www\.)?playerdkorea\.xyz/video/[a-zA-Z0-9]+)', ep_html)
+                if m_dk:
+                    sources_found.append(('dizikorea', 'Orijinal', m_dk.group(1)))
+                m_vm = re.search(r'(https?://(?:www\.)?vidmoly\.[a-z]+/embed-[a-zA-Z0-9]+\.html)', ep_html)
+                if m_vm:
+                    sources_found.append(('vidmoly', 'Vidmoly', m_vm.group(1)))
+
+                for prov, sname, direct_u in sources_found:
+                    ep_id, _ = match_or_create_episode(cur, did, 1, ep_num, f"1. Sezon {ep_num}. Bölüm", ep_url)
+                    added = add_source(cur, ep_id, sname, direct_u, prov, "dizikorea")
+                    if added:
+                        safe_commit(conn)
+                        log("AKINCI", f'"{drama_title}" Bölüm {ep_num} -> {sname} bağlandı.')
+                        synced_items.append({
+                            'id': f"dizikorea-{did}-1-{ep_num}",
+                            'title': drama_title,
+                            'subtitle': f"1. Sezon {ep_num}. Bölüm ({sname})",
+                            'image': '/logo-dark.png',
+                            'link': f"/seri/{slug_cand}/{ep_num}",
+                            'date': datetime.now().isoformat(),
+                            'status': 'Canlı Çözüldü',
+                            'sourceName': sname
+                        })
+        except Exception as err:
+            log("HATA", f"{s_url} işlenirken hata: {err}")
+
+    return len(synced_items), synced_items
+
+# =========================================================================
+# SCANNER: DDIZI
+# =========================================================================
+def scan_ddizi(conn, cur, idx, limit=10, target=None):
+    log("BAŞLATILDI", "DDizi canlı tarama motoru devrede (https://www.ddizi.tel)...")
+    headers = {'Referer': 'https://www.ddizi.tel/'}
+    ep_links = []
+
+    try:
+        html = fetch_url("https://www.ddizi.tel/yeni-eklenenler8", headers=headers)
+        soup = BeautifulSoup(html, 'html.parser')
+        seen = set()
+        for a in soup.find_all('a', href=True):
+            h = a['href']
+            t = a.get_text(strip=True)
+            if '/izle/' in h and h not in seen:
+                seen.add(h)
+                full_h = h if h.startswith('http') else f"https://www.ddizi.tel{h}"
+                ep_links.append((t, full_h))
+                if len(ep_links) >= limit:
+                    break
+    except Exception as e:
+        log("HATA", f"DDizi akışı alınamadı: {e}")
+        return 0, []
+
+    log("KAYIT", f"{len(ep_links)} adet yerli dizi bölümü tespit edildi.")
+    synced_items = []
+
+    for txt, ep_url in ep_links:
+        try:
+            m_ep = re.search(r'(\d+)\s*\.\s*b[öo]l[üu]m', txt, re.I) or re.search(r'-(\d+)-bolum', ep_url)
+            ep_num = int(m_ep.group(1)) if m_ep else 1
+            
+            clean_title = re.sub(r'\|\s*ddizi.*$', '', txt, flags=re.I)
+            clean_title = re.sub(r'\b\d+\s*\.\s*b[öo]l[üu]m.*$', '', clean_title, flags=re.I).strip()
+            if not clean_title:
+                clean_title = "Yerli Dizi"
+
+            did = find_in_index(idx, clean_title, content_type='dizi')
+            if not did:
+                cur.execute("SELECT id, title, slug FROM dramas WHERE title LIKE ?", (f"%{clean_title}%",))
+                row = cur.fetchone()
+                if row:
+                    did = row[0]
+                    clean_title = row[1]
+                else:
+                    slug_base = re.sub(r'[^a-z0-9]+', '-', clean_title.lower()).strip('-')
+                    cur.execute("""
+                        INSERT INTO dramas (title, slug, content_type, country, release_year, status, cover_image, overview)
+                        VALUES (?, ?, 'dizi', 'TR', ?, 'ongoing', '/logo-dark.png', ?)
+                    """, (clean_title, unique_slug(cur, slug_base), datetime.now().year, f"{clean_title} DDizi üzerinden eklendi."))
+                    did = cur.lastrowid
+                    tag_site(cur, did, 'ddizi')
+                    log("YENİ DİZİ", f'"{clean_title}" arşive yeni eklendi (ID: #{did})')
+
+            ep_html = fetch_url(ep_url, headers=headers)
+            
+            # 1. YouTube check
+            yt_match = re.search(r'src=["\'](?:/player/telif/index\.php\?id=)?(https?://(?:www\.)?youtube\.com/watch\?v=[a-zA-Z0-9_\-]+|https?://youtu\.be/[a-zA-Z0-9_\-]+)["\']', ep_html)
+            source_obj = None
+            if yt_match:
+                raw_yt = yt_match.group(1)
+                v_id = re.search(r'(?:v=|youtu\.be/)([a-zA-Z0-9_\-]+)', raw_yt).group(1)
+                source_obj = ("YouTube HD", f"https://www.youtube.com/embed/{v_id}?autoplay=1&enablejsapi=1", "youtube")
+            else:
+                m_p = re.search(r'<iframe[^>]+src=["\'](/player/oynat/[a-zA-Z0-9]+)["\']', ep_html)
+                if m_p:
+                    p_url = f"https://www.ddizi.tel{m_p.group(1)}"
+                    p_html = fetch_url(p_url, headers={'Referer': ep_url})
+                    m3u8_m = re.search(r'file:\s*["\'](https?:\\?/\\?/[^"\']+\.m3u8[^"\']*)["\']', p_html)
+                    if m3u8_m:
+                        hls_u = m3u8_m.group(1).replace('\\/', '/')
+                        source_obj = ("Orijinal", hls_u, "ddizi")
+                    else:
+                        yt_thumb = re.search(r'https?://(?:i\d*\.)?ytimg\.com/vi/([a-zA-Z0-9_\-]+)/', p_html)
+                        if yt_thumb:
+                            yt_id = yt_thumb.group(1)
+                            source_obj = ("YouTube HD", f"https://www.youtube.com/embed/{yt_id}?autoplay=1&enablejsapi=1", "youtube")
+
+            if source_obj:
+                sname, surl, sprov = source_obj
+                ep_id, _ = match_or_create_episode(cur, did, 1, ep_num, f"1. Sezon {ep_num}. Bölüm", ep_url)
+                added = add_source(cur, ep_id, sname, surl, sprov, "ddizi")
+                if added:
+                    safe_commit(conn)
+                    log("AKINCI", f'"{clean_title}" Bölüm {ep_num} -> {sname} akışı bağlandı.')
+                    synced_items.append({
+                        'id': f"ddizi-{did}-1-{ep_num}",
+                        'title': clean_title,
+                        'subtitle': f"1. Sezon {ep_num}. Bölüm ({sname})",
+                        'image': '/logo-dark.png',
+                        'link': f"/seri/{did}/{ep_num}",
+                        'date': datetime.now().isoformat(),
+                        'status': 'Canlı Çözüldü',
+                        'sourceName': sname
+                    })
+        except Exception as err:
+            log("HATA", f"{ep_url} işlenirken hata: {err}")
+
+    return len(synced_items), synced_items
+
+# =========================================================================
+# SCANNER: ANIMECIX
+# =========================================================================
+def clean_animecix_provider(name: str, url: str) -> str:
+    url_low = (url or '').lower()
+    name_low = (name or '').lower()
+    if 'tau-video' in url_low or 'tau-video' in name_low or 'tau' in name_low:
+        return 'tau-video'
+    if 'sibnet.ru' in url_low:
+        return 'sibnet'
+    if 'ok.ru' in url_low or 'odnoklassniki' in url_low:
+        return 'ok.ru'
+    if 'drive.google.com' in url_low:
+        return 'googledrive'
+    if 'mega.nz' in url_low:
+        return 'mega'
+    if 'dailymotion.com' in url_low:
+        return 'dailymotion'
+    if 'dood' in url_low:
+        return 'doodstream'
+    if 'uqload' in url_low:
+        return 'uqload'
+    if 'mp4upload' in url_low:
+        return 'mp4upload'
+    if 'sendvid' in url_low:
+        return 'sendvid'
+    if 'mail.ru' in url_low:
+        return 'mail.ru'
+    if name_low:
+        return name_low.replace(' ', '')
+    return 'embed'
+
+def fetch_animecix_json(endpoint: str, qs: str, retries: int = 3):
+    url = f"https://animecix.tv/secure/{endpoint}?{qs}"
+    for attempt in range(retries):
+        try:
+            h = make_animecix_header(qs)
+            req = urllib.request.Request(url, headers={
+                'X-E-H': h,
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+            })
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                if resp.status == 200:
+                    return json.loads(resp.read().decode('utf-8'))
+        except Exception as e:
+            if attempt == retries - 1:
+                log("UYARI", f"AnimeciX API isteği başarısız ({endpoint}): {e}")
+            time.sleep(0.5)
+    return None
+
+def scan_animecix(conn, cur, idx, limit=10, target=None):
+    log("BAŞLATILDI", "AnimeciX canlı tarama motoru devrede...")
+    synced_items = []
+
+    # 1. Target mode (Live search & ingest by title name or title ID)
+    if target and ANIMECIX_AES:
+        log("ARAMA", f'AnimeciX üzerinde aranıyor: "{target}"')
+        target_titles = []
+
+        if str(target).strip().isdigit():
+            target_titles.append({'id': int(str(target).strip()), 'name': f"AnimeciX #{target}"})
+        else:
+            q_enc = urllib.parse.quote(target.strip())
+            qs = f"query={q_enc}&onlyStreamable=true&page=1&perPage=5"
+            data = fetch_animecix_json("titles", qs)
+            if data and 'pagination' in data:
+                target_titles = data['pagination'].get('data', [])
+
+        log("KAYIT", f"{len(target_titles)} adet AnimeciX anime başlığı bulundu.")
+
+        for t_item in target_titles:
+            title_id = t_item.get('id')
+            raw_name = t_item.get('name') or target
+            clean_title = re.sub(r'[\-_]?(anime|izle|\d{1,4})+$', '', raw_name, flags=re.I).strip()
+            slug_cand = unique_slug(cur, raw_name)
+
+            did = find_in_index(idx, clean_title, content_type='anime')
+            if not did:
+                cur.execute("SELECT id, title, slug FROM dramas WHERE slug LIKE ? OR title LIKE ?", (f"%{clean_title}%", f"%{clean_title}%"))
+                row = cur.fetchone()
+                if row:
+                    did = row[0]
+                    clean_title = row[1]
+                else:
+                    meta = resolve_tmdb_metadata(clean_title, content_type='anime')
+                    c_overview = meta.get('overview') if meta and meta.get('overview') else f"{clean_title} animesinin tüm bölümlerini Full HD Tau-Video ve Türkçe altyazı seçenekleriyle KoUp üzerinden izleyebilirsiniz."
+                    c_cover = meta.get('cover_image') if meta and meta.get('cover_image') else '/logo-dark.png'
+                    c_year = str(meta.get('release_year') or t_item.get('year') or datetime.now().year)
+                    cur.execute("""
+                        INSERT INTO dramas (title, slug, content_type, country, release_year, status_broadcast, cover_image, overview, anilist_id)
+                        VALUES (?, ?, 'anime', 'JP', ?, 'ongoing', ?, ?, ?)
+                    """, (clean_title, slug_cand, c_year, c_cover, c_overview, t_item.get('anilist_id')))
+                    did = cur.lastrowid
+                    tag_site(cur, did, 'animecix')
+                    log("YENİ ANİME", f'"{clean_title}" arşive eklendi (ID: #{did})')
+
+            # Fetch all videos for this title
+            page = 1
+            added_for_title = 0
+            while page <= 25:
+                v_qs = f"titleId={title_id}&page={page}&perPage=100"
+                v_data = fetch_animecix_json("videos", v_qs)
+                if not v_data or 'pagination' not in v_data:
+                    break
+                videos = v_data['pagination'].get('data', [])
+                if not videos:
+                    break
+
+                for v in videos:
+                    v_url = (v.get('url') or '').strip()
+                    if not v_url:
+                        continue
+                    v_low = v_url.lower()
+                    # Skip dead/broken platforms
+                    if any(dead in v_low for dead in ['sendvid', 'drive.google.com', 'docs.google.com', 'dood', 'short.icu']):
+                        continue
+
+                    prov = clean_animecix_provider(v.get('name'), v_url)
+                    s_num = v.get('season_num') or 1
+                    e_num = v.get('episode_num') or 1
+                    ep_url = f"https://animecix.tv/titles/{title_id}/season/{s_num}/episode/{e_num}"
+
+                    ep_id, _ = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_url)
+                    s_name = v.get('name') or ('Tau-Video' if prov == 'tau-video' else 'Orijinal')
+                    if add_source(cur, ep_id, s_name, v_url, prov, 'animecix', fansub=v.get('extra')):
+                        added_for_title += 1
+                        if len(synced_items) < limit:
+                            synced_items.append({
+                                'id': f"animecix-{did}-{s_num}-{e_num}-{prov}",
+                                'title': clean_title,
+                                'subtitle': f"{s_num}. Sezon {e_num}. Bölüm ({s_name})",
+                                'image': '/logo-dark.png',
+                                'link': f"/seri/{slug_cand}/{e_num}",
+                                'date': datetime.now().isoformat(),
+                                'status': 'Tau-Video Canlı Eklendi',
+                                'sourceName': s_name
+                            })
+
+                if page >= v_data['pagination'].get('last_page', 1):
+                    break
+                page += 1
+
+            if added_for_title > 0:
+                safe_commit(conn)
+                log("AKINCI", f'"{clean_title}" -> +{added_for_title} yeni AnimeciX kaynağı bağlandı.')
+
+        if synced_items:
+            log("TAMAMLANDI", f"AnimeciX hedef tarama tamamlandı: +{len(synced_items)} yeni akış.")
+            return len(synced_items), synced_items
+
+    # 2. Database view fallback (Verification of recent active Tau-Video streams)
+    log("SİSTEM", "AnimeciX Tau-Video ve güncel akışlar doğrulanıyor...")
+    cur.execute("""
+        SELECT es.id, d.title, d.slug, e.season_number, e.episode_number, es.source_name, es.direct_url
+        FROM episode_sources es
+        JOIN episodes e ON es.episode_id = e.id
+        JOIN dramas d ON e.drama_id = d.id
+        WHERE es.site = 'animecix' OR es.provider = 'tau-video'
+        ORDER BY es.id DESC
+        LIMIT ?
+    """, (limit,))
+    rows = cur.fetchall()
+    
+    for r in rows:
+        synced_items.append({
+            'id': f"animecix-{r[0]}",
+            'title': r[1],
+            'subtitle': f"{r[3]}. Sezon {r[4]}. Bölüm (Tau-Video)",
+            'image': '/logo-dark.png',
+            'link': f"/seri/{r[2]}/{r[4]}",
+            'date': datetime.now().isoformat(),
+            'status': 'Aktif Akış',
+            'sourceName': 'Orijinal'
+        })
+    log("TAMAMLANDI", f"AnimeciX {len(synced_items)} adet güncel Tau-Video akışı doğrulandı.")
+    return len(synced_items), synced_items
+
+# =========================================================================
+# SCANNER: HDFILM
+# =========================================================================
+def scan_hdfilm(conn, cur, idx, limit=10, target=None):
+    log("BAŞLATILDI", "HDFilmcehennemi canlı tarama motoru devrede (https://www.hdfilmcehennemi.nl)...")
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Referer': 'https://www.hdfilmcehennemi.nl/',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+    }
+    synced_items = []
+
+    # 1. Target mode (Search by query or direct URL)
+    if target:
+        log("ARAMA", f'HDFilmcehennemi üzerinde aranıyor: "{target}"')
+        target_links = []
+        if target.startswith("http"):
+            target_links.append((target, "Hedef Bağlantı", "/logo-dark.png", str(datetime.now().year)))
+        else:
+            try:
+                q = urllib.parse.quote(target.strip())
+                search_url = f"https://www.hdfilmcehennemi.nl/search?q={q}"
+                req = urllib.request.Request(search_url, headers={
+                    **headers,
+                    'X-Requested-With': 'fetch',
+                    'Content-Type': 'application/json'
+                })
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = json.loads(resp.read().decode('utf-8'))
+                    for r_html in data.get('results', []):
+                        bs = BeautifulSoup(r_html, 'html.parser')
+                        a = bs.find('a', href=True)
+                        if a:
+                            t_node = bs.find('h4', class_='title') or bs.find(class_='title')
+                            title_txt = t_node.get_text(strip=True) if t_node else a.get_text(strip=True)
+                            img_node = bs.find('img')
+                            img_src = img_node.get('src') if img_node and img_node.get('src') else '/logo-dark.png'
+                            y_node = bs.find('span', class_='year')
+                            year_val = y_node.get_text(strip=True) if y_node else str(datetime.now().year)
+                            target_links.append((a['href'], title_txt, img_src, year_val))
+            except Exception as e:
+                log("UYARI", f"Arama hatası: {e}")
+
+        log("KAYIT", f"{len(target_links)} adet arama sonucu bulundu.")
+        for item_url, item_title, item_img, item_year in target_links[:limit]:
+            try:
+                if '/dizi/' in item_url:
+                    s_html = fetch_url(item_url, headers=headers)
+                    soup = BeautifulSoup(s_html, 'html.parser')
+                    t = re.sub(r'\s*(izle|hdfilmcehennemi|türkçe dublaj|dizi izle).*$', '', item_title, flags=re.I)
+                    t = re.sub(r'[\-_|:•]+$', '', t).strip()
+                    if not t:
+                        t = item_url.rstrip('/').split('/')[-1].replace('-', ' ').title()
+                    slug_cand = item_url.rstrip('/').split('/')[-1].replace('-izle', '')
+
+                    did = find_in_index(idx, t, slug=slug_cand, content_type='dizi', year=year_val)
+                    if not did:
+                        parts = [p.strip() for p in t.split(' - ') if p.strip()]
+                        for p in parts:
+                            did = find_in_index(idx, p, content_type='dizi', year=year_val)
+                            if did:
+                                t = p
+                                break
+                    if not did:
+                        cur.execute("SELECT id, title, slug FROM dramas WHERE slug LIKE ? OR title LIKE ?", (f"%{slug_cand}%", f"%{t}%"))
+                        row = cur.fetchone()
+                        if row:
+                            did = row[0]
+                            t = row[1]
+                        else:
+                            meta = resolve_tmdb_metadata(t, year=year_val, content_type='dizi')
+                            c_code = meta.get('country_code', 'US') if meta else 'US'
+                            c_overview = meta.get('overview') if meta and meta.get('overview') else f"{t} dizisinin tüm bölümlerini Türkçe altyazılı seçenekleriyle KoUp üzerinden izleyebilirsiniz."
+                            c_cover = meta.get('cover_image') if meta and meta.get('cover_image') else '/logo-dark.png'
+                            c_year = str(meta.get('release_year') or year_val or datetime.now().year)
+                            cur.execute("""
+                                INSERT INTO dramas (title, slug, content_type, country, release_year, status_broadcast, cover_image, overview, source_url)
+                                VALUES (?, ?, 'dizi', ?, ?, 'ongoing', ?, ?, ?)
+                            """, (t, unique_slug(cur, slug_cand), c_code, c_year, c_cover, c_overview, item_url))
+                            did = cur.lastrowid
+                            tag_site(cur, did, 'hdfilm')
+                            log("YENİ DİZİ", f'"{t}" arşive eklendi (ID: #{did}, Ülke: {c_code}, Yıl: {c_year})')
+
+                    ep_links = []
+                    seen = set()
+                    for a in soup.find_all('a', href=True):
+                        h = a['href']
+                        if '/dizi/' in h and ('/sezon-' in h and '/bolum-' in h):
+                            if h not in seen:
+                                seen.add(h)
+                                m = re.search(r'/sezon-(\d+)/bolum-(\d+)', h)
+                                if m:
+                                    ep_links.append((int(m.group(1)), int(m.group(2)), h))
+                    ep_links.sort(key=lambda x: (x[0], x[1]))
+                    for s_num, e_num, ep_url in ep_links[:5]:
+                        ep_html = fetch_url(ep_url, headers={'Referer': item_url})
+                        streams = resolve_hdfilm_streams(ep_url, ep_html)
+                        ep_id, _ = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_url)
+                        for sname, surl, sprov, ssite in streams:
+                            if add_source(cur, ep_id, sname, surl, sprov, ssite):
+                                safe_commit(conn)
+                                log("AKINCI", f'"{t}" S{s_num}E{e_num} -> {sname} bağlandı.')
+                                synced_items.append({
+                                    'id': f"hdfilm-{did}-{s_num}-{e_num}-{sprov}",
+                                    'title': t,
+                                    'subtitle': f"{s_num}. Sezon {e_num}. Bölüm ({sname})",
+                                    'image': '/logo-dark.png',
+                                    'link': f"/seri/{slug_cand}/{e_num}",
+                                    'date': datetime.now().isoformat(),
+                                    'status': 'Canlı Çözüldü',
+                                    'sourceName': sname
+                                })
+                else:
+                    m_html = fetch_url(item_url, headers=headers)
+                    t = re.sub(r'\s*(izle|hdfilmcehennemi|film izle|hd film izle|türkçe dublaj|türkçe altyazılı).*$', '', item_title, flags=re.I)
+                    t = re.sub(r'[\-_|:•]+$', '', t).strip()
+                    if not t:
+                        t = item_url.rstrip('/').split('/')[-1].replace('-', ' ').title()
+                    slug_cand = item_url.rstrip('/').split('/')[-1]
+
+                    did = find_in_index(idx, t, slug=slug_cand, content_type='film', year=year_val)
+                    if not did:
+                        parts = [p.strip() for p in t.split(' - ') if p.strip()]
+                        for p in parts:
+                            did = find_in_index(idx, p, content_type='film', year=year_val)
+                            if did:
+                                t = p
+                                break
+                    if not did:
+                        cur.execute("SELECT id, title, slug FROM dramas WHERE slug LIKE ? OR title LIKE ?", (f"%{slug_cand}%", f"%{t}%"))
+                        row = cur.fetchone()
+                        if row:
+                            did = row[0]
+                            t = row[1]
+                        else:
+                            meta = resolve_tmdb_metadata(t, year=year_val, content_type='film')
+                            c_code = meta.get('country_code', 'US') if meta else 'US'
+                            c_overview = meta.get('overview') if meta and meta.get('overview') else f"{t} filmini Türkçe dublaj ve altyazılı seçenekleriyle KoUp üzerinden izleyebilirsiniz."
+                            c_cover = meta.get('cover_image') if meta and meta.get('cover_image') else '/logo-dark.png'
+                            c_year = str(meta.get('release_year') or year_val or datetime.now().year)
+                            cur.execute("""
+                                INSERT INTO dramas (title, slug, content_type, country, release_year, status_broadcast, cover_image, overview, source_url)
+                                VALUES (?, ?, 'film', ?, ?, 'completed', ?, ?, ?)
+                            """, (t, unique_slug(cur, slug_cand), c_code, c_year, c_cover, c_overview, item_url))
+                            did = cur.lastrowid
+                            tag_site(cur, did, 'hdfilm')
+                            log("YENİ FİLM", f'"{t}" arşive eklendi (ID: #{did}, Ülke: {c_code}, Yıl: {c_year})')
+
+                    streams = resolve_hdfilm_streams(item_url, m_html)
+                    ep_id, _ = match_or_create_episode(cur, did, 1, 1, "Film", item_url)
+                    for sname, surl, sprov, ssite in streams:
+                        if add_source(cur, ep_id, sname, surl, sprov, ssite):
+                            safe_commit(conn)
+                            log("AKINCI", f'"{t}" Film -> {sname} bağlandı.')
+                            synced_items.append({
+                                'id': f"hdfilm-{did}-film-{sprov}",
+                                'title': t,
+                                'subtitle': f"Film ({sname})",
+                                'image': '/logo-dark.png',
+                                'link': f"/seri/{slug_cand}/1",
+                                'date': datetime.now().isoformat(),
+                                'status': 'Canlı Çözüldü',
+                                'sourceName': sname
+                            })
+            except Exception as err:
+                log("HATA", f"{item_url} işlenirken hata: {err}")
+
+    # 2. Live scan mode (Latest TV Series & Movies from HDFilmcehennemi)
+    else:
+        log("TARAMA", "HDFilmcehennemi güncel dizi bölümleri ve filmler taranıyor...")
+        try:
+            dizi_html = fetch_url("https://www.hdfilmcehennemi.nl/yabancidiziizle-5/", headers=headers)
+            soup = BeautifulSoup(dizi_html, 'html.parser')
+            ep_candidates = []
+            seen = set()
+            for a in soup.find_all('a', href=True):
+                h = a['href']
+                if '/dizi/' in h and ('/sezon-' in h and '/bolum-' in h) and h not in seen:
+                    seen.add(h)
+                    t = a.get_text(strip=True)
+                    ep_candidates.append((t, h))
+                    if len(ep_candidates) >= limit:
+                        break
+
+            log("KAYIT", f"{len(ep_candidates)} adet güncel yabancı dizi bölümü bulundu.")
+            for ep_title, ep_url in ep_candidates:
+                try:
+                    m = re.search(r'/dizi/([^/]+)/sezon-(\d+)/bolum-(\d+)', ep_url)
+                    if not m:
+                        continue
+                    slug_cand = m.group(1)
+                    s_num = int(m.group(2))
+                    e_num = int(m.group(3))
+
+                    raw_t = re.sub(r'^\d+\.\s*Sezon\s*\d+\.\s*B[öo]l[üu]m\s*', '', ep_title, flags=re.I)
+                    raw_t = re.sub(r'\d{1,2}\s+[A-Za-zÇĞİÖŞÜçğıöşü]+\s+\d{4}.*$', '', raw_t).strip()
+                    clean_title = raw_t if raw_t else re.sub(r'[\-_]?(dizi|hdfc|izle|\d{1,4})+$', '', slug_cand, flags=re.I).replace('-', ' ').strip().title()
+
+                    did = find_in_index(idx, clean_title, slug=slug_cand)
+                    if not did:
+                        parts = [p.strip() for p in clean_title.split(' - ') if p.strip()]
+                        for p in parts:
+                            did = find_in_index(idx, p)
+                            if did:
+                                clean_title = p
+                                break
+                    if not did:
+                        cur.execute("SELECT id, title, slug FROM dramas WHERE slug LIKE ? OR title LIKE ?", (f"%{slug_cand}%", f"%{clean_title}%"))
+                        row = cur.fetchone()
+                        if row:
+                            did = row[0]
+                            clean_title = row[1]
+                        else:
+                            meta = resolve_tmdb_metadata(clean_title, content_type='dizi')
+                            c_code = meta.get('country_code', 'US') if meta else 'US'
+                            c_overview = meta.get('overview') if meta and meta.get('overview') else f"{clean_title} dizisinin tüm bölümlerini Türkçe altyazılı seçenekleriyle KoUp üzerinden izleyebilirsiniz."
+                            c_cover = meta.get('cover_image') if meta and meta.get('cover_image') else '/logo-dark.png'
+                            c_year = str(meta.get('release_year') or datetime.now().year)
+                            cur.execute("""
+                                INSERT INTO dramas (title, slug, content_type, country, release_year, status_broadcast, cover_image, overview, source_url)
+                                VALUES (?, ?, 'dizi', ?, ?, 'ongoing', ?, ?, ?)
+                            """, (clean_title, unique_slug(cur, slug_cand), c_code, c_year, c_cover, c_overview, ep_url))
+                            did = cur.lastrowid
+                            tag_site(cur, did, 'hdfilm')
+                            log("YENİ DİZİ", f'"{clean_title}" arşive eklendi (ID: #{did}, Ülke: {c_code}, Yıl: {c_year})')
+
+                    ep_html = fetch_url(ep_url, headers=headers)
+                    streams = resolve_hdfilm_streams(ep_url, ep_html)
+                    ep_id, _ = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_url)
+                    for sname, surl, sprov, ssite in streams:
+                        if add_source(cur, ep_id, sname, surl, sprov, ssite):
+                            safe_commit(conn)
+                            log("AKINCI", f'"{clean_title}" S{s_num}E{e_num} -> {sname} bağlandı.')
+                            synced_items.append({
+                                'id': f"hdfilm-{did}-{s_num}-{e_num}-{sprov}",
+                                'title': clean_title,
+                                'subtitle': f"{s_num}. Sezon {e_num}. Bölüm ({sname})",
+                                'image': '/logo-dark.png',
+                                'link': f"/seri/{slug_cand}/{e_num}",
+                                'date': datetime.now().isoformat(),
+                                'status': 'Canlı Çözüldü',
+                                'sourceName': sname
+                            })
+                except Exception as err:
+                    log("HATA", f"{ep_url} çözümlenirken hata: {err}")
+
+        except Exception as e:
+            log("HATA", f"HDFilmcehennemi canlı tarama hatası: {e}")
+
+    log("TAMAMLANDI", f"HDFilmcehennemi işlemi tamamlandı: {len(synced_items)} yeni akış kaydedildi.")
+    return len(synced_items), synced_items
+
+# =========================================================================
+# SCANNER: ASYAWATCH
+# =========================================================================
+def scan_asyawatch(conn, cur, idx, limit=10, target=None):
+    log("BAŞLATILDI", "AsyaWatch canlı tarama motoru devrede (https://asyawatch.com)...")
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Referer': 'https://asyawatch.com/',
+        'Origin': 'https://asyawatch.com',
+        'Accept': 'application/json, text/plain, */*'
+    }
+    synced_items = []
+    build_id = "roDxiuBEE4QePAtjVppYK"
+
+    # 1. Target mode (Search by title or slug)
+    if target:
+        log("ARAMA", f'AsyaWatch üzerinde aranıyor: "{target}"')
+        target_slug = re.sub(r'[^a-z0-9]+', '-', target.lower()).strip('-')
+        target_slug = target_slug.replace('-izle', '')
+        
+        try:
+            url = f"https://asyawatch.com/_next/data/{build_id}/dizi/{target_slug}.json"
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                sec = data.get('pageProps', {}).get('secureData')
+                parsed = json.loads(base64.b64decode(sec).decode('utf-8'))
+                
+                ci = parsed.get('contentItem', {})
+                clean_title = ci.get('original_title') or target
+                year = ci.get('release_year') or datetime.now().year
+                poster = ci.get('poster_url') or '/logo-dark.png'
+                
+                did = find_in_index(idx, clean_title, year)
+                if not did:
+                    cur.execute("SELECT id FROM dramas WHERE slug LIKE ? OR title LIKE ?", (f"%{target_slug}%", f"%{clean_title}%"))
+                    row = cur.fetchone()
+                    if row:
+                        did = row[0]
+                
+                if did:
+                    tag_site(cur, did, 'asyawatch')
+                    season_results = parsed.get('RelatedResults', {}).get('getSerieSeasonAndEpisodes', {}).get('result', [])
+                    flat_eps = []
+                    for s in season_results:
+                        if isinstance(s, dict) and 'episodes' in s:
+                            flat_eps.extend(s['episodes'])
+                        else:
+                            flat_eps.append(s)
+                    log("BÖLÜMLER", f'"{clean_title}" için {len(flat_eps)} bölüm bulundu. Kaynaklar taranıyor...')
+                    
+                    for ep in flat_eps[:limit]:
+                        s_num = ep.get('season_no', 1)
+                        e_num = ep.get('episode_no', 1)
+                        ep_slug = ep.get('used_slug', f"dizi/{target_slug}/sezon-{s_num}/bolum-{e_num}")
+                        ep_page_url = f"https://asyawatch.com/{ep_slug}"
+                        
+                        try:
+                            ep_json_url = f"https://asyawatch.com/_next/data/{build_id}/{ep_slug}.json"
+                            with urllib.request.urlopen(urllib.request.Request(ep_json_url, headers=headers), timeout=10) as er:
+                                edata = json.loads(er.read().decode('utf-8'))
+                                esec = json.loads(base64.b64decode(edata['pageProps']['secureData']).decode('utf-8'))
+                                esources = esec.get('RelatedResults', {}).get('getEpisodeSources', {}).get('result', [])
+                                
+                                for s in esources:
+                                    s_content = s.get('source_content', '')
+                                    m_iframe = re.search(r'src=["\']([^"\']+)["\']', s_content)
+                                    if m_iframe:
+                                        embed_url = m_iframe.group(1)
+                                        if embed_url.startswith('//'):
+                                            embed_url = 'https:' + embed_url
+                                        
+                                        ep_id, _ = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_page_url)
+                                        if add_source(cur, ep_id, 'Asyawatch (1080p)', embed_url, 'asyawatch', 'asyawatch'):
+                                            safe_commit(conn)
+                                            log("AKINCI", f'"{clean_title}" S{s_num}E{e_num} -> Asyawatch (1080p) bağlandı.')
+                                            synced_items.append({
+                                                'id': f"asyawatch-{did}-{s_num}-{e_num}",
+                                                'title': clean_title,
+                                                'subtitle': f"{s_num}. Sezon {e_num}. Bölüm (Asyawatch 1080p)",
+                                                'image': poster,
+                                                'link': f"/seri/{target_slug}/{e_num}",
+                                                'date': datetime.now().isoformat(),
+                                                'status': '1080p HLS Bağlandı',
+                                                'sourceName': 'Asyawatch'
+                                            })
+                        except Exception as e:
+                            log("HATA", f"Bölüm {ep_slug} hatası: {e}")
+        except Exception as e:
+            log("HATA", f"AsyaWatch hedef arama hatası: {e}")
+
+    # 2. Live scan mode
+    else:
+        log("TARAMA", "AsyaWatch güncel akışları doğrulanıyor...")
+        cur.execute("""
+            SELECT es.id, d.title, d.slug, e.season_number, e.episode_number, es.source_name, es.direct_url, d.cover_image
+            FROM episode_sources es
+            JOIN episodes e ON es.episode_id = e.id
+            JOIN dramas d ON e.drama_id = d.id
+            WHERE es.site = 'asyawatch' OR es.provider = 'asyawatch'
+            ORDER BY es.id DESC
+            LIMIT ?
+        """, (limit,))
+        rows = cur.fetchall()
+        for r in rows:
+            synced_items.append({
+                'id': f"asyawatch-{r[0]}",
+                'title': r[1],
+                'subtitle': f"{r[3]}. Sezon {r[4]}. Bölüm ({r[5]})",
+                'image': r[7] or '/logo-dark.png',
+                'link': f"/seri/{r[2]}/{r[4]}",
+                'date': datetime.now().isoformat(),
+                'status': 'Aktif 1080p Akış',
+                'sourceName': r[5]
+            })
+
+    log("TAMAMLANDI", f"AsyaWatch işlemi tamamlandı: {len(synced_items)} adet akış hazır.")
+    return len(synced_items), synced_items
+
+# =========================================================================
+# SCANNER: DIZILLA
+# =========================================================================
+def scan_dizilla(conn, cur, idx, limit=10, target=None):
+    log("BAŞLATILDI", "Dizilla canlı tarama motoru devrede (https://dizilla.now)...")
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Referer': 'https://dizilla.now/',
+        'Origin': 'https://dizilla.now',
+        'Accept': 'application/json, text/plain, */*'
+    }
+    synced_items = []
+    build_id = "SMdJuCNMmz-cwhEqAI8Eb"
+
+    # 1. Target mode (Search by title or slug)
+    if target:
+        log("ARAMA", f'Dizilla üzerinde aranıyor: "{target}"')
+        target_slug = re.sub(r'[^a-z0-9]+', '-', target.lower()).strip('-')
+        target_slug = target_slug.replace('-izle', '')
+
+        try:
+            url = f"https://dizilla.now/_next/data/{build_id}/dizi/{target_slug}.json"
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                sec = data.get('pageProps', {}).get('secureData')
+                
+                h = hashlib.sha256(b'!!22xx!!90!!').digest()
+                b64 = base64.b64encode(h).decode('ascii')
+                key = b64[:32].encode('utf-8')
+                iv = bytes(16)
+                raw_data = base64.b64decode(sec)
+                cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+                dec = cipher.decryptor()
+                decrypted = dec.update(raw_data) + dec.finalize()
+                pad_len = decrypted[-1]
+                parsed = json.loads(decrypted[:-pad_len].decode('utf-8'))
+
+                ci = parsed.get('contentItem', {})
+                clean_title = ci.get('original_title') or target
+                year = ci.get('release_year') or datetime.now().year
+                poster = ci.get('poster_url') or '/logo-dark.png'
+
+                did = find_in_index(idx, clean_title, year)
+                if not did:
+                    cur.execute("SELECT id FROM dramas WHERE slug LIKE ? OR title LIKE ?", (f"%{target_slug}%", f"%{clean_title}%"))
+                    row = cur.fetchone()
+                    if row:
+                        did = row[0]
+
+                if did:
+                    season_results = parsed.get('RelatedResults', {}).get('getSerieSeasonAndEpisodes', {}).get('result', [])
+                    flat_eps = []
+                    for s in season_results:
+                        if isinstance(s, dict) and 'episodes' in s:
+                            flat_eps.extend(s['episodes'])
+                        else:
+                            flat_eps.append(s)
+                    log("BÖLÜMLER", f'"{clean_title}" için {len(flat_eps)} bölüm bulundu. Kaynaklar taranıyor...')
+
+                    for ep in flat_eps[:limit]:
+                        s_num = ep.get('season_no', 1)
+                        e_num = ep.get('episode_no', 1)
+                        ep_slug = ep.get('used_slug', f"{target_slug}-{s_num}-sezon-{e_num}-bolum")
+                        ep_page_url = f"https://dizilla.now/{ep_slug}"
+
+                        try:
+                            ep_json_url = f"https://dizilla.now/_next/data/{build_id}/{ep_slug}.json"
+                            with urllib.request.urlopen(urllib.request.Request(ep_json_url, headers=headers), timeout=10) as er:
+                                edata = json.loads(er.read().decode('utf-8'))
+                                esec = edata.get('pageProps', {}).get('secureData')
+                                raw_edata = base64.b64decode(esec)
+                                edec = cipher.decryptor().update(raw_edata) + cipher.decryptor().finalize()
+                                ep_parsed = json.loads(edec[:-edec[-1]].decode('utf-8'))
+                                esources = ep_parsed.get('RelatedResults', {}).get('getEpisodeSources', {}).get('result', [])
+
+                                for s in esources:
+                                    s_content = s.get('source_content', '')
+                                    m_iframe = re.search(r'src=["\']([^"\']+)["\']', s_content)
+                                    if m_iframe:
+                                        embed_url = m_iframe.group(1)
+                                        if embed_url.startswith('//'):
+                                            embed_url = 'https:' + embed_url
+
+                                        ep_id, _ = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_page_url)
+                                        if add_source(cur, ep_id, 'Dizilla (1080p)', embed_url, 'dizilla', 'dizilla'):
+                                            safe_commit(conn)
+                                            log("AKINCI", f'"{clean_title}" S{s_num}E{e_num} -> Dizilla (1080p) bağlandı.')
+                                            synced_items.append({
+                                                'id': f"dizilla-{did}-{s_num}-{e_num}",
+                                                'title': clean_title,
+                                                'subtitle': f"{s_num}. Sezon {e_num}. Bölüm (Dizilla 1080p)",
+                                                'image': poster,
+                                                'link': f"/seri/{target_slug}/{e_num}",
+                                                'date': datetime.now().isoformat(),
+                                                'status': '1080p HLS Bağlandı',
+                                                'sourceName': 'Dizilla'
+                                            })
+                        except Exception as e:
+                            log("HATA", f"Bölüm {ep_slug} hatası: {e}")
+        except Exception as e:
+            log("HATA", f"Dizilla hedef arama hatası: {e}")
+
+    # 2. Live scan mode
+    else:
+        log("TARAMA", "Dizilla güncel akışları doğrulanıyor...")
+        cur.execute("""
+            SELECT es.id, d.title, d.slug, e.season_number, e.episode_number, es.source_name, es.direct_url, d.cover_image
+            FROM episode_sources es
+            JOIN episodes e ON es.episode_id = e.id
+            JOIN dramas d ON e.drama_id = d.id
+            WHERE es.site = 'dizilla' OR es.provider = 'dizilla'
+            ORDER BY es.id DESC
+            LIMIT ?
+        """, (limit,))
+        rows = cur.fetchall()
+        for r in rows:
+            synced_items.append({
+                'id': f"dizilla-{r[0]}",
+                'title': r[1],
+                'subtitle': f"{r[3]}. Sezon {r[4]}. Bölüm ({r[5]})",
+                'image': r[7] or '/logo-dark.png',
+                'link': f"/seri/{r[2]}/{r[4]}",
+                'date': datetime.now().isoformat(),
+                'status': 'Aktif 1080p Akış',
+                'sourceName': r[5]
+            })
+
+    log("TAMAMLANDI", f"Dizilla işlemi tamamlandı: {len(synced_items)} adet akış hazır.")
+    return len(synced_items), synced_items
+
+# =========================================================================
+# MAIN ENTRY
+# =========================================================================
+def main():
+    parser = argparse.ArgumentParser(description="KoUp Live Scraper Engine")
+    parser.add_argument("--provider", required=True, choices=["dizibox", "dizikorea", "ddizi", "animecix", "hdfilm", "asyawatch", "dizilla"])
+    parser.add_argument("--limit", type=int, default=10)
+    parser.add_argument("--target", type=str, default=None)
+    args = parser.parse_args()
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("PRAGMA journal_mode=WAL;")
+    cur.execute("PRAGMA synchronous=NORMAL;")
+    
+    idx = build_drama_index(cur)
+
+    delta = 0
+    items = []
+    if args.provider == "dizibox":
+        delta, items = scan_dizibox(conn, cur, idx, limit=args.limit, target=args.target)
+    elif args.provider == "dizikorea":
+        delta, items = scan_dizikorea(conn, cur, idx, limit=args.limit, target=args.target)
+    elif args.provider == "ddizi":
+        delta, items = scan_ddizi(conn, cur, idx, limit=args.limit, target=args.target)
+    elif args.provider == "animecix":
+        delta, items = scan_animecix(conn, cur, idx, limit=args.limit, target=args.target)
+    elif args.provider == "hdfilm":
+        delta, items = scan_hdfilm(conn, cur, idx, limit=args.limit, target=args.target)
+    elif args.provider == "asyawatch":
+        delta, items = scan_asyawatch(conn, cur, idx, limit=args.limit, target=args.target)
+    elif args.provider == "dizilla":
+        delta, items = scan_dizilla(conn, cur, idx, limit=args.limit, target=args.target)
+
+    # Get updated total
+    if args.provider == "hdfilm":
+        cur.execute("SELECT COUNT(*) FROM episode_sources WHERE site LIKE '%hdfilm%' OR provider LIKE '%hdfilm%' OR provider = 'rapidrame' OR provider = 'close'")
+    elif args.provider == "asyawatch":
+        cur.execute("SELECT COUNT(*) FROM episode_sources WHERE site LIKE '%asyawatch%' OR provider LIKE '%asyawatch%'")
+    elif args.provider == "dizilla":
+        cur.execute("SELECT COUNT(*) FROM episode_sources WHERE site LIKE '%dizilla%' OR provider LIKE '%dizilla%'")
+    else:
+        cur.execute("SELECT COUNT(*) FROM episode_sources WHERE site=? OR provider=?", (args.provider, args.provider))
+    new_total = cur.fetchone()[0]
+
+    log("TAMAMLANDI", f"Tarama görevi tamamlandı. Yeni/Güncel Kaynak: +{delta}. Toplam Arşiv: {new_total:,}")
+
+    # Output JSON line for API consumer
+    result_data = {
+        "ok": True,
+        "provider": args.provider,
+        "syncedDelta": delta,
+        "newTotal": new_total,
+        "items": items,
+        "timestamp": datetime.now().isoformat()
+    }
+    print(f"__RESULT__ {json.dumps(result_data, ensure_ascii=False)}")
+
+if __name__ == "__main__":
+    main()

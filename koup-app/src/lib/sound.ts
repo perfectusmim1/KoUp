@@ -36,8 +36,6 @@ export function playNotificationChime(
     if (!ctx) return;
 
     const now = ctx.currentTime;
-    const gain = ctx.createGain();
-    gain.connect(ctx.destination);
 
     if (tone === 'apple_glass') {
       // Crystal harmonic dual-note Apple TV+ glass chime
@@ -48,14 +46,25 @@ export function playNotificationChime(
         osc.type = 'sine';
         osc.frequency.setValueAtTime(f, now + idx * 0.055);
         noteGain.gain.setValueAtTime(0.0001, now + idx * 0.055);
-        noteGain.gain.exponentialRampToValueAtTime(Math.max(0.02, volume * 0.22), now + idx * 0.055 + 0.02);
+        noteGain.gain.exponentialRampToValueAtTime(
+          Math.max(0.02, volume * 0.22),
+          now + idx * 0.055 + 0.02
+        );
         noteGain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.055 + 0.55);
         osc.connect(noteGain);
         noteGain.connect(ctx.destination);
+        osc.onended = () => {
+          try {
+            osc.disconnect();
+            noteGain.disconnect();
+          } catch {}
+        };
         osc.start(now + idx * 0.055);
         osc.stop(now + idx * 0.055 + 0.6);
       });
     } else if (tone === 'soft_chime') {
+      const gain = ctx.createGain();
+      gain.connect(ctx.destination);
       const osc = ctx.createOscillator();
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(587.33, now);
@@ -64,9 +73,17 @@ export function playNotificationChime(
       gain.gain.exponentialRampToValueAtTime(Math.max(0.02, volume * 0.25), now + 0.03);
       gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
       osc.connect(gain);
+      osc.onended = () => {
+        try {
+          osc.disconnect();
+          gain.disconnect();
+        } catch {}
+      };
       osc.start(now);
       osc.stop(now + 0.48);
     } else {
+      const gain = ctx.createGain();
+      gain.connect(ctx.destination);
       const osc = ctx.createOscillator();
       osc.type = 'sine';
       osc.frequency.setValueAtTime(420, now);
@@ -75,6 +92,12 @@ export function playNotificationChime(
       gain.gain.exponentialRampToValueAtTime(Math.max(0.02, volume * 0.3), now + 0.015);
       gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
       osc.connect(gain);
+      osc.onended = () => {
+        try {
+          osc.disconnect();
+          gain.disconnect();
+        } catch {}
+      };
       osc.start(now);
       osc.stop(now + 0.16);
     }

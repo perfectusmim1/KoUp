@@ -2,7 +2,7 @@
 KoUp Otomatik Veri Güncelleme & 24s Watchdog Pipeline (GitHub Actions / Admin Trigger)
 - AsyaMag (https://asyamag.com) yeni haber ve dedikodu içeriklerini çeker ve oyuncu/dizilerle eşler
 - DiziBox (https://www.dizibox.live/) yeni dizi ve bölümleri king.php -> molystream çözücüsüyle çeker
-- WebDramaTurkey2 (https://webdramaturkey2.com), TrAnimeİzle (https://www.tranimeizle.live) ve DiziYou son bölümleri kontrol eder
+- DiziKorea (https://dizikorea3.com), TrAnimeİzle (https://www.tranimeizle.live) ve DiziYou son bölümleri kontrol eder
 - 24 Saatlik Watchdog Doğrulaması: Son 24 saatte eklenen bölümlerin eksik alternatif kaynaklarını tamamlar
 """
 
@@ -103,6 +103,32 @@ def sync_dizibox_latest(limit: int = 10) -> int:
     return 0
 
 
+def sync_dizikorea_latest(limit: int = 10) -> int:
+    """https://dizikorea3.com üzerinden son eklenen K-Drama içeriklerini kontrol eder."""
+    base_url = "https://dizikorea3.com"
+    print(f"[DiziKorea] {base_url} üzerinden son {limit} Kore dizisi taranıyor...")
+    try:
+        sess = cfr.Session(impersonate="chrome") if cfr else requests.Session()
+        resp = sess.get(f"{base_url}/", headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0"}, timeout=20)
+        if resp.status_code != 200:
+            print(f"[DiziKorea] HTTP {resp.status_code} döndü.")
+            return 0
+        soup = BeautifulSoup(resp.text, "html.parser")
+        series_urls = []
+        for a in soup.find_all("a", href=True):
+            h = a["href"] or ""
+            if re.search(r"/(?:dizi|series)/[a-z0-9-]+/?$", h):
+                full = h if h.startswith("http") else base_url + h
+                if full not in series_urls:
+                    series_urls.append(full)
+        series_urls = series_urls[:limit]
+        print(f"[DiziKorea] {len(series_urls)} güncel dizi bağlantısı tespit edildi.")
+        return len(series_urls)
+    except Exception as e:
+        print(f"[DiziKorea] Tarama uyarısı: {e}")
+    return 0
+
+
 def run_watchdog_check() -> int:
     print("[Watchdog 24h] Son 24-36 saat içinde eklenen bölümlerin kaynak sağlığı doğrulanıyor...")
     try:
@@ -126,7 +152,7 @@ def main():
         "--target",
         type=str,
         default="all",
-        help="Hedef: all | asyamag | dizibox | webdramaturkey | tranimeizle | diziyou | watchdog_24h",
+        help="Hedef: all | asyamag | dizibox | dizikorea | tranimeizle | diziyou | watchdog_24h",
     )
     args = parser.parse_args()
 
@@ -139,10 +165,13 @@ def main():
     if target in ("all", "dizibox"):
         sync_dizibox_latest(10)
 
+    if target in ("all", "dizikorea"):
+        sync_dizikorea_latest(10)
+
     if target in ("all", "calendar", "takvim"):
         try:
-            from sync_real_calendars import sync_webdramaturkey, sync_dizibox, sync_anilist_airing
-            sync_webdramaturkey()
+            from sync_real_calendars import sync_dizikorea, sync_dizibox, sync_anilist_airing
+            sync_dizikorea()
             sync_dizibox()
             sync_anilist_airing()
         except Exception as e:

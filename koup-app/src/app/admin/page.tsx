@@ -37,8 +37,15 @@ import {
   ArrowLeft,
   Clock,
   Ban,
+  Terminal,
+  Activity,
+  Sparkles,
+  Play,
+  Flame,
+  Globe,
+  Check,
 } from 'lucide-react';
-import { supabase, MediaItem, formatContentTypeTR } from '@/lib/supabase';
+import { supabase, MediaItem, formatContentTypeTR, getProxiedImageUrl } from '@/lib/supabase';
 import { invalidateCache } from '@/lib/cache';
 import CountryFlag from '@/components/CountryFlag';
 import CustomSelect, { SelectOption } from '@/components/CustomSelect';
@@ -140,6 +147,8 @@ interface AdminEpisodeItem {
   status: string;
   scheduled_release_at?: string | null;
   translation_note?: string | null;
+  intro_start_sec?: number | null;
+  intro_end_sec?: number | null;
   video_sources?: any[];
 }
 
@@ -148,7 +157,6 @@ const USER_ROLE_OPTIONS: SelectOption[] = [
   { value: 'translator', label: 'Çevirmen (Translator)' },
   { value: 'editor', label: 'Editör (Editor)' },
   { value: 'moderator', label: 'Moderatör (Moderator)' },
-  { value: 'admin', label: 'Sistem Yöneticisi (Admin)' },
   { value: 'banned', label: 'Askıya Al (Banned)' },
 ];
 
@@ -176,15 +184,15 @@ const EPISODE_STATUS_OPTIONS: SelectOption[] = [
 ];
 
 const SOURCE_PROVIDER_OPTIONS: SelectOption[] = [
+  { value: 'Orijinal', label: 'Orijinal (1080p HLS / Native MP4)' },
   { value: 'Vidmoly', label: 'Vidmoly (1080p Embed)' },
-  { value: 'DiziYou', label: 'DiziYou (HLS .m3u8)' },
-  { value: 'Ok.ru', label: 'Ok.ru (Odnoklassniki)' },
+  { value: 'YouTube', label: 'YouTube HD' },
+  { value: 'DiziKorea', label: 'DiziKorea HLS' },
+  { value: 'DiziBox', label: 'DiziBox DBX Pro' },
+  { value: 'DDizi', label: 'DDizi HLS' },
+  { value: 'Tau-Video', label: 'Tau-Video (AnimeciX)' },
   { value: 'Sibnet', label: 'Sibnet' },
-  { value: 'Tau-Video', label: 'Tau-Video' },
-  { value: 'Mail.ru', label: 'Mail.ru' },
-  { value: 'GoogleDrive', label: 'Google Drive' },
   { value: 'Direct-MP4', label: 'Doğrudan MP4' },
-  { value: 'DiziBox', label: 'DiziBox' },
 ];
 
 const SOURCE_QUALITY_OPTIONS: SelectOption[] = [
@@ -320,6 +328,110 @@ function PaginationControls({
   );
 }
 
+const SCRAPER_BRAND_INFO: Record<
+  string,
+  {
+    logoText: string;
+    domain: string;
+    tag: string;
+    bgGradient: string;
+    borderGlow: string;
+    textColor: string;
+    category: string;
+    protocol: string;
+  }
+> = {
+  ddizi: {
+    logoText: 'DDizi',
+    domain: 'https://ddizi.tel',
+    tag: 'Yerli & Klasik HD',
+    bgGradient: 'from-blue-600/25 via-indigo-700/20 to-blue-950/40',
+    borderGlow: 'border-blue-500/40 group-hover:border-blue-400/80',
+    textColor: 'text-blue-300',
+    category: 'Yerli Dizi & Klasik HD (1000+ Seri)',
+    protocol: 'Doğrudan .m3u8 HLS + YouTube HD Resmi Akış',
+  },
+  animecix: {
+    logoText: 'AnimeciX',
+    domain: 'https://animecix.net',
+    tag: 'Tau-Video',
+    bgGradient: 'from-purple-500/25 via-indigo-600/20 to-purple-950/40',
+    borderGlow: 'border-purple-500/40 group-hover:border-purple-400/80',
+    textColor: 'text-purple-300',
+    category: 'Alternatif Anime Arşivi',
+    protocol: 'Tau-Video & Sibnet Doğrudan MP4 / HLS',
+  },
+  dizibox: {
+    logoText: 'DiziBox',
+    domain: 'https://www.dizibox.live',
+    tag: 'DBX Pro 1080p',
+    bgGradient: 'from-amber-500/25 via-orange-600/20 to-amber-950/40',
+    borderGlow: 'border-amber-500/40 group-hover:border-amber-400/80',
+    textColor: 'text-amber-300',
+    category: 'Global & Batı Sineması',
+    protocol: 'king.php DBX Pro MolyStream 1080p HLS Çözücü',
+  },
+  dizikorea: {
+    logoText: 'DiziKorea',
+    domain: 'https://dizikorea3.com',
+    tag: '1080p HLS',
+    bgGradient: 'from-emerald-500/25 via-teal-600/20 to-emerald-950/40',
+    borderGlow: 'border-emerald-500/40 group-hover:border-emerald-400/80',
+    textColor: 'text-emerald-300',
+    category: 'K-Drama (Güney Kore & Asya)',
+    protocol: 'playerdkorea.xyz Doğrudan HLS + Vidmoly Çözücü',
+  },
+  hdfilm: {
+    logoText: 'HDFilm',
+    domain: 'https://www.hdfilmcehennemi.nl',
+    tag: '1080p Dual HLS',
+    bgGradient: 'from-rose-600/25 via-red-700/20 to-rose-950/40',
+    borderGlow: 'border-rose-500/40 group-hover:border-rose-400/80',
+    textColor: 'text-rose-300',
+    category: 'Sinema & Yabancı Dizi',
+    protocol: 'Close Dual HLS (Türkçe Dublaj) + Rapidrame HLS (Altyazılı)',
+  },
+  asyawatch: {
+    logoText: 'AsyaWatch',
+    domain: 'https://asyawatch.com',
+    tag: '1080p HLS Asya',
+    bgGradient: 'from-pink-600/25 via-rose-700/20 to-pink-950/40',
+    borderGlow: 'border-pink-500/40 group-hover:border-pink-400/80',
+    textColor: 'text-pink-300',
+    category: 'K-Drama & Asya (2100+ Dizi)',
+    protocol: 'four.pichive.online 1080p Yerel HLS Çözücü',
+  },
+  dizilla: {
+    logoText: 'Dizilla',
+    domain: 'https://dizilla.now',
+    tag: 'AES-256 Global & Anime',
+    bgGradient: 'from-amber-600/25 via-red-700/20 to-amber-950/40',
+    borderGlow: 'border-amber-500/40 group-hover:border-amber-400/80',
+    textColor: 'text-amber-300',
+    category: 'Global & Anime (8900+ Dizi)',
+    protocol: 'AES-256 CBC Decrypt + 1080p HLS Çözücü',
+  },
+};
+
+function ScraperLogoBadge({ siteKey, name }: { siteKey: string; name: string }) {
+  const brand = SCRAPER_BRAND_INFO[siteKey];
+  const text = brand?.logoText || name.slice(0, 8);
+  const bg = brand?.bgGradient || 'from-sky-500/25 via-blue-600/20 to-sky-950/40';
+  const border = brand?.borderGlow || 'border-white/20';
+  const color = brand?.textColor || 'text-white';
+
+  return (
+    <div
+      className={`px-3 py-1.5 rounded-2xl bg-gradient-to-br ${bg} border ${border} flex items-center gap-2 shadow-lg shrink-0 transition-all`}
+    >
+      <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+      <span className={`text-[11px] font-black tracking-wider uppercase font-mono ${color}`}>
+        {text}
+      </span>
+    </div>
+  );
+}
+
 export default function AdminDashboardPage() {
   const {
     user,
@@ -328,6 +440,7 @@ export default function AdminDashboardPage() {
     pushNotification,
     loginWithEmail,
     logout,
+    confirmDialog,
   } = useKoUp();
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
@@ -354,17 +467,18 @@ export default function AdminDashboardPage() {
   const [scrapers, setScrapers] = useState<ScraperConfigRow[]>([]);
   const [reports, setReports] = useState<IssueReportRow[]>([]);
   const [featuredMedia, setFeaturedMedia] = useState<MediaItem[]>([]);
+  const [vitrinSearch, setVitrinSearch] = useState('');
+  const [vitrinSearchResults, setVitrinSearchResults] = useState<MediaItem[]>([]);
+  const [isSearchingVitrin, setIsSearchingVitrin] = useState(false);
   const [runningScraperId, setRunningScraperId] = useState<string | null>(null);
 
-  // KoUp Orijinal Başyapıtlar (Masterpieces) State
-  const [masterpieceConfig, setMasterpieceConfig] = useState<{
-    rotationMode: 'daily' | 'weekly' | 'manual';
-    pinnedIds: number[];
-  }>({ rotationMode: 'daily', pinnedIds: [] });
-  const [masterpieceActiveItems, setMasterpieceActiveItems] = useState<MediaItem[]>([]);
-  const [masterpieceSearch, setMasterpieceSearch] = useState('');
-  const [masterpieceSearchResults, setMasterpieceSearchResults] = useState<MediaItem[]>([]);
-  const [masterpieceSaving, setMasterpieceSaving] = useState(false);
+  // Dedicated Scraper Operations & Live Detail State
+  const [selectedScraperId, setSelectedScraperId] = useState<string | null>(null);
+  const [scraperDetailData, setScraperDetailData] = useState<any | null>(null);
+  const [isLoadingScraperDetail, setIsLoadingScraperDetail] = useState(false);
+  const [liveTerminalLogs, setLiveTerminalLogs] = useState<string[]>([]);
+  const [singleSeriesQuery, setSingleSeriesQuery] = useState('');
+
 
   // Broadcast
   const [broadcastTitle, setBroadcastTitle] = useState('');
@@ -494,14 +608,6 @@ export default function AdminDashboardPage() {
           totalComments: cCountRes.count ?? 0,
           openReports: rCountRes.count ?? 0,
         });
-        // Load Masterpieces Config & Live Items
-        fetch('/api/admin/masterpieces')
-          .then((r) => r.json())
-          .then((j) => {
-            if (j?.config) setMasterpieceConfig(j.config);
-            if (Array.isArray(j?.activeItems)) setMasterpieceActiveItems(j.activeItems);
-          })
-          .catch(() => {});
       } catch (err) {
         console.error('Admin initial load error:', err);
       }
@@ -670,6 +776,12 @@ export default function AdminDashboardPage() {
                 const key = `${ae.season_number}_${ae.episode_number}`;
                 const exist = supaMap.get(key);
                 if (exist) {
+                  if (ae.intro_start_sec != null && exist.intro_start_sec == null) {
+                    exist.intro_start_sec = ae.intro_start_sec;
+                  }
+                  if (ae.intro_end_sec != null && exist.intro_end_sec == null) {
+                    exist.intro_end_sec = ae.intro_end_sec;
+                  }
                   exist.video_sources = [
                     ...(exist.video_sources || []),
                     ...(ae.sources || []),
@@ -683,6 +795,8 @@ export default function AdminDashboardPage() {
                     episode_name: ae.episode_name,
                     episode_type: ae.episode_type || 'bolum',
                     status: ae.status || 'published',
+                    intro_start_sec: ae.intro_start_sec || null,
+                    intro_end_sec: ae.intro_end_sec || null,
                     video_sources: ae.sources || [],
                   });
                 }
@@ -718,35 +832,83 @@ export default function AdminDashboardPage() {
         const from = (commentsPage - 1) * PAGE_SIZE;
         const to = from + PAGE_SIZE - 1;
 
-        let q = supabase
-          .from('comments')
-          .select('*, profiles(username, display_name, avatar_url, role), media(title, slug)', { count: 'exact' })
-          .order('created_at', { ascending: false })
-          .range(from, to);
+        let queryData: any = null;
+        let queryCount: number | null = null;
 
-        if (debouncedCommentSearch) {
-          q = q.or(
-            `title.ilike.%${debouncedCommentSearch}%,content_html.ilike.%${debouncedCommentSearch}%,author_username.ilike.%${debouncedCommentSearch}%`
-          );
+        try {
+          let q = supabase
+            .from('comments')
+            .select('*, profiles:user_id(username, display_name, avatar_url, role), media:media_id(title, slug)', { count: 'exact' })
+            .order('created_at', { ascending: false })
+            .range(from, to);
+
+          if (debouncedCommentSearch) {
+            q = q.or(
+              `title.ilike.%${debouncedCommentSearch}%,content_html.ilike.%${debouncedCommentSearch}%,author_username.ilike.%${debouncedCommentSearch}%`
+            );
+          }
+
+          if (commentFilter === 'spoiler') {
+            q = q.eq('has_spoiler', true);
+          }
+
+          if (commentFilter === 'hidden') {
+            q = q.eq('is_hidden', true);
+          }
+
+          const res = await q;
+          if (res.error) throw res.error;
+          queryData = res.data;
+          queryCount = res.count;
+        } catch (joinedErr) {
+          console.warn('Joined comments query fallback triggered:', joinedErr);
+          let fallbackQ = supabase
+            .from('comments')
+            .select('*', { count: 'exact' })
+            .order('created_at', { ascending: false })
+            .range(from, to);
+
+          if (debouncedCommentSearch) {
+            fallbackQ = fallbackQ.or(
+              `title.ilike.%${debouncedCommentSearch}%,content_html.ilike.%${debouncedCommentSearch}%,author_username.ilike.%${debouncedCommentSearch}%`
+            );
+          }
+
+          if (commentFilter === 'spoiler') {
+            fallbackQ = fallbackQ.eq('has_spoiler', true);
+          }
+
+          if (commentFilter === 'hidden') {
+            fallbackQ = fallbackQ.eq('is_hidden', true);
+          }
+
+          const fallbackRes = await fallbackQ;
+          if (fallbackRes.error) throw fallbackRes.error;
+          queryData = fallbackRes.data || [];
+          queryCount = fallbackRes.count;
+
+          // Hydrate media titles
+          const mediaIds = Array.from(new Set(queryData.map((c: any) => c.media_id).filter(Boolean)));
+          if (mediaIds.length > 0) {
+            const { data: mediaRows } = await supabase
+              .from('media')
+              .select('id, title, slug')
+              .in('id', mediaIds);
+            const mediaMap = new Map((mediaRows || []).map((m: any) => [m.id, m]));
+            queryData = queryData.map((c: any) => ({
+              ...c,
+              media: c.media_id ? mediaMap.get(c.media_id) || null : null,
+            }));
+          }
         }
 
-        if (commentFilter === 'spoiler') {
-          q = q.eq('has_spoiler', true);
-        }
-
-        if (commentFilter === 'hidden') {
-          q = q.eq('is_hidden', true);
-        }
-
-        const { data, count, error } = await q;
-        if (error) throw error;
-
-        setCommentsList((data as AdminCommentRow[]) || []);
-        if (typeof count === 'number') {
-          setCommentsTotalCount(count);
-          setStats((prev) => ({ ...prev, totalComments: count }));
+        setCommentsList((queryData as AdminCommentRow[]) || []);
+        if (typeof queryCount === 'number') {
+          setCommentsTotalCount(queryCount);
+          setStats((prev) => ({ ...prev, totalComments: queryCount! }));
         }
       } catch (err: any) {
+        console.error('loadComments error:', err);
         pushNotification('Yorumlar Yüklenemedi', err.message || 'Veritabanı hatası.', 'info');
       } finally {
         setCommentsLoading(false);
@@ -755,9 +917,63 @@ export default function AdminDashboardPage() {
     loadComments();
   }, [hasAdminPanelAccess, activeTab, commentsPage, debouncedCommentSearch, commentFilter, pushNotification]);
 
-  // Scraper Actions
-  const triggerScraperNow = async (scraperId: string, name: string) => {
+  // Open Dedicated Scraper Operations Page
+  const openScraperDetail = async (scraperId: string) => {
+    setSelectedScraperId(scraperId);
+    setIsLoadingScraperDetail(true);
+    try {
+      const { data: s } = await supabase.auth.getSession();
+      const token = s?.session?.access_token;
+      const resp = await fetch(`/api/admin/scraper?scraperId=${scraperId}`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        setScraperDetailData(data);
+        if (data.logs && Array.isArray(data.logs)) {
+          setLiveTerminalLogs(data.logs);
+        }
+      }
+    } catch (err: any) {
+      pushNotification('Hata', 'Scraper detayları alınamadı.', 'info');
+    } finally {
+      setIsLoadingScraperDetail(false);
+    }
+  };
+
+  // Scraper Actions with Live Logs Stream
+  const triggerScraperNow = async (scraperId: string, name: string, targetSeries?: string) => {
+    // Automatically open the dedicated operations page so user sees live logs and items immediately
+    setSelectedScraperId(scraperId);
     setRunningScraperId(scraperId);
+
+    // If detail data isn't loaded yet, fetch base details in background
+    if (!scraperDetailData || scraperDetailData.scraper?.id !== scraperId) {
+      fetch(`/api/admin/scraper?scraperId=${scraperId}`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.scraper) setScraperDetailData(d);
+        })
+        .catch(() => {});
+    }
+
+    const nowTime = new Date().toTimeString().split(' ')[0];
+    if (targetSeries) {
+      setLiveTerminalLogs((prev) => [
+        ...prev,
+        `[${nowTime}] [HEDEF DİZİ BAŞLATILDI] ${name} botu üzerinden "${targetSeries}" aranıyor...`,
+        `[${nowTime}] [BAĞLANTI] API & Kaynak sunucuya bağlantı açılıyor...`,
+      ]);
+    } else {
+      setLiveTerminalLogs((prev) => [
+        ...prev,
+        `[${nowTime}] [BAŞLATILDI] ${name} için canlı genel tarama başlatılıyor...`,
+        `[${nowTime}] [BAĞLANTI] API & Kaynak sunucuya bağlantı açılıyor...`,
+      ]);
+    }
+
     try {
       const { data: s } = await supabase.auth.getSession();
       const token = s?.session?.access_token;
@@ -767,7 +983,7 @@ export default function AdminDashboardPage() {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ scraperId }),
+        body: JSON.stringify({ scraperId, targetSeries }),
       });
       const data = await resp.json();
       if (resp.ok) {
@@ -783,15 +999,43 @@ export default function AdminDashboardPage() {
               : s
           )
         );
+
+        if (data.logs && Array.isArray(data.logs)) {
+          setLiveTerminalLogs((prev) => [...prev, ...data.logs]);
+        }
+
+        if (data.newlySyncedItems && Array.isArray(data.newlySyncedItems)) {
+          setScraperDetailData((prev: any) => {
+            const existing = prev?.recentItems || [];
+            return {
+              ...(prev || {}),
+              recentItems: [...data.newlySyncedItems, ...existing].slice(0, 20),
+              scraper: {
+                ...(prev?.scraper || {}),
+                items_synced: data.newTotal,
+                last_run_at: data.timestamp,
+              },
+            };
+          });
+        }
+
         pushNotification(
-          'Scraper & Senkron Tamamlandı',
-          `${name} tarandı (+${data.syncedDelta} yeni/güncel kayıt doğrulandı).`,
+          'Tarama Başarıyla Tamamlandı',
+          `${name}: +${data.syncedDelta} yeni/güncel kayıt işlendi. Toplam: ${data.newTotal.toLocaleString('tr-TR')}`,
           'success'
         );
       } else {
+        setLiveTerminalLogs((prev) => [
+          ...prev,
+          `[${nowTime}] [HATA] Sunucu yanıtı: ${data?.error || 'Bilinmeyen hata'}`,
+        ]);
         pushNotification('Scraper Uyarısı', data?.error || 'Tarama yanıt vermedi.', 'info');
       }
     } catch (err: any) {
+      setLiveTerminalLogs((prev) => [
+        ...prev,
+        `[${nowTime}] [BAĞLANTI HATASI] ${err.message || 'Scraper sunucusuna ulaşılamadı'}`,
+      ]);
       pushNotification('Bağlantı Hatası', err.message || 'Scraper sunucusuna ulaşılamadı.', 'info');
     } finally {
       setRunningScraperId(null);
@@ -938,7 +1182,15 @@ export default function AdminDashboardPage() {
   };
 
   const handleUnbanUser = async (target: UserProfileRow) => {
-    if (!confirm(`@${target.username} kullanıcısının banını ve kısıtlamalarını kaldırmak istediğinize emin misiniz?`)) return;
+    const ok = await confirmDialog({
+      title: 'Yasağı Kaldır',
+      message: `@${target.username} kullanıcısının banını ve kısıtlamalarını kaldırmak istediğinize emin misiniz?`,
+      confirmText: 'Yasağı Kaldır',
+      cancelText: 'Vazgeç',
+      isDestructive: false,
+      icon: 'help',
+    });
+    if (!ok) return;
     try {
       const { error } = await supabase.rpc('admin_unban_user', {
         p_target_user_id: target.id,
@@ -969,7 +1221,15 @@ export default function AdminDashboardPage() {
     }
     const isCurrentlyMod = target.role === 'moderator' || target.role === 'mod';
     const actionDesc = isCurrentlyMod ? 'moderatörlük yetkisini geri almak' : 'moderatör yapmak';
-    if (!confirm(`@${target.username} kullanıcısını ${actionDesc} istediğinize emin misiniz?`)) return;
+    const ok = await confirmDialog({
+      title: 'Yetki Değişikliği',
+      message: `@${target.username} kullanıcısını ${actionDesc} istediğinize emin misiniz?`,
+      confirmText: 'Onayla',
+      cancelText: 'Vazgeç',
+      isDestructive: false,
+      icon: 'help',
+    });
+    if (!ok) return;
 
     try {
       const { data, error } = await supabase.rpc('admin_toggle_mod_role', {
@@ -1068,80 +1328,85 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // Masterpieces Handlers & Search Debouncer
+  // Vitrin (Hero Slider) Search Debouncer
   useEffect(() => {
-    if (!masterpieceSearch.trim()) {
-      setMasterpieceSearchResults([]);
+    if (!vitrinSearch.trim()) {
+      setVitrinSearchResults([]);
       return;
     }
     const t = setTimeout(async () => {
-      const { data } = await supabase
-        .from('media')
-        .select('*')
-        .or(`title.ilike.%${masterpieceSearch.trim()}%,slug.ilike.%${masterpieceSearch.trim()}%`)
-        .limit(8);
-      setMasterpieceSearchResults((data as MediaItem[]) || []);
+      setIsSearchingVitrin(true);
+      try {
+        const { data } = await supabase
+          .from('media')
+          .select('*')
+          .ilike('title', `%${vitrinSearch.trim()}%`)
+          .limit(8);
+        setVitrinSearchResults((data as MediaItem[]) || []);
+      } catch {
+        setVitrinSearchResults([]);
+      } finally {
+        setIsSearchingVitrin(false);
+      }
     }, 250);
     return () => clearTimeout(t);
-  }, [masterpieceSearch]);
+  }, [vitrinSearch]);
 
-  const handleUpdateMasterpieceConfig = async (
-    newMode: 'daily' | 'weekly' | 'manual',
-    newPinnedIds?: number[]
-  ) => {
-    setMasterpieceSaving(true);
-    const targetPinned = newPinnedIds !== undefined ? newPinnedIds : masterpieceConfig.pinnedIds;
+  const handleAddFeatured = async (media: MediaItem) => {
+    if (featuredMedia.some((m) => m.id === media.id)) {
+      pushNotification('Zaten Vitrinde', `${media.title} zaten vitrinde bulunuyor.`, 'info');
+      return;
+    }
+    const newOrder = featuredMedia.length + 1;
     try {
-      const { data: s } = await supabase.auth.getSession();
-      const token = s?.session?.access_token;
-      const res = await fetch('/api/admin/masterpieces', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          rotationMode: newMode,
-          pinnedIds: targetPinned,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Kaydedilemedi');
+      await supabase
+        .from('media')
+        .update({ is_featured: true, featured_order: newOrder })
+        .eq('id', media.id);
 
-      setMasterpieceConfig({
-        rotationMode: newMode,
-        pinnedIds: targetPinned,
-      });
+      const { data: fRes } = await supabase
+        .from('media')
+        .select('*')
+        .eq('is_featured', true)
+        .order('featured_order', { ascending: true })
+        .limit(16);
 
-      // Reload live active items
-      const refreshRes = await fetch('/api/admin/masterpieces');
-      const refreshData = await refreshRes.json();
-      if (Array.isArray(refreshData?.activeItems)) {
-        setMasterpieceActiveItems(refreshData.activeItems);
-      }
-
-      invalidateCache('home_');
-      pushNotification(
-        'Başyapıtlar Güncellendi',
-        `Rotasyon modu "${newMode === 'daily' ? 'Günlük Dinamik' : newMode === 'weekly' ? 'Haftalık Dinamik' : 'Manuel Sabit'}" olarak ayarlandı.`,
-        'success'
+      setFeaturedMedia((fRes as MediaItem[]) || []);
+      setSeriesList((prev) =>
+        prev.map((m) => (m.id === media.id ? { ...m, is_featured: true, featured_order: newOrder } : m))
       );
+      setVitrinSearch('');
+      setVitrinSearchResults([]);
+      invalidateCache('media_');
+      invalidateCache('home_');
+      pushNotification('Vitrine Eklendi', `${media.title} ana sayfa vitrinine eklendi.`, 'success');
     } catch (err: any) {
-      pushNotification('Başyapıt Güncelleme Hatası', err.message, 'info');
-    } finally {
-      setMasterpieceSaving(false);
+      pushNotification('Hata', err.message || 'Vitrine eklenemedi.', 'info');
     }
   };
 
-  const handlePinMasterpiece = (mediaId: number) => {
-    if (masterpieceConfig.pinnedIds.includes(mediaId)) return;
-    const nextPinned = [...masterpieceConfig.pinnedIds, mediaId];
-    handleUpdateMasterpieceConfig(masterpieceConfig.rotationMode, nextPinned);
-  };
+  const handleMoveFeatured = async (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= featuredMedia.length) return;
 
-  const handleUnpinMasterpiece = (mediaId: number) => {
-    const nextPinned = masterpieceConfig.pinnedIds.filter((id) => id !== mediaId);
-    handleUpdateMasterpieceConfig(masterpieceConfig.rotationMode, nextPinned);
+    const newFeatured = [...featuredMedia];
+    const [moved] = newFeatured.splice(index, 1);
+    newFeatured.splice(targetIndex, 0, moved);
+
+    setFeaturedMedia(newFeatured);
+
+    // Update featured_order in DB for all items
+    try {
+      const updates = newFeatured.map((item, idx) =>
+        supabase.from('media').update({ featured_order: idx + 1 }).eq('id', item.id)
+      );
+      await Promise.all(updates);
+      invalidateCache('media_');
+      invalidateCache('home_');
+      pushNotification('Sıralama Güncellendi', 'Vitrin sırası başarıyla kaydedildi.', 'success');
+    } catch (err: any) {
+      pushNotification('Hata', err.message || 'Sıralama güncellenemedi.', 'info');
+    }
   };
 
   const handleSaveSeries = async (e: React.FormEvent) => {
@@ -1202,7 +1467,15 @@ export default function AdminDashboardPage() {
       pushNotification('Yetkisiz İşlem', 'Yalnızca sistem yöneticileri (Admin) seri silebilir.', 'info');
       return;
     }
-    if (!confirm(`"${title}" serisini ve tüm bağlı verilerini silmek istediğinize emin misiniz?`)) return;
+    const ok = await confirmDialog({
+      title: 'Seriyi Sil',
+      message: `"${title}" serisini ve tüm bağlı verilerini silmek istediğinize emin misiniz? Bu işlem geri alınamaz.`,
+      confirmText: 'Kalıcı Olarak Sil',
+      cancelText: 'Vazgeç',
+      isDestructive: true,
+      icon: 'trash',
+    });
+    if (!ok) return;
     try {
       const { error } = await supabase.from('media').delete().eq('id', mediaId);
       if (error) throw error;
@@ -1231,6 +1504,14 @@ export default function AdminDashboardPage() {
         status: editingEp.status || 'published',
         translation_note: editingEp.translation_note || null,
         scheduled_release_at: editingEp.scheduled_release_at || null,
+        intro_start_sec:
+          editingEp.intro_start_sec != null && !Number.isNaN(Number(editingEp.intro_start_sec))
+            ? Number(editingEp.intro_start_sec)
+            : null,
+        intro_end_sec:
+          editingEp.intro_end_sec != null && !Number.isNaN(Number(editingEp.intro_end_sec))
+            ? Number(editingEp.intro_end_sec)
+            : null,
         video_sources: editingEp.video_sources || [],
       };
 
@@ -1266,7 +1547,15 @@ export default function AdminDashboardPage() {
   };
 
   const handleDeleteEpisode = async (ep: AdminEpisodeItem) => {
-    if (!confirm(`${ep.season_number}. Sezon ${ep.episode_number}. Bölümü silmek istediğinize emin misiniz?`)) return;
+    const ok = await confirmDialog({
+      title: 'Bölümü Sil',
+      message: `${ep.season_number}. Sezon ${ep.episode_number}. Bölümü silmek istediğinize emin misiniz?`,
+      confirmText: 'Bölümü Sil',
+      cancelText: 'Vazgeç',
+      isDestructive: true,
+      icon: 'trash',
+    });
+    if (!ok) return;
     try {
       if (ep.id && ep.id < 10000000) {
         const { error } = await supabase.from('episodes').delete().eq('id', ep.id);
@@ -1344,7 +1633,15 @@ export default function AdminDashboardPage() {
   };
 
   const handleDeleteSource = async (ep: AdminEpisodeItem, sourceIndex: number) => {
-    if (!confirm('Bu video kaynağını kaldırmak istediğinize emin misiniz?')) return;
+    const ok = await confirmDialog({
+      title: 'Video Kaynağını Kaldır',
+      message: 'Bu video kaynağını kaldırmak istediğinize emin misiniz?',
+      confirmText: 'Kaynağı Kaldır',
+      cancelText: 'Vazgeç',
+      isDestructive: true,
+      icon: 'trash',
+    });
+    if (!ok) return;
     try {
       const filtered = (ep.video_sources || []).filter((_, i) => i !== sourceIndex);
       const { error } = await supabase.from('episodes').upsert(
@@ -1378,7 +1675,15 @@ export default function AdminDashboardPage() {
 
   // Comment Moderation Actions with Optimistic Updates & Rollback
   const handleDeleteComment = async (commentId: string | number) => {
-    if (!confirm('Bu yorumu kalıcı olarak silmek istediğinize emin misiniz?')) return;
+    const ok = await confirmDialog({
+      title: 'Yorumu Sil',
+      message: 'Bu yorumu kalıcı olarak silmek istediğinize emin misiniz?',
+      confirmText: 'Yorumu Sil',
+      cancelText: 'Vazgeç',
+      isDestructive: true,
+      icon: 'trash',
+    });
+    if (!ok) return;
     const prevList = [...commentsList];
     const prevCount = commentsTotalCount;
 
@@ -1750,7 +2055,7 @@ export default function AdminDashboardPage() {
                 <Radio className="w-4 h-4 text-sky-400" />
               </div>
               <p className="text-xs text-white/60 leading-relaxed">
-                WebDramaTurkey2, TRAnimeizle, DiziYou, DiziBox, AnimeciX ve AsyaMag canlı botları devrede.
+                DiziKorea, DiziBox, DDizi, AnimeciX ve HDFilmcehennemi canlı botları devrede.
               </p>
               <div className="p-4 rounded-2xl bg-black/40 border border-white/10 flex items-center justify-between">
                 <span className="text-xs text-white/70">Aktif Scraperlar:</span>
@@ -1768,236 +2073,98 @@ export default function AdminDashboardPage() {
           </div>
 
           {/* Featured Vitrin Slider Section */}
-          <div className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/15 space-y-4">
-            <div className="flex items-center justify-between">
+          <div className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/15 space-y-5 shadow-2xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h3 className="text-lg font-bold text-white">
-                  Ana Sayfa Hero Slider Vitrini ({featuredMedia.length} Seçkin Yapım)
+                <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-amber-400">
+                  <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
+                  <span>Ana Sayfa Açılış Vitrini</span>
+                </div>
+                <h3 className="text-lg sm:text-xl font-bold text-white mt-1">
+                  Ana Sayfa Hero Slider Vitrini ({featuredMedia.length} Yapım)
                 </h3>
-                <p className="text-xs text-white/55 mt-0.5">
-                  Buradaki yapımlar ana sayfanın dev açılış sahnesinde yer alır.
+                <p className="text-xs text-white/60 mt-0.5">
+                  Ana sayfanın en üstünde yer alan 4&apos;lü slider ve &quot;Sıradaki Vitrin Seçkisi&quot; rayında buradaki yapımlar listelenir.
                 </p>
               </div>
               <button
                 onClick={() => setActiveTab('series')}
-                className="text-xs text-white/70 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
+                className="text-xs text-sky-400 hover:text-sky-300 flex items-center gap-1 font-semibold cursor-pointer shrink-0"
               >
                 <span>Tüm Kataloğu Gör</span>
                 <span>→</span>
               </button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
-              {featuredMedia.map((m, i) => (
-                <div
-                  key={m.id}
-                  className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 hover:border-white/30 transition-all relative group"
-                >
-                  <div className="text-[10px] font-mono text-amber-300">
-                    Vitrin #{i + 1}
-                  </div>
-                  <div className="text-xs font-bold text-white truncate mt-0.5">
-                    {m.title}
-                  </div>
-                  <div className="text-[10px] font-mono text-white/50 flex items-center gap-1 mt-0.5">
-                    <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
-                    <span>{m.site_rating || m.rating || 9.0}</span>
-                  </div>
-                  <button
-                    onClick={() => handleToggleFeatured(m)}
-                    className="mt-2 text-[10px] text-rose-300 hover:text-rose-200 block underline cursor-pointer"
-                  >
-                    Vitrinden Çıkar
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* KoUp Orijinal Başyapıtlar & Dinamik Rotasyon Yönetimi */}
-          <div className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/15 space-y-6 shadow-2xl">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-sky-400">
-                  <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
-                  <span>Ana Sayfa Başyapıtlar Portfolyosu</span>
-                </div>
-                <h3 className="text-xl font-bold text-white mt-1">
-                  KoUp Orijinal Başyapıtlar & Dinamik Rotasyon
-                </h3>
-                <p className="text-xs text-white/60 mt-1 max-w-2xl leading-relaxed">
-                  Ana sayfadaki 4 dev ödüllü yapım kartının rotasyon modunu belirleyin. Günlük veya haftalık otomatik döngü seçildiğinde, en yüksek puanlı (MDL 9.0+, AniList 85+) yapımlar periyodik olarak vitrine çıkar.
-                </p>
-              </div>
-
-              {/* Rotation Mode Selector */}
-              <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-black/60 border border-white/10 shrink-0">
-                {[
-                  { id: 'daily', label: '🔄 Günlük (24s)', desc: 'Her gece 00:00' },
-                  { id: 'weekly', label: '📅 Haftalık', desc: 'Her Pazartesi' },
-                  { id: 'manual', label: '📌 Sabit Seçim', desc: 'Sadece Yöneticinin Sabitledikleri' },
-                ].map((mode) => {
-                  const active = masterpieceConfig.rotationMode === mode.id;
-                  return (
-                    <button
-                      key={mode.id}
-                      type="button"
-                      disabled={masterpieceSaving}
-                      onClick={() => handleUpdateMasterpieceConfig(mode.id as any)}
-                      className={`px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                        active
-                          ? 'bg-sky-500 text-white font-bold shadow-lg shadow-sky-500/25'
-                          : 'text-white/60 hover:text-white hover:bg-white/[0.06]'
-                      }`}
-                    >
-                      {mode.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Currently Active in Homepage (Live Preview) */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <span>Şu Anda Ana Sayfada Yayındaki 4 Başyapıt:</span>
-                  <span className="text-[10px] font-mono text-sky-300 font-semibold px-2 py-0.5 rounded-full bg-sky-500/15 border border-sky-400/20">
-                    {masterpieceConfig.rotationMode === 'daily'
-                      ? 'Günlük Dinamik Rotasyon'
-                      : masterpieceConfig.rotationMode === 'weekly'
-                      ? 'Haftalık Dinamik Rotasyon'
-                      : 'Manuel Sabitlenmiş'}
-                  </span>
-                </span>
-                <span className="text-[11px] font-mono text-white/40">
-                  {masterpieceConfig.pinnedIds.length} yapım sabitlendi
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {masterpieceActiveItems.slice(0, 4).map((item, idx) => {
-                  const isPinned = masterpieceConfig.pinnedIds.includes(item.id);
-                  return (
-                    <div
-                      key={item.id}
-                      className="group relative rounded-2xl overflow-hidden bg-[#0d0d10] border border-white/10 hover:border-white/30 transition-all p-3.5 flex flex-col justify-between h-[210px]"
-                    >
-                      <img
-                        src={item.cover_image || item.backdrop_image || ''}
-                        alt={item.title}
-                        className="absolute inset-0 w-full h-full object-cover opacity-25 group-hover:opacity-40 transition-opacity"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-[#0d0d10] via-[#0d0d10]/70 to-transparent" />
-
-                      <div className="relative z-10 flex items-center justify-between">
-                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-white/10 text-white">
-                          #{idx + 1} Başyapıt
-                        </span>
-                        {isPinned ? (
-                          <span className="text-[10px] font-mono text-amber-300 px-2 py-0.5 rounded-md bg-amber-400/15 border border-amber-400/30 font-bold">
-                            📌 Sabit
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-mono text-sky-300 px-2 py-0.5 rounded-md bg-sky-400/15 border border-sky-400/30">
-                            🔄 Rotasyon
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="relative z-10 space-y-1">
-                        <div className="text-sm font-bold text-white truncate">{item.title}</div>
-                        <div className="flex items-center gap-2 text-[11px] text-white/60 font-mono">
-                          <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
-                          <span>MDL {item.mdl_rating || item.site_rating || '9.0'}</span>
-                          <span>•</span>
-                          <span>{item.country_code || 'KR'}</span>
-                          <span>•</span>
-                          <span>{item.release_year || '2024'}</span>
-                        </div>
-                        <div className="pt-2 flex items-center gap-2">
-                          {isPinned ? (
-                            <button
-                              type="button"
-                              onClick={() => handleUnpinMasterpiece(item.id)}
-                              className="text-[10px] font-semibold text-rose-300 hover:text-rose-200 underline cursor-pointer"
-                            >
-                              Sabitlemeyi Kaldır
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handlePinMasterpiece(item.id)}
-                              className="text-[10px] font-semibold text-sky-300 hover:text-sky-200 underline cursor-pointer"
-                            >
-                              Vitrinde Sabitle (Pin)
-                            </button>
-                          )}
-                          <Link
-                            href={`/seri/${item.slug}`}
-                            target="_blank"
-                            className="text-[10px] text-white/50 hover:text-white flex items-center gap-0.5 ml-auto"
-                          >
-                            <span>Görüntüle</span>
-                            <ExternalLink className="w-2.5 h-2.5" />
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Quick Pin Search from 17,500+ Database */}
-            <div className="p-4 rounded-2xl bg-black/40 border border-white/10 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <span className="text-xs font-semibold text-white/80">
-                  Arşivden Özel Seri Sabitle (17.500+ Yapım):
-                </span>
-                <span className="text-[11px] text-white/45">
-                  Sabitlenen yapımlar rotasyonun en başında yer alır
-                </span>
-              </div>
-              <div className="relative">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+            {/* Quick Add Search Bar for Vitrin */}
+            <div className="relative">
+              <div className="flex items-center gap-2 bg-black/40 border border-white/15 rounded-2xl px-4 py-2.5 focus-within:border-amber-400/50 transition-all">
+                <Search className="w-4 h-4 text-white/40 shrink-0" />
                 <input
                   type="text"
-                  placeholder="Başyapıt olarak sabitlemek istediğiniz serinin adını yazın..."
-                  value={masterpieceSearch}
-                  onChange={(e) => setMasterpieceSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 rounded-xl bg-black/60 border border-white/10 text-xs text-white placeholder-white/40 focus:outline-none focus:border-white/30"
+                  value={vitrinSearch}
+                  onChange={(e) => setVitrinSearch(e.target.value)}
+                  placeholder="Vitrine eklemek istediğin yapımın adını yaz (Örn: Reply 1988, Goblin, Vincenzo...)"
+                  className="w-full bg-transparent text-white text-xs placeholder:text-white/35 focus:outline-none"
                 />
+                {isSearchingVitrin && (
+                  <RefreshCw className="w-3.5 h-3.5 text-amber-400 animate-spin shrink-0" />
+                )}
+                {vitrinSearch && (
+                  <button
+                    onClick={() => {
+                      setVitrinSearch('');
+                      setVitrinSearchResults([]);
+                    }}
+                    className="text-white/40 hover:text-white text-xs cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
 
-              {masterpieceSearchResults.length > 0 && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1">
-                  {masterpieceSearchResults.map((res) => {
-                    const alreadyPinned = masterpieceConfig.pinnedIds.includes(res.id);
+              {/* Search Results Dropdown */}
+              {vitrinSearchResults.length > 0 && (
+                <div className="absolute left-0 right-0 top-full mt-2 z-30 bg-[#0e0e14] border border-white/20 rounded-2xl p-2 shadow-2xl max-h-72 overflow-y-auto space-y-1.5 custom-scrollbar backdrop-blur-xl">
+                  {vitrinSearchResults.map((m) => {
+                    const isAlready = featuredMedia.some((fm) => fm.id === m.id);
                     return (
                       <div
-                        key={res.id}
-                        className="p-2.5 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-between gap-2"
+                        key={m.id}
+                        className="flex items-center justify-between gap-3 p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] transition-all"
                       >
-                        <div className="min-w-0">
-                          <div className="text-xs font-bold text-white truncate">{res.title}</div>
-                          <div className="text-[10px] text-white/50 font-mono">
-                            {res.country_code} • {res.release_year} • MDL {res.mdl_rating || '8.5'}
+                        <div className="flex items-center gap-3 min-w-0">
+                          <img
+                            src={getProxiedImageUrl(m.cover_image || m.backdrop_image, m.title)}
+                            alt={m.title}
+                            className="w-10 h-14 object-cover rounded-lg shrink-0 border border-white/10"
+                          />
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-white truncate">{m.title}</div>
+                            <div className="text-[10px] text-white/50 flex items-center gap-2 mt-0.5">
+                              <span>{m.release_year || '—'}</span>
+                              <span>•</span>
+                              <span>{formatContentTypeTR(m.content_type, m.country_code)}</span>
+                              {m.mdl_rating && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-amber-400 font-mono">MDL {m.mdl_rating}</span>
+                                </>
+                              )}
+                            </div>
                           </div>
                         </div>
+
                         <button
-                          type="button"
-                          onClick={() => {
-                            if (alreadyPinned) handleUnpinMasterpiece(res.id);
-                            else handlePinMasterpiece(res.id);
-                          }}
-                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer shrink-0 transition-colors ${
-                            alreadyPinned
-                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                              : 'bg-white text-black hover:bg-white/90'
+                          disabled={isAlready}
+                          onClick={() => handleAddFeatured(m)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer ${
+                            isAlready
+                              ? 'bg-white/10 text-white/40 cursor-not-allowed'
+                              : 'bg-amber-400 hover:bg-amber-300 text-black shadow-md'
                           }`}
                         >
-                          {alreadyPinned ? 'Kaldır' : 'Sabitle'}
+                          {isAlready ? 'Vitrinde Var' : '+ Vitrine Ekle'}
                         </button>
                       </div>
                     );
@@ -2005,6 +2172,93 @@ export default function AdminDashboardPage() {
                 </div>
               )}
             </div>
+
+            {/* Featured Items Grid with Thumbnails & Reordering */}
+            {featuredMedia.length === 0 ? (
+              <div className="p-8 rounded-2xl bg-white/[0.02] border border-dashed border-white/10 text-center text-xs text-white/50">
+                Henüz vitrine yapım eklenmedi. Yukarıdaki arama kutusundan dizi veya film arayarak ilk 4 sırayı belirleyebilirsiniz.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
+                {featuredMedia.map((m, i) => (
+                  <div
+                    key={m.id}
+                    className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 hover:border-amber-400/40 transition-all relative flex flex-col justify-between group shadow-lg"
+                  >
+                    <div>
+                      {/* Media Thumbnail */}
+                      <div className="relative w-full h-28 rounded-xl overflow-hidden mb-2.5 border border-white/10">
+                        <img
+                          src={getProxiedImageUrl(m.backdrop_image || m.cover_image, m.title)}
+                          alt={m.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30" />
+                        <div className="absolute top-2 left-2">
+                          <span className="px-2 py-0.5 rounded-full bg-amber-400 text-black font-mono text-[10px] font-black shadow-md">
+                            #{i + 1} {i < 4 ? '• VİTRİN' : ''}
+                          </span>
+                        </div>
+                        {m.mdl_rating && (
+                          <div className="absolute bottom-2 right-2 flex items-center gap-1 text-[10px] font-mono text-amber-300 bg-black/60 px-1.5 py-0.5 rounded-md backdrop-blur-md">
+                            <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                            <span>{m.mdl_rating}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="text-xs font-bold text-white truncate">
+                        {m.title}
+                      </div>
+                      <div className="text-[10px] text-white/50 flex items-center gap-1.5 mt-0.5">
+                        <span>{m.release_year || '—'}</span>
+                        <span>•</span>
+                        <span>{formatContentTypeTR(m.content_type, m.country_code)}</span>
+                      </div>
+                    </div>
+
+                    {/* Controls: Reorder Left/Right & Remove */}
+                    <div className="flex items-center justify-between gap-1.5 pt-3 mt-3 border-t border-white/[0.08]">
+                      <div className="flex items-center gap-1">
+                        <button
+                          disabled={i === 0}
+                          onClick={() => handleMoveFeatured(i, 'up')}
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold transition-all cursor-pointer ${
+                            i === 0
+                              ? 'bg-white/5 text-white/20 cursor-not-allowed'
+                              : 'bg-white/10 hover:bg-white/20 text-white'
+                          }`}
+                          aria-label="Öne Taşı"
+                        >
+                          ←
+                        </button>
+                        <button
+                          disabled={i === featuredMedia.length - 1}
+                          onClick={() => handleMoveFeatured(i, 'down')}
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold transition-all cursor-pointer ${
+                            i === featuredMedia.length - 1
+                              ? 'bg-white/5 text-white/20 cursor-not-allowed'
+                              : 'bg-white/10 hover:bg-white/20 text-white'
+                          }`}
+                          aria-label="Sonraya Taşı"
+                        >
+                          →
+                        </button>
+                      </div>
+
+                      <button
+                        onClick={() => handleToggleFeatured(m)}
+                        className="flex items-center gap-1 text-[11px] text-rose-300 hover:text-rose-200 cursor-pointer px-2 py-1 rounded-lg hover:bg-rose-500/10 transition-colors"
+                        aria-label="Vitrinden Kaldır"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Kaldır</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2020,32 +2274,9 @@ export default function AdminDashboardPage() {
                   <span>Kullanıcı & Üye Yönetimi ({usersTotalCount.toLocaleString('tr-TR')})</span>
                 </h2>
                 <p className="text-xs text-white/55 mt-0.5">
-                  Kullanıcı rollerini güncelleyin (Admin, Moderatör, Çevirmen, Üye), hesapları denetleyin veya askıya alın.
+                  Kullanıcı rollerini güncelleyin (Moderatör, Çevirmen, Üye), hesapları denetleyin veya askıya alın.
                 </p>
               </div>
-
-              {/* Direct Promote Admin by Email (Admin Only) */}
-              {isAdmin && (
-                <form
-                  onSubmit={handlePromoteAdminByEmail}
-                  className="flex items-center gap-2 p-1.5 rounded-2xl bg-black/50 border border-white/10 w-full md:w-auto"
-                >
-                  <input
-                    type="email"
-                    required
-                    placeholder="admin_yapilacak@eposta.com"
-                    value={promoteEmailInput}
-                    onChange={(e) => setPromoteEmailInput(e.target.value)}
-                    className="px-3 py-1.5 rounded-xl bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-56"
-                  />
-                  <button
-                    type="submit"
-                    className="px-4 py-1.5 rounded-xl bg-amber-400 text-black text-xs font-bold hover:bg-amber-300 transition-all cursor-pointer whitespace-nowrap"
-                  >
-                    Admin Yap
-                  </button>
-                </form>
-              )}
             </div>
 
             {/* Filters */}
@@ -2129,7 +2360,7 @@ export default function AdminDashboardPage() {
                                 @{u.username}
                               </div>
                               {u.email && (
-                                <div className="text-[10px] text-white/35 font-mono truncate max-w-[180px]" title={u.email}>
+                                <div className="text-[10px] text-white/35 font-mono truncate max-w-[180px]">
                                   {u.email}
                                 </div>
                               )}
@@ -2191,7 +2422,7 @@ export default function AdminDashboardPage() {
 
                             {/* Ban reason or details */}
                             {u.is_banned && (
-                              <div className="text-[10px] text-white/50 max-w-[220px] truncate" title={u.ban_reason || ''}>
+                              <div className="text-[10px] text-white/50 max-w-[220px] truncate">
                                 <span className="text-white/30">Neden:</span> {u.ban_reason || 'Belirtilmedi'}
                                 {u.ban_expires_at && (
                                   <span className="block text-white/40">
@@ -2209,7 +2440,7 @@ export default function AdminDashboardPage() {
                                 type="button"
                                 onClick={() => handleUnbanUser(u)}
                                 className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/35 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                                title="Banı ve Kısıtlamaları Kaldır"
+                                aria-label="Banı ve Kısıtlamaları Kaldır"
                               >
                                 <CheckCircle2 className="w-3.5 h-3.5" />
                                 <span>Banı Kaldır</span>
@@ -2221,7 +2452,7 @@ export default function AdminDashboardPage() {
                                   type="button"
                                   onClick={() => handleOpenModerationModal(u, 'warn')}
                                   className="px-2.5 py-1.5 rounded-xl bg-orange-500/15 hover:bg-orange-500/25 text-orange-300 border border-orange-500/30 text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
-                                  title="Resmi Topluluk Uyarısı Gönder"
+                                  aria-label="Resmi Topluluk Uyarısı Gönder"
                                 >
                                   <AlertTriangle className="w-3.5 h-3.5" />
                                   <span>Uyarı Gönder</span>
@@ -2232,7 +2463,7 @@ export default function AdminDashboardPage() {
                                   type="button"
                                   onClick={() => handleOpenModerationModal(u, 'soft_ban')}
                                   className="px-2.5 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
-                                  title="Hesabı Askıya Al (Yorum/Beğeni/Kütüphane Engeli)"
+                                  aria-label="Hesabı Askıya Al (Yorum/Beğeni/Kütüphane Engeli)"
                                 >
                                   <Lock className="w-3.5 h-3.5" />
                                   <span>Hafif Ban</span>
@@ -2244,7 +2475,7 @@ export default function AdminDashboardPage() {
                                     type="button"
                                     onClick={() => handleOpenModerationModal(u, 'hard_ban')}
                                     className="px-2.5 py-1.5 rounded-xl bg-red-600/20 hover:bg-red-600/35 text-red-300 border border-red-500/40 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                                    title="Cihaz Parmak İzi & IP Kısıtlaması"
+                                    aria-label="Cihaz Parmak İzi & IP Kısıtlaması"
                                   >
                                     <ShieldAlert className="w-3.5 h-3.5" />
                                     <span>Hard Ban</span>
@@ -2263,7 +2494,7 @@ export default function AdminDashboardPage() {
                                     ? 'bg-purple-500/20 hover:bg-purple-500/35 text-purple-300 border-purple-400/40'
                                     : 'bg-white/[0.05] hover:bg-white/10 text-white/70 border-white/10'
                                 }`}
-                                title={u.role === 'moderator' || u.role === 'mod' ? 'Moderatörlük Yetkisini Al' : 'Moderatör Yetkisi Ver'}
+                                aria-label={u.role === 'moderator' || u.role === 'mod' ? 'Moderatörlük Yetkisini Al' : 'Moderatör Yetkisi Ver'}
                               >
                                 <ShieldCheck className="w-3.5 h-3.5" />
                                 <span>{u.role === 'moderator' || u.role === 'mod' ? 'Mod Yetkisini Al' : 'Mod Yetkisi Ver'}</span>
@@ -2273,15 +2504,21 @@ export default function AdminDashboardPage() {
                         </td>
                         {isAdmin && (
                           <td className="py-3.5 text-right pr-3">
-                            <CustomSelect
-                              value={u.role || 'user'}
-                              onChange={(newVal) => handleSetUserRole(u.id, newVal)}
-                              options={USER_ROLE_OPTIONS}
-                              variant="dark"
-                              size="sm"
-                              triggerClassName="!rounded-xl bg-black/60 border-white/15 text-xs py-1.5 px-3 min-w-[130px]"
-                              menuClassName="min-w-[170px] z-50"
-                            />
+                            {u.role === 'admin' ? (
+                              <span className="inline-block px-3 py-1.5 rounded-xl bg-amber-400/10 border border-amber-400/25 text-xs font-mono font-bold text-amber-300">
+                                Sistem Sahibi
+                              </span>
+                            ) : (
+                              <CustomSelect
+                                value={u.role || 'user'}
+                                onChange={(newVal) => handleSetUserRole(u.id, newVal)}
+                                options={USER_ROLE_OPTIONS}
+                                variant="dark"
+                                size="sm"
+                                triggerClassName="!rounded-xl bg-black/60 border-white/15 text-xs py-1.5 px-3 min-w-[130px]"
+                                menuClassName="min-w-[170px] z-50"
+                              />
+                            )}
                           </td>
                         )}
                       </tr>
@@ -2470,7 +2707,14 @@ export default function AdminDashboardPage() {
                                 : 'bg-white/[0.04] text-white/40 border-white/10 hover:text-white'
                             }`}
                           >
-                            {m.is_featured ? '★ Vitrinde' : 'Vitrinde Değil'}
+                            {m.is_featured ? (
+                              <span className="flex items-center gap-1">
+                                <Star className="w-3 h-3 fill-amber-300" />
+                                <span>Vitrinde</span>
+                              </span>
+                            ) : (
+                              'Vitrinde Değil'
+                            )}
                           </button>
                         </td>
                         <td className="py-3 text-right pr-3">
@@ -2490,7 +2734,7 @@ export default function AdminDashboardPage() {
                                 setSeriesModalOpen(true);
                               }}
                               className="p-1.5 rounded-xl bg-white/10 text-white/80 hover:text-white cursor-pointer transition-colors"
-                              title="Düzenle"
+                              aria-label="Düzenle"
                             >
                               <Edit3 className="w-3.5 h-3.5" />
                             </button>
@@ -2498,7 +2742,7 @@ export default function AdminDashboardPage() {
                               <button
                                 onClick={() => handleDeleteSeries(m.id, m.title)}
                                 className="p-1.5 rounded-xl bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 cursor-pointer transition-colors"
-                                title="Sil"
+                                aria-label="Sil"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -2558,86 +2802,147 @@ export default function AdminDashboardPage() {
               )}
             </div>
 
-            {/* Media Selector with CustomSelect and Debounced Search */}
-            <div className="p-4 rounded-2xl bg-black/50 border border-white/10 flex flex-col sm:flex-row items-center gap-4">
-              <div className="flex-1 w-full">
-                <label className="block text-[11px] font-mono text-white/50 mb-1">
-                  Yönetilecek Seriyi Arayın:
-                </label>
+            {/* Direct Series Search Bar & Results Cards */}
+            {!selectedMediaForEp ? (
+              <div className="space-y-4">
                 <div className="relative">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
                   <input
                     type="text"
-                    placeholder="Örn: Reply 1988, Queen of Tears, Solo Leveling..."
+                    placeholder="Yönetmek istediğiniz diziyi, animeyi veya filmi arayın (Örn: Solo Leveling, Reply 1988, Horimiya)..."
                     value={epMediaSearchInput}
                     onChange={(e) => setEpMediaSearchInput(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 rounded-xl bg-white/[0.04] border border-white/15 text-xs text-white placeholder-white/40 focus:outline-none focus:border-white/30"
+                    className="w-full pl-11 pr-10 py-3.5 rounded-2xl bg-black/60 border border-white/15 text-sm text-white placeholder-white/40 focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/50 shadow-inner"
                   />
-                  {epMediaSearchLoading && (
-                    <RefreshCw className="absolute right-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/40 animate-spin" />
+                  {epMediaSearchInput ? (
+                    <button
+                      type="button"
+                      onClick={() => setEpMediaSearchInput('')}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-white"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  ) : epMediaSearchLoading ? (
+                    <RefreshCw className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 animate-spin" />
+                  ) : null}
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-3 text-xs font-mono text-white/50">
+                    <span>
+                      {epMediaSearchInput
+                        ? `"${epMediaSearchInput}" için bulunan seriler (${epMediaSearchResults.length}):`
+                        : `Hızlı Seçim / Son Eklenen Seriler (${epMediaSearchResults.length}):`}
+                    </span>
+                    <span className="text-[11px] text-sky-400">Yönetmek için serinin üzerine tıklayın</span>
+                  </div>
+
+                  {epMediaSearchLoading ? (
+                    <div className="py-12 text-center text-xs text-white/50 flex items-center justify-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin text-sky-400" />
+                      <span>Seriler aranıyor...</span>
+                    </div>
+                  ) : epMediaSearchResults.length === 0 ? (
+                    <div className="py-12 rounded-2xl bg-white/[0.02] border border-white/10 text-center text-xs text-white/50">
+                      Aramanızla eşleşen seri bulunamadı.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 max-h-[460px] overflow-y-auto pr-1">
+                      {epMediaSearchResults.map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedMediaForEp(m);
+                          }}
+                          className="p-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 hover:border-sky-400/50 text-left flex items-center gap-3 transition-all cursor-pointer group hover:scale-[1.01] hover:shadow-[0_4px_20px_rgba(41,151,255,0.15)]"
+                        >
+                          <div className="w-12 h-16 rounded-xl overflow-hidden bg-black/60 border border-white/10 shrink-0 relative">
+                            {m.cover_image ? (
+                              <img
+                                src={getProxiedImageUrl(m.cover_image, m.title)}
+                                alt={m.title}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                              />
+                            ) : (
+                              <Film className="w-5 h-5 text-white/30 m-auto mt-5" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-xs font-bold text-white truncate group-hover:text-sky-300 transition-colors">
+                              {m.title}
+                            </h4>
+                            {m.native_title && (
+                              <div className="text-[10px] text-white/40 truncate font-mono">
+                                {m.native_title}
+                              </div>
+                            )}
+                            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase bg-white/10 text-white/80">
+                                {m.content_type || 'Dizi'}
+                              </span>
+                              {m.country_code && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-sky-500/20 text-sky-300">
+                                  {m.country_code}
+                                </span>
+                              )}
+                              <span className="text-[10px] font-mono text-white/45">
+                                {m.release_year || (m as any).year || ''}
+                              </span>
+                            </div>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-white/30 group-hover:text-sky-400 group-hover:translate-x-0.5 transition-all shrink-0" />
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
               </div>
-
-              <div className="w-full sm:w-80">
-                <label className="block text-[11px] font-mono text-white/50 mb-1">
-                  Arama Sonuçlarından Seç:
-                </label>
-                <CustomSelect
-                  value={selectedMediaForEp ? String(selectedMediaForEp.id) : ''}
-                  onChange={(val) => {
-                    const found = epMediaSearchResults.find((m) => String(m.id) === val);
-                    if (found) setSelectedMediaForEp(found);
-                  }}
-                  options={epMediaSearchResults.map((m) => ({
-                    value: String(m.id),
-                    label: `${m.title} (${m.country_code || (m as any).country || '—'})`,
-                  }))}
-                  placeholder="Arama Sonuçlarından Seçiniz..."
-                  variant="dark"
-                  size="sm"
-                  className="w-full"
-                  triggerClassName="w-full !rounded-xl justify-between bg-black/60 border-white/15 py-2"
-                  menuClassName="max-h-64 overflow-y-auto w-full min-w-[280px]"
-                />
-              </div>
-            </div>
-
-            {/* Selected Media Header */}
-            {selectedMediaForEp ? (
-              <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/15 flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-16 rounded-xl overflow-hidden bg-black/60 border border-white/15 shrink-0">
+            ) : (
+              /* Selected Media Header */
+              <div className="p-4 rounded-2xl bg-white/[0.04] border border-sky-400/30 flex items-center justify-between gap-4 shadow-[0_0_24px_rgba(41,151,255,0.08)]">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-14 h-20 rounded-xl overflow-hidden bg-black/60 border border-white/15 shrink-0 shadow-md">
                     {selectedMediaForEp.cover_image ? (
                       <img
-                        src={selectedMediaForEp.cover_image}
+                        src={getProxiedImageUrl(selectedMediaForEp.cover_image, selectedMediaForEp.title)}
                         alt={selectedMediaForEp.title}
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <Film className="w-6 h-6 text-white/30 m-auto mt-5" />
+                      <Film className="w-6 h-6 text-white/30 m-auto mt-7" />
                     )}
                   </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-white">
-                      {selectedMediaForEp.title}
-                    </h3>
-                    <div className="text-xs text-white/50 font-mono mt-0.5">
-                      {episodesList.length} Bölüm Mevcut · {formatContentTypeTR(selectedMediaForEp.content_type, selectedMediaForEp.country_code)}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-base font-bold text-white truncate">
+                        {selectedMediaForEp.title}
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-sky-500/20 text-sky-300 border border-sky-400/30 uppercase">
+                        {formatContentTypeTR(selectedMediaForEp.content_type, selectedMediaForEp.country_code)}
+                      </span>
+                    </div>
+                    {selectedMediaForEp.native_title && (
+                      <div className="text-xs text-white/50 font-mono mt-0.5 truncate">
+                        {selectedMediaForEp.native_title}
+                      </div>
+                    )}
+                    <div className="text-xs text-sky-300 font-mono mt-1 flex items-center gap-2">
+                      <span className="font-bold text-white">{episodesList.length} Bölüm Mevcut</span>
+                      <span>·</span>
+                      <span>{selectedMediaForEp.release_year || (selectedMediaForEp as any).year || ''}</span>
                     </div>
                   </div>
                 </div>
 
                 <button
+                  type="button"
                   onClick={() => setSelectedMediaForEp(null)}
-                  className="text-xs text-white/50 hover:text-white cursor-pointer underline transition-colors"
+                  className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
                 >
-                  Farklı Seri Seç
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Farklı Seri Seç</span>
                 </button>
-              </div>
-            ) : (
-              <div className="py-16 text-center text-xs text-white/50">
-                Lütfen bölümlerini ve akış linklerini yönetmek için yukarıdaki arama kutusundan bir seri seçin.
               </div>
             )}
 
@@ -2679,6 +2984,11 @@ export default function AdminDashboardPage() {
                             >
                               {ep.status === 'published' ? 'YAYINDA' : ep.status === 'broken' ? 'KIRIK' : 'BEKLENİYOR'}
                             </span>
+                            {ep.intro_start_sec != null && ep.intro_end_sec != null && ep.intro_end_sec > ep.intro_start_sec && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-400/15 text-amber-300 border border-amber-400/30 flex items-center gap-1">
+                                <span>⏩ İntro: {Math.floor(ep.intro_start_sec / 60)}:{String(ep.intro_start_sec % 60).padStart(2, '0')} - {Math.floor(ep.intro_end_sec / 60)}:{String(ep.intro_end_sec % 60).padStart(2, '0')}</span>
+                              </span>
+                            )}
                           </div>
 
                           <div className="flex items-center gap-2">
@@ -2698,14 +3008,14 @@ export default function AdminDashboardPage() {
                                 setEpModalOpen(true);
                               }}
                               className="p-1.5 rounded-xl bg-white/10 text-white/80 hover:text-white cursor-pointer transition-colors"
-                              title="Bölümü Düzenle"
+                              aria-label="Bölümü Düzenle"
                             >
                               <Edit3 className="w-3.5 h-3.5" />
                             </button>
                             <button
                               onClick={() => handleDeleteEpisode(ep)}
                               className="p-1.5 rounded-xl bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 cursor-pointer transition-colors"
-                              title="Bölümü Sil"
+                              aria-label="Bölümü Sil"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -2744,7 +3054,7 @@ export default function AdminDashboardPage() {
                                   <button
                                     onClick={() => handleDeleteSource(ep, idx)}
                                     className="p-1 rounded-lg text-rose-400 hover:text-rose-300 hover:bg-rose-500/20 cursor-pointer shrink-0 transition-colors"
-                                    title="Kaynağı Kaldır"
+                                    aria-label="Kaynağı Kaldır"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </button>
@@ -2878,6 +3188,11 @@ export default function AdminDashboardPage() {
                               <ExternalLink className="w-2.5 h-2.5 opacity-50" />
                             </Link>
                           )}
+                          {(c.person_id || c.target_type === 'person') && (
+                            <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 text-[10px] font-mono flex items-center gap-1">
+                              <span>Oyuncu Yorumu {c.person_id ? `(#${c.person_id})` : ''}</span>
+                            </span>
+                          )}
                           {c.has_spoiler && (
                             <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 text-[10px] font-mono font-bold">
                               SPOILER
@@ -2958,80 +3273,518 @@ export default function AdminDashboardPage() {
       )}
 
       {/* ================= TAB 6: SCRAPER BOTLARI & CRON ================= */}
-      {activeTab === 'scrapers' && (
-        <section className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/15 space-y-6">
-          <div>
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              <Radio className="w-5 h-5 text-emerald-400" />
-              <span>Otomatik Scraper Botları & Cron Saat Yönetimi</span>
-            </h2>
-            <p className="text-xs text-white/55 mt-0.5">
-              GitHub Actions Cron + Cloudflare Edge Cron + 24 Saat Rolling Verification Watchdog
-            </p>
-          </div>
+      {activeTab === 'scrapers' && (() => {
+        const currentBot = selectedScraperId ? scrapers.find((b) => b.id === selectedScraperId) : null;
+        const currentBrand = selectedScraperId ? SCRAPER_BRAND_INFO[selectedScraperId] : null;
+        const currentMeta = scraperDetailData?.meta || currentBrand;
+        const currentRecentItems = (scraperDetailData?.recentItems || []) as any[];
+        const isSelectedRunning = runningScraperId === selectedScraperId;
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {scrapers.map((bot) => {
-              const isRunning = runningScraperId === bot.id;
-              return (
-                <div
-                  key={bot.id}
-                  className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 flex flex-col justify-between gap-4"
+        if (selectedScraperId && currentBot) {
+          return (
+            <div className="space-y-6">
+              {/* Top Navigation & Back Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-3xl apple-glass border border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setSelectedScraperId(null)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs transition-all cursor-pointer shadow"
                 >
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`w-2.5 h-2.5 rounded-full ${
-                            bot.is_enabled ? 'bg-emerald-400' : 'bg-rose-400'
-                          }`}
-                        />
-                        <h3 className="text-sm font-bold text-white">{bot.name}</h3>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => toggleScraperActive(bot)}
-                          className={`px-3 py-1 rounded-full text-[11px] font-mono font-semibold transition-all cursor-pointer border ${
-                            bot.is_enabled
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40 hover:bg-emerald-500/30'
-                              : 'bg-rose-500/20 text-rose-300 border-rose-400/40 hover:bg-rose-500/30'
-                          }`}
-                        >
-                          {bot.is_enabled ? 'Aktif' : 'Devre Dışı'}
-                        </button>
-                        <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-white/10 text-white/80">
-                          {bot.items_synced.toLocaleString('tr-TR')} Senkron
-                        </span>
-                      </div>
-                    </div>
-                    <p className="text-xs text-white/55">{bot.notes}</p>
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Tüm Scraper Botlarına Dön</span>
+                </button>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2 text-xs font-mono text-white/60">
+                    <Clock className="w-3.5 h-3.5 text-white/40" />
+                    <span>
+                      Son Tarama:{' '}
+                      {currentBot.last_run_at
+                        ? new Date(currentBot.last_run_at).toLocaleTimeString('tr-TR', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                          })
+                        : 'Beklemede'}
+                    </span>
                   </div>
 
-                  <div className="pt-3 border-t border-white/[0.06] flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-mono text-white/50">Cron:</span>
-                      <span className="px-2.5 py-1 rounded-lg bg-black/70 border border-white/15 text-xs font-mono text-amber-300">
-                        {bot.cron_schedule}
+                  <button
+                    type="button"
+                    onClick={() => toggleScraperActive(currentBot)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-mono font-bold transition-all cursor-pointer border ${
+                      currentBot.is_enabled
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40 hover:bg-emerald-500/30'
+                        : 'bg-rose-500/20 text-rose-300 border-rose-400/40 hover:bg-rose-500/30'
+                    }`}
+                  >
+                    {currentBot.is_enabled ? (
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        <span>Bot Aktif & Dinliyor</span>
                       </span>
+                    ) : (
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-rose-400" />
+                        <span>Bot Devre Dışı</span>
+                      </span>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Hero Header with Brand Identity */}
+              <div className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/15 relative overflow-hidden">
+                <div
+                  className={`absolute -top-24 -right-24 w-80 h-80 rounded-full blur-3xl opacity-20 pointer-events-none bg-gradient-to-br ${
+                    currentBrand?.bgGradient || 'from-sky-500 to-blue-700'
+                  }`}
+                />
+
+                <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
+                  <div className="flex items-start sm:items-center gap-4">
+                    <div className="w-16 h-16 rounded-3xl bg-black/60 border border-white/15 p-2 flex items-center justify-center shrink-0 shadow-2xl">
+                      <ScraperLogoBadge siteKey={currentBot.id} name={currentBot.name} />
                     </div>
 
+                    <div className="space-y-1.5">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <h1 className="text-2xl font-black text-white tracking-tight">
+                          {currentBot.name}
+                        </h1>
+                        {currentBrand && (
+                          <span className={`px-2.5 py-0.5 rounded-full bg-white/10 text-xs font-mono font-semibold ${currentBrand.textColor}`}>
+                            {currentBrand.category}
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-xs text-white/60 max-w-2xl leading-relaxed">
+                        {currentBot.notes || currentBrand?.protocol || 'Otomatik kaynak senkronizasyon botu.'}
+                      </p>
+
+                      {currentBrand?.domain && (
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <a
+                            href={currentBrand.domain}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-xs font-mono text-sky-400 hover:text-sky-300 transition-colors"
+                          >
+                            <Globe className="w-3.5 h-3.5" />
+                            <span>{currentBrand.domain.replace('https://', '')}</span>
+                            <ExternalLink className="w-3 h-3 opacity-60" />
+                          </a>
+                          <span className="text-white/20">·</span>
+                          <span className="text-[11px] font-mono text-white/40">
+                            Protokol: {currentBrand.protocol}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Action Trigger Buttons */}
+                  <div className="flex flex-wrap items-center gap-3 shrink-0">
                     <button
-                      onClick={() => triggerScraperNow(bot.id, bot.name)}
-                      disabled={isRunning}
-                      className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 transition-all cursor-pointer disabled:opacity-50"
+                      type="button"
+                      onClick={() => triggerScraperNow(currentBot.id, currentBot.name)}
+                      disabled={isSelectedRunning}
+                      className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-xs tracking-wide transition-all shadow-xl cursor-pointer disabled:opacity-50 ${
+                        isSelectedRunning
+                          ? 'bg-amber-400 text-black'
+                          : 'bg-white text-black hover:bg-white/90 active:scale-95'
+                      }`}
                     >
-                      <RefreshCw
-                        className={`w-3.5 h-3.5 ${isRunning ? 'animate-spin' : ''}`}
-                      />
-                      <span>{isRunning ? 'Taranıyor...' : 'Şimdi Tara'}</span>
+                      <RefreshCw className={`w-4 h-4 ${isSelectedRunning ? 'animate-spin' : ''}`} />
+                      <span>{isSelectedRunning ? 'Canlı Taranıyor & İşleniyor...' : 'Şimdi Tara (Canlı Senkronize Et)'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setLiveTerminalLogs([])}
+                      className="px-4 py-3 rounded-2xl bg-white/10 hover:bg-white/15 text-white/80 hover:text-white font-mono text-xs border border-white/10 transition-all cursor-pointer"
+                    >
+                      Konsolu Temizle
                     </button>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
+              </div>
+
+              {/* ================= SINGLE SERIES TARGETED SYNC ================= */}
+              <div className="p-5 sm:p-6 rounded-3xl apple-glass border border-sky-400/20 bg-sky-500/[0.03] space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-sky-500/20 border border-sky-400/30 flex items-center justify-center text-sky-400">
+                      <Search className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-white tracking-wide">
+                        Tek Dizi Ara & Doğrudan Senkronize Et
+                      </h3>
+                      <p className="text-[11px] text-white/50">
+                        {currentBot.name} üzerinden belirli bir diziyi aratıp yalnızca onun bölümlerini ve video akışlarını sisteme çekin.
+                      </p>
+                    </div>
+                  </div>
+
+                  <span className="text-[10px] font-mono text-sky-300 bg-sky-500/10 px-2.5 py-1 rounded-full border border-sky-400/20">
+                    Birebir Hedef Senkronu
+                  </span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-1">
+                  <div className="relative flex-1 w-full">
+                    <input
+                      type="text"
+                      value={singleSeriesQuery}
+                      onChange={(e) => setSingleSeriesQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && singleSeriesQuery.trim() && !isSelectedRunning) {
+                          triggerScraperNow(currentBot.id, currentBot.name, singleSeriesQuery.trim());
+                        }
+                      }}
+                      placeholder={`Örn: Itaewon Class, Horimiya, Breaking Bad veya ${currentBrand?.domain?.replace('https://', '')}/dizi-adi...`}
+                      className="w-full px-4 py-3 rounded-2xl bg-black/60 border border-white/15 text-white text-xs placeholder:text-white/35 focus:outline-none focus:border-sky-400 transition-colors font-mono"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (singleSeriesQuery.trim()) {
+                        triggerScraperNow(currentBot.id, currentBot.name, singleSeriesQuery.trim());
+                      }
+                    }}
+                    disabled={!singleSeriesQuery.trim() || isSelectedRunning}
+                    className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs tracking-wide transition-all glow-sky disabled:opacity-40 disabled:pointer-events-none cursor-pointer flex items-center justify-center gap-2 shrink-0 active:scale-95"
+                  >
+                    <Sparkles className="w-4 h-4 text-white" />
+                    <span>{isSelectedRunning ? 'Senkronize Ediliyor...' : 'Diziyi Çek & Senkron Et'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 4-Card Metrics Strip */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="p-4 rounded-2xl apple-glass border border-white/10 space-y-1">
+                  <div className="text-[11px] font-mono text-white/50 uppercase tracking-wider">Toplam Senkronize</div>
+                  <div className="text-2xl font-black text-white font-mono">
+                    {currentBot.items_synced.toLocaleString('tr-TR')}
+                  </div>
+                  <div className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>Veritabanı ile eşleşti</span>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl apple-glass border border-white/10 space-y-1">
+                  <div className="text-[11px] font-mono text-white/50 uppercase tracking-wider">Cron Zamanlaması</div>
+                  <div className="text-lg font-black text-amber-300 font-mono pt-0.5">
+                    {currentBot.cron_schedule}
+                  </div>
+                  <div className="text-[10px] text-white/40 font-mono">
+                    GitHub Actions / Cloudflare
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl apple-glass border border-white/10 space-y-1">
+                  <div className="text-[11px] font-mono text-white/50 uppercase tracking-wider">Sağlık & Başarı</div>
+                  <div className="text-2xl font-black text-emerald-300 font-mono">
+                    %100.0
+                  </div>
+                  <div className="text-[10px] text-emerald-400 font-mono">
+                    0 Hata · Sağlıklı Yanıt
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl apple-glass border border-white/10 space-y-1">
+                  <div className="text-[11px] font-mono text-white/50 uppercase tracking-wider">Hedef Kategori</div>
+                  <div className="text-lg font-black text-sky-300 font-mono pt-0.5 truncate">
+                    {currentBrand?.category || 'K-Drama / Dizi'}
+                  </div>
+                  <div className="text-[10px] text-white/40 font-mono truncate">
+                    {currentBrand?.tag || 'Otomatik Parser'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Live Terminal Console (Realtime execution stream) */}
+              <div className="rounded-3xl border border-white/15 bg-[#07090e] shadow-2xl overflow-hidden space-y-0">
+                {/* Terminal Header */}
+                <div className="px-5 py-3.5 bg-black/70 border-b border-white/10 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-3 h-3 rounded-full bg-rose-500/80 inline-block" />
+                      <span className="w-3 h-3 rounded-full bg-amber-500/80 inline-block" />
+                      <span className="w-3 h-3 rounded-full bg-emerald-500/80 inline-block" />
+                    </div>
+                    <div className="flex items-center gap-2 text-xs font-mono text-white/70">
+                      <Terminal className="w-3.5 h-3.5 text-sky-400" />
+                      <span className="font-semibold text-white/90">
+                        koup-scraper-engine :: {currentBot.id} --live-stream
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 text-[11px] font-mono">
+                    <div className="flex items-center gap-1.5 text-emerald-400">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>CANLI İZLEME AKTİF</span>
+                    </div>
+                    <span className="text-white/20">|</span>
+                    <span className="text-white/50">{liveTerminalLogs.length} satır log</span>
+                  </div>
+                </div>
+
+                {/* Terminal Body */}
+                <div className="p-5 font-mono text-xs max-h-[360px] min-h-[220px] overflow-y-auto space-y-1.5 scrollbar-thin">
+                  {liveTerminalLogs.length === 0 ? (
+                    <div className="py-12 text-center text-white/40 space-y-2">
+                      <Activity className="w-6 h-6 mx-auto opacity-30 animate-pulse" />
+                      <p>Terminal dinlemede. Canlı log akışı için yukarıdaki &quot;Şimdi Tara&quot; butonuna basınız.</p>
+                    </div>
+                  ) : (
+                    liveTerminalLogs.map((line, idx) => {
+                      let colorClass = 'text-white/80';
+                      if (line.includes('[BAŞLATILDI]')) colorClass = 'text-sky-300 font-bold';
+                      else if (line.includes('[BAĞLANTI]')) colorClass = 'text-blue-400';
+                      else if (line.includes('[TARAMA]')) colorClass = 'text-amber-300';
+                      else if (line.includes('[ÇÖZÜCÜ]')) colorClass = 'text-purple-300';
+                      else if (line.includes('[SENKRON]')) colorClass = 'text-teal-300';
+                      else if (line.includes('[TAMAMLANDI]')) colorClass = 'text-emerald-300 font-bold bg-emerald-500/10 px-2 py-0.5 rounded inline-block';
+                      else if (line.includes('[HATA]')) colorClass = 'text-rose-400 font-bold bg-rose-500/10 px-2 py-0.5 rounded inline-block';
+                      else if (line.includes('[BEKLEMEDE]')) colorClass = 'text-white/50';
+
+                      return (
+                        <div key={idx} className={`leading-relaxed break-all ${colorClass}`}>
+                          {line}
+                        </div>
+                      );
+                    })
+                  )}
+
+                  {isSelectedRunning && (
+                    <div className="flex items-center gap-2 text-sky-400 pt-2 animate-pulse">
+                      <span className="w-2 h-2 rounded-full bg-sky-400 animate-ping" />
+                      <span>&gt; Paket ayrıştırılıyor, hedef sunucudan güncel bölümler çekiliyor...</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Son Eklenen & Senkronize Edilen Yapımlar (Recently added items) */}
+              <div className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/15 space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                      <Sparkles className="w-5 h-5 text-amber-400" />
+                      <span>Son Eklenen & Senkronize Edilen İçerikler</span>
+                      <span className="px-2.5 py-0.5 rounded-full bg-white/10 text-xs font-mono text-white/70">
+                        {currentRecentItems.length} Yapım
+                      </span>
+                    </h3>
+                    <p className="text-xs text-white/50 mt-0.5">
+                      Bu bot tarafından sisteme kaydedilen son bölümler ve medya kaynakları. Tıklayarak doğrudan sayfasına gidebilirsiniz.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => openScraperDetail(currentBot.id)}
+                    disabled={isLoadingScraperDetail}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-semibold cursor-pointer transition-all"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingScraperDetail ? 'animate-spin' : ''}`} />
+                    <span>Yenile</span>
+                  </button>
+                </div>
+
+                {isLoadingScraperDetail ? (
+                  <div className="py-16 text-center text-xs text-white/50 flex items-center justify-center gap-2">
+                    <RefreshCw className="w-4 h-4 animate-spin text-sky-400" />
+                    <span>Eklenen yapımlar yükleniyor...</span>
+                  </div>
+                ) : currentRecentItems.length === 0 ? (
+                  <div className="py-16 text-center text-xs text-white/40 space-y-2">
+                    <p>Bu bot için henüz listelenmiş ekleme kaydı bulunamadı.</p>
+                    <p className="text-[11px] text-white/30">Canlı veri çekmek için &quot;Şimdi Tara&quot; butonunu kullanabilirsiniz.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {currentRecentItems.map((item: any, idx: number) => (
+                      <Link
+                        key={item.id || idx}
+                        href={item.link || '#'}
+                        target="_blank"
+                        className="group p-3 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 hover:border-sky-500/40 transition-all flex flex-col justify-between gap-3 shadow-lg"
+                      >
+                        <div className="space-y-2.5">
+                          <div className="aspect-video w-full rounded-xl overflow-hidden bg-black/60 relative border border-white/10">
+                            {item.image ? (
+                              <img
+                                src={item.image}
+                                alt={item.title}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-xs text-white/30 font-mono">
+                                Görsel Yok
+                              </div>
+                            )}
+                            <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/70 backdrop-blur text-[10px] font-mono font-bold text-emerald-300 border border-emerald-400/30">
+                              {item.status || 'Yayında'}
+                            </div>
+                          </div>
+
+                          <div>
+                            <h4 className="text-sm font-bold text-white group-hover:text-sky-300 transition-colors line-clamp-1">
+                              {item.title}
+                            </h4>
+                            <p className="text-xs text-white/60 line-clamp-1 mt-0.5">
+                              {item.subtitle || 'Bölüm'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between text-[11px] font-mono text-white/50">
+                          <span className="text-sky-400 truncate max-w-[130px]">
+                            {item.sourceName || '1080p Kaynak'}
+                          </span>
+                          <div className="flex items-center gap-1 text-white/60 group-hover:text-white transition-colors">
+                            <span>Aç</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </div>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          /* SCRAPER CARDS LIST VIEW WITH BRAND BADGES & DIRECT ACTIONS */
+          <section className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/15 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Radio className="w-5 h-5 text-emerald-400" />
+                  <span>Otomatik Scraper Botları & Cron Saat Yönetimi</span>
+                </h2>
+                <p className="text-xs text-white/55 mt-0.5">
+                  GitHub Actions Cron + Cloudflare Edge Cron + 24 Saat Rolling Verification Watchdog
+                </p>
+              </div>
+
+              <div className="text-xs font-mono text-white/60 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 shrink-0">
+                Toplam <span className="text-white font-bold">{scrapers.length}</span> Aktif Bot Motoru
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {scrapers.map((bot) => {
+                const isRunning = runningScraperId === bot.id;
+                const brand = SCRAPER_BRAND_INFO[bot.id];
+
+                return (
+                  <div
+                    key={bot.id}
+                    className="p-5 rounded-3xl bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 hover:border-white/20 transition-all flex flex-col justify-between gap-5 group"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-3">
+                          <ScraperLogoBadge siteKey={bot.id} name={bot.name} />
+                          <div>
+                            <h3 className="text-sm font-bold text-white group-hover:text-sky-300 transition-colors">
+                              {bot.name}
+                            </h3>
+                            {brand?.category && (
+                              <span className="text-[10px] font-mono text-white/50 block">
+                                {brand.category}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleScraperActive(bot)}
+                            className={`px-3 py-1 rounded-full text-[11px] font-mono font-semibold transition-all cursor-pointer border ${
+                              bot.is_enabled
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40 hover:bg-emerald-500/30'
+                                : 'bg-rose-500/20 text-rose-300 border-rose-400/40 hover:bg-rose-500/30'
+                            }`}
+                          >
+                            {bot.is_enabled ? 'Aktif' : 'Devre Dışı'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-white/60 leading-relaxed">
+                        {bot.notes || brand?.protocol}
+                      </p>
+
+                      {brand?.domain && (
+                        <div className="flex items-center gap-2">
+                          <a
+                            href={brand.domain}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-[11px] font-mono text-sky-400 hover:text-sky-300 transition-colors"
+                          >
+                            <Globe className="w-3 h-3" />
+                            <span>{brand.domain.replace('https://', '')}</span>
+                            <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                          </a>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-3 border-t border-white/[0.06] flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-mono text-white/50">Cron:</span>
+                        <span className="px-2 py-0.5 rounded-lg bg-black/70 border border-white/15 text-xs font-mono text-amber-300">
+                          {bot.cron_schedule}
+                        </span>
+                        <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-white/10 text-white/80">
+                          {bot.items_synced.toLocaleString('tr-TR')} Senkron
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openScraperDetail(bot.id)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs transition-all cursor-pointer"
+                        >
+                          <Terminal className="w-3.5 h-3.5 text-sky-400" />
+                          <span>Detay & Canlı Konsol</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => triggerScraperNow(bot.id, bot.name)}
+                          disabled={isRunning}
+                          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white text-black font-bold text-xs hover:bg-white/90 transition-all cursor-pointer disabled:opacity-50 shadow-md"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isRunning ? 'animate-spin' : ''}`} />
+                          <span>{isRunning ? 'Taranıyor...' : 'Şimdi Tara'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })()}
 
       {/* ================= TAB 7: SORUN BİLDİRİMLERİ (REPORTS) ================= */}
       {activeTab === 'reports' && (
@@ -3428,6 +4181,95 @@ export default function AdminDashboardPage() {
                   />
                 </div>
 
+                {/* Intro Skip Range (Start & End) */}
+                <div className="p-3.5 rounded-2xl bg-amber-500/[0.05] border border-amber-400/20 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
+                      <span>⏩ İntro Atlama Zamanı</span>
+                      <span className="text-[10px] text-white/40 font-normal">(İsteğe Bağlı)</span>
+                    </span>
+                    {editingEp?.intro_start_sec != null &&
+                      editingEp?.intro_end_sec != null &&
+                      editingEp.intro_end_sec > editingEp.intro_start_sec && (
+                        <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                          {editingEp.intro_end_sec - editingEp.intro_start_sec} sn atlar
+                        </span>
+                      )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-medium text-white/60 mb-1">
+                        Başlangıç (sn veya 01:30)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Örn: 90 veya 01:30"
+                        value={
+                          editingEp?.intro_start_sec != null
+                            ? `${Math.floor(editingEp.intro_start_sec / 60)}:${String(
+                                editingEp.intro_start_sec % 60
+                              ).padStart(2, '0')}`
+                            : ''
+                        }
+                        onChange={(e) => {
+                          const raw = e.target.value.trim();
+                          if (!raw) {
+                            setEditingEp((prev) => ({ ...prev, intro_start_sec: null }));
+                            return;
+                          }
+                          let sec: number | null = null;
+                          if (raw.includes(':')) {
+                            const p = raw.split(':').map(Number);
+                            if (p.length === 2 && !Number.isNaN(p[0]) && !Number.isNaN(p[1])) {
+                              sec = p[0] * 60 + p[1];
+                            }
+                          } else {
+                            const n = Number(raw);
+                            if (!Number.isNaN(n)) sec = n;
+                          }
+                          setEditingEp((prev) => ({ ...prev, intro_start_sec: sec }));
+                        }}
+                        className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/15 text-xs text-white focus:outline-none focus:border-amber-400/50"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-medium text-white/60 mb-1">
+                        Bitiş (sn veya 03:00)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Örn: 180 veya 03:00"
+                        value={
+                          editingEp?.intro_end_sec != null
+                            ? `${Math.floor(editingEp.intro_end_sec / 60)}:${String(
+                                editingEp.intro_end_sec % 60
+                              ).padStart(2, '0')}`
+                            : ''
+                        }
+                        onChange={(e) => {
+                          const raw = e.target.value.trim();
+                          if (!raw) {
+                            setEditingEp((prev) => ({ ...prev, intro_end_sec: null }));
+                            return;
+                          }
+                          let sec: number | null = null;
+                          if (raw.includes(':')) {
+                            const p = raw.split(':').map(Number);
+                            if (p.length === 2 && !Number.isNaN(p[0]) && !Number.isNaN(p[1])) {
+                              sec = p[0] * 60 + p[1];
+                            }
+                          } else {
+                            const n = Number(raw);
+                            if (!Number.isNaN(n)) sec = n;
+                          }
+                          setEditingEp((prev) => ({ ...prev, intro_end_sec: sec }));
+                        }}
+                        className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/15 text-xs text-white focus:outline-none focus:border-amber-400/50"
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 <div className="pt-3 border-t border-white/10 flex items-center justify-end gap-2">
                   <button
                     type="button"
@@ -3626,8 +4468,9 @@ export default function AdminDashboardPage() {
               >
                 {modActionType === 'hard_ban' && (
                   <div>
-                    <strong className="block font-bold text-red-100 mb-0.5">
-                      ⚠️ Kritik Sistem Güvenlik Müdahalesi (Admin Yetkisi)
+                    <strong className="flex items-center gap-1.5 font-bold text-red-100 mb-0.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>Kritik Sistem Güvenlik Müdahalesi (Admin Yetkisi)</span>
                     </strong>
                     Kullanıcının tarayıcı/donanım parmak izi (fingerprint) kalıcı kara listeye alınır. Kullanıcı ve cihazındaki tüm oturumlar anında 403 Banned ekranına kilitlenir.
                   </div>
@@ -3727,7 +4570,7 @@ export default function AdminDashboardPage() {
                 <div className="p-3 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between text-[11px] text-white/50 font-mono">
                   <span>Mevcut Uyarı: <strong className="text-white">{modTargetUser.warning_count || 0} / 3</strong></span>
                   <span>Rol: <strong className="text-white uppercase">{modTargetUser.role || 'user'}</strong></span>
-                  <span>Fingerprint: <strong className="text-white">{modTargetUser.fingerprint_hash ? 'Kayıtlı ✓' : 'Yok'}</strong></span>
+                  <span>Fingerprint: <strong className="text-white flex items-center gap-1">{modTargetUser.fingerprint_hash ? <><Check className="w-3 h-3 text-emerald-400" /> Kayıtlı</> : 'Yok'}</strong></span>
                 </div>
 
                 {/* Actions */}

@@ -20,9 +20,10 @@ import {
   MediaItem,
   getProxiedImageUrl,
   formatContentTypeTR,
+  cleanMediaTitle,
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
-import { cachedQuery } from '@/lib/cache';
+import { cachedQuery, getCache } from '@/lib/cache';
 
 interface CalendarScheduleItem {
   id: number;
@@ -60,7 +61,9 @@ function isScheduleAnime(item: CalendarScheduleItem): boolean {
   return (
     item.source_site === 'tranimeizle' ||
     item.source_site === 'animecix' ||
+    item.source_site === 'asyaanimeleri' ||
     Boolean(item.category?.toLowerCase().includes('anime')) ||
+    Boolean(item.category?.toLowerCase().includes('donghua')) ||
     item.media?.content_type === 'anime'
   );
 }
@@ -68,7 +71,7 @@ function isScheduleAnime(item: CalendarScheduleItem): boolean {
 function isScheduleKdrama(item: CalendarScheduleItem): boolean {
   if (isScheduleAnime(item)) return false;
   return (
-    item.source_site === 'webdramaturkey' ||
+    item.source_site === 'dizikorea' ||
     Boolean(item.category?.toLowerCase().includes('kore')) ||
     Boolean(item.category?.toLowerCase().includes('k-drama')) ||
     Boolean(item.category?.toLowerCase().includes('çin')) ||
@@ -81,21 +84,36 @@ export default function CalendarPage() {
   const { followedMediaIds, toggleMediaFollow, triggerSound, pushNotification } =
     useKoUp();
 
-  const [selectedDay, setSelectedDay] = useState<number>(
-    ((new Date().getDay() + 6) % 7) + 1
+  const todayDay = ((new Date().getDay() + 6) % 7) + 1;
+  const initialData = getCache<{ success: boolean; schedules: CalendarScheduleItem[]; enabledScrapers: string[] }>(
+    `takvim_schedules_${todayDay}`,
+    true
   );
+
+  const [selectedDay, setSelectedDay] = useState<number>(todayDay);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [schedules, setSchedules] = useState<CalendarScheduleItem[]>([]);
-  const [enabledScrapers, setEnabledScrapers] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [schedules, setSchedules] = useState<CalendarScheduleItem[]>(() => initialData?.schedules || []);
+  const [enabledScrapers, setEnabledScrapers] = useState<string[]>(() => initialData?.enabledScrapers || []);
+  const [isLoading, setIsLoading] = useState(() => !initialData?.schedules || initialData.schedules.length === 0);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadSchedule() {
-      setIsLoading(true);
+      const cacheKey = `takvim_schedules_${selectedDay}`;
+      const cached = getCache<{ success: boolean; schedules: CalendarScheduleItem[]; enabledScrapers: string[] }>(
+        cacheKey,
+        true
+      );
+      if (cached?.schedules && cached.schedules.length > 0) {
+        setSchedules(cached.schedules);
+        setEnabledScrapers(cached.enabledScrapers || []);
+        setIsLoading(false);
+      } else if (schedules.length === 0) {
+        setIsLoading(true);
+      }
+
       try {
-        const cacheKey = `takvim_schedules_${selectedDay}`;
         const result = await cachedQuery(cacheKey, 120_000, async () => {
           const params = new URLSearchParams({
             day: String(selectedDay),
@@ -114,7 +132,7 @@ export default function CalendarPage() {
           setSchedules([]);
         }
       } catch (err) {
-        if (!cancelled) setSchedules([]);
+        if (!cancelled && schedules.length === 0) setSchedules([]);
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -187,7 +205,7 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* Category Filter Pills (Internal Scraper Sources Completely Removed) */}
+      {/* Category Filter Pills with Fluid Spring Sliding Pill */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-mono text-white/45 mr-1">Kategori:</span>
         {CATEGORY_FILTERS.map((cf) => {
@@ -199,13 +217,21 @@ export default function CalendarPage() {
                 triggerSound?.('click');
                 setSelectedCategory(cf.id);
               }}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-mono transition-all cursor-pointer border ${
+              className={`relative px-3.5 py-1.5 rounded-full text-xs font-mono transition-colors duration-200 cursor-pointer border ${
                 active
-                  ? 'bg-white text-black font-bold border-white shadow-[0_0_16px_rgba(255,255,255,0.25)]'
+                  ? 'text-black font-bold border-white'
                   : 'bg-white/[0.04] text-white/70 border-white/10 hover:text-white hover:border-white/20'
               }`}
             >
-              {cf.label}
+              {active && (
+                <motion.span
+                  layoutId="calendar-category-pill"
+                  initial={false}
+                  transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
+                  className="absolute inset-0 rounded-full bg-white shadow-[0_0_16px_rgba(255,255,255,0.25)]"
+                />
+              )}
+              <span className="relative z-10">{cf.label}</span>
             </button>
           );
         })}
@@ -230,9 +256,14 @@ export default function CalendarPage() {
       </div>
 
       {/* Grid of Calendar Items */}
-      {isLoading ? (
-        <div className="py-24 text-center text-sm font-mono text-white/50 animate-pulse">
-          Canlı yayın takvimi ve program bilgileri getiriliyor...
+      {isLoading && displayedSchedules.length === 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div
+              key={i}
+              className="aspect-[2/3] rounded-3xl bg-white/[0.03] border border-white/[0.06] animate-pulse"
+            />
+          ))}
         </div>
       ) : displayedSchedules.length === 0 ? (
         <div className="py-24 text-center rounded-3xl apple-glass p-8 border border-white/10 space-y-3">
@@ -261,7 +292,7 @@ export default function CalendarPage() {
               const coverImg =
                 item.media?.cover_image ||
                 item.cover_image ||
-                'https://cdn.webdrama.io/cover/default.jpeg';
+                '/logo-dark.png';
               const isFollowed = item.media_id
                 ? followedMediaIds.includes(item.media_id)
                 : false;
@@ -323,7 +354,7 @@ export default function CalendarPage() {
                         href={`/seri/${targetSlug}`}
                         className="text-xs sm:text-sm font-bold text-white hover:text-white/80 line-clamp-2 leading-snug"
                       >
-                        {item.title}
+                        {cleanMediaTitle(item.title)}
                       </Link>
                     </div>
 
@@ -341,7 +372,7 @@ export default function CalendarPage() {
                           onClick={() => {
                             if (item.media) toggleMediaFollow(item.media);
                           }}
-                          title={isFollowed ? 'Takibi Bırak' : 'Yeni Bölüm Bildirimi Aç'}
+                          aria-label={isFollowed ? 'Takibi Bırak' : 'Yeni Bölüm Bildirimi Aç'}
                           className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all cursor-pointer border ${
                             isFollowed
                               ? 'bg-white text-black border-white'

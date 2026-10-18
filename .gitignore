@@ -33,3 +33,9 @@ Thumbs.db
 next-env.d.ts
 scratch/
 supabase/.temp/
+
+# R2 Local Bundles & Large Dumps
+r2_bundles/
+scrapers/ddizi_catalog.json
+scripts/reports/
+*.log

@@ -152,20 +152,30 @@ export default function CustomSelect({
     };
   }, [isOpen, updatePosition]);
 
-  // Reset search and highlight when menu opens/closes
+  // Reset search and highlight ONLY when menu opens or closes
   useEffect(() => {
     if (isOpen) {
       setSearchQuery('');
-      const selectedIdx = filteredOptions.findIndex((o) => o.value === value);
-      setHighlightedIndex(selectedIdx >= 0 ? selectedIdx : 0);
+      setHighlightedIndex(-1);
       if (isSearchable) {
-        setTimeout(() => searchInputRef.current?.focus(), 50);
+        setTimeout(() => searchInputRef.current?.focus(), 60);
       }
     } else {
       setSearchQuery('');
       setHighlightedIndex(-1);
     }
-  }, [isOpen, filteredOptions, value, isSearchable]);
+  }, [isOpen, isSearchable]);
+
+  // When search query changes while open, highlight first filtered option only when query is non-empty
+  useEffect(() => {
+    if (isOpen) {
+      if (searchQuery.trim().length > 0) {
+        setHighlightedIndex(filteredOptions.length > 0 ? 0 : -1);
+      } else {
+        setHighlightedIndex(-1);
+      }
+    }
+  }, [searchQuery, isOpen, filteredOptions.length]);
 
   // Outside click & touch handling
   useEffect(() => {
@@ -217,7 +227,7 @@ export default function CustomSelect({
       case 'ArrowDown': {
         e.preventDefault();
         setHighlightedIndex((prev) => {
-          let next = prev + 1;
+          let next = prev < 0 ? 0 : prev + 1;
           while (next < filteredOptions.length && filteredOptions[next]?.disabled) {
             next++;
           }
@@ -228,7 +238,7 @@ export default function CustomSelect({
       case 'ArrowUp': {
         e.preventDefault();
         setHighlightedIndex((prev) => {
-          let next = prev - 1;
+          let next = prev < 0 ? filteredOptions.length - 1 : prev - 1;
           while (next >= 0 && filteredOptions[next]?.disabled) {
             next--;
           }
@@ -340,23 +350,57 @@ export default function CustomSelect({
         >
           {/* Optional Instant Search Filter */}
           {isSearchable && (
-            <div className="p-1.5 pb-2 border-b border-white/[0.08]">
-              <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.06] border border-white/10 focus-within:border-[var(--accent-blue)]/60 focus-within:ring-1 focus-within:ring-[var(--accent-blue)]/30 transition-all">
-                <Search className="w-3.5 h-3.5 text-white/50 shrink-0" />
+            <div
+              className="p-1.5 pb-2 border-b border-white/[0.08]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.06] border border-white/10 focus-within:border-sky-400/60 focus-within:ring-1 focus-within:ring-sky-400/30 transition-all">
+                <Search className="w-3.5 h-3.5 text-white/50 shrink-0 pointer-events-none" />
                 <input
                   ref={searchInputRef}
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Escape') {
+                      setIsOpen(false);
+                      triggerRef.current?.focus();
+                    } else if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setHighlightedIndex((prev) =>
+                        prev < 0 ? 0 : Math.min(filteredOptions.length - 1, prev + 1)
+                      );
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setHighlightedIndex((prev) =>
+                        prev < 0 ? filteredOptions.length - 1 : Math.max(0, prev - 1)
+                      );
+                    } else if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const targetOption = filteredOptions[highlightedIndex];
+                      if (targetOption && !targetOption.disabled) {
+                        onChange(targetOption.value);
+                        setIsOpen(false);
+                        triggerRef.current?.focus();
+                      }
+                    }
+                  }}
                   placeholder={searchPlaceholder}
+                  autoComplete="off"
+                  spellCheck={false}
                   className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full"
                   aria-label={searchPlaceholder}
                 />
                 {searchQuery && (
                   <button
                     type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="text-white/40 hover:text-white shrink-0 cursor-pointer"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSearchQuery('');
+                      searchInputRef.current?.focus();
+                    }}
+                    className="text-white/40 hover:text-white shrink-0 cursor-pointer p-0.5"
                     aria-label="Temizle"
                   >
                     <X className="w-3 h-3" />
@@ -369,6 +413,7 @@ export default function CustomSelect({
           {/* Options List with sleek scrollbar */}
           <div
             ref={optionsListRef}
+            onMouseLeave={() => setHighlightedIndex(-1)}
             className="max-h-60 overflow-y-auto space-y-0.5 py-1 no-scrollbar pr-0.5"
           >
             {filteredOptions.length === 0 ? (

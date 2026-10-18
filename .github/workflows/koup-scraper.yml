@@ -7,14 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       target_site:
-        description: 'Taranacak hedef site (all, asyamag, webdramaturkey, tranimeizle, diziyou, dizibox, watchdog_24h)'
+        description: 'Taranacak hedef site (all, asyamag, dizikorea, tranimeizle, diziyou, dizibox, watchdog_24h)'
         required: false
         default: 'all'
         type: choice
         options:
           - all
           - asyamag
-          - webdramaturkey
+          - dizikorea
           - tranimeizle
           - diziyou
           - dizibox

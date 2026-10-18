@@ -21,8 +21,9 @@ import {
   ArrowLeft,
   Star,
   Check,
+  CheckSquare,
 } from 'lucide-react';
-import { MediaItem, getProxiedImageUrl, formatContentTypeTR } from '@/lib/supabase';
+import { MediaItem, getProxiedImageUrl, formatContentTypeTR, supabase } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 
@@ -53,7 +54,7 @@ export default function ListDetailPage({
 }) {
   const unwrappedParams = use(params);
   const router = useRouter();
-  const { user, triggerSound, pushNotification, setIsAuthModalOpen } = useKoUp();
+  const { user, authLoading, triggerSound, pushNotification, setIsAuthModalOpen, confirmDialog } = useKoUp();
 
   const [list, setList] = useState<ListDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -75,10 +76,14 @@ export default function ListDetailPage({
   const isOwner = Boolean(user?.id && list?.creator?.id && user.id === list.creator.id);
 
   useEffect(() => {
+    // If auth is still initializing, wait so we can authenticate private list ownership
+    if (authLoading) return;
+
     async function loadList() {
       setIsLoading(true);
       try {
-        const res = await fetch(`/api/lists/${unwrappedParams.id}`);
+        const userParam = user?.id ? `?user_id=${encodeURIComponent(user.id)}` : '';
+        const res = await fetch(`/api/lists/${unwrappedParams.id}${userParam}`);
         const data = await res.json();
         if (data.success && data.list) {
           setList(data.list);
@@ -86,15 +91,30 @@ export default function ListDetailPage({
           setEditTitle(data.list.title || '');
           setEditDesc(data.list.description || '');
           setEditVisibility(data.list.visibility === 'private' ? 'private' : 'public');
+
+          if (user?.id && data.list.id) {
+            void supabase
+              .from('custom_list_likes')
+              .select('list_id')
+              .eq('user_id', user.id)
+              .eq('list_id', data.list.id)
+              .maybeSingle()
+              .then(({ data: lData }) => {
+                setIsLiked(Boolean(lData));
+              });
+          }
+        } else {
+          setList(null);
         }
       } catch (err) {
         console.error('Failed to load list details:', err);
+        setList(null);
       } finally {
         setIsLoading(false);
       }
     }
     loadList();
-  }, [unwrappedParams.id]);
+  }, [unwrappedParams.id, user?.id, authLoading]);
 
   // Search dramas to add into list
   useEffect(() => {
@@ -125,27 +145,162 @@ export default function ListDetailPage({
     return () => clearTimeout(t);
   }, [searchDramaQuery]);
 
-  const handleToggleLike = () => {
+  // Multi-selection state (Owner only)
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
+  const [isDeletingSelected, setIsDeletingSelected] = useState(false);
+
+  const toggleSelectItem = (id: number) => {
+    triggerSound('click');
+    setSelectedItemIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAll = () => {
+    triggerSound('click');
+    if (!list) return;
+    if (selectedItemIds.length === list.items.length) {
+      setSelectedItemIds([]);
+    } else {
+      setSelectedItemIds(list.items.map((i) => i.id));
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (!list || selectedItemIds.length === 0 || isDeletingSelected) return;
+
+    const confirmed = await confirmDialog({
+      title: 'Yapımları Listeden Kaldır',
+      message: `Seçilen ${selectedItemIds.length} yapımı bu listeden kaldırmak istediğinize emin misiniz?`,
+      confirmText: 'Kaldır',
+      cancelText: 'Vazgeç',
+      isDestructive: true,
+      icon: 'trash',
+    });
+    if (!confirmed) return;
+
+    setIsDeletingSelected(true);
+    triggerSound('click');
+
+    const remainingItems = list.items.filter((item) => !selectedItemIds.includes(item.id));
+    const remainingIds = remainingItems.map((item) => item.id);
+
+    try {
+      const res = await fetch(`/api/lists/${list.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          media_ids: remainingIds,
+          user_id: user?.id,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setList((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            items: remainingItems,
+            item_count: remainingItems.length,
+          };
+        });
+        triggerSound('success');
+        pushNotification(
+          'Yapımlar Kaldırıldı',
+          `${selectedItemIds.length} yapım listeden başarıyla kaldırıldı.`,
+          'info'
+        );
+        setSelectedItemIds([]);
+        setIsSelectMode(false);
+      } else {
+        pushNotification('Hata', data.error || 'Yapımlar silinemedi.', 'info');
+      }
+    } catch {
+      pushNotification('Hata', 'İşlem sırasında bağlantı hatası oluştu.', 'info');
+    } finally {
+      setIsDeletingSelected(false);
+    }
+  };
+
+  const handleToggleLike = async () => {
     if (!user) {
       setIsAuthModalOpen(true);
       return;
     }
+    if (!list) return;
     triggerSound('click');
-    setIsLiked((prev) => !prev);
-    setLikesCount((prev) => (isLiked ? Math.max(0, prev - 1) : prev + 1));
+
+    const willLike = !isLiked;
+    setIsLiked(willLike);
+    setLikesCount((prev) => (willLike ? prev + 1 : Math.max(0, prev - 1)));
     pushNotification(
-      isLiked ? 'Beğeni Kaldırıldı' : 'Liste Beğenildi',
-      isLiked ? 'Liste beğenilerinizden kaldırıldı.' : 'Bu liste beğenilerinize eklendi.',
+      willLike ? 'Liste Beğenildi' : 'Beğeni Kaldırıldı',
+      willLike ? 'Bu liste beğenilerinize eklendi.' : 'Liste beğenilerinizden kaldırıldı.',
       'info'
     );
+
+    try {
+      if (willLike) {
+        await supabase
+          .from('custom_list_likes')
+          .insert({ user_id: user.id, list_id: list.id });
+      } else {
+        await supabase
+          .from('custom_list_likes')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('list_id', list.id);
+      }
+    } catch (err) {
+      console.error('Failed to persist custom list like:', err);
+      // Rollback on error
+      setIsLiked(!willLike);
+      setLikesCount((prev) => (willLike ? Math.max(0, prev - 1) : prev + 1));
+    }
   };
 
-  const handleShare = () => {
+  const handleShare = async () => {
     triggerSound('click');
-    if (typeof window !== 'undefined') {
-      navigator.clipboard.writeText(window.location.href);
-      pushNotification('Bağlantı Kopyalandı', 'Liste bağlantısı panoya kopyalandı.', 'success');
+    const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
+    if (!shareUrl) return;
+
+    let copied = false;
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(shareUrl);
+        copied = true;
+      }
+    } catch {}
+
+    if (!copied) {
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = shareUrl;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        copied = true;
+      } catch {}
     }
+
+    if (navigator.share && /mobile|android|iphone|ipad/i.test(navigator.userAgent)) {
+      try {
+        await navigator.share({
+          title: list?.title || 'KoUp Liste',
+          url: shareUrl,
+        });
+        return;
+      } catch {}
+    }
+
+    pushNotification('Bağlantı Kopyalandı', 'Liste bağlantısı panoya kopyalandı.', 'success');
   };
 
   const handleAddMedia = async (mediaItem: MediaItem) => {
@@ -187,6 +342,17 @@ export default function ListDetailPage({
 
   const handleRemoveMedia = async (mediaId: number, mediaTitle: string) => {
     if (!list) return;
+
+    const confirmed = await confirmDialog({
+      title: 'Yapımı Listeden Kaldır',
+      message: `"${mediaTitle}" yapımını bu listeden çıkarmak istediğinize emin misiniz?`,
+      confirmText: 'Çıkar',
+      cancelText: 'Vazgeç',
+      isDestructive: true,
+      icon: 'trash',
+    });
+    if (!confirmed) return;
+
     triggerSound('click');
 
     try {
@@ -245,7 +411,18 @@ export default function ListDetailPage({
   };
 
   const handleDeleteList = async () => {
-    if (!list || !confirm('Bu listeyi kalıcı olarak silmek istediğinizden emin misiniz?')) return;
+    if (!list) return;
+
+    const confirmed = await confirmDialog({
+      title: 'Listeyi Sil',
+      message: `"${list.title}" listesini kalıcı olarak silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.`,
+      confirmText: 'Listeyi Sil',
+      cancelText: 'Vazgeç',
+      isDestructive: true,
+      icon: 'trash',
+    });
+    if (!confirmed) return;
+
     try {
       const res = await fetch(`/api/lists/${list.id}?user_id=${user?.id}`, {
         method: 'DELETE',
@@ -260,9 +437,9 @@ export default function ListDetailPage({
     }
   };
 
-  if (isLoading) {
+  if (isLoading || authLoading) {
     return (
-      <div className="min-h-[70vh] flex items-center justify-center pt-28">
+      <div className="min-h-[70vh] flex items-center justify-center pt-36 sm:pt-40">
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
           <p className="text-xs text-white/50 font-mono tracking-wider">Liste Yükleniyor...</p>
@@ -273,7 +450,7 @@ export default function ListDetailPage({
 
   if (!list) {
     return (
-      <div className="pt-28 pb-24 max-w-xl mx-auto px-5 text-center space-y-4">
+      <div className="pt-36 sm:pt-40 pb-24 max-w-xl mx-auto px-5 text-center space-y-4">
         <div className="w-16 h-16 rounded-full bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mx-auto text-rose-400">
           <ListOrdered className="w-8 h-8" />
         </div>
@@ -293,7 +470,7 @@ export default function ListDetailPage({
   }
 
   return (
-    <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 space-y-8">
+    <div className="pt-36 sm:pt-40 pb-24 max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 space-y-8">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-xs font-mono text-white/45">
         <Link href="/" className="hover:text-white transition-colors">
@@ -432,7 +609,7 @@ export default function ListDetailPage({
                 <button
                   onClick={handleDeleteList}
                   className="flex items-center gap-1.5 px-3 py-2.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold hover:bg-rose-500/25 cursor-pointer"
-                  title="Listeyi Sil"
+                  aria-label="Listeyi Sil"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -444,13 +621,68 @@ export default function ListDetailPage({
 
       {/* MEDIA GRID */}
       <div>
-        <div className="flex items-center justify-between mb-5">
+        <div className="mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2">
             <span>Listelenen Yapımlar</span>
             <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.06] text-white/60">
               {list.items.length}
             </span>
           </h2>
+
+          {isOwner && list.items.length > 0 && (
+            <div className="flex items-center gap-2">
+              {!isSelectMode ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSelectMode(true);
+                    setSelectedItemIds([]);
+                    triggerSound('click');
+                  }}
+                  className="px-3.5 py-1.5 rounded-full glass-pill hover:bg-white/15 text-xs font-semibold text-white/80 hover:text-white transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <CheckSquare className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Çoklu Seçim</span>
+                </button>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSelectAll}
+                    className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-all cursor-pointer"
+                  >
+                    {selectedItemIds.length === list.items.length
+                      ? 'Seçimi Kaldır'
+                      : 'Tümünü Seç'}
+                  </button>
+
+                  {selectedItemIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteSelected}
+                      disabled={isDeletingSelected}
+                      className="px-3.5 py-1.5 rounded-full bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Seçilenleri Sil ({selectedItemIds.length})</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSelectMode(false);
+                      setSelectedItemIds([]);
+                      triggerSound('click');
+                    }}
+                    className="px-3 py-1.5 rounded-full text-xs text-white/50 hover:text-white transition-colors cursor-pointer"
+                  >
+                    Vazgeç
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {list.items.length === 0 ? (
@@ -475,24 +707,51 @@ export default function ListDetailPage({
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5 pb-6">
-            {list.items.map((item, idx) => (
-              <div key={item.id} className="relative group">
-                <AccordionMediaCard item={item} priority={idx < 6} fluidWidth={true} />
-                {isOwner && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
+            {list.items.map((item, idx) => {
+              const isSelected = selectedItemIds.includes(item.id);
+              return (
+                <div
+                  key={item.id}
+                  onClickCapture={(e) => {
+                    if (isSelectMode) {
                       e.preventDefault();
-                      handleRemoveMedia(item.id, item.title);
-                    }}
-                    title="Listeden Çıkar"
-                    className="absolute -top-2 -right-2 z-30 w-7 h-7 rounded-full bg-rose-600/90 hover:bg-rose-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-lg border border-white/20 cursor-pointer hover:scale-110"
+                      e.stopPropagation();
+                      toggleSelectItem(item.id);
+                    }
+                  }}
+                  className={`relative group ${isSelectMode ? 'cursor-pointer select-none' : ''}`}
+                >
+                  <div
+                    className={`relative transition-all duration-200 rounded-2xl overflow-hidden ${
+                      isSelectMode
+                        ? isSelected
+                          ? 'ring-4 ring-sky-400 shadow-[0_0_24px_rgba(56,189,248,0.5)] scale-[0.97]'
+                          : 'opacity-85 hover:opacity-100 hover:ring-2 hover:ring-white/30'
+                        : ''
+                    }`}
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            ))}
+                    <div className={isSelectMode ? 'pointer-events-none' : ''}>
+                      <AccordionMediaCard item={item} priority={idx < 6} fluidWidth={true} />
+                    </div>
+
+                    {/* Integrated Selection Overlay & Checkmark */}
+                    {isSelectMode && (
+                      <div className="absolute inset-0 z-30 bg-black/15 flex items-start justify-end p-2.5 pointer-events-none">
+                        <div
+                          className={`w-7 h-7 rounded-full flex items-center justify-center transition-all shadow-xl border ${
+                            isSelected
+                              ? 'bg-sky-500 border-white text-white scale-110 shadow-[0_0_15px_rgba(56,189,248,0.8)]'
+                              : 'bg-black/75 border-white/40 text-transparent'
+                          }`}
+                        >
+                          <Check className={`w-4 h-4 stroke-[3] ${isSelected ? 'text-white' : 'text-transparent'}`} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

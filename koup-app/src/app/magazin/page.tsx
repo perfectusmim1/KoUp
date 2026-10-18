@@ -7,7 +7,10 @@ import {
   Search,
   RefreshCw,
   Newspaper,
+  Layers,
+  X,
 } from 'lucide-react';
+import { motion } from 'motion/react';
 import {
   supabase,
   MagazinePost,
@@ -18,23 +21,23 @@ import { cachedQuery, invalidateCache } from '@/lib/cache';
 function getMagCategoryColor(cat: string): string {
   switch (cat) {
     case 'Dedikodu':
-      return 'bg-rose-500/20 text-rose-300 border-rose-400/35';
+      return 'bg-rose-600/85 text-white border-rose-400/50 shadow-sm shadow-black/30';
     case 'Kore':
-      return 'bg-emerald-500/20 text-emerald-300 border-emerald-400/35';
+      return 'bg-emerald-600/85 text-white border-emerald-400/50 shadow-sm shadow-black/30';
     case 'Çin':
-      return 'bg-orange-500/20 text-orange-300 border-orange-400/35';
+      return 'bg-orange-600/85 text-white border-orange-400/50 shadow-sm shadow-black/30';
     case 'Dizi':
-      return 'bg-sky-500/20 text-sky-300 border-sky-400/35';
+      return 'bg-sky-600/85 text-white border-sky-400/50 shadow-sm shadow-black/30';
     case 'Müzik':
-      return 'bg-purple-500/20 text-purple-300 border-purple-400/35';
+      return 'bg-purple-600/85 text-white border-purple-400/50 shadow-sm shadow-black/30';
     case 'Film':
-      return 'bg-amber-500/20 text-amber-300 border-amber-400/35';
+      return 'bg-amber-600/85 text-white border-amber-400/50 shadow-sm shadow-black/30';
     case 'BL GL':
-      return 'bg-pink-500/20 text-pink-300 border-pink-400/35';
+      return 'bg-pink-600/85 text-white border-pink-400/50 shadow-sm shadow-black/30';
     case 'Tayland':
-      return 'bg-teal-500/20 text-teal-300 border-teal-400/35';
+      return 'bg-teal-600/85 text-white border-teal-400/50 shadow-sm shadow-black/30';
     default:
-      return 'bg-white/10 text-white/80 border-white/15';
+      return 'bg-black/75 text-white border-white/25 shadow-sm shadow-black/30';
   }
 }
 
@@ -53,10 +56,11 @@ const MAGAZINE_CATEGORIES = [
 export default function MagazineHubPage() {
   const [allPosts, setAllPosts] = useState<MagazinePost[]>([]);
   const [activeCategory, setActiveCategory] = useState('Tümü');
+  const [activeSource, setActiveSource] = useState<'Tümü' | 'KoreZin' | 'AsyaMag'>('Tümü');
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [sourceMode, setSourceMode] = useState<'live_api' | 'supabase_cache'>('live_api');
+  const [sourceMode, setSourceMode] = useState<string>('combined_live');
 
   const loadMagazine = useCallback(async (forceFresh = false) => {
     if (forceFresh) {
@@ -67,9 +71,9 @@ export default function MagazineHubPage() {
     }
 
     try {
-      // 1. Canlı AsyaMag WordPress REST API akışını çek
+      // 1. Canlı AsyaMag ve KoreZin kombine akışını çek
       const liveJson = await cachedQuery('magazin_live_posts', 180_000, async () => {
-        const liveRes = await fetch(`/api/magazin/live?limit=30${forceFresh ? '&fresh=1' : ''}`);
+        const liveRes = await fetch(`/api/magazin/live?limit=48${forceFresh ? '&fresh=1' : ''}`);
         return liveRes.json();
       });
       const livePosts: MagazinePost[] = liveJson?.posts || [];
@@ -81,16 +85,21 @@ export default function MagazineHubPage() {
           .from('magazine_posts')
           .select('*')
           .order('published_at', { ascending: false })
-          .limit(75);
+          .limit(300);
         return (data as MagazinePost[]) || [];
       });
 
       const seenSlugs = new Set<string>();
+      const seenTitles = new Set<string>();
       const merged: MagazinePost[] = [];
 
       for (const p of [...livePosts, ...(dbData || [])]) {
         if (!p?.slug || seenSlugs.has(p.slug)) continue;
+        const normTitle = (p.title || '').trim().toLowerCase();
+        if (normTitle && seenTitles.has(normTitle)) continue;
+
         seenSlugs.add(p.slug);
+        if (normTitle) seenTitles.add(normTitle);
         merged.push(p);
       }
 
@@ -104,7 +113,7 @@ export default function MagazineHubPage() {
         .from('magazine_posts')
         .select('*')
         .order('published_at', { ascending: false })
-        .limit(60);
+        .limit(300);
       setAllPosts((data as MagazinePost[]) || []);
     } finally {
       setIsLoading(false);
@@ -117,6 +126,19 @@ export default function MagazineHubPage() {
   }, [loadMagazine]);
 
   const filteredPosts = allPosts.filter((p) => {
+    // Kaynak Filtresi (KoreZin / AsyaMag / Tümü)
+    if (activeSource !== 'Tümü') {
+      const isKZ =
+        p.source_site === 'KoreZin' ||
+        p.slug.startsWith('kz-') ||
+        p.author_name?.includes('KoreZin') ||
+        p.source_url?.includes('korezin.com');
+
+      if (activeSource === 'KoreZin' && !isKZ) return false;
+      if (activeSource === 'AsyaMag' && isKZ) return false;
+    }
+
+    // Kategori Filtresi
     if (activeCategory !== 'Tümü') {
       const cats = p.categories || [];
       if (
@@ -126,6 +148,8 @@ export default function MagazineHubPage() {
         return false;
       }
     }
+
+    // Arama Filtresi
     if (searchQuery.trim().length >= 2) {
       const q = searchQuery.trim().toLowerCase();
       return (
@@ -152,7 +176,7 @@ export default function MagazineHubPage() {
             Magazin & Dizi Gündemi
           </h1>
           <p className="text-sm text-white/65 max-w-2xl">
-            Güney Kore, Çin, Tayland ve Japonya eğlence dünyasındaki en son haberler, dedikodular, oyuncu gelişmeleri ve dizi duyuruları.
+            AsyaMag ve KoreZin canlı haber akışıyla Güney Kore, Çin, Tayland ve Japonya eğlence dünyasından en son haberler, K-Pop gelişmeleri, dedikodular ve dizi duyuruları.
           </p>
         </div>
 
@@ -166,43 +190,99 @@ export default function MagazineHubPage() {
             <span>{isRefreshing ? 'Canlı Çekiliyor...' : 'Canlı Akışı Yenile'}</span>
           </button>
 
-          <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-black/55 border border-white/15">
-            <Search className="w-4 h-4 text-amber-300" />
+          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)]">
+            <Search className="w-4 h-4 text-white/60 shrink-0" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Haber, oyuncu veya dedikodu ara..."
-              className="bg-transparent text-sm text-white placeholder-white/40 focus:outline-none w-56"
+              className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-56 font-medium"
             />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="text-white/40 hover:text-white transition-colors cursor-pointer"
+                aria-label="Aramayı temizle"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* CATEGORY FILTER TABS */}
-      <div className="flex flex-wrap items-center gap-2">
-        {MAGAZINE_CATEGORIES.map((cat) => {
-          const active = activeCategory === cat;
-          return (
-            <button
-              key={cat}
-              onClick={() => setActiveCategory(cat)}
-              className={`relative flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-colors cursor-pointer ${
-                active
-                  ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.4)]'
-                  : 'glass-pill text-white/75 hover:text-white'
-              }`}
-            >
-              {cat === 'Dedikodu' && <Flame className="w-3.5 h-3.5" />}
-              <span>{cat}</span>
-            </button>
-          );
-        })}
+      {/* CATEGORY & SOURCE FILTER TABS */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        {/* Category Pills */}
+        <div className="flex flex-wrap items-center gap-2">
+          {MAGAZINE_CATEGORIES.map((cat) => {
+            const active = activeCategory === cat;
+            return (
+              <button
+                key={cat}
+                onClick={() => setActiveCategory(cat)}
+                className={`relative flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-colors duration-200 cursor-pointer ${
+                  active
+                    ? 'text-black'
+                    : 'glass-pill text-white/75 hover:text-white'
+                }`}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="magazin-category-active-pill"
+                    initial={false}
+                    transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
+                    className="absolute inset-0 rounded-full bg-white shadow-[0_0_20px_rgba(255,255,255,0.4)]"
+                  />
+                )}
+                {cat === 'Dedikodu' && <Flame className="w-3.5 h-3.5 text-rose-400 relative z-10" />}
+                <span className="relative z-10">{cat}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Source Segmented Switch */}
+        <div className="flex items-center gap-1 p-1 rounded-full glass-pill-dark border border-white/12 self-start sm:self-auto shrink-0">
+          {(['Tümü', 'KoreZin', 'AsyaMag'] as const).map((source) => {
+            const active = activeSource === source;
+            return (
+              <button
+                key={source}
+                onClick={() => setActiveSource(source)}
+                className={`relative px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors duration-200 cursor-pointer ${
+                  active
+                    ? 'text-white'
+                    : 'text-white/60 hover:text-white'
+                }`}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="magazin-source-active-pill"
+                    initial={false}
+                    transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
+                    className={`absolute inset-0 rounded-full shadow-md ${
+                      source === 'KoreZin'
+                        ? 'bg-gradient-to-r from-rose-500 to-pink-500 shadow-[0_0_15px_rgba(244,63,94,0.45)]'
+                        : source === 'AsyaMag'
+                        ? 'bg-sky-500 shadow-[0_0_15px_rgba(14,165,233,0.45)]'
+                        : 'bg-white/20 border border-white/20'
+                    }`}
+                  />
+                )}
+                <span className="relative z-10">
+                  {source === 'Tümü' ? 'Tüm Kaynaklar' : source}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {isLoading ? (
         <div className="py-20 text-center text-sm font-mono text-amber-300 animate-pulse">
-          Canlı Magazin ve Dedikodu Akışı Çekiliyor...
+          Canlı AsyaMag ve KoreZin Akışı Çekiliyor...
         </div>
       ) : (
         <>
@@ -224,7 +304,18 @@ export default function MagazineHubPage() {
               </div>
               <div className="lg:col-span-5 p-6 sm:p-10 flex flex-col justify-between">
                 <div className="space-y-4">
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-mono font-bold border backdrop-blur-md shadow-sm shadow-black/30 ${
+                        featuredPost.source_site === 'KoreZin' || featuredPost.slug.startsWith('kz-')
+                          ? 'bg-rose-600/85 text-white border-rose-400/50'
+                          : 'bg-sky-600/85 text-white border-sky-400/50'
+                      }`}
+                    >
+                      {featuredPost.source_site === 'KoreZin' || featuredPost.slug.startsWith('kz-')
+                        ? 'KoreZin'
+                        : 'AsyaMag'}
+                    </span>
                     {(featuredPost.categories || ['Magazin']).map((c) => (
                       <span
                         key={c}
@@ -260,51 +351,68 @@ export default function MagazineHubPage() {
 
           {/* ARTICLES BENTO GRID */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {restPosts.map((post) => (
-              <Link
-                key={post.slug}
-                href={`/magazin/${post.slug}`}
-                className="koup-projection-card cv-card rounded-3xl overflow-hidden bg-[#121216] border border-white/10 flex flex-col group"
-              >
-                <div className="relative h-52 overflow-hidden">
-                  <img
-                    src={getProxiedImageUrl(post.featured_image)}
-                    alt={post.title}
-                    loading="lazy"
-                    decoding="async"
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
-                    {(post.categories || ['Magazin']).slice(0, 2).map((cat) => (
+            {restPosts.map((post) => {
+              const isKoreZin =
+                post.source_site === 'KoreZin' ||
+                post.slug.startsWith('kz-') ||
+                post.source_url?.includes('korezin.com');
+
+              return (
+                <Link
+                  key={post.slug}
+                  href={`/magazin/${post.slug}`}
+                  className="koup-projection-card cv-card rounded-3xl overflow-hidden bg-[#121216] border border-white/10 flex flex-col group"
+                >
+                  <div className="relative h-52 overflow-hidden">
+                    <img
+                      src={getProxiedImageUrl(post.featured_image)}
+                      alt={post.title}
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-transparent to-transparent pointer-events-none" />
+                    <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 z-10">
                       <span
-                        key={cat}
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border backdrop-blur-md ${getMagCategoryColor(cat)}`}
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border backdrop-blur-md shadow-sm shadow-black/30 ${
+                          isKoreZin
+                            ? 'bg-rose-600/85 text-white border-rose-400/50'
+                            : 'bg-sky-600/85 text-white border-sky-400/50'
+                        }`}
                       >
-                        {cat}
+                        {isKoreZin ? 'KoreZin' : 'AsyaMag'}
                       </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="p-5 flex-1 flex flex-col justify-between">
-                  <div>
-                    <h3 className="text-base font-bold text-white group-hover:text-sky-300 transition-colors line-clamp-2">
-                      {post.title}
-                    </h3>
-                    <p className="text-xs text-white/60 mt-2 line-clamp-3 leading-relaxed">
-                      {post.excerpt}
-                    </p>
+                      {(post.categories || ['Magazin']).slice(0, 2).map((cat) => (
+                        <span
+                          key={cat}
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border backdrop-blur-md ${getMagCategoryColor(cat)}`}
+                        >
+                          {cat}
+                        </span>
+                      ))}
+                    </div>
                   </div>
 
-                  <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between text-[11px] font-mono text-white/45">
-                    <span>
-                      {new Date(post.published_at).toLocaleDateString('tr-TR')}
-                    </span>
-                    <span className="text-sky-400">Haberi Oku →</span>
+                  <div className="p-5 flex-1 flex flex-col justify-between">
+                    <div>
+                      <h3 className="text-base font-bold text-white group-hover:text-sky-300 transition-colors line-clamp-2">
+                        {post.title}
+                      </h3>
+                      <p className="text-xs text-white/60 mt-2 line-clamp-3 leading-relaxed">
+                        {post.excerpt}
+                      </p>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between text-[11px] font-mono text-white/45">
+                      <span>
+                        {new Date(post.published_at).toLocaleDateString('tr-TR')}
+                      </span>
+                      <span className="text-sky-400">Haberi Oku →</span>
+                    </div>
                   </div>
-                </div>
-              </Link>
-            ))}
+                </Link>
+              );
+            })}
           </div>
         </>
       )}

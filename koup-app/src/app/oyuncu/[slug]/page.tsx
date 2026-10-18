@@ -5,12 +5,13 @@ import Link from 'next/link';
 import {
   Heart,
   Bell,
-  ExternalLink,
   Film,
   Users,
   Sparkles,
   Award,
   Newspaper,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import {
   supabase,
@@ -19,9 +20,10 @@ import {
   MagazinePost,
   getProxiedImageUrl,
 } from '@/lib/supabase';
-import { cachedQuery } from '@/lib/cache';
+import { cachedQuery, invalidateCache } from '@/lib/cache';
 import { useKoUp } from '@/context/KoUpContext';
-import AccordionMediaCard from '@/components/AccordionMediaCard';
+import AccordionMediaCard, { requestAccordionHover, preloadMediaImages } from '@/components/AccordionMediaCard';
+import { useDragScroll } from '@/hooks/useDragScroll';
 import RichCommentSection from '@/components/RichCommentSection';
 
 interface PersonBundle {
@@ -48,6 +50,7 @@ export default function PersonDetailPage({
   const [coStars, setCoStars] = useState<PersonItem[]>([]);
   const [magazinePosts, setMagazinePosts] = useState<MagazinePost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const creditsScrollRef = useDragScroll<HTMLDivElement>();
 
   useEffect(() => {
     let isCancelled = false;
@@ -59,7 +62,7 @@ export default function PersonDetailPage({
       try {
         const bundle = await cachedQuery<PersonBundle>(
           `person_${decoded}`,
-          300_000,
+          5_000,
           async () => {
             let { data: pData } = await supabase
               .from('people')
@@ -221,7 +224,29 @@ export default function PersonDetailPage({
 
   const isFav = favPersonIds.includes(person.id);
   const isFollowed = followedPersonIds.includes(person.id);
-  const totalFavs = person.favorites_count + (isFav ? 1 : 0);
+  const totalFavs = Math.max(person.favorites_count || 0, isFav ? 1 : 0);
+
+  const handleToggleFavorite = async () => {
+    if (!person) return;
+    const willBeFav = !isFav;
+    const nextCount = Math.max(0, (person.favorites_count || 0) + (willBeFav ? 1 : -1));
+    setPerson((prev) =>
+      prev
+        ? {
+            ...prev,
+            favorites_count: nextCount,
+          }
+        : prev
+    );
+    try {
+      invalidateCache(`person_${slug}`);
+      invalidateCache(`person_${decodeURIComponent(slug)}`);
+      invalidateCache(`person_${person.id}`);
+      invalidateCache('top_people_');
+      invalidateCache('people_');
+    } catch {}
+    await togglePersonFavorite(person.id, person.name);
+  };
 
   return (
     <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-4 sm:px-8 lg:px-14 space-y-12 bg-[#080808] text-white">
@@ -229,7 +254,7 @@ export default function PersonDetailPage({
       <div className="rounded-3xl apple-glass p-6 sm:p-10 border border-white/15 flex flex-col md:flex-row gap-8 items-center md:items-start">
         <div className="w-44 h-44 sm:w-56 sm:h-56 rounded-3xl overflow-hidden border-2 border-white/15 shadow-2xl shrink-0">
           <img
-            src={getProxiedImageUrl(person.image_url)}
+            src={getProxiedImageUrl(person.image_url, person.name, null, 'w500', 'person')}
             alt={person.name}
             className="w-full h-full object-cover"
           />
@@ -241,10 +266,10 @@ export default function PersonDetailPage({
               <Sparkles className="w-3.5 h-3.5 text-white/80" />
               <span>
                 {person.person_type === 'character'
-                  ? 'Anime Karakteri (AniList)'
+                  ? 'Anime Karakteri'
                   : person.person_type === 'seiyuu'
                     ? 'Japonca Seslendirmen (Seiyuu)'
-                    : 'Dizi & Sinema Oyuncusu (MDL)'}
+                    : 'Dizi & Sinema Oyuncusu'}
               </span>
             </span>
 
@@ -275,10 +300,10 @@ export default function PersonDetailPage({
               `${person.name}, KoUp arşivindeki ${credits.length} yapımda yer almaktadır.`}
           </p>
 
-          {/* Action Buttons: Favorite (Heart), Follow (Bell), External MDL / AniList Link */}
+          {/* Action Buttons: Favorite (Heart), Follow (Bell) */}
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 pt-2">
             <button
-              onClick={() => togglePersonFavorite(person.id, person.name)}
+              onClick={handleToggleFavorite}
               className={`flex items-center gap-2 px-6 py-3 rounded-full text-xs font-bold transition-all cursor-pointer ${
                 isFav
                   ? 'bg-pink-500 text-white shadow-[0_0_25px_rgba(236,72,153,0.5)] active:scale-[0.98]'
@@ -286,13 +311,7 @@ export default function PersonDetailPage({
               }`}
             >
               <Heart className={`w-4 h-4 ${isFav ? 'fill-white' : 'fill-black'}`} />
-              <span>
-                {isFav
-                  ? `Favorilerimde (${totalFavs})`
-                  : totalFavs > 0
-                  ? `Favorile (${totalFavs})`
-                  : 'Favorilere Ekle'}
-              </span>
+              <span>{isFav ? 'Favorilerimde' : 'Favorilere Ekle'}</span>
             </button>
 
             <button
@@ -308,30 +327,6 @@ export default function PersonDetailPage({
                 {isFollowed ? 'Takip Ediliyor (Bildirim Açık)' : '+ Takip Et'}
               </span>
             </button>
-
-            {person.mydramalist_url && (
-              <a
-                href={person.mydramalist_url}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1.5 px-4 py-3 rounded-full bg-[#E5A93C]/20 border border-[#E5A93C]/45 text-[#E5A93C] text-xs font-mono font-bold"
-              >
-                <span>MyDramaList Profili</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-            )}
-
-            {person.profile_url && person.profile_url.includes('anilist.co') && (
-              <a
-                href={person.profile_url}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1.5 px-4 py-3 rounded-full bg-[#38BDF8]/20 border border-[#38BDF8]/45 text-[#38BDF8] text-xs font-mono font-bold"
-              >
-                <span>AniList Sayfası</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-            )}
           </div>
         </div>
       </div>
@@ -339,17 +334,49 @@ export default function PersonDetailPage({
       {/* 2. FILMOGRAPHY / ANIME APPEARANCES */}
       {credits.length > 0 && (
         <section>
-          <div className="mb-4">
-            <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-sky-400">
-              Filmografi & Karakter Bağlantıları
+          <div className="flex items-end justify-between mb-4">
+            <div>
+              <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-sky-400">
+                Filmografi & Karakter Bağlantıları
+              </div>
+              <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
+                <Film className="w-5 h-5 text-sky-400" />
+                <span>Yer Aldığı Yapımlar ({credits.length})</span>
+              </h2>
             </div>
-            <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
-              <Film className="w-5 h-5 text-sky-400" />
-              <span>Yer Aldığı Yapımlar ({credits.length})</span>
-            </h2>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  creditsScrollRef.current?.scrollBy({ left: -560, behavior: 'smooth' })
+                }
+                aria-label="Sola Kaydır"
+                className="w-9 h-9 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  creditsScrollRef.current?.scrollBy({ left: 560, behavior: 'smooth' })
+                }
+                aria-label="Sağa Kaydır"
+                className="w-9 h-9 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-4 overflow-x-auto no-scrollbar py-2">
+          <div
+            ref={creditsScrollRef}
+            onMouseEnter={() => {
+              preloadMediaImages(credits.map((c) => c.media).filter(Boolean));
+            }}
+            onMouseLeave={() => requestAccordionHover(null)}
+            className="flex items-center gap-4 overflow-x-auto no-scrollbar py-2 [-webkit-overflow-scrolling:touch]"
+          >
             {credits.map((c) =>
               c.media ? (
                 <AccordionMediaCard key={c.media.id} item={c.media} />
@@ -380,7 +407,7 @@ export default function PersonDetailPage({
                 className="koup-projection-card rounded-2xl p-3 bg-[#121216] border border-white/[0.08] text-center group"
               >
                 <img
-                  src={getProxiedImageUrl(peer.image_url)}
+                  src={getProxiedImageUrl(peer.image_url, peer.name, null, 'w500', 'person')}
                   alt={peer.name}
                   loading="lazy"
                   className="w-16 h-16 rounded-full object-cover mx-auto mb-2 border border-white/15 group-hover:border-sky-400"

@@ -192,7 +192,7 @@ export default function PublicListsPage() {
   };
 
   return (
-    <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 space-y-8">
+    <div className="pt-36 sm:pt-40 pb-24 max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 space-y-8">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-xs font-mono text-white/45">
         <Link href="/" className="hover:text-white transition-colors">
@@ -217,7 +217,18 @@ export default function PublicListsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {user && (
+            <Link
+              href="/listelerim"
+              onClick={() => triggerSound('click')}
+              className="flex items-center gap-2 px-5 py-3 rounded-full glass-pill text-white font-bold text-xs sm:text-sm hover:bg-white/15 cursor-pointer transition-all"
+            >
+              <ListOrdered className="w-4 h-4 text-sky-400" />
+              <span>Listelerim</span>
+            </Link>
+          )}
+
           <button
             onClick={handleOpenCreateModal}
             className="flex items-center gap-2 px-5 py-3 rounded-full bg-white text-black font-extrabold text-xs sm:text-sm hover:bg-white/90 cursor-pointer shadow-[0_0_25px_rgba(255,255,255,0.25)] hover:scale-[1.02] active:scale-95 transition-all"
@@ -231,19 +242,19 @@ export default function PublicListsPage() {
       {/* FILTER & SEARCH TOOLBAR */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
         {/* Search bar */}
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 text-white/40 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] flex-1 max-w-md">
+          <Search className="w-4 h-4 text-white/60 shrink-0" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="İçerik, liste veya kullanıcı ara..."
-            className="w-full pl-11 pr-4 py-2.5 rounded-full bg-[#111115] border border-white/10 text-xs text-white placeholder-white/40 focus:outline-none focus:border-sky-400/50 transition-all"
+            className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full font-medium"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white"
+              className="text-white/40 hover:text-white transition-colors cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -496,7 +507,7 @@ export default function PublicListsPage() {
                     value={newListTitle}
                     onChange={(e) => setNewListTitle(e.target.value)}
                     placeholder="Örn: 2024 Favori K-Dramalarım, Ağlatan Başyapıtlar..."
-                    className="w-full px-4 py-2.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder-white/35 focus:outline-none focus:border-sky-400/60 transition-all"
+                    className="w-full px-4 py-2.5 rounded-full bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/35 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-all font-medium"
                   />
                 </div>
 
@@ -509,7 +520,7 @@ export default function PublicListsPage() {
                     value={newListDesc}
                     onChange={(e) => setNewListDesc(e.target.value)}
                     placeholder="Listenin teması veya izleme önerileri hakkında kısa not..."
-                    className="w-full px-4 py-2.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white placeholder-white/35 focus:outline-none focus:border-sky-400/60 transition-all resize-none"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/35 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-all resize-none font-medium"
                   />
                 </div>
 

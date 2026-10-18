@@ -1,5 +1,29 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: 'Netflix Sans';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/NetflixSans_W_Rg.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Netflix Sans';
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/NetflixSans_W_Md.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Netflix Sans';
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/NetflixSans_W_Bd.woff2') format('woff2');
+}
+
 @property --animation-reduced {
   syntax: "<number>";
   initial-value: 0;
@@ -47,6 +71,8 @@
 html {
   margin: 0;
   padding: 0;
+  width: 100%;
+  max-width: 100%;
   background-color: #080808;
   color: #e5e2e1;
   font-family: var(--font-sans), "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
@@ -59,11 +85,14 @@ html {
 body {
   margin: 0;
   padding: 0;
+  width: 100%;
+  max-width: 100%;
   background-color: #080808;
   color: #e5e2e1;
   font-family: var(--font-sans), "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
   overflow-x: hidden;
   overflow-y: visible;
+  position: relative;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
 }
@@ -90,6 +119,60 @@ body {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+@media (min-width: 1024px) {
+  .player-synced-height {
+    height: var(--player-height, 560px) !important;
+    max-height: var(--player-height, 560px) !important;
+  }
+}
+
+/* ============================================================================
+   SMOOTH IMAGE DOWNSCALING & SUBPIXEL ANTI-ALIASING
+   Fixes moiré shimmering, jagged staircasing, and pixel distortion when large
+   images (posters, avatars) are scaled down to small containers on Chromium/WebKit.
+   ============================================================================ */
+img {
+  image-rendering: auto;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Prevent jagged aliased pixels on small rounded avatars and cinema thumbnails */
+.avatar-smooth,
+img.rounded-full,
+.rounded-full > img,
+.rounded-2xl > img,
+.rounded-xl > img {
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  image-rendering: auto;
+}
+
+/* Fix Chromium/WebKit subpixel border-radius overflow clip leakage */
+.rounded-full.overflow-hidden {
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
+  isolation: isolate;
 }
 
 /* Exact ui/code.html Glass & Surface Primitives */
@@ -134,12 +217,99 @@ body {
   transform: scale(0.96);
 }
 
-/* Exact ui/code.html Hero Cinema Vignette */
+/* Unified KoUp Apple Glass Input System */
+.koup-input {
+  width: 100%;
+  border-radius: 9999px;
+  background: rgba(14, 14, 18, 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 0.6rem 1.1rem;
+  font-size: 0.8125rem;
+  color: #ffffff;
+  outline: none;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+textarea.koup-input {
+  border-radius: 1.25rem !important;
+}
+
+.koup-input::placeholder {
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.koup-input:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.koup-input:focus,
+.koup-input-wrapper:focus-within {
+  border-color: rgba(41, 151, 255, 0.6) !important;
+  box-shadow: 0 0 18px rgba(41, 151, 255, 0.28), 0 0 0 2px rgba(41, 151, 255, 0.2) !important;
+}
+
+/* ============================================================================
+   CINEMA DISPERSED RADIAL GLOWS (No boxy bounds, no clipping, smooth Gaussian blur)
+   ============================================================================ */
+.glow-blue,
+.btn-glow-blue {
+  box-shadow: 0 0 20px rgba(41, 151, 255, 0.45), 0 0 38px rgba(41, 151, 255, 0.18) !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.glow-blue:hover,
+.btn-glow-blue:hover {
+  box-shadow: 0 0 28px rgba(56, 189, 248, 0.65), 0 0 48px rgba(41, 151, 255, 0.28) !important;
+}
+
+.glow-white,
+.btn-glow-white {
+  box-shadow: 0 0 22px rgba(255, 255, 255, 0.38), 0 0 42px rgba(255, 255, 255, 0.14) !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.glow-white:hover,
+.btn-glow-white:hover {
+  box-shadow: 0 0 30px rgba(255, 255, 255, 0.58), 0 0 54px rgba(255, 255, 255, 0.22) !important;
+}
+
+.glow-emerald,
+.btn-glow-emerald {
+  box-shadow: 0 0 18px rgba(16, 185, 129, 0.42), 0 0 34px rgba(16, 185, 129, 0.16) !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.glow-emerald:hover,
+.btn-glow-emerald:hover {
+  box-shadow: 0 0 26px rgba(16, 185, 129, 0.62), 0 0 44px rgba(16, 185, 129, 0.24) !important;
+}
+
+.glow-sky,
+.btn-glow-sky {
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.45), 0 0 36px rgba(56, 189, 248, 0.18) !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.glow-sky:hover,
+.btn-glow-sky:hover {
+  box-shadow: 0 0 26px rgba(56, 189, 248, 0.65), 0 0 46px rgba(56, 189, 248, 0.26) !important;
+}
+
+.glow-rose,
+.btn-glow-rose {
+  box-shadow: 0 0 18px rgba(244, 63, 94, 0.42), 0 0 34px rgba(244, 63, 94, 0.16) !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.glow-rose:hover,
+.btn-glow-rose:hover {
+  box-shadow: 0 0 26px rgba(244, 63, 94, 0.62), 0 0 44px rgba(244, 63, 94, 0.25) !important;
+}
+
+/* Balanced Hero Cinema Vignette */
 .cinema-vignette {
   background:
-    radial-gradient(circle at 65% 35%, rgba(0, 102, 181, 0.1) 0%, transparent 60%),
-    linear-gradient(to top, #080808 0%, rgba(8, 8, 8, 0.78) 25%, rgba(8, 8, 8, 0.2) 65%, transparent 100%),
-    linear-gradient(to right, #080808 0%, rgba(8, 8, 8, 0.86) 35%, rgba(8, 8, 8, 0.2) 70%, transparent 100%);
+    radial-gradient(circle at 65% 35%, rgba(0, 102, 181, 0.08) 0%, transparent 65%),
+    linear-gradient(to top, rgba(8, 8, 8, 0.75) 0%, rgba(8, 8, 8, 0.25) 15%, transparent 35%),
+    linear-gradient(to right, rgba(8, 8, 8, 0.7) 0%, rgba(8, 8, 8, 0.3) 25%, transparent 50%);
 }
 
 /* Clean Specular Card Hover (No Garish Blue-Orange Gradient) */
@@ -161,37 +331,29 @@ body {
   border-color: rgba(255, 255, 255, 0.26);
   box-shadow:
     0 24px 48px -12px rgba(0, 0, 0, 0.9),
-    0 0 28px -6px rgba(41, 151, 255, 0.16),
     inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
-/* Accordion Poster-to-Widescreen Expansion — Fluid Width + Sibling Slide */
+/* Accordion Poster-to-Widescreen Expansion — Fluid Width + Sibling Slide (GPU Optimized) */
 .koup-accordion-card {
   flex: 0 0 auto;
   background-color: #0f0f11;
   border: 1px solid rgba(255, 255, 255, 0.09);
+  will-change: width;
   transition:
-    width 480ms cubic-bezier(0.16, 1, 0.3, 1),
-    min-width 480ms cubic-bezier(0.16, 1, 0.3, 1),
-    max-width 480ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 480ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 480ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 320ms ease;
-  will-change: width, min-width, transform;
+    width 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms ease;
+  contain: layout paint style;
 }
 
 .koup-accordion-card:hover {
   border-color: rgba(255, 255, 255, 0.32);
-  box-shadow:
-    0 26px 54px -10px rgba(0, 0, 0, 0.92),
-    0 0 32px -8px rgba(41, 151, 255, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 /* Subtle Cinema Focus Ring */
 .koup-focus-ring:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px #080808, 0 0 0 4px rgba(41, 151, 255, 0.7), 0 0 16px -2px rgba(41, 151, 255, 0.4);
+  box-shadow: 0 0 0 2px #080808, 0 0 0 4px rgba(255, 255, 255, 0.4), 0 0 16px rgba(255, 255, 255, 0.2);
 }
 
 /* Content Type Badges — Subtle, Film-Graded Accents (DESIGN.md) */
@@ -215,42 +377,42 @@ body {
   background: rgba(16, 185, 129, 0.12);
   color: #6ee7b7;
   border: 1px solid rgba(16, 185, 129, 0.28);
-  box-shadow: 0 0 10px -2px rgba(16, 185, 129, 0.2);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.2);
 }
 
 .badge-cdrama {
   background: rgba(244, 63, 94, 0.12);
   color: #fda4af;
   border: 1px solid rgba(244, 63, 94, 0.28);
-  box-shadow: 0 0 10px -2px rgba(244, 63, 94, 0.2);
+  box-shadow: 0 0 12px rgba(244, 63, 94, 0.2);
 }
 
 .badge-anime {
   background: rgba(168, 85, 247, 0.12);
   color: #d8b4fe;
   border: 1px solid rgba(168, 85, 247, 0.28);
-  box-shadow: 0 0 10px -2px rgba(168, 85, 247, 0.2);
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.2);
 }
 
 .badge-movie {
   background: rgba(245, 158, 11, 0.12);
   color: #fcd34d;
   border: 1px solid rgba(245, 158, 11, 0.28);
-  box-shadow: 0 0 10px -2px rgba(245, 158, 11, 0.2);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.2);
 }
 
 .badge-variety {
   background: rgba(236, 72, 153, 0.12);
   color: #f472b6;
   border: 1px solid rgba(236, 72, 153, 0.28);
-  box-shadow: 0 0 10px -2px rgba(236, 72, 153, 0.2);
+  box-shadow: 0 0 12px rgba(236, 72, 153, 0.2);
 }
 
 .badge-global {
   background: rgba(99, 102, 241, 0.12);
   color: #a5b4fc;
   border: 1px solid rgba(99, 102, 241, 0.28);
-  box-shadow: 0 0 10px -2px rgba(99, 102, 241, 0.2);
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.2);
 }
 
 /* Performance: Deferred rendering for heavy sections strictly below the fold */
@@ -350,4 +512,198 @@ body {
     transform: none !important;
   }
 }
+
+/* ============================================================================
+   NETFLIX PLAYER NATIVE RANGE SLIDER (modern-web-guidance: slider & motion)
+   ============================================================================ */
+input[type="range"].netflix-scrubber,
+input[type="range"].netflix-volume-slider {
+  --slider-track-size: 4px;
+  --slider-thumb-size: 14px;
+  --slider-track-radius: 999px;
+  --slider-thumb-radius: 50%;
+  --slider-track-color: rgba(255, 255, 255, 0.26);
+  --slider-buffered-color: rgba(255, 255, 255, 0.48);
+  --slider-fill-color: #e50914;
+  --slider-thumb-color: #e50914;
+  --slider-direction: to right;
+  --buffered-progress: 0%;
+
+  &:dir(rtl) {
+    --slider-direction: to left;
+  }
+
+  --attr-min: attr(min type(<number>), 0);
+  --attr-max: attr(max type(<number>), 100);
+  --control-value: attr(value type(<number>), 0);
+  --slider-progress: calc(
+    progress(var(--control-value), var(--attr-min), var(--attr-max)) * 100%
+  );
+
+  appearance: none;
+  -webkit-appearance: none;
+  inline-size: 100%;
+  block-size: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: none;
+}
+
+input[type="range"].netflix-volume-slider {
+  --slider-track-size: 4px;
+  --slider-thumb-size: 12px;
+  block-size: 24px;
+}
+
+@supports not (opacity: progress(1, 0, 100)) {
+  input[type="range"].netflix-scrubber,
+  input[type="range"].netflix-volume-slider {
+    --slider-progress: calc(
+      (var(--control-value) - var(--attr-min)) /
+      max(0.0001, (var(--attr-max) - var(--attr-min))) * 100%
+    );
+  }
+}
+
+input[type="range"].netflix-scrubber:hover,
+input[type="range"].netflix-scrubber:active {
+  --slider-track-size: 6px;
+  --slider-thumb-size: 18px;
+}
+
+/* WebKit / Blink Track */
+input[type="range"].netflix-scrubber::-webkit-slider-runnable-track,
+input[type="range"].netflix-volume-slider::-webkit-slider-runnable-track {
+  block-size: var(--slider-track-size);
+  border: 0;
+  border-radius: var(--slider-track-radius);
+  background: linear-gradient(
+    var(--slider-direction),
+    var(--slider-fill-color) 0%,
+    var(--slider-fill-color) var(--slider-progress),
+    var(--slider-buffered-color) var(--slider-progress),
+    var(--slider-buffered-color) var(--buffered-progress),
+    var(--slider-track-color) var(--buffered-progress),
+    var(--slider-track-color) 100%
+  );
+  transition: block-size 120ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* WebKit / Blink Thumb */
+input[type="range"].netflix-scrubber::-webkit-slider-thumb,
+input[type="range"].netflix-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  inline-size: var(--slider-thumb-size);
+  block-size: var(--slider-thumb-size);
+  margin-block-start: calc(
+    (var(--slider-track-size) - var(--slider-thumb-size)) / 2
+  );
+  border: 0;
+  border-radius: var(--slider-thumb-radius);
+  background: var(--slider-thumb-color);
+  box-shadow: 0 0 10px rgba(229, 9, 20, 0.65);
+  transition:
+    transform 120ms cubic-bezier(0.22, 1, 0.36, 1),
+    inline-size 120ms cubic-bezier(0.22, 1, 0.36, 1),
+    block-size 120ms cubic-bezier(0.22, 1, 0.36, 1),
+    margin-block-start 120ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+input[type="range"].netflix-scrubber:active::-webkit-slider-thumb,
+input[type="range"].netflix-volume-slider:active::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+
+/* Firefox Track */
+input[type="range"].netflix-scrubber::-moz-range-track,
+input[type="range"].netflix-volume-slider::-moz-range-track {
+  block-size: var(--slider-track-size);
+  border: 0;
+  border-radius: var(--slider-track-radius);
+  background: var(--slider-track-color);
+}
+
+/* Firefox Progress */
+input[type="range"].netflix-scrubber::-moz-range-progress,
+input[type="range"].netflix-volume-slider::-moz-range-progress {
+  block-size: var(--slider-track-size);
+  border-radius: var(--slider-track-radius);
+  background: var(--slider-fill-color);
+}
+
+/* Firefox Thumb */
+input[type="range"].netflix-scrubber::-moz-range-thumb,
+input[type="range"].netflix-volume-slider::-moz-range-thumb {
+  inline-size: var(--slider-thumb-size);
+  block-size: var(--slider-thumb-size);
+  border: 0;
+  border-radius: var(--slider-thumb-radius);
+  background: var(--slider-thumb-color);
+  box-shadow: 0 0 10px rgba(229, 9, 20, 0.65);
+  transition: transform 120ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+input[type="range"].netflix-scrubber:focus-visible,
+input[type="range"].netflix-volume-slider:focus-visible {
+  outline: 2px solid var(--slider-fill-color);
+  outline-offset: 4px;
+}
+
+/* Compositor-only Netflix HUD transitions */
+.netflix-hud-layer {
+  will-change: opacity;
+  transition: opacity calc(180ms * (1 - var(--animation-reduced))) cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes netflixSeekSlideLeft {
+  0% {
+    opacity: 0;
+    transform: translate3d(12px, 0, 0) scale(0.85);
+  }
+  25% {
+    opacity: 1;
+    transform: translate3d(-6px, 0, 0) scale(1);
+  }
+  80% {
+    opacity: 1;
+    transform: translate3d(-14px, 0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(-20px, 0, 0) scale(0.95);
+  }
+}
+
+@keyframes netflixSeekSlideRight {
+  0% {
+    opacity: 0;
+    transform: translate3d(-12px, 0, 0) scale(0.85);
+  }
+  25% {
+    opacity: 1;
+    transform: translate3d(6px, 0, 0) scale(1);
+  }
+  80% {
+    opacity: 1;
+    transform: translate3d(14px, 0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(20px, 0, 0) scale(0.95);
+  }
+}
+
+.animate-netflix-seek-left {
+  animation: netflixSeekSlideLeft calc(650ms * (1 - var(--animation-reduced))) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-netflix-seek-right {
+  animation: netflixSeekSlideRight calc(650ms * (1 - var(--animation-reduced))) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 

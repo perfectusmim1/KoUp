@@ -1,7 +1,11 @@
 /**
- * KoUp Lightweight Client-Side Cache Layer
- * Provides In-Memory + SessionStorage caching with TTL, in-flight request deduplication,
- * and Stale-While-Revalidate (SWR) for Supabase and REST API queries.
+ * KoUp High-Performance Multi-Tier Client Cache Layer
+ * Provides:
+ * 1. Synchronous In-Memory LRU Cache (0ms instant access)
+ * 2. Persistent Storage (localStorage with sessionStorage fallback and auto-pruning)
+ * 3. Global Media Registry (synchronous instant hydration for series & episode pages)
+ * 4. Stale-While-Revalidate (SWR) with background non-blocking revalidation
+ * 5. In-flight promise deduplication to prevent duplicate concurrent network queries
  */
 
 interface CacheEntry<T> {
@@ -11,22 +15,28 @@ interface CacheEntry<T> {
 }
 
 // In-memory cache map (LRU with max entries limit)
-const MAX_MEMORY_ENTRIES = 500;
+const MAX_MEMORY_ENTRIES = 800;
 const memoryCache = new Map<string, CacheEntry<any>>();
 
 // In-flight fetch promises to prevent redundant concurrent requests
 const inFlightRequests = new Map<string, Promise<any>>();
 
-const SESSION_PREFIX = 'koup_cache_';
+// In-memory instant media registry (by slug and by numeric id)
+const mediaBySlug = new Map<string, any>();
+const mediaById = new Map<number, any>();
+
+const STORAGE_PREFIX = 'koup_cache_v4_';
 
 function isBrowser(): boolean {
-  return typeof window !== 'undefined' && typeof window.sessionStorage !== 'undefined';
+  return typeof window !== 'undefined';
 }
 
-function getFromSession<T>(key: string): CacheEntry<T> | null {
+function getFromStorage<T>(key: string): CacheEntry<T> | null {
   if (!isBrowser()) return null;
   try {
-    const raw = window.sessionStorage.getItem(SESSION_PREFIX + key);
+    const raw =
+      window.localStorage.getItem(STORAGE_PREFIX + key) ||
+      window.sessionStorage?.getItem(STORAGE_PREFIX + key);
     if (!raw) return null;
     return JSON.parse(raw) as CacheEntry<T>;
   } catch {
@@ -34,19 +44,42 @@ function getFromSession<T>(key: string): CacheEntry<T> | null {
   }
 }
 
-function saveToSession<T>(key: string, entry: CacheEntry<T>): void {
+function pruneStorage(): void {
   if (!isBrowser()) return;
   try {
-    window.sessionStorage.setItem(SESSION_PREFIX + key, JSON.stringify(entry));
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k?.startsWith(STORAGE_PREFIX)) {
+        keysToRemove.push(k);
+      }
+    }
+    // Remove oldest 30% of keys to free quota
+    keysToRemove.slice(0, Math.ceil(keysToRemove.length * 0.3)).forEach((k) => {
+      window.localStorage.removeItem(k);
+    });
+  } catch {}
+}
+
+function saveToStorage<T>(key: string, entry: CacheEntry<T>): void {
+  if (!isBrowser()) return;
+  try {
+    window.localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(entry));
   } catch {
-    // Quota exceeded or private browsing restrictions - ignore safely
+    try {
+      pruneStorage();
+      window.sessionStorage?.setItem(STORAGE_PREFIX + key, JSON.stringify(entry));
+    } catch {
+      // Ignore if completely full
+    }
   }
 }
 
-function removeFromSession(key: string): void {
+function removeFromStorage(key: string): void {
   if (!isBrowser()) return;
   try {
-    window.sessionStorage.removeItem(SESSION_PREFIX + key);
+    window.localStorage.removeItem(STORAGE_PREFIX + key);
+    window.sessionStorage?.removeItem(STORAGE_PREFIX + key);
   } catch {}
 }
 
@@ -70,7 +103,6 @@ function setMemoryEntry<T>(key: string, entry: CacheEntry<T>): void {
   if (memoryCache.has(key)) {
     memoryCache.delete(key);
   } else if (memoryCache.size >= MAX_MEMORY_ENTRIES) {
-    // Evict oldest item (first key in Map)
     const oldestKey = memoryCache.keys().next().value;
     if (oldestKey) {
       memoryCache.delete(oldestKey);
@@ -80,11 +112,69 @@ function setMemoryEntry<T>(key: string, entry: CacheEntry<T>): void {
 }
 
 /**
- * Dynamically resolves appropriate TTL for static/catalog queries:
+ * Register a media item into the global synchronous registry.
+ * This makes detail pages open in 0ms with zero network wait!
+ */
+export function registerMediaItem(item: any, persistToDisk = false): void {
+  if (!item || typeof item !== 'object') return;
+  if (item.slug) {
+    const s = String(item.slug).toLowerCase();
+    mediaBySlug.set(s, item);
+  }
+  if (item.id) {
+    mediaById.set(Number(item.id), item);
+  }
+  if (persistToDisk && item.slug && item.title) {
+    const s = String(item.slug).toLowerCase();
+    saveToStorage(`media_stub_${s}`, {
+      data: item,
+      timestamp: Date.now(),
+      ttlMs: 86400_000, // 24 hours
+    });
+  }
+}
+
+export function registerMediaItems(items: any[]): void {
+  if (!Array.isArray(items)) return;
+  for (const item of items) {
+    registerMediaItem(item, false);
+  }
+}
+
+/**
+ * Synchronously retrieves a media item from memory or persistent storage.
+ * Returns null only on a true cold miss (e.g. direct URL paste).
+ */
+export function getMediaFromCache(slugOrId: string | number): any | null {
+  if (!slugOrId) return null;
+  if (typeof slugOrId === 'number' || (!isNaN(Number(slugOrId)) && !String(slugOrId).includes('-'))) {
+    const byId = mediaById.get(Number(slugOrId));
+    if (byId) return byId;
+  }
+
+  const cleanSlug = String(slugOrId).toLowerCase().replace(/[^a-z0-9\-]/g, '');
+  const bySlug = mediaBySlug.get(cleanSlug);
+  if (bySlug) return bySlug;
+
+  // Try persistent storage
+  const fromStorage = getFromStorage<any>(`media_stub_${cleanSlug}`);
+  if (fromStorage?.data) {
+    registerMediaItem(fromStorage.data);
+    return fromStorage.data;
+  }
+  return null;
+}
+
+/**
+ * Dynamically resolves appropriate TTL for queries:
  * - 15 minutes (900,000ms) for categories / actors / people
  * - 5 minutes (300,000ms) for media items / catalog rows / home bundles
  */
 export function resolveQueryTTL(key: string, customTtlMs?: number): number {
+  if (typeof customTtlMs === 'number') {
+    return Math.max(0, customTtlMs);
+  }
+
   const k = key.toLowerCase();
   const isActorOrCategory =
     k.includes('person') ||
@@ -95,7 +185,7 @@ export function resolveQueryTTL(key: string, customTtlMs?: number): number {
     k.includes('genre');
 
   if (isActorOrCategory) {
-    return customTtlMs && customTtlMs > 900_000 ? customTtlMs : 900_000; // 15 mins minimum
+    return 1200_000; // 20 minutes (SWR non-blocking background revalidation)
   }
 
   const isMediaOrCatalog =
@@ -108,18 +198,14 @@ export function resolveQueryTTL(key: string, customTtlMs?: number): number {
     k.includes('episode');
 
   if (isMediaOrCatalog) {
-    return customTtlMs && customTtlMs > 300_000 ? customTtlMs : 300_000; // 5 mins minimum
+    return 600_000; // 10 minutes (SWR non-blocking background revalidation)
   }
 
-  return customTtlMs && customTtlMs > 0 ? customTtlMs : 300_000;
+  return 300_000; // 5 minutes default
 }
 
 /**
  * Execute a query with caching, in-flight deduplication, and stale-while-revalidate.
- *
- * @param key Unique cache key (e.g. 'catalog_kr_drama_10')
- * @param ttlMs Time-to-live in milliseconds
- * @param fetcher Async function returning fresh data
  */
 export async function cachedQuery<T>(
   key: string,
@@ -132,11 +218,11 @@ export async function cachedQuery<T>(
   // 1. Check in-memory LRU cache
   let entry = getMemoryEntry<T>(key);
 
-  // 2. Fallback to sessionStorage if not in memory
+  // 2. Fallback to persistent storage if not in memory
   if (!entry) {
-    const sessionEntry = getFromSession<T>(key);
-    if (sessionEntry) {
-      entry = sessionEntry;
+    const storageEntry = getFromStorage<T>(key);
+    if (storageEntry) {
+      entry = storageEntry;
       setMemoryEntry(key, entry);
     }
   }
@@ -159,7 +245,7 @@ export async function cachedQuery<T>(
             ttlMs: effectiveTtl,
           };
           setMemoryEntry(key, freshEntry);
-          saveToSession(key, freshEntry);
+          saveToStorage(key, freshEntry);
           return freshData;
         })
         .catch((err) => {
@@ -192,7 +278,7 @@ export async function cachedQuery<T>(
         ttlMs: effectiveTtl,
       };
       setMemoryEntry(key, freshEntry);
-      saveToSession(key, freshEntry);
+      saveToStorage(key, freshEntry);
       return freshData;
     } finally {
       inFlightRequests.delete(key);
@@ -204,7 +290,7 @@ export async function cachedQuery<T>(
 }
 
 /**
- * Manually set or update a cache item with LRU management.
+ * Manually set or update a cache item with LRU management and persistent sync.
  */
 export function setCache<T>(key: string, data: T, ttlMs = 300_000): void {
   const effectiveTtl = resolveQueryTTL(key, ttlMs);
@@ -214,7 +300,7 @@ export function setCache<T>(key: string, data: T, ttlMs = 300_000): void {
     ttlMs: effectiveTtl,
   };
   setMemoryEntry(key, entry);
-  saveToSession(key, entry);
+  saveToStorage(key, entry);
 }
 
 /**
@@ -224,7 +310,7 @@ export function getCache<T>(key: string, allowStale = true): T | null {
   const now = Date.now();
   let entry = getMemoryEntry<T>(key);
   if (!entry) {
-    entry = getFromSession<T>(key) || undefined;
+    entry = getFromStorage<T>(key) || undefined;
     if (entry) setMemoryEntry(key, entry);
   }
   if (!entry) return null;
@@ -234,20 +320,25 @@ export function getCache<T>(key: string, allowStale = true): T | null {
   return null;
 }
 
+export const getSynchronousCache = getCache;
+export const setSynchronousCache = setCache;
+
 /**
  * Invalidate a specific cache key or all keys matching a prefix.
  */
 export function invalidateCache(keyOrPrefix?: string): void {
   if (!keyOrPrefix) {
     memoryCache.clear();
+    mediaBySlug.clear();
+    mediaById.clear();
     if (isBrowser()) {
       try {
         const keysToRemove: string[] = [];
-        for (let i = 0; i < window.sessionStorage.length; i++) {
-          const k = window.sessionStorage.key(i);
-          if (k?.startsWith(SESSION_PREFIX)) keysToRemove.push(k);
+        for (let i = 0; i < window.localStorage.length; i++) {
+          const k = window.localStorage.key(i);
+          if (k?.startsWith(STORAGE_PREFIX)) keysToRemove.push(k);
         }
-        for (const k of keysToRemove) window.sessionStorage.removeItem(k);
+        for (const k of keysToRemove) window.localStorage.removeItem(k);
       } catch {}
     }
     return;
@@ -260,19 +351,18 @@ export function invalidateCache(keyOrPrefix?: string): void {
     }
   }
 
-  // Invalidate matching sessionStorage keys
+  // Invalidate matching storage keys
   if (isBrowser()) {
     try {
-      const fullPrefix = SESSION_PREFIX + keyOrPrefix;
+      const fullPrefix = STORAGE_PREFIX + keyOrPrefix;
       const keysToRemove: string[] = [];
-      for (let i = 0; i < window.sessionStorage.length; i++) {
-        const k = window.sessionStorage.key(i);
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i);
         if (k && (k === fullPrefix || k.startsWith(fullPrefix))) {
           keysToRemove.push(k);
         }
       }
-      for (const k of keysToRemove) window.sessionStorage.removeItem(k);
+      for (const k of keysToRemove) window.localStorage.removeItem(k);
     } catch {}
   }
 }
-

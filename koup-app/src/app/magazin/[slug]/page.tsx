@@ -10,6 +10,7 @@ import {
   Newspaper,
   Users,
   Tv,
+  ExternalLink,
 } from 'lucide-react';
 import {
   supabase,
@@ -21,27 +22,28 @@ import {
 import RichCommentSection from '@/components/RichCommentSection';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 import { cachedQuery } from '@/lib/cache';
+import { useKoUp } from '@/context/KoUpContext';
 
 function getMagCategoryColor(cat: string): string {
   switch (cat) {
     case 'Dedikodu':
-      return 'bg-rose-500/20 text-rose-300 border-rose-400/35';
+      return 'bg-rose-600/85 text-white border-rose-400/50 shadow-sm shadow-black/30';
     case 'Kore':
-      return 'bg-emerald-500/20 text-emerald-300 border-emerald-400/35';
+      return 'bg-emerald-600/85 text-white border-emerald-400/50 shadow-sm shadow-black/30';
     case 'Çin':
-      return 'bg-orange-500/20 text-orange-300 border-orange-400/35';
+      return 'bg-orange-600/85 text-white border-orange-400/50 shadow-sm shadow-black/30';
     case 'Dizi':
-      return 'bg-sky-500/20 text-sky-300 border-sky-400/35';
+      return 'bg-sky-600/85 text-white border-sky-400/50 shadow-sm shadow-black/30';
     case 'Müzik':
-      return 'bg-purple-500/20 text-purple-300 border-purple-400/35';
+      return 'bg-purple-600/85 text-white border-purple-400/50 shadow-sm shadow-black/30';
     case 'Film':
-      return 'bg-amber-500/20 text-amber-300 border-amber-400/35';
+      return 'bg-amber-600/85 text-white border-amber-400/50 shadow-sm shadow-black/30';
     case 'BL GL':
-      return 'bg-pink-500/20 text-pink-300 border-pink-400/35';
+      return 'bg-pink-600/85 text-white border-pink-400/50 shadow-sm shadow-black/30';
     case 'Tayland':
-      return 'bg-teal-500/20 text-teal-300 border-teal-400/35';
+      return 'bg-teal-600/85 text-white border-teal-400/50 shadow-sm shadow-black/30';
     default:
-      return 'bg-white/10 text-white/80 border-white/15';
+      return 'bg-black/75 text-white border-white/25 shadow-sm shadow-black/30';
   }
 }
 
@@ -51,12 +53,14 @@ export default function MagazineArticlePage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = use(params);
+  const { user, openAuthModal, pushNotification, triggerSound } = useKoUp();
 
   const [post, setPost] = useState<MagazinePost | null>(null);
   const [linkedMedia, setLinkedMedia] = useState<MediaItem[]>([]);
   const [linkedPeople, setLinkedPeople] = useState<PersonItem[]>([]);
   const [morePosts, setMorePosts] = useState<MagazinePost[]>([]);
   const [liked, setLiked] = useState(false);
+  const [likesCount, setLikesCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -67,15 +71,9 @@ export default function MagazineArticlePage({
       try {
         const article = await cachedQuery(`magazin_post_${decoded}`, 300_000, async () => {
           let art: MagazinePost | null = null;
-          const { data } = await supabase
-            .from('magazine_posts')
-            .select('*')
-            .eq('slug', decoded)
-            .single();
 
-          if (data) {
-            art = data as MagazinePost;
-          } else {
+          // KoreZin yazıları doğrudan canlı API'den veya slug route'tan çözülür
+          if (decoded.startsWith('kz-')) {
             try {
               const liveRes = await fetch(`/api/magazin/${encodeURIComponent(decoded)}`);
               if (liveRes.ok) {
@@ -86,6 +84,33 @@ export default function MagazineArticlePage({
               // ignore
             }
           }
+
+          // Supabase veritabanında ara
+          if (!art) {
+            const { data } = await supabase
+              .from('magazine_posts')
+              .select('*')
+              .eq('slug', decoded)
+              .single();
+
+            if (data) {
+              art = data as MagazinePost;
+            }
+          }
+
+          // Hâlâ bulunamadıysa canlı route'a sor (AsyaMag veya genel)
+          if (!art) {
+            try {
+              const liveRes = await fetch(`/api/magazin/${encodeURIComponent(decoded)}`);
+              if (liveRes.ok) {
+                const liveJson = await liveRes.json();
+                art = liveJson?.post || null;
+              }
+            } catch {
+              // ignore
+            }
+          }
+
           return art;
         });
 
@@ -95,6 +120,19 @@ export default function MagazineArticlePage({
         }
 
         setPost(article);
+        setLikesCount(article.likes_count || 0);
+
+        if (user?.id && article.id) {
+          void supabase
+            .from('magazine_likes')
+            .select('post_id')
+            .eq('user_id', user.id)
+            .eq('post_id', article.id)
+            .maybeSingle()
+            .then(({ data: lData }) => {
+              setLiked(Boolean(lData));
+            });
+        }
 
         // Load linked media & people
         if (article.related_media_ids?.length > 0) {
@@ -113,11 +151,27 @@ export default function MagazineArticlePage({
           setLinkedPeople((pRows as PersonItem[]) || []);
         }
 
-        // Load more articles
+        // Canlı akıştan diğer son haberleri çek (KoreZin + AsyaMag hibrit)
+        try {
+          const moreRes = await fetch('/api/magazin/live?limit=6');
+          if (moreRes.ok) {
+            const moreJson = await moreRes.json();
+            const fetchedList: MagazinePost[] = moreJson?.posts || [];
+            const filteredMore = fetchedList.filter((mp) => mp.slug !== decoded).slice(0, 4);
+            if (filteredMore.length > 0) {
+              setMorePosts(filteredMore);
+              return;
+            }
+          }
+        } catch {
+          // ignore
+        }
+
+        // Yedek: Supabase'den diğer haberleri çek
         const { data: more } = await supabase
           .from('magazine_posts')
           .select('*')
-          .neq('id', article.id)
+          .neq('slug', decoded)
           .order('published_at', { ascending: false })
           .limit(4);
         setMorePosts((more as MagazinePost[]) || []);
@@ -143,15 +197,21 @@ export default function MagazineArticlePage({
     return (
       <div className="min-h-screen flex flex-col items-center justify-center pt-24 text-center px-4">
         <h1 className="text-2xl font-bold text-white mb-2">Haber Bulunamadı</h1>
+        <p className="text-sm text-white/60 mb-4">Aradığınız haber yayından kaldırılmış veya taşınmış olabilir.</p>
         <Link
           href="/magazin"
-          className="px-6 py-3 rounded-full bg-white text-black font-bold text-xs mt-4"
+          className="px-6 py-3 rounded-full bg-white text-black font-bold text-xs"
         >
           Magazin Merkezine Dön
         </Link>
       </div>
     );
   }
+
+  const isKoreZin =
+    post.source_site === 'KoreZin' ||
+    post.slug.startsWith('kz-') ||
+    post.source_url?.includes('korezin.com');
 
   return (
     <div className="pt-28 pb-24 max-w-5xl mx-auto px-4 sm:px-8 space-y-10">
@@ -167,6 +227,17 @@ export default function MagazineArticlePage({
       {/* ARTICLE EDITORIAL HEADER */}
       <article className="rounded-3xl apple-glass p-6 sm:p-10 border border-white/15 space-y-6">
         <div className="flex flex-wrap items-center gap-2">
+          {/* Source Badge */}
+          <span
+            className={`px-3 py-1 rounded-full text-xs font-mono font-bold border backdrop-blur-md shadow-sm shadow-black/30 ${
+              isKoreZin
+                ? 'bg-rose-600/85 text-white border-rose-400/50'
+                : 'bg-sky-600/85 text-white border-sky-400/50'
+            }`}
+          >
+            {isKoreZin ? 'KoreZin' : 'AsyaMag'}
+          </span>
+
           {(post.categories || ['Magazin']).map((cat) => (
             <span
               key={cat}
@@ -175,6 +246,7 @@ export default function MagazineArticlePage({
               {cat}
             </span>
           ))}
+
           <span className="text-xs font-mono text-white/45 flex items-center gap-1.5 ml-auto">
             <Calendar className="w-3.5 h-3.5" />
             {new Date(post.published_at).toLocaleDateString('tr-TR', {
@@ -188,6 +260,27 @@ export default function MagazineArticlePage({
         <h1 className="text-2xl sm:text-4xl font-extrabold text-white leading-tight">
           {post.title}
         </h1>
+
+        {/* Source metadata & original link bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-white/55 border-b border-white/10 pb-4">
+          <div className="flex items-center gap-2">
+            <span>Editör / Yazar:</span>
+            <strong className="text-white/85">
+              {post.author_name || (isKoreZin ? 'KoreZin Editör' : 'AsyaMag Editör')}
+            </strong>
+          </div>
+          {post.source_url && (
+            <a
+              href={post.source_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs text-amber-300/80 hover:text-amber-300 transition-colors"
+            >
+              <span>Orijinal Haberi Görüntüle</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          )}
+        </div>
 
         {post.featured_image && (
           <div className="rounded-2xl overflow-hidden border border-white/10 max-h-[480px]">
@@ -221,7 +314,43 @@ export default function MagazineArticlePage({
           </div>
 
           <button
-            onClick={() => setLiked((v) => !v)}
+            onClick={async () => {
+              if (!user) {
+                openAuthModal('Haberi beğenebilmek için lütfen giriş yapın.');
+                return;
+              }
+              if (!post) return;
+              triggerSound('click');
+
+              const willLike = !liked;
+              setLiked(willLike);
+              setLikesCount((prev) => (willLike ? prev + 1 : Math.max(0, prev - 1)));
+
+              pushNotification(
+                willLike ? 'Haber Beğenildi' : 'Beğeni Kaldırıldı',
+                willLike ? 'Bu haber beğenilerinize eklendi.' : 'Haber beğenilerinizden kaldırıldı.',
+                'info'
+              );
+
+              try {
+                if (willLike) {
+                  await supabase
+                    .from('magazine_likes')
+                    .insert({ user_id: user.id, post_id: post.id });
+                } else {
+                  await supabase
+                    .from('magazine_likes')
+                    .delete()
+                    .eq('user_id', user.id)
+                    .eq('post_id', post.id);
+                }
+              } catch (err) {
+                console.error('Failed to toggle magazine like:', err);
+                // Rollback on error
+                setLiked(!willLike);
+                setLikesCount((prev) => (willLike ? Math.max(0, prev - 1) : prev + 1));
+              }
+            }}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold border transition-all cursor-pointer ${
               liked
                 ? 'bg-pink-500 border-pink-300 text-white'
@@ -229,7 +358,7 @@ export default function MagazineArticlePage({
             }`}
           >
             <Heart className={`w-4 h-4 ${liked ? 'fill-white' : ''}`} />
-            <span>Haberi Beğen ({(post.likes_count || 18) + (liked ? 1 : 0)})</span>
+            <span>Haberi Beğen ({likesCount})</span>
           </button>
         </div>
       </article>
@@ -284,34 +413,52 @@ export default function MagazineArticlePage({
       {morePosts.length > 0 && (
         <section>
           <h3 className="text-lg font-bold text-white mb-4">
-            Diğer Dedikodu & Haberler
+            Diğer Dedikodu & Güncel Haberler
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {morePosts.map((mp) => (
-              <Link
-                key={mp.id}
-                href={`/magazin/${mp.slug}`}
-                className="p-4 rounded-2xl bg-[#121216] border border-white/10 hover:border-amber-400/40 transition-all flex items-center gap-3.5"
-              >
-                <img
-                  src={getProxiedImageUrl(mp.featured_image)}
-                  alt={mp.title}
-                  width={80}
-                  height={80}
-                  loading="lazy"
-                  decoding="async"
-                  className="w-20 h-20 rounded-xl object-cover shrink-0"
-                />
-                <div className="min-w-0">
-                  <span className="text-[10px] font-mono text-amber-300">
-                    {(mp.categories || ['Magazin'])[0]}
-                  </span>
-                  <h4 className="text-xs font-bold text-white line-clamp-2 mt-0.5">
-                    {mp.title}
-                  </h4>
-                </div>
-              </Link>
-            ))}
+            {morePosts.map((mp) => {
+              const mpIsKoreZin =
+                mp.source_site === 'KoreZin' ||
+                mp.slug.startsWith('kz-') ||
+                mp.source_url?.includes('korezin.com');
+
+              return (
+                <Link
+                  key={mp.slug}
+                  href={`/magazin/${mp.slug}`}
+                  className="p-4 rounded-2xl bg-[#121216] border border-white/10 hover:border-amber-400/40 transition-all flex items-center gap-3.5"
+                >
+                  <img
+                    src={getProxiedImageUrl(mp.featured_image)}
+                    alt={mp.title}
+                    width={80}
+                    height={80}
+                    loading="lazy"
+                    decoding="async"
+                    className="w-20 h-20 rounded-xl object-cover shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ${
+                          mpIsKoreZin
+                            ? 'text-rose-300 bg-rose-500/20 border-rose-400/30'
+                            : 'text-sky-300 bg-sky-500/20 border-sky-400/30'
+                        }`}
+                      >
+                        {mpIsKoreZin ? 'KoreZin' : 'AsyaMag'}
+                      </span>
+                      <span className="text-[10px] font-mono text-amber-300">
+                        {(mp.categories || ['Magazin'])[0]}
+                      </span>
+                    </div>
+                    <h4 className="text-xs font-bold text-white line-clamp-2 mt-1">
+                      {mp.title}
+                    </h4>
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         </section>
       )}

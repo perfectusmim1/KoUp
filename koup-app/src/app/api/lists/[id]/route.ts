@@ -16,16 +16,59 @@ export async function GET(
       );
     }
 
-    const { data, error } = await supabase.rpc('get_list_detail', {
+    const { searchParams } = new URL(req.url);
+    const userId = searchParams.get('user_id');
+
+    let { data, error } = await supabase.rpc('get_list_detail', {
       list_identifier: id,
+      p_user_id: userId || null,
     });
 
     if (error) {
       console.error('Error fetching list detail RPC:', error);
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: 500 }
-      );
+    }
+
+    if (!data && userId) {
+      const isNum = /^[0-9]+$/.test(id);
+      let q = supabase
+        .from('custom_lists')
+        .select(`
+          *,
+          creator:profiles!user_id(id, username, display_name, avatar_url, bio)
+        `)
+        .eq('user_id', userId);
+      if (isNum) q = q.eq('id', Number(id));
+      else q = q.eq('slug', id);
+
+      const { data: directList } = await q.maybeSingle();
+      if (directList) {
+        const mediaIds = Array.isArray(directList.media_ids) ? directList.media_ids : [];
+        let items: any[] = [];
+        if (mediaIds.length > 0) {
+          const { data: mediaRows } = await supabase
+            .from('media')
+            .select('id, slug, title, content_type, cover_image, backdrop_image, release_year, episode_count, country_code, country_name, site_rating, overview, categories')
+            .in('id', mediaIds);
+          if (mediaRows) {
+            const mediaMap = new Map(mediaRows.map((m: any) => [m.id, m]));
+            items = mediaIds.map((mid: number) => mediaMap.get(mid)).filter(Boolean);
+          }
+        }
+        data = {
+          id: directList.id,
+          slug: directList.slug,
+          title: directList.title,
+          description: directList.description,
+          visibility: directList.visibility,
+          likes_count: directList.likes_count || 0,
+          follower_count: directList.follower_count || 0,
+          created_at: directList.created_at,
+          updated_at: directList.updated_at,
+          item_count: mediaIds.length,
+          creator: directList.creator,
+          items,
+        };
+      }
     }
 
     if (!data) {
@@ -85,37 +128,52 @@ export async function PATCH(
 
     // Handle adding/removing media items
     if (action === 'add' && media_id) {
-      const currentIds = Array.isArray(existingList.media_ids) ? [...existingList.media_ids] : [];
-      if (!currentIds.includes(Number(media_id))) {
-        currentIds.push(Number(media_id));
-        updates.media_ids = currentIds;
+      const currentIds = Array.isArray(existingList.media_ids) ? existingList.media_ids.map(Number) : [];
+      const numMedia = Number(media_id);
+      if (!currentIds.includes(numMedia)) {
+        currentIds.push(numMedia);
       }
+      updates.media_ids = currentIds;
     } else if (action === 'remove' && media_id) {
-      const currentIds = Array.isArray(existingList.media_ids) ? [...existingList.media_ids] : [];
-      updates.media_ids = currentIds.filter((m) => Number(m) !== Number(media_id));
+      const currentIds = Array.isArray(existingList.media_ids) ? existingList.media_ids.map(Number) : [];
+      updates.media_ids = currentIds.filter((m: number) => Number(m) !== Number(media_id));
     } else if (action === 'toggle' && media_id) {
-      const currentIds = Array.isArray(existingList.media_ids) ? [...existingList.media_ids] : [];
+      const currentIds = Array.isArray(existingList.media_ids) ? existingList.media_ids.map(Number) : [];
       const numMedia = Number(media_id);
       if (currentIds.includes(numMedia)) {
-        updates.media_ids = currentIds.filter((m) => Number(m) !== numMedia);
+        updates.media_ids = currentIds.filter((m: number) => Number(m) !== numMedia);
       } else {
         currentIds.push(numMedia);
         updates.media_ids = currentIds;
       }
     }
 
-    const { data: updatedList, error: updateErr } = await supabase
-      .from('custom_lists')
-      .update(updates)
-      .eq('id', existingList.id)
-      .select('*')
-      .single();
+    const targetUserId = user_id || existingList.user_id;
+
+    const { data: updatedList, error: updateErr } = await supabase.rpc('update_custom_list', {
+      p_list_id: existingList.id,
+      p_user_id: targetUserId,
+      p_title: updates.title ?? null,
+      p_description: updates.description ?? null,
+      p_visibility: updates.visibility ?? null,
+      p_media_ids: updates.media_ids !== undefined ? updates.media_ids.map(Number) : null,
+    });
 
     if (updateErr) {
-      return NextResponse.json(
-        { success: false, error: updateErr.message },
-        { status: 500 }
-      );
+      console.warn('RPC update_custom_list error, attempting table update fallback:', updateErr);
+      const { data: tableData, error: tableErr } = await supabase
+        .from('custom_lists')
+        .update(updates)
+        .eq('id', existingList.id)
+        .select()
+        .single();
+      if (tableErr) {
+        return NextResponse.json(
+          { success: false, error: tableErr.message },
+          { status: 500 }
+        );
+      }
+      return NextResponse.json({ success: true, list: tableData });
     }
 
     return NextResponse.json({ success: true, list: updatedList });
@@ -136,35 +194,30 @@ export async function DELETE(
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get('user_id');
 
-    const isNum = /^[0-9]+$/.test(id);
-    let query = supabase.from('custom_lists').select('id, user_id');
-    if (isNum) query = query.eq('id', Number(id));
-    else query = query.eq('slug', id);
-
-    const { data: existingList, error: fetchErr } = await query.single();
-    if (fetchErr || !existingList) {
+    if (!userId) {
       return NextResponse.json(
-        { success: false, error: 'Liste bulunamadı.' },
-        { status: 404 }
+        { success: false, error: 'Kullanıcı oturumu gereklidir.' },
+        { status: 401 }
       );
     }
 
-    if (userId && existingList.user_id !== userId) {
-      return NextResponse.json(
-        { success: false, error: 'Bu listeyi silme yetkiniz yok.' },
-        { status: 403 }
-      );
-    }
-
-    const { error: delErr } = await supabase
-      .from('custom_lists')
-      .delete()
-      .eq('id', existingList.id);
+    const { data: deleted, error: delErr } = await supabase.rpc('delete_custom_list', {
+      list_identifier: id,
+      p_user_id: userId,
+    });
 
     if (delErr) {
+      console.error('delete_custom_list RPC error:', delErr);
       return NextResponse.json(
         { success: false, error: delErr.message },
         { status: 500 }
+      );
+    }
+
+    if (!deleted) {
+      return NextResponse.json(
+        { success: false, error: 'Liste bulunamadı veya silinemedi.' },
+        { status: 404 }
       );
     }
 

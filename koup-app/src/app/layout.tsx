@@ -3,6 +3,7 @@ import { Plus_Jakarta_Sans, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import { KoUpProvider } from '@/context/KoUpContext';
 import Navbar from '@/components/Navbar';
+import CookieConsentBanner from '@/components/CookieConsentBanner';
 import Link from 'next/link';
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -57,16 +58,17 @@ export default function RootLayout({
   return (
     <html
       lang="tr"
+      data-scroll-behavior="smooth"
       className={`dark ${plusJakartaSans.variable} ${jetbrainsMono.variable}`}
       suppressHydrationWarning
     >
       <body
-        className={`${plusJakartaSans.className} bg-[#080808] text-[#F4F4F6] min-h-screen flex flex-col selection:bg-white selection:text-black antialiased`}
+        className={`${plusJakartaSans.className} bg-[#080808] text-[#F4F4F6] min-h-screen flex flex-col selection:bg-white selection:text-black antialiased overflow-x-hidden w-full max-w-full`}
       >
         <KoUpProvider>
           <Navbar />
-          <main className="flex-1">{children}</main>
-          <footer className="mt-24 border-t border-white/[0.06] bg-[#080808] py-12 px-6 lg:px-14">
+          <main className="flex-1 w-full max-w-full overflow-x-hidden">{children}</main>
+          <footer className="mt-24 border-t border-white/[0.06] bg-[#080808] py-12 px-4 sm:px-6 lg:px-14 w-full max-w-full overflow-x-hidden">
             <div className="max-w-[1680px] mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
               <div className="flex items-center gap-3.5">
                 <img
@@ -105,6 +107,7 @@ export default function RootLayout({
               </div>
             </div>
           </footer>
+          <CookieConsentBanner />
         </KoUpProvider>
       </body>
     </html>

@@ -31,6 +31,7 @@ import {
   Library,
   ListOrdered,
   FolderHeart,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   supabase,
@@ -38,10 +39,12 @@ import {
   PersonItem,
   getProxiedImageUrl,
   formatContentTypeTR,
+  cleanMediaTitle,
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
 import AuthModal from '@/components/AuthModal';
-import { cachedQuery } from '@/lib/cache';
+import { cachedQuery, registerMediaItems } from '@/lib/cache';
+import { normalizeSearchQuery } from '@/lib/search';
 
 const NAV_LINKS = [
   { href: '/', label: 'Ana Sayfa', icon: Home },
@@ -78,6 +81,8 @@ export default function Navbar() {
     triggerSound,
     setIsAuthModalOpen,
     logout,
+    navbarBehavior,
+    floatingNavbarEnabled,
   } = useKoUp();
 
   const [query, setQuery] = useState('');
@@ -107,46 +112,89 @@ export default function Navbar() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Instant Omnibox Search (Debounced 160ms)
+  // Instant Omnibox Search (Debounced 160ms with direct catalog fallback & race-condition cancellation)
   useEffect(() => {
-    const trimmed = query.trim();
-    if (trimmed.length < 2) {
+    const { normalized, raw } = normalizeSearchQuery(query);
+    if (normalized.length < 2 && raw.length < 2) {
       setMediaResults([]);
       setPersonResults([]);
       return;
     }
 
+    let active = true;
     const timer = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const cacheKey = `omnibox_${trimmed.toLowerCase()}`;
-        const [mList, pList] = await cachedQuery(cacheKey, 60_000, async () => {
-          const [mRes, pRes] = await Promise.all([
-            supabase.rpc('search_catalog', {
-              p_query: trimmed,
+        const cacheKey = `omnibox_${normalized || raw}`;
+        const [mList, pList] = await cachedQuery(cacheKey, 30_000, async () => {
+          let mediaData: MediaItem[] = [];
+
+          // 1. Try high-performance fuzzy catalog RPC
+          try {
+            const mRes = await supabase.rpc('search_catalog', {
+              p_query: raw,
               p_limit: 8,
-            }),
-            supabase
+            });
+            if (mRes.data && Array.isArray(mRes.data) && mRes.data.length > 0) {
+              mediaData = mRes.data as MediaItem[];
+            }
+          } catch {
+            // Failsafe
+          }
+
+          // 2. Fallback: if search_catalog returned 0 results or had an error, search media directly
+          if (mediaData.length === 0) {
+            try {
+              const { data: directMedia } = await supabase
+                .from('media')
+                .select('id, slug, title, native_title, content_type, country_code, release_year, cover_image, backdrop_image, mdl_rating, anilist_rating, imdb_rating, categories')
+                .or(`title.ilike.%${raw}%,slug.ilike.%${normalized || raw}%,search_text.ilike.%${normalized || raw}%`)
+                .order('views_total', { ascending: false })
+                .limit(8);
+
+              if (directMedia && directMedia.length > 0) {
+                mediaData = directMedia as MediaItem[];
+              }
+            } catch {
+              // Direct query failsafe
+            }
+          }
+
+          // 3. Search people & actors
+          let personData: PersonItem[] = [];
+          try {
+            const pRes = await supabase
               .from('people')
               .select('id, slug, name, native_name, person_type, image_url, favorites_count')
-              .ilike('name', `%${trimmed}%`)
+              .or(`name.ilike.%${normalized}%,native_name.ilike.%${raw}%`)
               .order('favorites_count', { ascending: false })
-              .limit(4),
-          ]);
-          return [
-            (mRes.data as MediaItem[]) || [],
-            (pRes.data as PersonItem[]) || [],
-          ] as const;
+              .limit(4);
+            if (pRes.data && Array.isArray(pRes.data)) {
+              personData = pRes.data as PersonItem[];
+            }
+          } catch {
+            // Person failsafe
+          }
+
+          return [mediaData, personData] as const;
         });
 
-        setMediaResults(mList as MediaItem[]);
-        setPersonResults(pList as PersonItem[]);
+        if (!active) return;
+        const mediaItems = (mList as MediaItem[]) || [];
+        registerMediaItems(mediaItems);
+        setMediaResults(mediaItems);
+        setPersonResults((pList as PersonItem[]) || []);
       } finally {
-        setIsSearching(false);
+        if (active) {
+          setIsSearching(false);
+        }
       }
     }, 160);
 
-    return () => clearTimeout(timer);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
   }, [query]);
 
   // Close popovers on outside click
@@ -209,12 +257,24 @@ export default function Navbar() {
 
   return (
     <>
-      <div className="fixed top-0 left-0 right-0 z-50 flex justify-center pointer-events-none transition-all duration-300">
+      <div
+        suppressHydrationWarning
+        className={`top-0 left-0 right-0 z-50 flex justify-center pointer-events-none transition-all duration-300 ${
+          navbarBehavior === 'static' ? 'absolute' : 'fixed'
+        }`}
+      >
         <header
           className={`pointer-events-auto flex items-center justify-between transition-all duration-300 ease-out will-change-[width,transform,background-color,border-radius] ${
-            isScrolled
-              ? 'mt-2 sm:mt-3.5 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-full bg-[#08080a]/90 backdrop-blur-2xl border border-white/[0.14] shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_30px_-5px_rgba(41,151,255,0.12),inset_0_1px_0_rgba(255,255,255,0.18)] py-2 sm:py-2.5 px-4 sm:px-6'
-              : 'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-[#080808]/95 via-[#080808]/70 to-transparent backdrop-blur-[12px] py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+            navbarBehavior === 'floating'
+              ? isScrolled
+                ? 'mt-2 sm:mt-3.5 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-full bg-[#08080a]/92 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.9),0_0_30px_-5px_rgba(41,151,255,0.08)] py-2 sm:py-2.5 px-4 sm:px-6'
+                : 'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-[#080808]/95 via-[#080808]/70 to-transparent backdrop-blur-[12px] py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+              : navbarBehavior === 'sticky'
+              ? isScrolled
+                ? 'mt-0 w-full max-w-full rounded-none bg-[#08080a]/95 backdrop-blur-2xl border-b border-white/10 shadow-[0_12px_32px_rgba(0,0,0,0.8)] py-3 sm:py-4 px-4 sm:px-8 lg:px-14'
+                : 'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-[#080808]/95 via-[#080808]/70 to-transparent backdrop-blur-[12px] py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+              : /* static: sitenin üstünde kalır, sayfa kayınca bizle gelmez */
+                'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-[#080808]/95 via-[#080808]/70 to-transparent backdrop-blur-[12px] py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
           }`}
         >
       {/* LEFT: Brand Mark (Original KU Logo — No Circle or Box Wrapper) */}
@@ -322,6 +382,12 @@ export default function Navbar() {
                 setQuery(e.target.value);
                 setSearchOpen(true);
               }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && query.trim()) {
+                  setSearchOpen(false);
+                  router.push(`/kesfet?q=${encodeURIComponent(query.trim())}`);
+                }
+              }}
               placeholder="İçerik veya oyuncu ara..."
               className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full"
             />
@@ -398,10 +464,17 @@ export default function Navbar() {
                                 loading="lazy"
                                 decoding="async"
                                 className="w-10 h-14 object-cover rounded-lg border border-white/10 shrink-0"
+                                onError={(e) => {
+                                  const target = e.currentTarget;
+                                  if (!target.dataset.fallbackTried) {
+                                    target.dataset.fallbackTried = 'true';
+                                    target.src = `/api/image-proxy?title=${encodeURIComponent(cleanMediaTitle(m.title))}`;
+                                  }
+                                }}
                               />
                               <div className="min-w-0 flex-1">
                                 <div className="text-sm font-semibold text-white group-hover:text-white truncate">
-                                  {m.title}
+                                  {cleanMediaTitle(m.title)}
                                 </div>
                                 <div className="text-[11px] text-white/50 flex flex-wrap items-center gap-2 mt-1">
                                   <span className={getNavTypeBadgeClass(m.content_type, m.country_code || (m as any).country)}>
@@ -411,6 +484,11 @@ export default function Navbar() {
                                   {m.mdl_rating && (
                                     <span className="text-amber-300 font-mono">
                                       MDL {m.mdl_rating}
+                                    </span>
+                                  )}
+                                  {(m.imdb_rating || (m as any).imdb_score || (m as any).vote_average) && (
+                                    <span className="text-[#f5c518] font-mono">
+                                      IMDb {Number(m.imdb_rating ?? (m as any).imdb_score ?? (m as any).vote_average).toFixed(1)}
                                     </span>
                                   )}
                                   {m.anilist_rating && (
@@ -442,7 +520,7 @@ export default function Navbar() {
                               className="flex items-center gap-2.5 p-2 rounded-2xl hover:bg-white/[0.08] transition-colors text-left cursor-pointer"
                             >
                               <img
-                                src={getProxiedImageUrl(p.image_url, p.name)}
+                                src={getProxiedImageUrl(p.image_url, p.name, null, 'w185', 'person')}
                                 alt={p.name}
                                 width={36}
                                 height={36}
@@ -481,9 +559,6 @@ export default function Navbar() {
               triggerSound('click');
               const nextOpen = !notifOpen;
               setNotifOpen(nextOpen);
-              if (nextOpen && unreadCount > 0) {
-                markAllNotificationsRead();
-              }
               setProfileDropdownOpen(false);
               setSearchOpen(false);
             }}
@@ -505,7 +580,7 @@ export default function Navbar() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 6, scale: 0.96 }}
                 transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="absolute right-0 mt-3 w-[calc(100vw-2.5rem)] sm:w-[410px] max-w-[410px] rounded-3xl bg-[#0f0f12]/95 backdrop-blur-2xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.12)] border border-white/15 z-50 flex flex-col gap-3"
+                className="fixed left-3 right-3 top-20 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-3 sm:w-[410px] sm:max-w-[410px] rounded-3xl bg-[#0f0f12]/95 backdrop-blur-2xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.12)] border border-white/15 z-50 flex flex-col gap-3"
               >
                 {/* Header */}
                 <div className="flex items-center justify-between pb-2.5 border-b border-white/10">
@@ -522,7 +597,7 @@ export default function Navbar() {
                       <button
                         onClick={() => markAllNotificationsRead()}
                         className="text-[11px] font-semibold text-amber-300 hover:text-amber-200 transition-colors cursor-pointer flex items-center gap-1"
-                        title="Tümünü Okundu İşaretle"
+                        aria-label="Tümünü Okundu İşaretle"
                       >
                         <CheckCheck className="w-3.5 h-3.5" />
                         <span>Tümünü Oku</span>
@@ -567,18 +642,21 @@ export default function Navbar() {
                       const href = n.linkUrl || (n as any).link_url;
                       const isUnread = !n.isRead;
 
-                      // Category Icon Picker
+                      // Category Icon & Distinct Colors Picker
                       let CatIcon = Sparkles;
                       let catColor = 'bg-purple-500/20 text-purple-300 border-purple-400/30';
                       if (n.type === 'episode') {
                         CatIcon = Tv;
-                        catColor = 'bg-sky-500/20 text-sky-300 border-sky-400/30';
+                        catColor = 'bg-amber-500/20 text-amber-300 border-amber-400/30';
                       } else if (n.type === 'actor') {
                         CatIcon = UserCheck;
-                        catColor = 'bg-amber-500/20 text-amber-300 border-amber-400/30';
+                        catColor = 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30';
                       } else if (n.type === 'reply') {
                         CatIcon = MessageSquare;
                         catColor = 'bg-sky-500/20 text-sky-300 border-sky-400/30';
+                      } else if (n.type === 'system' || n.type === 'info') {
+                        CatIcon = AlertTriangle;
+                        catColor = 'bg-rose-500/20 text-rose-300 border-rose-400/30';
                       }
 
                       const cardContent = (
@@ -674,7 +752,7 @@ export default function Navbar() {
           <Link
             href="/admin"
             prefetch={true}
-            title="Admin Kontrol Merkezi"
+            aria-label="Admin Kontrol Merkezi"
             className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-full glass-pill text-xs font-medium text-amber-300 border-amber-400/30 hover:border-amber-400/60 transition-all shadow-[0_0_12px_rgba(245,158,11,0.2)]"
           >
             <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
@@ -703,7 +781,7 @@ export default function Navbar() {
               <div className="w-7 h-7 rounded-full bg-white/15 border border-white/20 group-hover:border-sky-400/60 flex items-center justify-center text-white text-xs font-bold shrink-0 overflow-hidden shadow-xs transition-colors">
                 {user.avatar_url ? (
                   <img
-                    src={getProxiedImageUrl(user.avatar_url, user.display_name || user.username)}
+                    src={getProxiedImageUrl(user.avatar_url, user.display_name || user.username, null, 'w185', 'person')}
                     alt=""
                     className="w-full h-full object-cover"
                   />
@@ -724,14 +802,14 @@ export default function Navbar() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 6, scale: 0.96 }}
                   transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                  className="absolute right-0 mt-3 w-64 rounded-3xl bg-[#0f0f12]/95 backdrop-blur-2xl p-3 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.15)] border border-white/15 z-50 flex flex-col gap-1"
+                  className="fixed right-3 top-20 sm:absolute sm:right-0 sm:top-full sm:mt-3 w-64 rounded-3xl bg-[#0f0f12]/95 backdrop-blur-2xl p-3 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.15)] border border-white/15 z-50 flex flex-col gap-1"
                 >
                   {/* User Header */}
                   <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/[0.06] flex items-center gap-3 mb-1">
                     <div className="w-10 h-10 rounded-full bg-[#1c1c22] border border-white/20 flex items-center justify-center shrink-0 overflow-hidden shadow-inner">
                       {user.avatar_url ? (
                         <img
-                          src={getProxiedImageUrl(user.avatar_url, user.display_name || user.username)}
+                          src={getProxiedImageUrl(user.avatar_url, user.display_name || user.username, null, 'w185', 'person')}
                           alt={user.display_name || user.username}
                           className="w-full h-full object-cover"
                         />
@@ -957,7 +1035,10 @@ export default function Navbar() {
                           <img
                             src={getProxiedImageUrl(
                               user.avatar_url,
-                              user.display_name || user.username
+                              user.display_name || user.username,
+                              null,
+                              'w185',
+                              'person'
                             )}
                             alt={user.display_name || user.username}
                             className="w-full h-full object-cover"
@@ -1077,6 +1158,12 @@ export default function Navbar() {
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && query.trim()) {
+                      setMobileSearchOpen(false);
+                      router.push(`/kesfet?q=${encodeURIComponent(query.trim())}`);
+                    }
+                  }}
                   placeholder="İçerik veya oyuncu ara..."
                   className="bg-transparent text-sm text-white placeholder-white/40 focus:outline-none w-full"
                 />
@@ -1197,7 +1284,7 @@ export default function Navbar() {
                                 className="flex items-center gap-2.5 p-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] transition-colors text-left cursor-pointer border border-white/[0.06]"
                               >
                                 <img
-                                  src={getProxiedImageUrl(p.image_url, p.name)}
+                                  src={getProxiedImageUrl(p.image_url, p.name, null, 'w185', 'person')}
                                   alt={p.name}
                                   width={36}
                                   height={36}

@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { motion } from 'motion/react';
 import {
   Heart,
   Search,
@@ -12,7 +11,9 @@ import {
   Clapperboard,
   Mic,
   UserCheck,
+  X,
 } from 'lucide-react';
+import { motion } from 'motion/react';
 import {
   supabase,
   PersonItem,
@@ -20,7 +21,6 @@ import {
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
 import CustomSelect from '@/components/CustomSelect';
-import { cachedQuery } from '@/lib/cache';
 
 const PERSON_TABS = [
   { id: 'all', label: 'Tüm Yıldızlar & Karakterler', icon: Sparkles },
@@ -50,32 +50,27 @@ export default function ActorsLeaderboardPage() {
     async function fetchPeople() {
       setIsLoading(true);
       try {
-        const cacheKey = `top_people_${filterType}_${sortBy}_${page}_${searchQuery.trim().toLowerCase()}`;
-        const data = await cachedQuery(cacheKey, 300_000, async () => {
-          let query = supabase
-            .from('people')
-            .select('*')
-            .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+        let query = supabase
+          .from('people')
+          .select('*')
+          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
-          if (filterType !== 'all') {
-            query = query.eq('person_type', filterType);
-          }
-          if (searchQuery.trim().length >= 2) {
-            query = query.ilike('name', `%${searchQuery.trim()}%`);
-          }
-          if (sortBy === 'favs') {
-            query = query
-              .order('favorites_count', { ascending: false })
-              .order('drama_count', { ascending: false });
-          } else {
-            query = query.order('drama_count', { ascending: false });
-          }
+        if (filterType !== 'all') {
+          query = query.eq('person_type', filterType);
+        }
+        if (searchQuery.trim().length >= 2) {
+          query = query.ilike('name', `%${searchQuery.trim()}%`);
+        }
+        if (sortBy === 'favs') {
+          query = query
+            .order('favorites_count', { ascending: false })
+            .order('drama_count', { ascending: false });
+        } else {
+          query = query.order('drama_count', { ascending: false });
+        }
 
-          const { data: resData } = await query;
-          return (resData as PersonItem[]) || [];
-        });
-
-        setPeople(data);
+        const { data: resData } = await query;
+        setPeople((resData as PersonItem[]) || []);
       } finally {
         setIsLoading(false);
       }
@@ -104,8 +99,8 @@ export default function ActorsLeaderboardPage() {
 
         {/* Search & Sort Controls */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-          <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-full glass-pill-dark">
-            <Search className="w-4 h-4 text-white/60" />
+          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)]">
+            <Search className="w-4 h-4 text-white/60 shrink-0" />
             <input
               type="text"
               value={searchQuery}
@@ -114,8 +109,20 @@ export default function ActorsLeaderboardPage() {
                 setPage(0);
               }}
               placeholder="Oyuncu veya anime karakteri ara..."
-              className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-56"
+              className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-56 sm:w-64 font-medium"
             />
+            {searchQuery && (
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setPage(0);
+                }}
+                className="text-white/40 hover:text-white transition-colors cursor-pointer"
+                aria-label="Aramayı temizle"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           <CustomSelect
@@ -143,14 +150,15 @@ export default function ActorsLeaderboardPage() {
                 setFilterType(tab.id);
                 setPage(0);
               }}
-              className={`relative flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition-colors cursor-pointer ${
+              className={`relative flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition-colors duration-200 cursor-pointer ${
                 active ? 'text-black' : 'glass-pill text-white/75 hover:text-white'
               }`}
             >
               {active && (
                 <motion.span
-                  layoutId="actors-category-pill"
-                  transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                  layoutId="oyuncular-tab-active-pill"
+                  initial={false}
+                  transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
                   className="absolute inset-0 rounded-full bg-white shadow-[0_0_24px_rgba(255,255,255,0.4)]"
                 />
               )}
@@ -167,32 +175,27 @@ export default function ActorsLeaderboardPage() {
           Oyuncu ve Karakter Sıralaması Yükleniyor...
         </div>
       ) : (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4"
-        >
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
           {people.map((person, idx) => {
             const rank = page * PAGE_SIZE + idx + 1;
             const isFav = favPersonIds.includes(person.id);
             const isFol = followedPersonIds.includes(person.id);
-            const displayFavs = person.favorites_count + (isFav ? 1 : 0);
+            const displayFavs = person.favorites_count || 0;
 
             return (
               <div
                 key={person.id}
-                className="koup-projection-card cv-card rounded-3xl p-4 flex flex-col justify-between group"
+                className="cv-card rounded-3xl p-4 flex flex-col justify-between group bg-[#0f0f11] border border-white/[0.08] hover:border-white/30 hover:shadow-[0_0_24px_-4px_rgba(41,151,255,0.25),0_10px_24px_rgba(0,0,0,0.7)] transition-all duration-300"
               >
                 <div>
-                  <div className="relative aspect-square rounded-2xl overflow-hidden mb-3 bg-black/50 border border-white/10">
+                  <div className="relative aspect-square rounded-2xl overflow-hidden mb-3 bg-black/50 border border-white/10 group-hover:border-white/30 transition-all">
                     <Link href={`/oyuncu/${person.slug}`}>
                       <img
-                        src={getProxiedImageUrl(person.image_url, person.name)}
+                        src={getProxiedImageUrl(person.image_url, person.name, null, 'w500', 'person')}
                         alt={person.name}
                         loading="lazy"
                         decoding="async"
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        className="w-full h-full object-cover"
                       />
                     </Link>
 
@@ -209,23 +212,6 @@ export default function ActorsLeaderboardPage() {
                       }`}
                     >
                       #{rank}
-                    </span>
-
-                    {/* Type Badge - High Contrast Opaque */}
-                    <span
-                      className={`absolute bottom-2 left-2 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border shadow-md ${
-                        person.person_type === 'character'
-                          ? 'bg-[#1b1035] text-purple-200 border-purple-400/60'
-                          : person.person_type === 'seiyuu'
-                          ? 'bg-[#09223b] text-sky-200 border-sky-400/60'
-                          : 'bg-[#0f1d2e] text-blue-200 border-blue-400/60'
-                      }`}
-                    >
-                      {person.person_type === 'character'
-                        ? 'Karakter'
-                        : person.person_type === 'seiyuu'
-                          ? 'Seiyuu'
-                          : 'Oyuncu'}
                     </span>
                   </div>
 
@@ -245,7 +231,23 @@ export default function ActorsLeaderboardPage() {
                 {/* Bottom Favorite & Follow Actions */}
                 <div className="mt-3 pt-2.5 border-t border-white/[0.07] flex items-center justify-between gap-2">
                   <button
-                    onClick={() => togglePersonFavorite(person.id, person.name)}
+                    onClick={async () => {
+                      const wasFav = favPersonIds.includes(person.id);
+                      setPeople((prev) =>
+                        prev.map((p) =>
+                          p.id === person.id
+                            ? {
+                                ...p,
+                                favorites_count: Math.max(
+                                  0,
+                                  (p.favorites_count || 0) + (wasFav ? -1 : 1)
+                                ),
+                              }
+                            : p
+                        )
+                      );
+                      await togglePersonFavorite(person.id, person.name);
+                    }}
                     className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-full text-xs font-mono font-bold border transition-all cursor-pointer ${
                       isFav
                         ? 'bg-rose-500 border-rose-400 text-white'
@@ -258,7 +260,7 @@ export default function ActorsLeaderboardPage() {
 
                   <button
                     onClick={() => togglePersonFollow(person.id, person.name)}
-                    title="Takip Et (Yeni dizi/haber bildirimi)"
+                    aria-label="Takip Et (Yeni dizi/haber bildirimi)"
                     className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
                       isFol
                         ? 'bg-white text-black border-white'
@@ -271,7 +273,7 @@ export default function ActorsLeaderboardPage() {
               </div>
             );
           })}
-        </motion.div>
+        </div>
       )}
 
       {/* PAGINATION */}

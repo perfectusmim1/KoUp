@@ -50,21 +50,23 @@ def parse_season_number(text, default=1):
     return default
 
 def build_drama_index(cur, content_types=('dizi', 'film', 'program', 'anime')):
-    """ Bellek ici indeks: {norm_title: [(id, year, mdl, al)]}, {mdl: id}, {al: id}, {slugcore: [id]}."""
-    cur.execute("SELECT id, slug, title, release_year, mydramalist_url, anilist_url FROM dramas WHERE content_type IN ({})".format(
+    """ Bellek ici indeks: {norm_title: [(id, year, mdl, al, content_type)]}, {mdl: id}, {al: id}, {slugcore: [(id, year, content_type)]}."""
+    cur.execute("SELECT id, slug, title, release_year, mydramalist_url, anilist_url, content_type FROM dramas WHERE content_type IN ({})".format(
         ','.join('?' * len(content_types))), content_types)
     by_title, by_mdl, by_al, by_slug = {}, {}, {}, {}
-    for did, slug, title, year, mdl, al in cur.fetchall():
+    for did, slug, title, year, mdl, al, ctype in cur.fetchall():
         nt = norm_title(title)
+        ct = (ctype or '').strip().lower()
+        yr = (year or '').strip()
         if len(nt) >= 4:
-            by_title.setdefault(nt, []).append((did, (year or '').strip(), mdl, al))
+            by_title.setdefault(nt, []).append((did, yr, mdl, al, ct))
         if mdl:
             by_mdl[mdl.strip()] = did
         if al:
             by_al[al.strip()] = did
         sc = slug_core(slug or '')
         if len(sc) >= 4:
-            by_slug.setdefault(sc, []).append((did, (year or '').strip()))
+            by_slug.setdefault(sc, []).append((did, yr, ct))
     return {'title': by_title, 'mdl': by_mdl, 'al': by_al, 'slug': by_slug}
 
 def _years_compatible(y1, y2):
@@ -75,29 +77,48 @@ def _years_compatible(y1, y2):
     except Exception:
         return str(y1).strip() == str(y2).strip()
 
-def find_in_index(idx, title, year=None, slug=None, mdl_url=None, anilist_url=None):
+def find_in_index(idx, title, year=None, slug=None, content_type=None, mdl_url=None, anilist_url=None):
     if mdl_url and mdl_url.strip() in idx.get('mdl', {}):
         return idx['mdl'][mdl_url.strip()]
     if anilist_url and anilist_url.strip() in idx.get('al', {}):
         return idx['al'][anilist_url.strip()]
+
+    target_ct = (content_type or '').strip().lower()
     nt = norm_title(title)
     if len(nt) >= 4 and nt in idx['title']:
         cands = idx['title'][nt]
-        if year:
-            for did, y, _m, _a in cands:
-                if y == str(year):
-                    return did
-            for did, y, _m, _a in cands:
-                if _years_compatible(y, year):
-                    return did
-            return None
-        return cands[0][0]
+        # Filter by content_type if specified (never mix anime and live-action dizi)
+        if target_ct:
+            matching_cands = [c for c in cands if not c[4] or c[4] == target_ct]
+            if matching_cands:
+                cands = matching_cands
+            else:
+                # If target is dizi and all candidates are anime, do NOT match!
+                if target_ct in ('dizi', 'film') and all(c[4] == 'anime' for c in cands):
+                    cands = []
+                elif target_ct == 'anime' and all(c[4] in ('dizi', 'film') for c in cands):
+                    cands = []
+
+        if cands:
+            if year:
+                for did, y, _m, _a, _ct in cands:
+                    if y == str(year):
+                        return did
+                for did, y, _m, _a, _ct in cands:
+                    if _years_compatible(y, year):
+                        return did
+                return None
+            return cands[0][0]
+
     if slug:
         sc = slug_core(slug)
         if len(sc) >= 4 and sc in idx['slug']:
             for item in idx['slug'][sc]:
                 if isinstance(item, tuple):
-                    did, y = item
+                    did, y = item[0], item[1]
+                    item_ct = item[2] if len(item) > 2 else None
+                    if target_ct and item_ct and target_ct != item_ct:
+                        continue
                     if _years_compatible(y, year):
                         return did
                 else:

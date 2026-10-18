@@ -35,19 +35,24 @@ import {
   UserX,
   ShieldAlert,
   Search,
+  MessageSquare,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import {
   supabase,
   MediaItem,
   PersonItem,
   UserProfile,
+  UserMediaProgress,
   getProxiedImageUrl,
+  getEpisodeProgressStats,
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 import CountryFlag from '@/components/CountryFlag';
 
-type ProfileTab = 'overview' | 'library' | 'history' | 'lists' | 'import' | 'settings';
+type ProfileTab = 'overview' | 'library' | 'history' | 'lists' | 'comments' | 'import' | 'settings';
 
 const AVATAR_PRESETS = [
   { name: 'K-Drama Protagonist', url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80' },
@@ -77,6 +82,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
     isUserBlocked,
     isBlockedBy,
     pushNotification,
+    refreshUserLibrary,
   } = useKoUp();
 
   const [profileData, setProfileData] = useState<UserProfile | null>(null);
@@ -93,7 +99,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
 
   // Tab State
   const tabParam = searchParams.get('tab') as ProfileTab | null;
-  const validTabs: ProfileTab[] = ['overview', 'library', 'history', 'lists', 'import', 'settings'];
+  const validTabs: ProfileTab[] = ['overview', 'library', 'history', 'lists', 'comments', 'import', 'settings'];
   const initialTab: ProfileTab =
     tabParam && validTabs.includes(tabParam)
       ? (!isOwner && (tabParam === 'settings' || tabParam === 'import') ? 'overview' : tabParam)
@@ -102,7 +108,34 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
   const [activeTab, setActiveTab] = useState<ProfileTab>(initialTab);
   const [libraryFilter, setLibraryFilter] = useState<string>('ALL');
   const [watchedMedia, setWatchedMedia] = useState<MediaItem[]>([]);
+  const [targetProgressMap, setTargetProgressMap] = useState<Record<number, UserMediaProgress>>({});
   const [favPeople, setFavPeople] = useState<PersonItem[]>([]);
+  const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
+
+  // User comments on profile
+  const [profileComments, setProfileComments] = useState<
+    Array<{
+      id: string;
+      user_id: string;
+      target_type: string;
+      media_id?: number | null;
+      season_number?: number | null;
+      episode_number?: number | null;
+      content_html: string;
+      has_spoiler?: boolean;
+      likes_count?: number;
+      dislikes_count?: number;
+      created_at: string;
+      media?: {
+        id: number;
+        slug: string;
+        title: string;
+        cover_image?: string | null;
+        content_type?: string;
+      } | null;
+    }>
+  >([]);
+  const [revealedSpoilers, setRevealedSpoilers] = useState<Record<string, boolean>>({});
 
   // Settings form states
   const [editDisplayName, setEditDisplayName] = useState('');
@@ -119,23 +152,10 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
 
-  // Custom Lists
+  // Custom Lists (Zero mock data - strictly derived from Supabase custom_lists table)
   const [customLists, setCustomLists] = useState<
     Array<{ id: number; title: string; description: string; count: number }>
-  >([
-    {
-      id: 1,
-      title: 'Ağlatan Kore Dizileri Seçkim',
-      description: 'Mendilsiz izlenmeyecek duygusal başyapıtlar',
-      count: 8,
-    },
-    {
-      id: 2,
-      title: 'Soluksuz İzlenen Gizem & Gerilim Animeleri',
-      description: 'Zihin yoran ters köşeler ve kusursuz senaryolar',
-      count: 5,
-    },
-  ]);
+  >([]);
   const [newListTitle, setNewListTitle] = useState('');
   const [newListDesc, setNewListDesc] = useState('');
 
@@ -249,42 +269,124 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
     }
   }, [profileData, isOwner, user]);
 
-  // Load media and favorites
+  // Unified Profile Data Loader (Strictly real Supabase data, Zero mock leaks)
   useEffect(() => {
-    async function loadMediaAndPeople() {
-      if (isOwner) {
-        const mIds = Object.keys(progressMap).map(Number).filter((n) => !isNaN(n));
-        if (mIds.length > 0) {
-          const { data: mRows } = await supabase
-            .from('media')
-            .select('*')
-            .in('id', mIds);
-          setWatchedMedia((mRows as MediaItem[]) || []);
+    let isMounted = true;
+    async function loadUnifiedProfileData() {
+      if (!profileData?.id) return;
+      setIsLoadingLibrary(true);
+
+      const targetId = profileData.id;
+      const isProfilePrivate = Boolean(profileData.is_private);
+      const isHistoryHidden = Boolean(profileData.hide_watch_history);
+
+      try {
+        // 1. WATCH PROGRESS & WATCHED MEDIA
+        if (!isOwner && (isProfilePrivate || isHistoryHidden)) {
+          if (isMounted) {
+            setWatchedMedia([]);
+            setTargetProgressMap({});
+          }
+        } else if (isOwner && Object.keys(progressMap).length > 0) {
+          // Owner local-first reactive progress
+          if (isMounted) setTargetProgressMap(progressMap);
+          const mIds = Object.keys(progressMap).map(Number).filter((n) => !isNaN(n));
+          if (mIds.length > 0) {
+            const { data: mRows } = await supabase.from('media').select('*').in('id', mIds);
+            if (isMounted) setWatchedMedia((mRows as MediaItem[]) || []);
+          } else if (isMounted) {
+            setWatchedMedia([]);
+          }
         } else {
-          setWatchedMedia([]);
+          // Visitor viewing public profile OR fresh owner without cached map:
+          // Query real user_media_progress directly from Supabase!
+          const { data: progRows } = await supabase
+            .from('user_media_progress')
+            .select('*, media:media_id (*)')
+            .eq('user_id', targetId);
+
+          if (isMounted) {
+            if (progRows && progRows.length > 0) {
+              const pMap: Record<number, UserMediaProgress> = {};
+              const mList: MediaItem[] = [];
+              progRows.forEach((r: any) => {
+                pMap[r.media_id] = r as UserMediaProgress;
+                if (r.media) mList.push(r.media as MediaItem);
+              });
+              setTargetProgressMap(pMap);
+              setWatchedMedia(mList);
+            } else {
+              setTargetProgressMap({});
+              setWatchedMedia([]);
+            }
+          }
         }
 
-        if (personFavorites.length > 0) {
-          const { data: pRows } = await supabase
-            .from('people')
-            .select('*')
-            .in('id', personFavorites);
-          setFavPeople((pRows as PersonItem[]) || []);
-        } else {
-          setFavPeople([]);
+        // 2. FAVORITE PEOPLE / ACTORS
+        const { data: favRows } = await supabase
+          .from('person_favorites')
+          .select('person_id, people:person_id (*)')
+          .eq('user_id', targetId);
+
+        if (isMounted) {
+          if (favRows && favRows.length > 0) {
+            const pList = favRows.map((r: any) => r.people).filter(Boolean) as PersonItem[];
+            setFavPeople(pList);
+          } else {
+            setFavPeople([]);
+          }
         }
-      } else {
-        // Visitor viewing public profile: load top featured or recent items for public showcase
-        const { data: sampleMedia } = await supabase
-          .from('media')
-          .select('*')
-          .limit(8);
-        setWatchedMedia((sampleMedia as MediaItem[]) || []);
+
+        // 3. USER COMMENTS TAB
+        const { data: commentRows } = await supabase
+          .from('comments')
+          .select('id, user_id, target_type, media_id, season_number, episode_number, content_html, has_spoiler, likes_count, dislikes_count, created_at, media:media_id (id, slug, title, cover_image, content_type)')
+          .eq('user_id', targetId)
+          .eq('is_hidden', false)
+          .order('created_at', { ascending: false })
+          .limit(50);
+
+        if (isMounted) {
+          setProfileComments((commentRows as any[]) || []);
+        }
+
+        // 4. CUSTOM LISTS (Filtered by visibility for visitors, zero hardcoded data)
+        let listQuery = supabase
+          .from('custom_lists')
+          .select('id, slug, title, description, visibility, media_ids, likes_count')
+          .eq('user_id', targetId);
+
+        if (!isOwner) {
+          listQuery = listQuery.eq('visibility', 'public');
+        }
+
+        const { data: listsData } = await listQuery.order('created_at', { ascending: false });
+        if (isMounted) {
+          if (listsData && listsData.length > 0) {
+            setCustomLists(
+              listsData.map((l: any) => ({
+                id: l.id,
+                title: l.title,
+                description: l.description || 'Özel Koleksiyon',
+                count: Array.isArray(l.media_ids) ? l.media_ids.length : 0,
+              }))
+            );
+          } else {
+            setCustomLists([]);
+          }
+        }
+      } catch (err) {
+        console.error('Error loading unified profile data:', err);
+      } finally {
+        if (isMounted) setIsLoadingLibrary(false);
       }
     }
 
-    loadMediaAndPeople();
-  }, [isOwner, progressMap, personFavorites]);
+    loadUnifiedProfileData();
+    return () => {
+      isMounted = false;
+    };
+  }, [profileData?.id, isOwner, progressMap]);
 
   // Save Settings Handler
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -334,17 +436,28 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
     triggerSound('click');
 
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
       const res = await fetch('/api/mdl-import', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source, username: uname }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          source,
+          username: uname,
+          userId: user?.id,
+        }),
       });
       const data = await res.json();
       if (data.success) {
         triggerSound('success');
         setImportStatus(
-          `${data.message} (${data.matchedCount} yapım KoUp kütüphanenize bağlandı)`
+          `${data.message} (${data.matchedCount} yapım KoUp kütüphanenize başarıyla bağlandı)`
         );
+        await refreshUserLibrary();
       } else {
         setImportStatus(`Hata: ${data.error || 'İçe aktarım başarısız'}`);
       }
@@ -354,38 +467,6 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
       setIsImporting(false);
     }
   };
-
-  // Load custom lists from Supabase
-  useEffect(() => {
-    async function loadUserLists() {
-      if (!profileData?.id) return;
-      try {
-        let q = supabase
-          .from('custom_lists')
-          .select('id, slug, title, description, visibility, media_ids, likes_count')
-          .eq('user_id', profileData.id);
-
-        if (!isOwner) {
-          q = q.eq('visibility', 'public');
-        }
-
-        const { data } = await q.order('created_at', { ascending: false });
-        if (data && data.length > 0) {
-          setCustomLists(
-            data.map((l: any) => ({
-              id: l.id,
-              title: l.title,
-              description: l.description || 'Özel Koleksiyon',
-              count: Array.isArray(l.media_ids) ? l.media_ids.length : 0,
-            }))
-          );
-        }
-      } catch (err) {
-        console.error('Failed to load user custom lists:', err);
-      }
-    }
-    loadUserLists();
-  }, [profileData?.id, isOwner]);
 
   // Custom List Creator
   const handleCreateList = async (e: React.FormEvent) => {
@@ -445,29 +526,25 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
   const isPrivate = Boolean(currentDisplayProfile?.is_private);
   const hideHistory = Boolean(currentDisplayProfile?.hide_watch_history);
 
+  // Active progress map (Local-first for owner, targetProgressMap for visitors)
+  const activeProgMap = isOwner && Object.keys(progressMap).length > 0 ? progressMap : targetProgressMap;
+  const progressItems = Object.values(activeProgMap);
+
   // Filtered watched media
   const filteredWatchedMedia = watchedMedia.filter((m) => {
     if (libraryFilter === 'ALL') return true;
-    return progressMap[m.id]?.status === libraryFilter;
+    return activeProgMap[m.id]?.status === libraryFilter;
   });
 
-  // Calculate statistics
-  const totalWatchedEpisodes = isOwner
-    ? Object.values(progressMap).reduce((acc, p) => acc + (p.watched_episodes?.length || 0), 0)
-    : currentDisplayProfile?.stats_episodes_watched || 0;
-
-  const totalScreenHours = isOwner
-    ? (totalWatchedEpisodes * 0.75).toFixed(1)
-    : ((currentDisplayProfile?.stats_total_minutes || 0) / 60).toFixed(1);
-
-  const totalCompleted = isOwner
-    ? Object.values(progressMap).filter((p) => p.status === 'completed').length
-    : currentDisplayProfile?.stats_series_completed || 0;
-
-  // Heatmap simulation data (6 months)
-  const heatmapWeeks = Array.from({ length: 26 }, () =>
-    Array.from({ length: 7 }, () => 0)
+  // Calculate live statistics (Derived strictly from real user_media_progress data)
+  const totalWatchedEpisodes = progressItems.reduce(
+    (acc, p) => acc + (p.watched_episodes?.length || 0),
+    0
   );
+
+  const totalScreenHours = (totalWatchedEpisodes * 0.75).toFixed(1);
+
+  const totalCompleted = progressItems.filter((p) => p.status === 'completed').length;
 
   // Country DNA Breakdown
   const countryBreakdown = useMemo(() => {
@@ -522,6 +599,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
     { id: 'overview', label: 'Genel Bakış & Drama DNA', icon: BarChart3 },
     { id: 'library', label: `Kütüphane (${watchedMedia.length})`, icon: Library },
     { id: 'lists', label: `Özel Listeler (${customLists.length})`, icon: FolderHeart },
+    { id: 'comments', label: `Yorumlar (${profileComments.length})`, icon: MessageSquare },
   ];
 
   if (isLoadingProfile) {
@@ -567,13 +645,52 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
   }
 
   return (
-    <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 space-y-8">
+    <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 space-y-8 relative">
+      {/* AMBIENT CINEMATIC BACKGROUND GLOW FROM BANNER (Not in a box, spreads soft atmospheric light) */}
+      {currentDisplayProfile?.banner_url && (
+        <div className="absolute -top-12 left-0 right-0 h-[540px] overflow-hidden pointer-events-none -z-10 select-none">
+          <div
+            className="w-full h-full bg-cover bg-center blur-[75px] opacity-40 scale-125 transform-gpu transition-all duration-700"
+            style={{
+              backgroundImage: `url(${getProxiedImageUrl(
+                currentDisplayProfile.banner_url,
+                currentDisplayProfile.username,
+                null,
+                'original',
+                'banner'
+              )})`,
+            }}
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#09090b]/75 to-[#09090b]" />
+        </div>
+      )}
+
       {/* PROFILE HERO BANNER */}
-      <div className="rounded-3xl overflow-hidden bg-[#0f0f11] border border-white/[0.08] shadow-2xl">
-        <div className="h-36 sm:h-52 bg-gradient-to-r from-[#101524] via-[#141b2d] to-[#0c101d] relative overflow-hidden">
-          <div className="absolute inset-0 cinema-vignette" />
-          <div className="absolute -top-16 -right-16 w-80 h-80 rounded-full bg-sky-500/10 blur-3xl pointer-events-none" />
-          <div className="absolute bottom-0 left-1/4 w-96 h-36 bg-blue-600/10 blur-2xl pointer-events-none" />
+      <div className="rounded-3xl overflow-hidden bg-[#0f0f11] border border-white/[0.08] shadow-2xl relative">
+        <div className="h-44 sm:h-64 relative overflow-hidden bg-gradient-to-r from-[#101524] via-[#141b2d] to-[#0c101d]">
+          {currentDisplayProfile?.banner_url ? (
+            <>
+              <img
+                src={getProxiedImageUrl(
+                  currentDisplayProfile.banner_url,
+                  currentDisplayProfile.username,
+                  null,
+                  'original',
+                  'banner'
+                )}
+                alt="Profil Kapak Görseli"
+                className="w-full h-full object-cover object-center scale-105 transform-gpu"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f11] via-[#0f0f11]/50 to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-r from-[#0f0f11]/70 via-transparent to-[#0f0f11]/70" />
+            </>
+          ) : (
+            <>
+              <div className="absolute inset-0 cinema-vignette" />
+              <div className="absolute -top-16 -right-16 w-80 h-80 rounded-full bg-sky-500/10 blur-3xl pointer-events-none" />
+              <div className="absolute bottom-0 left-1/4 w-96 h-36 bg-blue-600/10 blur-2xl pointer-events-none" />
+            </>
+          )}
         </div>
 
         <div className="px-6 sm:px-10 pb-8 -mt-12 relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -584,9 +701,14 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                 <img
                   src={getProxiedImageUrl(
                     currentDisplayProfile.avatar_url,
-                    currentDisplayProfile.display_name || currentDisplayProfile.username
+                    currentDisplayProfile.display_name || currentDisplayProfile.username,
+                    null,
+                    'w185',
+                    'person'
                   )}
                   alt={currentDisplayProfile.display_name || currentDisplayProfile.username}
+                  loading="eager"
+                  decoding="async"
                   className="w-full h-full object-cover"
                 />
               ) : (
@@ -638,41 +760,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            {isOwner ? (
-              <>
-                <Link
-                  href="/kutuphane"
-                  onClick={() => triggerSound('click')}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-full glass-pill text-xs font-semibold text-white hover:bg-white/15 cursor-pointer transition-all"
-                >
-                  <Library className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Kütüphanem</span>
-                </Link>
-                <Link
-                  href="/listelerim"
-                  onClick={() => triggerSound('click')}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-full glass-pill text-xs font-semibold text-white hover:bg-white/15 cursor-pointer transition-all"
-                >
-                  <FolderHeart className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Listelerim</span>
-                </Link>
-                <Link
-                  href="/ayarlar"
-                  onClick={() => triggerSound('click')}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-full glass-pill text-xs font-semibold text-white hover:bg-white/15 cursor-pointer transition-all"
-                >
-                  <Settings className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Ayarlar</span>
-                </Link>
-                <button
-                  onClick={() => logout()}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-400/30 text-xs font-semibold hover:bg-rose-500/30 cursor-pointer transition-all"
-                >
-                  <XCircle className="w-3.5 h-3.5" />
-                  <span>Çıkış Yap</span>
-                </button>
-              </>
-            ) : !user ? (
+            {isOwner ? null : !user ? (
               <button
                 onClick={() => setIsAuthModalOpen(true)}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 cursor-pointer shadow-lg transition-all"
@@ -886,7 +974,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                           className="flex items-center gap-2.5 p-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 transition-colors"
                         >
                           <img
-                            src={getProxiedImageUrl(p.image_url, p.name)}
+                            src={getProxiedImageUrl(p.image_url, p.name, null, 'w500', 'person')}
                             alt={p.name}
                             className="w-11 h-11 rounded-full object-cover shrink-0"
                           />
@@ -904,47 +992,6 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                   )}
                 </div>
               </div>
-
-              {/* 365-Day Watch Activity Heatmap (Electric Blue Style) */}
-              {hideHistory && !isOwner ? (
-                <div className="rounded-3xl bg-[#0f0f11] p-6 border border-white/[0.08] text-center text-xs text-white/50">
-                  Kullanıcı izleme aktivite haritasını gizli tutmaktadır.
-                </div>
-              ) : (
-                <div className="rounded-3xl bg-[#0f0f11] p-6 sm:p-8 border border-white/[0.08] space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base font-bold text-white flex items-center gap-2">
-                      <BarChart3 className="w-4 h-4 text-sky-400" />
-                      <span>Yıllık İzleme Aktivite Haritası (Son 6 Ay)</span>
-                    </h3>
-                    <span className="text-xs font-mono text-white/45">
-                      Günlük Bölüm Yoğunluğu
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-2 no-scrollbar">
-                    {heatmapWeeks.map((week, wIdx) => (
-                      <div key={wIdx} className="flex flex-col gap-1.5 shrink-0">
-                        {week.map((lvl, dIdx) => (
-                          <div
-                            key={dIdx}
-                            className={`w-3.5 h-3.5 rounded-sm transition-colors ${
-                              lvl === 0
-                                ? 'bg-white/[0.05]'
-                                : lvl === 1
-                                ? 'bg-sky-500/20'
-                                : lvl === 2
-                                ? 'bg-sky-500/40'
-                                : lvl === 3
-                                ? 'bg-sky-400/80 shadow-[0_0_6px_rgba(56,189,248,0.35)]'
-                                : 'bg-[#2997ff] shadow-[0_0_10px_rgba(41,151,255,0.7)]'
-                            }`}
-                          />
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </motion.div>
           )}
 
@@ -1007,9 +1054,9 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                         id: 'completed',
                         label: 'Tamamlandı',
                         icon: CheckCircle2,
-                        iconColor: 'text-[#2997ff]',
-                        activeClass: 'bg-[#2997ff] text-white font-bold shadow-[0_0_18px_rgba(41,151,255,0.45)]',
-                        inactiveClass: 'glass-pill text-blue-300/80 hover:text-blue-200 border-blue-500/20 hover:border-blue-500/40',
+                        iconColor: 'text-emerald-400',
+                        activeClass: 'bg-emerald-500 text-black font-bold shadow-[0_0_18px_rgba(16,185,129,0.45)]',
+                        inactiveClass: 'glass-pill text-emerald-300/80 hover:text-emerald-200 border-emerald-500/20 hover:border-emerald-500/40',
                       },
                       {
                         id: 'plan_to_watch',
@@ -1107,7 +1154,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                       Henüz izleme geçmişiniz bulunmuyor.
                     </p>
                     <p className="text-xs text-white/40 max-w-sm mx-auto">
-                      Dizilerin bölümlerini oynatmaya başladığınızda kaldığınız dakika ve saniye otomatik olarak burada listelenecektir.
+                      Dizilerin bölümlerini izledikçe ve işaretledikçe sıradaki bölümleriniz otomatik olarak burada listelenecektir.
                     </p>
                     <Link
                       href="/kesfet"
@@ -1120,15 +1167,11 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {continueWatchingList.map((item) => {
                       const media = item.media;
-                      const progressPct =
-                        item.resume_duration_sec > 0
-                          ? Math.min(
-                              100,
-                              Math.round(
-                                (item.resume_position_sec / item.resume_duration_sec) * 100
-                              )
-                            )
-                          : 0;
+                      const stats = getEpisodeProgressStats(item, media);
+                      const barPct = Math.max(
+                        stats.watchedCount > 0 ? 6 : 3,
+                        stats.progressPercent
+                      );
 
                       return (
                         <div
@@ -1156,26 +1199,24 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                                 {media?.title || `Yapım #${item.media_id}`}
                               </h4>
                               <div className="text-xs text-sky-400 font-mono mt-0.5">
-                                {item.last_season_num}. Sezon · {item.last_episode_num}. Bölüm
+                                Sıradaki: {stats.season}. Sezon · {stats.nextEpisode}. Bölüm
                               </div>
-                              {item.last_episode_title && (
-                                <p className="text-[11px] text-white/50 truncate mt-0.5">
-                                  {item.last_episode_title}
-                                </p>
-                              )}
+                              <p className="text-[11px] text-white/50 truncate mt-0.5">
+                                {stats.watchedCount} / {stats.totalEpisodes} Bölüm İzlendi
+                              </p>
                             </div>
 
                             <div className="space-y-2 mt-2">
-                              {/* Progress bar */}
+                              {/* Episode Progress bar */}
                               <div className="space-y-1">
                                 <div className="flex justify-between text-[10px] font-mono text-white/50">
-                                  <span>Kalan Süre</span>
-                                  <span>%{progressPct}</span>
+                                  <span>Bölüm İlerlemesi</span>
+                                  <span>%{stats.progressPercent}</span>
                                 </div>
                                 <div className="h-1 rounded-full bg-white/10 overflow-hidden">
                                   <div
                                     className="h-full bg-sky-400 rounded-full"
-                                    style={{ width: `${progressPct}%` }}
+                                    style={{ width: `${barPct}%` }}
                                   />
                                 </div>
                               </div>
@@ -1183,13 +1224,13 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                               <Link
                                 href={
                                   media?.slug
-                                    ? `/seri/${media.slug}/${item.last_episode_num}`
+                                    ? `/seri/${media.slug}/${stats.nextEpisode}?season=${stats.season}`
                                     : `/seri/${item.media_id}`
                                 }
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-[11px] font-semibold transition-all w-fit"
                               >
                                 <Play className="w-3 h-3 text-sky-400 fill-sky-400" />
-                                <span>Kaldığın Yerden Oynat</span>
+                                <span>{stats.nextEpisode}. Bölümden Devam Et</span>
                               </Link>
                             </div>
                           </div>
@@ -1250,14 +1291,14 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                     value={newListTitle}
                     onChange={(e) => setNewListTitle(e.target.value)}
                     placeholder="Örn: En İyi Wuxia & Fantastik Seçkim"
-                    className="w-full px-4 py-2.5 rounded-xl bg-black/50 border border-white/15 text-xs text-white focus:outline-none focus:border-sky-400/50"
+                    className="w-full px-4 py-2.5 rounded-full bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-all font-medium"
                   />
                   <textarea
                     value={newListDesc}
                     onChange={(e) => setNewListDesc(e.target.value)}
                     rows={3}
                     placeholder="Koleksiyon açıklaması..."
-                    className="w-full px-4 py-2.5 rounded-xl bg-black/50 border border-white/15 text-xs text-white focus:outline-none focus:border-sky-400/50"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-all resize-none font-medium"
                   />
                   <button
                     type="submit"
@@ -1273,34 +1314,181 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                   isOwner ? 'lg:col-span-8' : 'lg:col-span-12'
                 } grid grid-cols-1 sm:grid-cols-2 gap-4`}
               >
-                {customLists.map((lst) => (
-                  <Link
-                    key={lst.id}
-                    href={`/listeler/${lst.id}`}
-                    onClick={() => triggerSound('click')}
-                    className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-6 flex flex-col justify-between hover:border-sky-400/40 hover:bg-white/[0.03] transition-all group cursor-pointer"
-                  >
-                    <div>
-                      <span className="text-[10px] font-mono text-sky-400 uppercase tracking-wider font-semibold">
-                        Özel Koleksiyon
-                      </span>
-                      <h4 className="text-lg font-bold text-white mt-1 group-hover:text-sky-300 transition-colors">
-                        {lst.title}
-                      </h4>
-                      <p className="text-xs text-white/60 mt-1 line-clamp-2">
-                        {lst.description}
-                      </p>
-                    </div>
-                    <div className="mt-5 pt-3 border-t border-white/10 flex items-center justify-between text-xs font-mono text-white/50">
-                      <span>{lst.count} Yapım</span>
-                      <span className="text-sky-400 group-hover:translate-x-1 transition-transform inline-flex items-center gap-1 font-semibold">
-                        <span>İncele</span>
-                        <span>→</span>
-                      </span>
-                    </div>
-                  </Link>
-                ))}
+                {customLists.length === 0 ? (
+                  <div className="col-span-full rounded-3xl bg-[#0f0f11] p-12 text-center border border-white/[0.08] space-y-3">
+                    <FolderHeart className="w-8 h-8 text-white/20 mx-auto" />
+                    <p className="text-sm text-white/60">
+                      {isOwner
+                        ? 'Henüz bir özel liste oluşturmadınız. Sol taraftaki formdan hemen yeni bir koleksiyon başlatabilirsiniz.'
+                        : 'Bu kullanıcı henüz herkese açık bir özel liste oluşturmamış.'}
+                    </p>
+                  </div>
+                ) : (
+                  customLists.map((lst) => (
+                    <Link
+                      key={lst.id}
+                      href={`/listeler/${lst.id}`}
+                      onClick={() => triggerSound('click')}
+                      className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-6 flex flex-col justify-between hover:border-sky-400/40 hover:bg-white/[0.03] transition-all group cursor-pointer"
+                    >
+                      <div>
+                        <span className="text-[10px] font-mono text-sky-400 uppercase tracking-wider font-semibold">
+                          Özel Koleksiyon
+                        </span>
+                        <h4 className="text-lg font-bold text-white mt-1 group-hover:text-sky-300 transition-colors">
+                          {lst.title}
+                        </h4>
+                        <p className="text-xs text-white/60 mt-1 line-clamp-2">
+                          {lst.description}
+                        </p>
+                      </div>
+                      <div className="mt-5 pt-3 border-t border-white/10 flex items-center justify-between text-xs font-mono text-white/50">
+                        <span>{lst.count} Yapım</span>
+                        <span className="text-sky-400 group-hover:translate-x-1 transition-transform inline-flex items-center gap-1 font-semibold">
+                          <span>İncele</span>
+                          <span>→</span>
+                        </span>
+                      </div>
+                    </Link>
+                  ))
+                )}
               </div>
+            </motion.div>
+          )}
+
+          {/* TAB 5: USER COMMENTS & REVIEWS */}
+          {activeTab === 'comments' && (
+            <motion.div
+              key="comments"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              className="space-y-4"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-sky-400" />
+                    <span>Paylaşılan Yorumlar ({profileComments.length})</span>
+                  </h3>
+                  <p className="text-xs text-white/50 mt-0.5">
+                    Kullanıcının dizi, film, anime ve bölümlere yazdığı en son değerlendirmeler.
+                  </p>
+                </div>
+              </div>
+
+              {profileComments.length === 0 ? (
+                <div className="rounded-3xl bg-[#0f0f11] p-12 text-center border border-white/[0.08] space-y-3">
+                  <MessageSquare className="w-8 h-8 text-white/20 mx-auto" />
+                  <p className="text-sm text-white/60">
+                    Bu kullanıcı henüz bir yorum veya değerlendirme paylaşmamış.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4">
+                  {profileComments.map((comment) => {
+                    const isSpoiler = Boolean(comment.has_spoiler);
+                    const isRevealed = revealedSpoilers[comment.id];
+                    const media = comment.media;
+                    const isEpisode = Boolean(comment.season_number && comment.episode_number);
+
+                    const targetLink = media?.slug
+                      ? isEpisode
+                        ? `/seri/${media.slug}/${comment.episode_number}?season=${comment.season_number}`
+                        : `/${media.content_type === 'film' ? 'film' : 'seri'}/${media.slug}`
+                      : '#';
+
+                    return (
+                      <div
+                        key={comment.id}
+                        className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-5 sm:p-6 space-y-3.5 hover:border-white/20 transition-all"
+                      >
+                        {/* Target Media Header */}
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <Link
+                            href={targetLink}
+                            className="flex items-center gap-3 group/link min-w-0"
+                          >
+                            {media?.cover_image && (
+                              <img
+                                src={getProxiedImageUrl(media.cover_image, media.title, null, 'w185', 'poster')}
+                                alt={media.title || 'Kapak'}
+                                className="w-9 h-12 rounded-lg object-cover border border-white/10 shrink-0 group-hover/link:scale-105 transition-transform"
+                              />
+                            )}
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-white group-hover/link:text-sky-300 transition-colors truncate">
+                                {media?.title || 'Yapım'}
+                              </div>
+                              <div className="flex items-center gap-2 text-[10px] font-mono text-white/45 mt-0.5 flex-wrap">
+                                {isEpisode ? (
+                                  <span className="text-sky-400 bg-sky-400/10 px-2 py-0.5 rounded-full border border-sky-400/20">
+                                    {comment.season_number}. Sezon {comment.episode_number}. Bölüm
+                                  </span>
+                                ) : (
+                                  <span className="text-white/60 bg-white/5 px-2 py-0.5 rounded-full border border-white/10">
+                                    Genel İnceleme
+                                  </span>
+                                )}
+                                <span>•</span>
+                                <span>
+                                  {comment.created_at
+                                    ? new Date(comment.created_at).toLocaleDateString('tr-TR', {
+                                        day: 'numeric',
+                                        month: 'long',
+                                        year: 'numeric',
+                                      })
+                                    : 'Geçmiş'}
+                                </span>
+                              </div>
+                            </div>
+                          </Link>
+
+                          {/* Likes count */}
+                          <div className="flex items-center gap-3 text-xs font-mono text-white/50 shrink-0">
+                            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.03] border border-white/10">
+                              <Heart className="w-3.5 h-3.5 text-rose-400 fill-rose-400/30" />
+                              <span>{comment.likes_count || 0}</span>
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Comment Body with Spoiler Protection */}
+                        {isSpoiler && !isRevealed ? (
+                          <div
+                            onClick={() =>
+                              setRevealedSpoilers((prev) => ({ ...prev, [comment.id]: true }))
+                            }
+                            className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 cursor-pointer hover:bg-amber-500/15 transition-all flex items-center justify-between gap-3"
+                          >
+                            <div className="flex items-center gap-2.5 text-xs text-amber-300 font-semibold">
+                              <EyeOff className="w-4 h-4 text-amber-400 shrink-0" />
+                              <span>Bu yorum sürprizbozan (spoiler) içerir. Görmek için tıklayın.</span>
+                            </div>
+                            <span className="text-[10px] font-mono text-amber-400 underline shrink-0">
+                              Göster
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="text-xs sm:text-sm text-white/80 leading-relaxed break-words bg-black/20 p-4 rounded-2xl border border-white/[0.04]">
+                            <div
+                              dangerouslySetInnerHTML={{ __html: comment.content_html }}
+                              className="prose prose-invert prose-xs max-w-none [&_p]:m-0"
+                            />
+                            {isSpoiler && (
+                              <div className="mt-2 text-[10px] font-mono text-amber-400/70 flex items-center gap-1">
+                                <Eye className="w-3 h-3" />
+                                <span>Spoiler içeriği gösterildi</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

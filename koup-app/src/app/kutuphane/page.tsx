@@ -20,16 +20,56 @@ import {
   Layers,
   BarChart2,
   ChevronRight,
+  ChevronDown,
+  Trash2,
+  X,
 } from 'lucide-react';
 import { useKoUp } from '@/context/KoUpContext';
-import { supabase, MediaItem } from '@/lib/supabase';
+import { supabase, MediaItem, cleanMediaTitle } from '@/lib/supabase';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
+import CustomSelect, { SelectOption } from '@/components/CustomSelect';
+
+const CARD_STATUS_OPTIONS: SelectOption[] = [
+  {
+    value: 'watching',
+    label: 'İzleniyor',
+    icon: <Clock className="w-3.5 h-3.5 text-sky-400" />,
+  },
+  {
+    value: 'completed',
+    label: 'Tamamlandı',
+    icon: <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />,
+  },
+  {
+    value: 'plan_to_watch',
+    label: 'Planlanan',
+    icon: <Bookmark className="w-3.5 h-3.5 text-amber-400" />,
+  },
+  {
+    value: 'on_hold',
+    label: 'Beklemede',
+    icon: <PauseCircle className="w-3.5 h-3.5 text-purple-400" />,
+  },
+  {
+    value: 'dropped',
+    label: 'Bıraktım',
+    icon: <XCircle className="w-3.5 h-3.5 text-rose-400" />,
+  },
+];
 
 type LibraryStatus = 'ALL' | 'watching' | 'completed' | 'plan_to_watch' | 'on_hold' | 'dropped';
 type ContentTypeFilter = 'ALL' | 'drama' | 'anime' | 'movie';
 
 export default function KutuphanePage() {
-  const { user, progressMap, setIsAuthModalOpen, triggerSound } = useKoUp();
+  const {
+    user,
+    progressMap,
+    setIsAuthModalOpen,
+    triggerSound,
+    setLibraryStatus,
+    removeFromLibrary,
+    confirmDialog,
+  } = useKoUp();
 
   const [activeStatus, setActiveStatus] = useState<LibraryStatus>('ALL');
   const [activeType, setActiveType] = useState<ContentTypeFilter>('ALL');
@@ -128,7 +168,7 @@ export default function KutuphanePage() {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchTitle = (item.title || '').toLowerCase().includes(q);
-        const matchOriginal = (item.original_title || '').toLowerCase().includes(q);
+        const matchOriginal = ((item as any).original_title || item.native_title || '').toLowerCase().includes(q);
         if (!matchTitle && !matchOriginal) return false;
       }
 
@@ -202,7 +242,7 @@ export default function KutuphanePage() {
         {[
           { id: 'ALL' as const, label: 'Toplam Yapım', count: statusCounts.ALL, icon: Sparkles, color: 'text-white', border: 'border-white/15' },
           { id: 'watching' as const, label: 'İzleniyor', count: statusCounts.watching, icon: Clock, color: 'text-sky-400', border: 'border-sky-500/30' },
-          { id: 'completed' as const, label: 'Tamamlandı', count: statusCounts.completed, icon: CheckCircle2, color: 'text-[#2997ff]', border: 'border-blue-500/30' },
+          { id: 'completed' as const, label: 'Tamamlandı', count: statusCounts.completed, icon: CheckCircle2, color: 'text-emerald-400', border: 'border-emerald-500/30' },
           { id: 'plan_to_watch' as const, label: 'Planlanan', count: statusCounts.plan_to_watch, icon: Bookmark, color: 'text-amber-400', border: 'border-amber-500/30' },
           { id: 'on_hold' as const, label: 'Beklemede', count: statusCounts.on_hold, icon: PauseCircle, color: 'text-purple-400', border: 'border-purple-500/30' },
           { id: 'dropped' as const, label: 'Bıraktım', count: statusCounts.dropped, icon: XCircle, color: 'text-rose-400', border: 'border-rose-500/30' },
@@ -245,59 +285,90 @@ export default function KutuphanePage() {
             { id: 'plan_to_watch' as const, label: 'Planlanan' },
             { id: 'on_hold' as const, label: 'Beklemede' },
             { id: 'dropped' as const, label: 'Bıraktım' },
-          ].map((st) => (
-            <button
-              key={st.id}
-              onClick={() => {
-                triggerSound('click');
-                setActiveStatus(st.id);
-              }}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer shrink-0 ${
-                activeStatus === st.id
-                  ? 'bg-white text-black shadow-md'
-                  : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              {st.label}
-            </button>
-          ))}
+          ].map((st) => {
+            const active = activeStatus === st.id;
+            return (
+              <button
+                key={st.id}
+                onClick={() => {
+                  triggerSound('click');
+                  setActiveStatus(st.id);
+                }}
+                className={`relative px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors duration-200 cursor-pointer shrink-0 ${
+                  active
+                    ? 'text-black'
+                    : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="kutuphane-status-active-pill"
+                    initial={false}
+                    transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
+                    className="absolute inset-0 rounded-full bg-white shadow-md"
+                  />
+                )}
+                <span className="relative z-10">{st.label}</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Content Type Filter & Search Input */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-          <div className="flex items-center gap-1.5 p-1 rounded-full bg-white/[0.05] border border-white/10 shrink-0">
+          <div className="flex items-center gap-1 p-1 rounded-full glass-pill-dark border border-white/12 shrink-0">
             {[
               { id: 'ALL' as const, label: 'Hepsi' },
               { id: 'drama' as const, label: 'Dizi' },
               { id: 'anime' as const, label: 'Anime' },
               { id: 'movie' as const, label: 'Film' },
-            ].map((tp) => (
-              <button
-                key={tp.id}
-                onClick={() => {
-                  triggerSound('click');
-                  setActiveType(tp.id);
-                }}
-                className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer ${
-                  activeType === tp.id
-                    ? 'bg-sky-500 text-black font-bold'
-                    : 'text-white/60 hover:text-white'
-                }`}
-              >
-                {tp.label}
-              </button>
-            ))}
+            ].map((tp) => {
+              const active = activeType === tp.id;
+              return (
+                <button
+                  key={tp.id}
+                  onClick={() => {
+                    triggerSound('click');
+                    setActiveType(tp.id);
+                  }}
+                  className={`relative px-3 py-1 rounded-full text-[11px] font-semibold transition-colors duration-200 cursor-pointer ${
+                    active
+                      ? 'text-white'
+                      : 'text-white/60 hover:text-white'
+                  }`}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="kutuphane-type-active-pill"
+                      initial={false}
+                      transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
+                      className="absolute inset-0 rounded-full bg-sky-500 shadow-[0_0_12px_rgba(14,165,233,0.45)]"
+                    />
+                  )}
+                  <span className="relative z-10 font-bold">{tp.label}</span>
+                </button>
+              );
+            })}
           </div>
 
-          <div className="relative min-w-[200px]">
-            <Search className="w-3.5 h-3.5 text-white/40 absolute left-3 top-1/2 -translate-y-1/2" />
+          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] min-w-[200px]">
+            <Search className="w-3.5 h-3.5 text-white/60 shrink-0" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Kütüphanede ara..."
-              className="w-full pl-8 pr-3 py-1.5 rounded-full bg-black/60 border border-white/15 text-xs text-white placeholder-white/40 focus:outline-none focus:border-sky-400"
+              className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full font-medium"
             />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="text-white/40 hover:text-white transition-colors cursor-pointer"
+                aria-label="Aramayı temizle"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -338,9 +409,81 @@ export default function KutuphanePage() {
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
-          {filteredMedia.map((m) => (
-            <AccordionMediaCard key={m.id} item={m} fluidWidth={true} />
-          ))}
+          {filteredMedia.map((m) => {
+            const prog = progressMap[m.id];
+            const currentStatus = prog?.status || 'watching';
+            const watchedCount = prog?.watched_episodes?.length || 0;
+            const totalEps = m.episode_count || 0;
+
+            return (
+              <div
+                key={m.id}
+                className="group relative flex flex-col rounded-2xl bg-[#0f0f12] border border-white/10 hover:border-white/25 overflow-hidden transition-all shadow-lg hover:shadow-2xl"
+              >
+                {/* Poster & Direct Play */}
+                <div className="relative aspect-[2/3] w-full overflow-hidden bg-black/60">
+                  <AccordionMediaCard item={m} fluidWidth={true} />
+                </div>
+
+                {/* Library Management Strip */}
+                <div className="p-2.5 bg-[#0a0a0d] border-t border-white/[0.08] flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between gap-1.5">
+                    {/* Status Dropdown */}
+                    <div className="flex-1 min-w-0">
+                      <CustomSelect
+                        value={currentStatus}
+                        onChange={(val) => {
+                          triggerSound?.('click');
+                          setLibraryStatus(m, val as any);
+                        }}
+                        options={CARD_STATUS_OPTIONS}
+                        variant="glass"
+                        size="sm"
+                        portal={true}
+                        searchable={false}
+                        direction="auto"
+                        className="w-full"
+                        triggerClassName="!py-1.5 !px-2.5 !rounded-xl !text-[11px] font-semibold w-full justify-between !bg-white/[0.06] hover:!bg-white/10 !border-white/10"
+                      />
+                    </div>
+
+                    {/* Quick Remove from Library Button */}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        triggerSound?.('click');
+                        const confirmed = await confirmDialog({
+                          title: 'Kütüphaneden Kaldır',
+                          message: `"${cleanMediaTitle(m.title)}" serisini kütüphanenizden ve izleme geçmişinizden kaldırmak istediğinize emin misiniz?`,
+                          confirmText: 'Kaldır',
+                          cancelText: 'Vazgeç',
+                          isDestructive: true,
+                          icon: 'trash',
+                        });
+                        if (confirmed) {
+                          await removeFromLibrary(m.id);
+                        }
+                      }}
+                      className="p-2 rounded-xl bg-white/[0.05] hover:bg-rose-500/20 text-white/40 hover:text-rose-300 border border-white/10 hover:border-rose-400/30 transition-all cursor-pointer shrink-0"
+                      aria-label="Kütüphaneden Kaldır"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Watched Episode Indicator */}
+                  {totalEps > 0 && (
+                    <div className="flex items-center justify-between text-[10px] font-mono text-white/50 px-0.5">
+                      <span>İlerleme:</span>
+                      <span className="font-bold text-white/80">
+                        {watchedCount} / {totalEps} Bölüm
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

@@ -80,6 +80,7 @@ export function transformWpPost(p: any): MagazinePost {
     content_html: contentHtml,
     featured_image: featuredImage,
     author_name: authorName,
+    source_site: 'AsyaMag',
     categories,
     tags: [],
     is_gossip: isGossip,

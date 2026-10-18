@@ -8,17 +8,140 @@ import {
   Tv,
   UserCheck,
   MessageSquare,
-  Sparkles,
   CheckCheck,
   Trash2,
   Check,
   RotateCcw,
   ChevronRight,
   ArrowRight,
+  AlertTriangle,
 } from 'lucide-react';
 import { useKoUp, ToastNotification } from '@/context/KoUpContext';
+import { getProxiedImageUrl } from '@/lib/supabase';
 
-type CategoryFilter = 'all' | 'episode' | 'actor' | 'reply' | 'info';
+type CategoryFilter = 'all' | 'episode' | 'actor' | 'reply' | 'system';
+
+interface NotificationThumbnailProps {
+  notification: ToastNotification;
+  meta: {
+    label: string;
+    badgeColor: string;
+    iconBg: string;
+    glow: string;
+    Icon: any;
+  };
+}
+
+function NotificationThumbnail({ notification, meta }: NotificationThumbnailProps) {
+  const [imageError, setImageError] = useState(false);
+  const IconComp = meta.Icon;
+  const link = notification.linkUrl || (notification as any).link_url;
+
+  // Determine thumbnail source:
+  let rawImg: string | null = notification.imageUrl || (notification as any).image_url || null;
+
+  if (!rawImg) {
+    if (notification.type === 'episode' || (link && link.startsWith('/seri/'))) {
+      const title = notification.title.includes('•')
+        ? notification.title.split('•')[0].trim()
+        : notification.title.trim();
+      if (title) {
+        rawImg = getProxiedImageUrl(null, title, null, 'w185', 'media');
+      }
+    } else if (notification.type === 'actor' || (link && link.startsWith('/oyuncu/'))) {
+      const name = notification.title.includes('•')
+        ? notification.title.split('•')[0].trim()
+        : notification.title.trim();
+      if (name) {
+        rawImg = getProxiedImageUrl(null, name, null, 'w185', 'person');
+      }
+    }
+  } else {
+    rawImg = getProxiedImageUrl(
+      rawImg,
+      notification.title,
+      null,
+      'w185',
+      notification.type === 'actor' ? 'person' : 'media'
+    );
+  }
+
+  if (imageError || !rawImg) {
+    return (
+      <div
+        className={`w-12 h-12 rounded-2xl border flex items-center justify-center shrink-0 mt-0.5 transition-transform group-hover:scale-105 ${meta.iconBg} ${meta.glow}`}
+      >
+        <IconComp className="w-6 h-6" />
+      </div>
+    );
+  }
+
+  // Episode Notification: Sleek 2:3 Vertical Cinema Poster Thumbnail with TV Badge
+  if (notification.type === 'episode') {
+    return (
+      <div className="relative w-12 sm:w-14 aspect-[2/3] rounded-xl overflow-hidden border border-white/20 bg-[#121216] shrink-0 shadow-lg group-hover:scale-105 group-hover:border-amber-400/50 transition-all">
+        <img
+          src={rawImg}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onError={() => setImageError(true)}
+          className="w-full h-full object-cover"
+        />
+        <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-amber-400 text-black shadow-md border-2 border-[#0f0f12]">
+          <Tv className="w-2.5 h-2.5" />
+        </div>
+      </div>
+    );
+  }
+
+  // Actor Notification: Sleek Circular Actor Portrait with UserCheck Badge
+  if (notification.type === 'actor') {
+    return (
+      <div className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden border border-white/20 bg-[#121216] shrink-0 shadow-lg group-hover:scale-105 group-hover:border-emerald-400/50 transition-all">
+        <img
+          src={rawImg}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onError={() => setImageError(true)}
+          className="w-full h-full object-cover"
+        />
+        <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-emerald-500 text-black shadow-md border-2 border-[#0f0f12]">
+          <UserCheck className="w-2.5 h-2.5" />
+        </div>
+      </div>
+    );
+  }
+
+  // Comment Reply Notification: Sleek Circular Replier Avatar with MessageSquare Badge
+  if (notification.type === 'reply') {
+    return (
+      <div className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden border border-white/20 bg-[#121216] shrink-0 shadow-lg group-hover:scale-105 group-hover:border-sky-400/50 transition-all">
+        <img
+          src={rawImg}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onError={() => setImageError(true)}
+          className="w-full h-full object-cover"
+        />
+        <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-sky-400 text-black shadow-md border-2 border-[#0f0f12]">
+          <MessageSquare className="w-2.5 h-2.5" />
+        </div>
+      </div>
+    );
+  }
+
+  // Default Fallback
+  return (
+    <div
+      className={`w-12 h-12 rounded-2xl border flex items-center justify-center shrink-0 mt-0.5 transition-transform group-hover:scale-105 ${meta.iconBg} ${meta.glow}`}
+    >
+      <IconComp className="w-6 h-6" />
+    </div>
+  );
+}
 
 function formatNotificationDate(dateStr?: string): string {
   if (!dateStr) return 'Şimdi';
@@ -47,6 +170,7 @@ export default function NotificationsPage() {
     markAllNotificationsRead,
     deleteNotification,
     clearAllNotifications,
+    confirmDialog,
   } = useKoUp();
 
   const [selectedFilter, setSelectedFilter] = useState<CategoryFilter>('all');
@@ -62,8 +186,8 @@ export default function NotificationsPage() {
 
       // Category filter
       if (selectedFilter !== 'all') {
-        if (selectedFilter === 'info') {
-          if (n.type !== 'info' && n.type !== 'success') return false;
+        if (selectedFilter === 'system') {
+          if (n.type !== 'system' && n.type !== 'info' && n.type !== 'success') return false;
         } else if (n.type !== selectedFilter) {
           return false;
         }
@@ -84,7 +208,7 @@ export default function NotificationsPage() {
       episode: unique.filter((n) => n.type === 'episode').length,
       actor: unique.filter((n) => n.type === 'actor').length,
       reply: unique.filter((n) => n.type === 'reply').length,
-      info: unique.filter((n) => n.type === 'info' || n.type === 'success' || n.type === 'system').length,
+      system: unique.filter((n) => n.type === 'system' || n.type === 'info' || n.type === 'success').length,
     };
   }, [notifications]);
 
@@ -93,17 +217,17 @@ export default function NotificationsPage() {
       case 'episode':
         return {
           label: 'Bölüm Bildirimi',
-          badgeColor: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
-          iconBg: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400',
-          glow: 'shadow-[0_0_20px_rgba(16,185,129,0.15)]',
+          badgeColor: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+          iconBg: 'bg-amber-500/15 border-amber-500/30 text-amber-400',
+          glow: 'shadow-[0_0_20px_rgba(245,158,11,0.15)]',
           Icon: Tv,
         };
       case 'actor':
         return {
           label: 'Takip & Oyuncu',
-          badgeColor: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
-          iconBg: 'bg-amber-500/15 border-amber-500/30 text-amber-400',
-          glow: 'shadow-[0_0_20px_rgba(245,158,11,0.15)]',
+          badgeColor: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
+          iconBg: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400',
+          glow: 'shadow-[0_0_20px_rgba(16,185,129,0.15)]',
           Icon: UserCheck,
         };
       case 'reply':
@@ -114,15 +238,16 @@ export default function NotificationsPage() {
           glow: 'shadow-[0_0_20px_rgba(14,165,233,0.15)]',
           Icon: MessageSquare,
         };
-      case 'success':
+      case 'system':
       case 'info':
+      case 'success':
       default:
         return {
-          label: 'Sistem & Duyuru',
-          badgeColor: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
-          iconBg: 'bg-purple-500/15 border-purple-500/30 text-purple-400',
-          glow: 'shadow-[0_0_20px_rgba(168,85,247,0.15)]',
-          Icon: Sparkles,
+          label: 'Sistem & Moderasyon',
+          badgeColor: 'text-rose-400 bg-rose-500/10 border-rose-500/20',
+          iconBg: 'bg-rose-500/15 border-rose-500/30 text-rose-400',
+          glow: 'shadow-[0_0_20px_rgba(244,63,94,0.15)]',
+          Icon: AlertTriangle,
         };
     }
   };
@@ -200,8 +325,7 @@ export default function NotificationsPage() {
               Bildirimler
             </h1>
             <p className="text-sm sm:text-base text-white/60 mt-2 font-light max-w-2xl leading-relaxed">
-              Takip ettiğin Asya dizileri, favori oyuncuların yeni projeleri ve yorumlarına gelen
-              etkileşimlerin tümü burada listelenir.
+              Takip ettiğin Asya dizilerinin yeni bölümleri, favori oyuncularının yeni projeleri ve yorumlarına gelen yanıtların tümü burada listelenir.
             </p>
           </div>
 
@@ -219,13 +343,21 @@ export default function NotificationsPage() {
 
             {notifications.length > 0 && (
               <button
-                onClick={() => {
-                  if (confirm('Tüm bildirimleri silmek istediğinize emin misiniz?')) {
+                onClick={async () => {
+                  const confirmed = await confirmDialog({
+                    title: 'Tüm Bildirimleri Temizle',
+                    message: 'Tüm bildirim geçmişinizi kalıcı olarak silmek istediğinize emin misiniz?',
+                    confirmText: 'Tümünü Temizle',
+                    cancelText: 'Vazgeç',
+                    isDestructive: true,
+                    icon: 'trash',
+                  });
+                  if (confirmed) {
                     clearAllNotifications();
                   }
                 }}
                 className="px-3.5 py-2.5 rounded-2xl bg-white/[0.04] hover:bg-red-500/20 hover:text-red-300 text-white/60 text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer border border-white/[0.06] hover:border-red-500/30 active:scale-95"
-                title="Tüm Bildirimleri Temizle"
+                aria-label="Tüm Bildirimleri Temizle"
               >
                 <Trash2 className="w-4 h-4" />
                 <span className="hidden sm:inline">Temizle</span>
@@ -260,7 +392,7 @@ export default function NotificationsPage() {
               onClick={() => setSelectedFilter('episode')}
               className={`px-4 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-2 ${
                 selectedFilter === 'episode'
-                  ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-500/20'
+                  ? 'bg-amber-400 text-black shadow-lg shadow-amber-400/20'
                   : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
               }`}
             >
@@ -271,7 +403,7 @@ export default function NotificationsPage() {
                   className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
                     selectedFilter === 'episode'
                       ? 'bg-black/20 text-black'
-                      : 'bg-emerald-500/20 text-emerald-300'
+                      : 'bg-amber-500/20 text-amber-300'
                   }`}
                 >
                   {counts.episode}
@@ -283,7 +415,7 @@ export default function NotificationsPage() {
               onClick={() => setSelectedFilter('actor')}
               className={`px-4 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-2 ${
                 selectedFilter === 'actor'
-                  ? 'bg-amber-400 text-black shadow-lg shadow-amber-400/20'
+                  ? 'bg-emerald-500 text-black glow-emerald'
                   : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
               }`}
             >
@@ -294,7 +426,7 @@ export default function NotificationsPage() {
                   className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
                     selectedFilter === 'actor'
                       ? 'bg-black/20 text-black'
-                      : 'bg-amber-500/20 text-amber-300'
+                      : 'bg-emerald-500/20 text-emerald-300'
                   }`}
                 >
                   {counts.actor}
@@ -306,12 +438,12 @@ export default function NotificationsPage() {
               onClick={() => setSelectedFilter('reply')}
               className={`px-4 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-2 ${
                 selectedFilter === 'reply'
-                  ? 'bg-sky-400 text-black shadow-lg shadow-sky-400/20'
+                  ? 'bg-sky-400 text-black glow-sky'
                   : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
               }`}
             >
               <MessageSquare className="w-3.5 h-3.5" />
-              <span>Yorumlar</span>
+              <span>Yorum Yanıtları</span>
               {counts.reply > 0 && (
                 <span
                   className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
@@ -326,24 +458,24 @@ export default function NotificationsPage() {
             </button>
 
             <button
-              onClick={() => setSelectedFilter('info')}
+              onClick={() => setSelectedFilter('system')}
               className={`px-4 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-2 ${
-                selectedFilter === 'info'
-                  ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20'
+                selectedFilter === 'system'
+                  ? 'bg-rose-500 text-white glow-rose'
                   : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
               }`}
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Duyurular</span>
-              {counts.info > 0 && (
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>Sistem & Moderasyon</span>
+              {counts.system > 0 && (
                 <span
                   className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
-                    selectedFilter === 'info'
+                    selectedFilter === 'system'
                       ? 'bg-white/20 text-white'
-                      : 'bg-purple-500/20 text-purple-300'
+                      : 'bg-rose-500/20 text-rose-300'
                   }`}
                 >
-                  {counts.info}
+                  {counts.system}
                 </span>
               )}
             </button>
@@ -417,12 +549,8 @@ export default function NotificationsPage() {
                 >
                   {/* Left: Category Icon & Content */}
                   <div className="flex items-start gap-4 sm:gap-5 flex-1 min-w-0">
-                    {/* Visual Category Badge */}
-                    <div
-                      className={`w-12 h-12 rounded-2xl border flex items-center justify-center shrink-0 mt-0.5 transition-transform group-hover:scale-105 ${meta.iconBg} ${meta.glow}`}
-                    >
-                      <IconComp className="w-6 h-6" />
-                    </div>
+                    {/* Visual Thumbnail or Category Badge */}
+                    <NotificationThumbnail notification={n} meta={meta} />
 
                     {/* Content */}
                     <div className="flex-1 min-w-0 space-y-1.5">
@@ -480,7 +608,7 @@ export default function NotificationsPage() {
                           ? 'bg-white/10 hover:bg-emerald-500/20 text-white/70 hover:text-emerald-300 border-white/10 hover:border-emerald-500/30'
                           : 'bg-white/[0.04] hover:bg-white/10 text-white/40 hover:text-white border-white/[0.05]'
                       }`}
-                      title={isUnread ? 'Okundu İşaretle' : 'Okunmadı Olarak İşaretle'}
+                      aria-label={isUnread ? 'Okundu İşaretle' : 'Okunmadı Olarak İşaretle'}
                     >
                       {isUnread ? <Check className="w-4 h-4" /> : <RotateCcw className="w-4 h-4" />}
                     </button>
@@ -489,7 +617,7 @@ export default function NotificationsPage() {
                     <button
                       onClick={() => deleteNotification(n.id)}
                       className="p-2.5 rounded-xl bg-white/[0.04] hover:bg-red-500/20 text-white/40 hover:text-red-300 border border-white/[0.05] hover:border-red-500/30 text-xs font-medium transition-all cursor-pointer"
-                      title="Bildirimi Sil"
+                      aria-label="Bildirimi Sil"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

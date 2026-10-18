@@ -182,12 +182,12 @@ export async function GET(req: NextRequest) {
 
     // 5. If successful, persist to Supabase `people` table in background for instant caching!
     if (turkishBio && cleanId) {
-      supabase
-        .from('people')
-        .update({ bio_tr: turkishBio })
-        .eq('id', cleanId)
-        .then(() => {})
-        .catch(() => {});
+      Promise.resolve(
+        supabase
+          .from('people')
+          .update({ bio_tr: turkishBio })
+          .eq('id', cleanId)
+      ).catch(() => {});
     }
 
     return NextResponse.json({

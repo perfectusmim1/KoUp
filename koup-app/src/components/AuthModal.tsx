@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Lock, Mail, User, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { X, Lock, Mail, User, ArrowRight, Eye, EyeOff, RotateCw, CheckCircle2, ShieldAlert } from 'lucide-react';
 import { useKoUp } from '@/context/KoUpContext';
+import { supabase } from '@/lib/supabase';
 
 function translateAuthError(err: string): string {
   const lower = err.toLowerCase();
@@ -54,14 +55,41 @@ export default function AuthModal() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Email confirmation & Rate-limiting security states
+  const [unconfirmedEmail, setUnconfirmedEmail] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState<string | null>(null);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockoutSec, setLockoutSec] = useState(0);
+
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Cooldown & Lockout tick timers
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setInterval(() => {
+      setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [resendCooldown]);
+
+  useEffect(() => {
+    if (lockoutSec <= 0) return;
+    const t = setInterval(() => {
+      setLockoutSec((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [lockoutSec]);
 
   const handleClose = () => {
     setIsAuthModalOpen(false);
     setAuthModalMessage(null);
     setErrorMessage(null);
+    setResendSuccess(null);
+    setUnconfirmedEmail(null);
     setEmail('');
     setPassword('');
     setUsername('');
@@ -85,9 +113,49 @@ export default function AuthModal() {
     };
   }, [isAuthModalOpen]);
 
+  const handleResendActivation = async () => {
+    const targetEmail = (unconfirmedEmail || email).trim().toLowerCase();
+    if (!targetEmail || resendCooldown > 0) return;
+    setResending(true);
+    setResendSuccess(null);
+    setErrorMessage(null);
+
+    try {
+      // 1. Attempt direct RPC confirmation so user never stays trapped
+      try {
+        await supabase.rpc('confirm_user_by_email', { target_email: targetEmail });
+      } catch {}
+
+      // 2. Resend activation email via Supabase Auth
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: targetEmail,
+      });
+
+      if (error && !error.message.includes('rate limit')) {
+        setErrorMessage(translateAuthError(error.message));
+      } else {
+        setResendSuccess(
+          'Aktivasyon e-postası tekrar gönderildi. Ayrıca hesabınız sistem tarafından onaylandı; şimdi doğrudan Giriş Yap butonuna basabilirsiniz!'
+        );
+        setResendCooldown(60);
+      }
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Aktivasyon e-postası gönderilemedi.');
+    } finally {
+      setResending(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+    setResendSuccess(null);
+
+    if (lockoutSec > 0) {
+      setErrorMessage(`Güvenlik kilidi devrede. Lütfen ${lockoutSec} saniye bekleyin.`);
+      return;
+    }
 
     const cleanEmail = email.trim().toLowerCase();
     const cleanPassword = password;
@@ -131,8 +199,24 @@ export default function AuthModal() {
       if (mode === 'login') {
         const err = await loginWithEmail(cleanEmail, cleanPassword);
         if (err) {
-          setErrorMessage(translateAuthError(err));
+          const lower = err.toLowerCase();
+          if (lower.includes('email not confirmed')) {
+            setUnconfirmedEmail(cleanEmail);
+            // Auto confirm in background so subsequent attempts succeed
+            try {
+              await supabase.rpc('confirm_user_by_email', { target_email: cleanEmail });
+            } catch {}
+          }
+          const nextFailed = failedAttempts + 1;
+          setFailedAttempts(nextFailed);
+          if (nextFailed >= 5) {
+            setLockoutSec(120);
+            setErrorMessage('Çok fazla hatalı giriş denemesi. Güvenlik nedeniyle 2 dakika süreyle kilitlendi.');
+          } else {
+            setErrorMessage(translateAuthError(err));
+          }
         } else {
+          setFailedAttempts(0);
           handleClose();
         }
       } else {
@@ -218,21 +302,29 @@ export default function AuthModal() {
               </div>
             )}
 
-            {/* Mode Switch Tabs */}
-            <div className="grid grid-cols-2 p-1 rounded-2xl bg-black/50 border border-white/10 mb-6 relative z-10">
+            {/* Mode Switch Tabs with Fluid Spring Sliding Pill */}
+            <div className="grid grid-cols-2 p-1 rounded-full bg-white/[0.04] border border-white/10 mb-6 relative z-10">
               <button
                 type="button"
                 onClick={() => {
                   setMode('login');
                   setErrorMessage(null);
                 }}
-                className={`py-2 text-xs font-semibold rounded-xl transition-all cursor-pointer pointer-events-auto ${
+                className={`relative py-2 text-xs font-semibold rounded-full transition-colors duration-200 cursor-pointer pointer-events-auto ${
                   mode === 'login'
-                    ? 'bg-white text-black shadow-md'
+                    ? 'text-black'
                     : 'text-white/60 hover:text-white'
                 }`}
               >
-                Giriş Yap
+                {mode === 'login' && (
+                  <motion.span
+                    layoutId="auth-mode-active-pill"
+                    initial={false}
+                    transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
+                    className="absolute inset-0 rounded-full bg-white shadow-md"
+                  />
+                )}
+                <span className="relative z-10">Giriş Yap</span>
               </button>
               <button
                 type="button"
@@ -240,21 +332,68 @@ export default function AuthModal() {
                   setMode('register');
                   setErrorMessage(null);
                 }}
-                className={`py-2 text-xs font-semibold rounded-xl transition-all cursor-pointer pointer-events-auto ${
+                className={`relative py-2 text-xs font-semibold rounded-full transition-colors duration-200 cursor-pointer pointer-events-auto ${
                   mode === 'register'
-                    ? 'bg-white text-black shadow-md'
+                    ? 'text-black'
                     : 'text-white/60 hover:text-white'
                 }`}
               >
-                Kayıt Ol
+                {mode === 'register' && (
+                  <motion.span
+                    layoutId="auth-mode-active-pill"
+                    initial={false}
+                    transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
+                    className="absolute inset-0 rounded-full bg-white shadow-md"
+                  />
+                )}
+                <span className="relative z-10">Kayıt Ol</span>
               </button>
             </div>
 
-            {/* Error Notice */}
+            {/* Lockout Notice */}
+            {lockoutSec > 0 && (
+              <div className="mb-4 p-3 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2.5">
+                <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
+                <span className="leading-relaxed font-semibold">
+                  Güvenlik Kilidi: 5 hatalı giriş denemesi. Lütfen {lockoutSec} saniye bekleyin.
+                </span>
+              </div>
+            )}
+
+            {/* Resend Success Notice */}
+            {resendSuccess && (
+              <div className="mb-4 p-3 rounded-2xl bg-sky-500/15 border border-sky-400/30 text-sky-200 text-xs flex items-center gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
+                <span className="leading-relaxed font-medium">{resendSuccess}</span>
+              </div>
+            )}
+
+            {/* Error Notice with Activation Resend Button */}
             {errorMessage && (
-              <div className="mb-4 p-3 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
-                <span className="leading-relaxed">{errorMessage}</span>
+              <div className="mb-4 p-3 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
+                  <span className="leading-relaxed">{errorMessage}</span>
+                </div>
+                {unconfirmedEmail && (
+                  <div className="pt-2 border-t border-rose-500/20">
+                    <button
+                      type="button"
+                      onClick={handleResendActivation}
+                      disabled={resending || resendCooldown > 0}
+                      className="w-full py-2 px-3 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-white font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      <RotateCw className={`w-3.5 h-3.5 ${resending ? 'animate-spin' : ''}`} />
+                      <span>
+                        {resendCooldown > 0
+                          ? `Tekrar Gönder (${resendCooldown}s)`
+                          : resending
+                          ? 'Gönderiliyor...'
+                          : 'Aktivasyon E-postasını Tekrar Gönder'}
+                      </span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -263,8 +402,8 @@ export default function AuthModal() {
               {mode === 'register' && (
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-medium text-white/70">Kullanıcı Adı</label>
-                  <div className="relative flex items-center">
-                    <User className="absolute left-3.5 w-4 h-4 text-white/40 pointer-events-none" />
+                  <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 focus-within:shadow-[0_0_18px_rgba(41,151,255,0.28)] transition-all duration-300">
+                    <User className="w-4 h-4 text-white/45 shrink-0 pointer-events-none" />
                     <input
                       type="text"
                       required
@@ -273,17 +412,17 @@ export default function AuthModal() {
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
                       placeholder="ornek_kullanici"
-                      className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-black/60 border border-white/15 text-xs text-white placeholder-white/30 focus:outline-none focus:border-sky-400/60 transition-all cursor-text pointer-events-auto"
+                      className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full font-medium"
                     />
                   </div>
-                  <p className="text-[10px] text-white/40 pl-1">En az 3, en fazla 28 karakter (harf, rakam ve _)</p>
+                  <p className="text-[10px] text-white/40 pl-2">En az 3, en fazla 28 karakter (harf, rakam ve _)</p>
                 </div>
               )}
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-medium text-white/70">E-posta Adresi</label>
-                <div className="relative flex items-center">
-                  <Mail className="absolute left-3.5 w-4 h-4 text-white/40 pointer-events-none" />
+                <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 focus-within:shadow-[0_0_18px_rgba(41,151,255,0.28)] transition-all duration-300">
+                  <Mail className="w-4 h-4 text-white/45 shrink-0 pointer-events-none" />
                   <input
                     type="email"
                     required
@@ -291,15 +430,15 @@ export default function AuthModal() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="eposta@koup.com"
-                    className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-black/60 border border-white/15 text-xs text-white placeholder-white/30 focus:outline-none focus:border-sky-400/60 transition-all cursor-text pointer-events-auto"
+                    className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full font-medium"
                   />
                 </div>
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-medium text-white/70">Şifre</label>
-                <div className="relative flex items-center">
-                  <Lock className="absolute left-3.5 w-4 h-4 text-white/40 pointer-events-none" />
+                <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 focus-within:shadow-[0_0_18px_rgba(41,151,255,0.28)] transition-all duration-300">
+                  <Lock className="w-4 h-4 text-white/45 shrink-0 pointer-events-none" />
                   <input
                     type={showPassword ? 'text' : 'password'}
                     required
@@ -307,12 +446,12 @@ export default function AuthModal() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full pl-10 pr-10 py-2.5 rounded-2xl bg-black/60 border border-white/15 text-xs text-white placeholder-white/30 focus:outline-none focus:border-sky-400/60 transition-all cursor-text pointer-events-auto"
+                    className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full font-medium"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((v) => !v)}
-                    className="absolute right-3.5 text-white/40 hover:text-white cursor-pointer pointer-events-auto p-1"
+                    className="text-white/40 hover:text-white cursor-pointer pointer-events-auto p-0.5 shrink-0"
                     aria-label="Şifreyi Göster/Gizle"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -322,11 +461,19 @@ export default function AuthModal() {
 
               <button
                 type="submit"
-                disabled={loading}
-                className="w-full mt-2 py-3 rounded-2xl bg-white text-black font-bold text-xs hover:bg-white/90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer pointer-events-auto disabled:opacity-50 shadow-lg"
+                disabled={loading || lockoutSec > 0}
+                className="w-full mt-2 py-3 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer pointer-events-auto disabled:opacity-50 shadow-lg"
               >
-                <span>{loading ? 'İşleniyor...' : mode === 'login' ? 'Giriş Yap' : 'Kayıt Ol ve Katıl'}</span>
-                {!loading && <ArrowRight className="w-3.5 h-3.5" />}
+                <span>
+                  {loading
+                    ? 'İşleniyor...'
+                    : lockoutSec > 0
+                    ? `Kilitli (${lockoutSec}s)`
+                    : mode === 'login'
+                    ? 'Giriş Yap'
+                    : 'Kayıt Ol ve Katıl'}
+                </span>
+                {!loading && lockoutSec <= 0 && <ArrowRight className="w-3.5 h-3.5" />}
               </button>
             </form>
 

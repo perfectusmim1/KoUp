@@ -30,7 +30,7 @@ async function writeConfig(config: MasterpiecesConfig): Promise<void> {
   await fs.writeFile(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
 }
 
-export function computeActiveMasterpieces(
+function computeActiveMasterpieces(
   config: MasterpiecesConfig,
   candidates: MediaItem[]
 ): MediaItem[] {

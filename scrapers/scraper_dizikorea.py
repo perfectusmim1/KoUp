@@ -183,10 +183,6 @@ def save_sources(conn, episode_id, ep_url, sources):
 
 async def run(limit=None, batch=20):
     init_db()
-    catalog = json.load(open('dk_catalog.json', encoding='utf-8'))
-    slugs = list(catalog.keys())
-    if limit:
-        slugs = slugs[:limit]
     conn = get_connection()
     conn.execute("PRAGMA busy_timeout=30000;")
     sem = asyncio.Semaphore(10)
@@ -194,6 +190,37 @@ async def run(limit=None, batch=20):
     new_dramas = matched = new_eps = matched_eps = new_src = 0
     t0 = time.time()
     async with aiohttp.ClientSession(connector=connector) as sess:
+        slugs = []
+        if os.path.exists('dk_catalog.json'):
+            try:
+                catalog = json.load(open('dk_catalog.json', encoding='utf-8'))
+                slugs = list(catalog.keys())
+            except Exception:
+                slugs = []
+
+        if not slugs:
+            print(f"DK: dk_catalog.json bulunamadı, {BASE}/diziler üzerinden katalog taranıyor...")
+            for p in range(1, 40):
+                u = f'{BASE}/diziler' if p == 1 else f'{BASE}/diziler/sayfa/{p}/'
+                html = await fetch(sess, u, sem)
+                if not html:
+                    break
+                soup = BeautifulSoup(html, 'html.parser')
+                n = 0
+                for a in soup.find_all('a', href=True):
+                    h = a['href'] or ''
+                    if re.match(r'(https://dizikorea3.com)?/dizi/[a-z0-9-]+/?$', h):
+                        slug = h.split('/dizi/')[1].strip('/')
+                        if slug and slug not in slugs:
+                            slugs.append(slug)
+                            n += 1
+                print(f'DK dizi sayfa {p}: +{n} (toplam {len(slugs)})')
+                if n == 0:
+                    break
+
+        if limit:
+            slugs = slugs[:limit]
+
         # Faz 1: drama sayfalari
         async def get_drama(slug):
             url = f'{BASE}/dizi/{slug}'

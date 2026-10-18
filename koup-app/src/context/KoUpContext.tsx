@@ -15,9 +15,30 @@ import {
   UserProfile,
   UserMediaProgress,
 } from '@/lib/supabase';
+import {
+  reconcileProgressMaps,
+  shouldSyncToSupabase,
+  syncProgressRecordToSupabase,
+  sanitizeProgressDbPayload,
+  setCachedAccessToken,
+  LastSyncSnapshot,
+  ProgressSyncOptions,
+  SIGNIFICANT_DELTA_SEC,
+} from '@/lib/progressSync';
 import { playNotificationChime, SoundTone } from '@/lib/sound';
 import { invalidateCache } from '@/lib/cache';
 import { getClientFingerprint } from '@/lib/fingerprint';
+import { registerOrHeartbeatDevice } from '@/lib/deviceTracker';
+import ConfirmModal from '@/components/ConfirmModal';
+
+export interface ConfirmDialogOptions {
+  title: string;
+  message: React.ReactNode;
+  confirmText?: string;
+  cancelText?: string;
+  isDestructive?: boolean;
+  icon?: 'trash' | 'alert' | 'help';
+}
 
 export interface ToastNotification {
   id: string;
@@ -25,11 +46,14 @@ export interface ToastNotification {
   body: string;
   type: 'episode' | 'actor' | 'reply' | 'system' | 'info' | 'success';
   linkUrl?: string;
+  imageUrl?: string;
   createdAt: string;
   isRead: boolean;
   mediaId?: number;
   personId?: number;
 }
+
+export type NavbarBehavior = 'floating' | 'sticky' | 'static';
 
 interface KoUpContextValue {
   user: UserProfile | null;
@@ -46,6 +70,15 @@ interface KoUpContextValue {
   soundEnabled: boolean;
   toggleSound: () => void;
   triggerSound: (kind?: string) => void;
+  isTrailerMuted: boolean;
+  toggleTrailerMuted: () => void;
+  setTrailerMuted: (muted: boolean) => void;
+  navbarBehavior: NavbarBehavior;
+  setNavbarBehavior: (mode: NavbarBehavior) => void;
+  floatingNavbarEnabled: boolean;
+  setFloatingNavbarEnabled: (v: boolean) => void;
+  autoCardTrailerEnabled: boolean;
+  setAutoCardTrailerEnabled: (v: boolean) => void;
   isSearchOpen: boolean;
   setIsSearchOpen: (v: boolean) => void;
   isAuthModalOpen: boolean;
@@ -73,14 +106,19 @@ interface KoUpContextValue {
     episodeTitle: string,
     positionSec: number,
     durationSec: number,
-    markCompletedEpisode?: boolean
+    markCompletedEpisode?: boolean,
+    options?: ProgressSyncOptions
   ) => void;
+  flushProgressSync: (mediaId?: number, options?: { keepalive?: boolean }) => void;
   toggleEpisodeWatched: (media: MediaItem, episodeNum: number, upToHere?: boolean) => void;
   setLibraryStatus: (
     media: MediaItem,
     status: UserMediaProgress['status'],
     score?: number
   ) => void;
+  setMediaScore: (media: MediaItem, score: number | null) => void;
+  removeFromLibrary: (mediaId: number) => Promise<void>;
+  refreshUserLibrary: () => Promise<void>;
   toggleMediaFavorite: (media: MediaItem) => void;
   toggleMediaFollow: (media: MediaItem) => void;
   togglePersonFavorite: (personId: number, personName?: string) => Promise<number>;
@@ -90,7 +128,7 @@ interface KoUpContextValue {
     body: string,
     type?: ToastNotification['type'],
     linkUrl?: string,
-    extra?: { mediaId?: number; personId?: number }
+    extra?: { mediaId?: number; personId?: number; imageUrl?: string }
   ) => void;
   markAllNotificationsRead: () => void;
   markNotificationsRead: () => void;
@@ -124,6 +162,7 @@ interface KoUpContextValue {
     username: string
   ) => Promise<string | null>;
   logout: () => Promise<void>;
+  confirmDialog: (options: ConfirmDialogOptions) => Promise<boolean>;
 }
 
 const DEFAULT_NOTIFICATION_SETTINGS = {
@@ -143,6 +182,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [progressMap, setProgressMap] = useState<Record<number, UserMediaProgress>>({});
+  const lastSyncedProgressRef = useRef<Record<number, LastSyncSnapshot>>({});
   const [favPersonIds, setFavPersonIds] = useState<number[]>([]);
   const [followedMediaIds, setFollowedMediaIds] = useState<number[]>([]);
   const [followedPersonIds, setFollowedPersonIds] = useState<number[]>([]);
@@ -165,6 +205,123 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     }>
   >([]);
   const [blockedByUserIds, setBlockedByUserIds] = useState<string[]>([]);
+
+  // Site-wide Persistent Trailer Mute State (remembers user sound choice across all cards & hero)
+  const [isTrailerMuted, setIsTrailerMutedState] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      const saved = localStorage.getItem('koup_trailer_muted');
+      if (saved !== null) {
+        return saved === 'true';
+      }
+    } catch {}
+    return true;
+  });
+
+  const setTrailerMuted = useCallback((muted: boolean) => {
+    setIsTrailerMutedState(muted);
+    try {
+      localStorage.setItem('koup_trailer_muted', String(muted));
+    } catch {}
+  }, []);
+
+  const toggleTrailerMuted = useCallback(() => {
+    setIsTrailerMutedState((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('koup_trailer_muted', String(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  // Persistent User Preferences: Navbar Behavior ('floating' | 'sticky' | 'static') & Hover Trailer Auto-Play
+  const [navbarBehavior, setNavbarBehaviorState] = useState<NavbarBehavior>('floating');
+
+  const setNavbarBehavior = useCallback((mode: NavbarBehavior) => {
+    setNavbarBehaviorState(mode);
+    try {
+      localStorage.setItem('koup_pref_navbar_behavior', mode);
+      localStorage.setItem('koup_pref_floating_navbar', String(mode === 'floating'));
+    } catch {}
+  }, []);
+
+  const floatingNavbarEnabled = navbarBehavior === 'floating';
+
+  const setFloatingNavbarEnabled = useCallback((enabled: boolean) => {
+    setNavbarBehavior(enabled ? 'floating' : 'sticky');
+  }, [setNavbarBehavior]);
+
+  const [autoCardTrailerEnabled, setAutoCardTrailerEnabledState] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      const saved = localStorage.getItem('koup_pref_auto_card_trailer');
+      if (saved !== null) {
+        return saved === 'true';
+      }
+    } catch {}
+    return true;
+  });
+
+  const setAutoCardTrailerEnabled = useCallback((enabled: boolean) => {
+    setAutoCardTrailerEnabledState(enabled);
+    try {
+      localStorage.setItem('koup_pref_auto_card_trailer', String(enabled));
+    } catch {}
+  }, []);
+
+  // Hydrate persistent preferences on client mount (avoids Next.js SSR hydration mismatch)
+  useEffect(() => {
+    try {
+      const savedMode = localStorage.getItem('koup_pref_navbar_behavior') as NavbarBehavior;
+      if (savedMode === 'floating' || savedMode === 'sticky' || savedMode === 'static') {
+        setNavbarBehaviorState(savedMode);
+      } else {
+        const legacy = localStorage.getItem('koup_pref_floating_navbar');
+        if (legacy === 'false') setNavbarBehaviorState('sticky');
+        else if (legacy === 'true') setNavbarBehaviorState('floating');
+      }
+
+      const savedTrailer = localStorage.getItem('koup_pref_auto_card_trailer');
+      if (savedTrailer !== null) {
+        setAutoCardTrailerEnabledState(savedTrailer === 'true');
+      }
+    } catch {}
+  }, []);
+
+  // Global Confirmation Dialog State
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean;
+    options: ConfirmDialogOptions;
+    resolve?: (val: boolean) => void;
+  }>({
+    isOpen: false,
+    options: { title: '', message: '' },
+  });
+
+  const confirmDialog = useCallback((options: ConfirmDialogOptions): Promise<boolean> => {
+    return new Promise((resolve) => {
+      setConfirmState({
+        isOpen: true,
+        options,
+        resolve,
+      });
+    });
+  }, []);
+
+  const handleConfirmClose = useCallback(() => {
+    setConfirmState((prev) => {
+      if (prev.resolve) prev.resolve(false);
+      return { ...prev, isOpen: false, resolve: undefined };
+    });
+  }, []);
+
+  const handleConfirmAccept = useCallback(() => {
+    setConfirmState((prev) => {
+      if (prev.resolve) prev.resolve(true);
+      return { ...prev, isOpen: false, resolve: undefined };
+    });
+  }, []);
 
   const openAuthModal = useCallback((message?: string) => {
     setAuthModalMessage(message || 'İşlem yapabilmek için lütfen giriş yapın.');
@@ -243,6 +400,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       // Fetch user notifications from Supabase if table exists (strictly for authenticated users)
       const activeUserId = profile?.id || userId;
       if (activeUserId) {
+        void registerOrHeartbeatDevice(activeUserId);
         void supabase
           .from('user_notifications')
           .select('*')
@@ -265,6 +423,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
                     body: row.body || '',
                     type: mappedType,
                     linkUrl: row.link_url || undefined,
+                    imageUrl: row.image_url || undefined,
                     createdAt: row.created_at
                       ? new Date(row.created_at).toLocaleDateString('tr-TR')
                       : 'Şimdi',
@@ -274,7 +433,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
                 .filter((n: ToastNotification) => {
                   const t = n.title.toLowerCase();
                   const b = n.body.toLowerCase();
-                  // Permanently reject dummy notifications & broadcast spam
+                  // Permanently reject dummy notifications, self-comment alerts, & broadcast spam
                   return !(
                     t.includes('reply 1988') ||
                     t.includes('yoo in na') ||
@@ -282,16 +441,36 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
                     t.includes('slider') ||
                     t.includes('hesap oluşturuldu') ||
                     t.includes('oturum kapatıldı') ||
+                    t.includes('yorumun yayınlandı') ||
+                    t.includes('yanıtınız gönderildi') ||
+                    t.includes('yanıtın gönderildi') ||
                     b.includes('reply 1988') ||
-                    b.includes('yoo in na')
+                    b.includes('yoo in na') ||
+                    b.includes('tartışmasına katkın kaydedildi') ||
+                    b.includes('yorumuna yanıtınız eklendi')
                   );
                 });
+
+              // Clean up any historical self-notifications from database
+              void supabase
+                .from('user_notifications')
+                .delete()
+                .eq('user_id', activeUserId)
+                .in('title', ['Yanıtınız Gönderildi', 'Yorumun Yayınlandı', 'Yanıtın Gönderildi']);
 
               setNotifications((prev) => {
                 const map = new Map<string, ToastNotification>();
                 formatted.forEach((n) => map.set(n.id, n));
                 prev.forEach((n) => {
-                  if (!map.has(n.id)) map.set(n.id, n);
+                  const t = n.title.toLowerCase();
+                  const b = n.body.toLowerCase();
+                  const isJunk =
+                    t.includes('yorumun yayınlandı') ||
+                    t.includes('yanıtınız gönderildi') ||
+                    t.includes('yanıtın gönderildi') ||
+                    b.includes('tartışmasına katkın kaydedildi') ||
+                    b.includes('yorumuna yanıtınız eklendi');
+                  if (!isJunk && !map.has(n.id)) map.set(n.id, n);
                 });
                 const merged = Array.from(map.values()).slice(0, 50);
                 try {
@@ -301,10 +480,151 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
               });
             }
           });
+
+        // Fetch authenticated user's person favorites fresh from Supabase
+        void supabase
+          .from('person_favorites')
+          .select('person_id')
+          .eq('user_id', activeUserId)
+          .then(({ data: dbFavs }) => {
+            if (dbFavs && Array.isArray(dbFavs)) {
+              const ids = dbFavs.map((r: any) => Number(r.person_id));
+              setFavPersonIds(ids);
+              try {
+                localStorage.setItem('koup_fav_people_v1', JSON.stringify(ids));
+              } catch {}
+            }
+          });
+
+        // Fetch authenticated user's media progress fresh from Supabase and reconcile with local-first storage
+        void supabase
+          .from('user_media_progress')
+          .select('*, media:media_id (*)')
+          .eq('user_id', activeUserId)
+          .then(({ data: dbProg }) => {
+            if (dbProg && Array.isArray(dbProg)) {
+              let localMap: Record<number, UserMediaProgress> = {};
+              try {
+                const raw = localStorage.getItem('koup_progress_v1');
+                if (raw) localMap = JSON.parse(raw) || {};
+              } catch {}
+
+              const { mergedMap, itemsToSyncToSupabase } = reconcileProgressMaps(
+                localMap,
+                dbProg,
+                activeUserId
+              );
+
+              setProgressMap(mergedMap);
+              try {
+                localStorage.setItem('koup_progress_v1', JSON.stringify(mergedMap));
+              } catch {}
+
+              // Update snapshot of current sync state
+              Object.values(mergedMap).forEach((item) => {
+                lastSyncedProgressRef.current[item.media_id] = {
+                  positionSec: item.resume_position_sec ?? 0,
+                  seasonNum: item.last_season_num ?? 1,
+                  episodeNum: item.last_episode_num ?? 1,
+                  status: item.status,
+                  watchedCount: (item.watched_episodes || []).length,
+                  syncedAt: Date.now(),
+                };
+              });
+
+              // If local had newer progress buffered, reconcile it back to Supabase
+              if (itemsToSyncToSupabase.length > 0) {
+                void syncProgressRecordToSupabase(itemsToSyncToSupabase);
+              }
+            }
+          });
+
+        // Fetch authenticated user's follows fresh from Supabase
+        void supabase
+          .from('user_follows')
+          .select('target_type, target_id')
+          .eq('user_id', activeUserId)
+          .then(({ data: dbFollows }) => {
+            if (dbFollows && Array.isArray(dbFollows)) {
+              const mIds: number[] = [];
+              const pIds: number[] = [];
+              dbFollows.forEach((row: any) => {
+                const numId = Number(row.target_id);
+                if (row.target_type === 'media') mIds.push(numId);
+                else if (row.target_type === 'person') pIds.push(numId);
+              });
+              setFollowedMediaIds(mIds);
+              setFollowedPersonIds(pIds);
+              try {
+                localStorage.setItem('koup_fol_media_v1', JSON.stringify(mIds));
+                localStorage.setItem('koup_fol_people_v1', JSON.stringify(pIds));
+              } catch {}
+            }
+          });
       }
     } catch (err) {
       console.error('Error syncing user profile:', err);
     }
+  }, []);
+
+  // Site-wide native tooltip suppression: prevents annoying native browser hover popup boxes across the app
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const sanitizeElement = (el: Element) => {
+      if (el.tagName === 'IFRAME') return;
+      const title = el.getAttribute('title');
+      if (title) {
+        if (!el.getAttribute('aria-label')) {
+          el.setAttribute('aria-label', title);
+        }
+        el.removeAttribute('title');
+      }
+    };
+
+    // Sanitize any existing elements on mount
+    try {
+      document.querySelectorAll('[title]:not(iframe)').forEach(sanitizeElement);
+    } catch {}
+
+    // MutationObserver guarantees dynamic / hydrated nodes lose title immediately
+    let observer: MutationObserver | null = null;
+    try {
+      observer = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+          if (m.type === 'attributes' && m.attributeName === 'title') {
+            if (m.target instanceof Element) sanitizeElement(m.target);
+          } else if (m.type === 'childList') {
+            m.addedNodes.forEach((node) => {
+              if (node instanceof Element) {
+                sanitizeElement(node);
+                node.querySelectorAll?.('[title]:not(iframe)').forEach(sanitizeElement);
+              }
+            });
+          }
+        }
+      });
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['title'],
+        childList: true,
+        subtree: true,
+      });
+    } catch {}
+
+    const handlePointer = (e: Event) => {
+      const target = (e.target as HTMLElement)?.closest?.('[title]');
+      if (target) sanitizeElement(target);
+    };
+
+    document.addEventListener('mouseover', handlePointer, { capture: true, passive: true });
+    document.addEventListener('pointerenter', handlePointer, { capture: true, passive: true });
+
+    return () => {
+      observer?.disconnect();
+      document.removeEventListener('mouseover', handlePointer, { capture: true });
+      document.removeEventListener('pointerenter', handlePointer, { capture: true });
+    };
   }, []);
 
   // Hydrate persisted state from localStorage & synchronize Supabase auth
@@ -312,28 +632,11 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     let isMounted = true;
 
     try {
+      // Local-first: always hydrate watch progress instantly on client
       const savedProg = localStorage.getItem('koup_progress_v1');
       if (savedProg) {
-        const parsed = JSON.parse(savedProg);
-        if (parsed && typeof parsed === 'object') setProgressMap(parsed);
-      }
-
-      const savedFavP = localStorage.getItem('koup_fav_people_v1');
-      if (savedFavP) {
-        const parsed = JSON.parse(savedFavP);
-        if (Array.isArray(parsed)) setFavPersonIds(parsed);
-      }
-
-      const savedFolM = localStorage.getItem('koup_fol_media_v1');
-      if (savedFolM) {
-        const parsed = JSON.parse(savedFolM);
-        if (Array.isArray(parsed)) setFollowedMediaIds(parsed);
-      }
-
-      const savedFolP = localStorage.getItem('koup_fol_people_v1');
-      if (savedFolP) {
-        const parsed = JSON.parse(savedFolP);
-        if (Array.isArray(parsed)) setFollowedPersonIds(parsed);
+        const parsedProg = JSON.parse(savedProg);
+        if (parsedProg && typeof parsedProg === 'object') setProgressMap(parsedProg);
       }
 
       const savedProf = localStorage.getItem('koup_profile_v1');
@@ -345,6 +648,24 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
             ...parsed,
             role: 'user',
           });
+
+          const savedFavP = localStorage.getItem('koup_fav_people_v1');
+          if (savedFavP) {
+            const parsedFavP = JSON.parse(savedFavP);
+            if (Array.isArray(parsedFavP)) setFavPersonIds(parsedFavP);
+          }
+
+          const savedFolM = localStorage.getItem('koup_fol_media_v1');
+          if (savedFolM) {
+            const parsedFolM = JSON.parse(savedFolM);
+            if (Array.isArray(parsedFolM)) setFollowedMediaIds(parsedFolM);
+          }
+
+          const savedFolP = localStorage.getItem('koup_fol_people_v1');
+          if (savedFolP) {
+            const parsedFolP = JSON.parse(savedFolP);
+            if (Array.isArray(parsedFolP)) setFollowedPersonIds(parsedFolP);
+          }
 
           // Only load notifications if user is authenticated!
           const savedNotifs = localStorage.getItem('koup_notifs_v1');
@@ -383,17 +704,22 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           }
         } else {
           localStorage.removeItem('koup_profile_v1');
+          localStorage.removeItem('koup_notifs_v1');
+          localStorage.removeItem('koup_fav_people_v1');
+          localStorage.removeItem('koup_fol_media_v1');
+          localStorage.removeItem('koup_fol_people_v1');
+          setUser(null);
+          setFavPersonIds([]);
+          setFollowedMediaIds([]);
+          setFollowedPersonIds([]);
           setNotifications([]);
-          try {
-            localStorage.removeItem('koup_notifs_v1');
-          } catch {}
         }
       } else {
-        // Guest user: Zero automated notifications loaded!
+        setUser(null);
+        setFavPersonIds([]);
+        setFollowedMediaIds([]);
+        setFollowedPersonIds([]);
         setNotifications([]);
-        try {
-          localStorage.removeItem('koup_notifs_v1');
-        } catch {}
       }
     } catch {
       // ignore storage errors
@@ -431,14 +757,14 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       if (!isMounted) return;
       try {
         if (data?.session?.user) {
+          if (data.session.access_token) setCachedAccessToken(data.session.access_token);
           await syncUserProfile(data.session.user.id, data.session.user);
         } else {
           setUser(null);
+          setFavPersonIds([]);
+          setFollowedMediaIds([]);
+          setFollowedPersonIds([]);
           setNotifications([]);
-          try {
-            localStorage.removeItem('koup_profile_v1');
-            localStorage.removeItem('koup_notifs_v1');
-          } catch {}
         }
       } finally {
         if (isMounted) {
@@ -451,11 +777,20 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     const { data: authSub } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!isMounted) return;
       if (event === 'SIGNED_OUT') {
+        setCachedAccessToken(null);
         setUser(null);
+        setProgressMap({});
+        setFavPersonIds([]);
+        setFollowedMediaIds([]);
+        setFollowedPersonIds([]);
         setNotifications([]);
         try {
           localStorage.removeItem('koup_profile_v1');
           localStorage.removeItem('koup_notifs_v1');
+          localStorage.removeItem('koup_progress_v1');
+          localStorage.removeItem('koup_fav_people_v1');
+          localStorage.removeItem('koup_fol_media_v1');
+          localStorage.removeItem('koup_fol_people_v1');
         } catch {}
         invalidateCache();
         setAuthLoading(false);
@@ -463,15 +798,15 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (session?.user) {
+        if (session.access_token) setCachedAccessToken(session.access_token);
         await syncUserProfile(session.user.id, session.user);
         if (isMounted) setAuthLoading(false);
       } else if (event === 'INITIAL_SESSION' && !session) {
         setUser(null);
+        setFavPersonIds([]);
+        setFollowedMediaIds([]);
+        setFollowedPersonIds([]);
         setNotifications([]);
-        try {
-          localStorage.removeItem('koup_profile_v1');
-          localStorage.removeItem('koup_notifs_v1');
-        } catch {}
         if (isMounted) setAuthLoading(false);
       }
     });
@@ -501,7 +836,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       body: string,
       type: ToastNotification['type'] = 'system',
       linkUrl?: string,
-      extra?: { mediaId?: number; personId?: number }
+      extra?: { mediaId?: number; personId?: number; imageUrl?: string }
     ) => {
       // 1. STRICT GUEST USER GUARD:
       // NO notifications should be pushed to guest users!
@@ -509,8 +844,8 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // 2. DISALLOW UNWANTED SPAM / BROADCASTS:
-      // Search for and eliminate "Vitrin Güncellendi", slider broadcasts, or dummy notifications!
+      // 2. DISALLOW UNWANTED SPAM / BROADCASTS / SELF-NOTIFICATIONS:
+      // Eliminate "Vitrin Güncellendi", slider broadcasts, or dummy notifications, and NEVER self-notify for own comments!
       const lowerTitle = title.toLowerCase();
       const lowerBody = body.toLowerCase();
       if (
@@ -518,10 +853,15 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         lowerTitle.includes('slider') ||
         lowerTitle.includes('oturum kapatıldı') ||
         lowerTitle.includes('hesap oluşturuldu') ||
+        lowerTitle.includes('yorumun yayınlandı') ||
+        lowerTitle.includes('yanıtınız gönderildi') ||
+        lowerTitle.includes('yanıtın gönderildi') ||
         lowerTitle.includes('reply 1988') ||
         lowerTitle.includes('yoo in na') ||
         lowerBody.includes('reply 1988') ||
-        lowerBody.includes('yoo in na')
+        lowerBody.includes('yoo in na') ||
+        lowerBody.includes('katkın kaydedildi') ||
+        lowerBody.includes('yorumuna yanıtınız eklendi')
       ) {
         return;
       }
@@ -547,26 +887,15 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // 4. THE ONLY 4 REAL NOTIFICATION TYPES ALLOWED:
-      // 1. episode: New episode uploaded for a series that the user ACTUALLY follows in followedMediaIds.
-      // 2. actor: Followed actor in a new release that the user ACTUALLY follows in followedPersonIds.
-      // 3. reply: Someone replied to the user's comment.
+      // 4. REAL INBOX NOTIFICATION TYPES ALLOWED:
+      // 1. episode: New episode uploaded for a series that the user follows.
+      // 2. actor: Followed actor in a new release or project.
+      // 3. reply: Someone replied to the user's comment (never own comments).
       // 4. system: Official warning or message from admin/mod team.
       let finalType: 'episode' | 'actor' | 'reply' | 'system' = 'system';
-
       if (type === 'episode') {
-        if (extra?.mediaId && !followedMediaIds.includes(extra.mediaId)) {
-          return; // Skip: user does not follow this media
-        }
         finalType = 'episode';
       } else if (type === 'actor') {
-        if (
-          extra?.personId &&
-          !followedPersonIds.includes(extra.personId) &&
-          !favPersonIds.includes(extra.personId)
-        ) {
-          return; // Skip: user does not follow this actor
-        }
         finalType = 'actor';
       } else if (type === 'reply') {
         finalType = 'reply';
@@ -596,6 +925,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         body,
         type: finalType,
         linkUrl,
+        imageUrl: extra?.imageUrl,
         createdAt: 'Şimdi',
         isRead: false,
         mediaId: extra?.mediaId,
@@ -642,6 +972,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           body,
           type: dbType,
           link_url: linkUrl || null,
+          image_url: extra?.imageUrl || null,
           is_read: false,
         })
       ).catch(() => {});
@@ -649,6 +980,52 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     [user, followedMediaIds, followedPersonIds, favPersonIds]
   );
 
+
+  const refreshUserLibrary = useCallback(async () => {
+    if (!user) return;
+    try {
+      const { data: dbProg } = await supabase
+        .from('user_media_progress')
+        .select('*, media:media_id (*)')
+        .eq('user_id', user.id);
+
+      if (dbProg && Array.isArray(dbProg)) {
+        let localMap: Record<number, UserMediaProgress> = {};
+        try {
+          const raw = localStorage.getItem('koup_progress_v1');
+          if (raw) localMap = JSON.parse(raw) || {};
+        } catch {}
+
+        const { mergedMap, itemsToSyncToSupabase } = reconcileProgressMaps(
+          localMap,
+          dbProg,
+          user.id
+        );
+
+        setProgressMap(mergedMap);
+        try {
+          localStorage.setItem('koup_progress_v1', JSON.stringify(mergedMap));
+        } catch {}
+
+        Object.values(mergedMap).forEach((item) => {
+          lastSyncedProgressRef.current[item.media_id] = {
+            positionSec: item.resume_position_sec ?? 0,
+            seasonNum: item.last_season_num ?? 1,
+            episodeNum: item.last_episode_num ?? 1,
+            status: item.status,
+            watchedCount: (item.watched_episodes || []).length,
+            syncedAt: Date.now(),
+          };
+        });
+
+        if (itemsToSyncToSupabase.length > 0) {
+          void syncProgressRecordToSupabase(itemsToSyncToSupabase);
+        }
+      }
+    } catch (e) {
+      console.error('Error refreshing library:', e);
+    }
+  }, [user]);
 
   const updateEpisodeProgress = useCallback(
     (
@@ -658,8 +1035,12 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       episodeTitle: string,
       positionSec: number,
       durationSec: number,
-      markCompletedEpisode = false
+      markCompletedEpisode = false,
+      options?: ProgressSyncOptions
     ) => {
+      const roundedPos = Math.floor(positionSec);
+      const roundedDur = Math.floor(durationSec || 3600);
+
       setProgressMap((prev) => {
         const existing = prev[media.id] || {
           media_id: media.id,
@@ -669,41 +1050,168 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           last_season_num: seasonNum,
           last_episode_num: episodeNum,
           last_episode_title: episodeTitle,
-          resume_position_sec: positionSec,
-          resume_duration_sec: durationSec || 3600,
+          resume_position_sec: roundedPos,
+          resume_duration_sec: roundedDur,
           updated_at: new Date().toISOString(),
           media,
         };
 
         const watchedSet = new Set(existing.watched_episodes || []);
-        if (markCompletedEpisode || (durationSec > 0 && positionSec / durationSec >= 0.85)) {
+        if (markCompletedEpisode || (roundedDur > 0 && roundedPos / roundedDur >= 0.85)) {
           watchedSet.add(episodeNum);
         }
 
+        const watchedArr = Array.from(watchedSet).sort((a, b) => a - b);
+        const maxWatched = watchedArr.length > 0 ? Math.max(...watchedArr) : 0;
+
+        let nextLastEp = episodeNum;
+        let nextLastEpTitle = episodeTitle;
+        let nextResumePos = roundedPos;
+
+        // If this episode was just completed (or reached > 85%), advance the series-level pointer to the next episode
+        const isCompletedNow = markCompletedEpisode || (roundedDur > 0 && roundedPos / roundedDur >= 0.85);
+        if (isCompletedNow) {
+          const computedNext =
+            media.episode_count && media.episode_count > 0
+              ? Math.min(media.episode_count, maxWatched + 1)
+              : maxWatched + 1;
+          nextLastEp = computedNext;
+          nextLastEpTitle = `${computedNext}. Bölüm`;
+          if (computedNext !== episodeNum) {
+            nextResumePos = 0;
+          }
+        }
+
+        // Per-episode progress record
+        const epKey = `${seasonNum}_${episodeNum}`;
+        const prevEpisodePositions = existing.episode_positions || {};
+        const newEpisodePositions = {
+          ...prevEpisodePositions,
+          [epKey]: {
+            position: roundedPos,
+            duration: roundedDur,
+            updated_at: new Date().toISOString(),
+          },
+        };
+
+        try {
+          localStorage.setItem(
+            `koup_ep_pos_${media.id}_${seasonNum}_${episodeNum}`,
+            JSON.stringify({ position: roundedPos, duration: roundedDur })
+          );
+        } catch {}
+
         const updated: UserMediaProgress = {
           ...existing,
+          user_id: user ? user.id : 'guest',
           status:
             media.episode_count > 0 && watchedSet.size >= media.episode_count
               ? 'completed'
               : 'watching',
-          watched_episodes: Array.from(watchedSet).sort((a, b) => a - b),
+          watched_episodes: watchedArr,
           last_season_num: seasonNum,
-          last_episode_num: episodeNum,
-          last_episode_title: episodeTitle,
-          resume_position_sec: Math.floor(positionSec),
-          resume_duration_sec: Math.floor(durationSec || 3600),
+          last_episode_num: nextLastEp,
+          last_episode_title: nextLastEpTitle,
+          resume_position_sec: nextResumePos,
+          resume_duration_sec: roundedDur,
+          episode_positions: newEpisodePositions,
           updated_at: new Date().toISOString(),
-          media,
+          media: existing.media || media,
         };
 
         const next = { ...prev, [media.id]: updated };
         try {
           localStorage.setItem('koup_progress_v1', JSON.stringify(next));
         } catch {}
+
+        // Smart Supabase Egress Optimization:
+        let lastSync = lastSyncedProgressRef.current[media.id];
+        if (!lastSync) {
+          lastSync = {
+            positionSec: nextResumePos,
+            seasonNum,
+            episodeNum: nextLastEp,
+            status: updated.status,
+            watchedCount: watchedArr.length,
+            syncedAt: Date.now(),
+          };
+          lastSyncedProgressRef.current[media.id] = lastSync;
+        }
+
+        const shouldSync = shouldSyncToSupabase(
+          nextResumePos,
+          seasonNum,
+          nextLastEp,
+          updated.status,
+          watchedArr.length,
+          lastSync,
+          options
+        );
+
+        if (user && shouldSync) {
+          lastSyncedProgressRef.current[media.id] = {
+            positionSec: nextResumePos,
+            seasonNum,
+            episodeNum: nextLastEp,
+            status: updated.status,
+            watchedCount: watchedArr.length,
+            syncedAt: Date.now(),
+          };
+
+          const payload = sanitizeProgressDbPayload({ ...updated, user_id: user.id }, user.id);
+          void syncProgressRecordToSupabase(payload, { keepalive: options?.keepalive });
+        }
+
         return next;
       });
     },
-    []
+    [user]
+  );
+
+  const flushProgressSync = useCallback(
+    (mediaId?: number, options?: { keepalive?: boolean }) => {
+      if (!user) return;
+      try {
+        const raw = localStorage.getItem('koup_progress_v1');
+        const map: Record<number, UserMediaProgress> = raw ? JSON.parse(raw) : progressMap;
+
+        const targets = mediaId && map[mediaId] ? [map[mediaId]] : Object.values(map);
+        const toSync: any[] = [];
+
+        targets.forEach((item) => {
+          if (!item || !item.media_id) return;
+          const lastSync = lastSyncedProgressRef.current[item.media_id];
+          const delta = lastSync
+            ? Math.abs((item.resume_position_sec || 0) - lastSync.positionSec)
+            : item.resume_position_sec || 0;
+
+          if (
+            !lastSync ||
+            delta >= SIGNIFICANT_DELTA_SEC ||
+            lastSync.seasonNum !== item.last_season_num ||
+            lastSync.episodeNum !== item.last_episode_num ||
+            lastSync.status !== item.status
+          ) {
+            toSync.push(sanitizeProgressDbPayload({ ...item, user_id: user.id }, user.id));
+            lastSyncedProgressRef.current[item.media_id] = {
+              positionSec: item.resume_position_sec || 0,
+              seasonNum: item.last_season_num || 1,
+              episodeNum: item.last_episode_num || 1,
+              status: item.status,
+              watchedCount: (item.watched_episodes || []).length,
+              syncedAt: Date.now(),
+            };
+          }
+        });
+
+        if (toSync.length > 0) {
+          void syncProgressRecordToSupabase(toSync, options);
+        }
+      } catch (e) {
+        console.warn('Failed to flush progress sync:', e);
+      }
+    },
+    [user, progressMap]
   );
 
   const toggleEpisodeWatched = useCallback(
@@ -752,10 +1260,51 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
+        const watchedArr = Array.from(watchedSet).sort((a, b) => a - b);
+        const maxWatched = watchedArr.length > 0 ? Math.max(...watchedArr) : 0;
+        const nextEpNum =
+          watchedArr.length > 0
+            ? media.episode_count && media.episode_count > 0
+              ? Math.min(media.episode_count, maxWatched + 1)
+              : maxWatched + 1
+            : 1;
+
+        const nextStatus: UserMediaProgress['status'] =
+          media.episode_count > 0 && watchedSet.size >= media.episode_count
+            ? 'completed'
+            : watchedSet.size > 0
+            ? 'watching'
+            : existing.status || 'watching';
+
+        const isNowWatched = watchedSet.has(episodeNum);
+        const epKey = `${existing.last_season_num || 1}_${episodeNum}`;
+        const prevEpPositions = existing.episode_positions || {};
+        const safeDur = existing.resume_duration_sec || 3600;
+        const newEpPositions = {
+          ...prevEpPositions,
+          [epKey]: {
+            position: isNowWatched ? safeDur : 0,
+            duration: safeDur,
+            updated_at: new Date().toISOString(),
+          },
+        };
+        try {
+          localStorage.setItem(
+            `koup_ep_pos_${media.id}_${existing.last_season_num || 1}_${episodeNum}`,
+            JSON.stringify({ position: isNowWatched ? safeDur : 0, duration: safeDur })
+          );
+        } catch {}
+
         const updated: UserMediaProgress = {
           ...existing,
-          watched_episodes: Array.from(watchedSet).sort((a, b) => a - b),
-          last_episode_num: episodeNum,
+          user_id: user.id,
+          media_id: media.id,
+          status: nextStatus,
+          watched_episodes: watchedArr,
+          last_episode_num: nextEpNum,
+          last_episode_title: `${nextEpNum}. Bölüm`,
+          resume_position_sec: 0,
+          episode_positions: newEpPositions,
           updated_at: new Date().toISOString(),
           media,
         };
@@ -764,6 +1313,19 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         try {
           localStorage.setItem('koup_progress_v1', JSON.stringify(next));
         } catch {}
+
+        lastSyncedProgressRef.current[media.id] = {
+          positionSec: updated.resume_position_sec || 0,
+          seasonNum: updated.last_season_num || 1,
+          episodeNum: updated.last_episode_num || 1,
+          status: updated.status,
+          watchedCount: updated.watched_episodes.length,
+          syncedAt: Date.now(),
+        };
+
+        const payload = sanitizeProgressDbPayload(updated, user.id);
+        void syncProgressRecordToSupabase(payload);
+
         return next;
       });
     },
@@ -788,6 +1350,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       setProgressMap((prev) => {
         const existing = prev[media.id];
         const updated: UserMediaProgress = {
+          user_id: user.id,
           media_id: media.id,
           status,
           is_favorite: existing?.is_favorite ?? false,
@@ -805,10 +1368,127 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         try {
           localStorage.setItem('koup_progress_v1', JSON.stringify(next));
         } catch {}
+
+        lastSyncedProgressRef.current[media.id] = {
+          positionSec: updated.resume_position_sec || 0,
+          seasonNum: updated.last_season_num || 1,
+          episodeNum: updated.last_episode_num || 1,
+          status: updated.status,
+          watchedCount: updated.watched_episodes.length,
+          syncedAt: Date.now(),
+        };
+
+        const payload = sanitizeProgressDbPayload(updated, user.id);
+        void syncProgressRecordToSupabase(payload);
+
         return next;
       });
     },
     [user, isSoftBanned, openAuthModal, pushNotification]
+  );
+
+  const setMediaScore = useCallback(
+    (media: MediaItem, score: number | null) => {
+      if (!user) {
+        openAuthModal('Puan verebilmek için lütfen giriş yapın.');
+        return;
+      }
+      if (isSoftBanned) {
+        pushNotification(
+          'Hesap Askıda',
+          'Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır. İçerik etkileşimleri devre dışıdır.',
+          'info'
+        );
+        return;
+      }
+
+      setProgressMap((prev) => {
+        const existing = prev[media.id];
+        const updated: UserMediaProgress = {
+          user_id: user.id,
+          media_id: media.id,
+          status: existing?.status ?? 'watching',
+          is_favorite: existing?.is_favorite ?? false,
+          user_score: score,
+          watched_episodes: existing?.watched_episodes ?? [],
+          last_season_num: existing?.last_season_num ?? 1,
+          last_episode_num: existing?.last_episode_num ?? 1,
+          last_episode_title: existing?.last_episode_title ?? '1. Bölüm',
+          resume_position_sec: existing?.resume_position_sec ?? 0,
+          resume_duration_sec: existing?.resume_duration_sec ?? 3600,
+          updated_at: new Date().toISOString(),
+          media,
+        };
+        const next = { ...prev, [media.id]: updated };
+        try {
+          localStorage.setItem('koup_progress_v1', JSON.stringify(next));
+        } catch {}
+
+        lastSyncedProgressRef.current[media.id] = {
+          positionSec: updated.resume_position_sec || 0,
+          seasonNum: updated.last_season_num || 1,
+          episodeNum: updated.last_episode_num || 1,
+          status: updated.status,
+          watchedCount: updated.watched_episodes.length,
+          syncedAt: Date.now(),
+        };
+
+        const payload = sanitizeProgressDbPayload(updated, user.id);
+        void syncProgressRecordToSupabase(payload);
+
+        return next;
+      });
+
+      if (score != null) {
+        pushNotification(
+          'Puanınız Kaydedildi',
+          `Bu yapım için ${score}/10 puanınız başarıyla kaydedildi.`,
+          'success'
+        );
+      } else {
+        pushNotification(
+          'Puan Kaldırıldı',
+          'Puanınız başarıyla kaldırıldı.',
+          'info'
+        );
+      }
+    },
+    [user, isSoftBanned, openAuthModal, pushNotification]
+  );
+
+  const removeFromLibrary = useCallback(
+    async (mediaId: number) => {
+      if (!user) {
+        openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
+        return;
+      }
+      setProgressMap((prev) => {
+        const next = { ...prev };
+        delete next[mediaId];
+        try {
+          localStorage.setItem('koup_progress_v1', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      delete lastSyncedProgressRef.current[mediaId];
+      try {
+        await supabase
+          .from('user_media_progress')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('media_id', mediaId);
+
+        pushNotification(
+          'Kütüphaneden Kaldırıldı',
+          'Yapım kütüphanenizden başarıyla kaldırıldı.',
+          'info'
+        );
+      } catch (err) {
+        console.error('Failed to delete from user_media_progress:', err);
+      }
+    },
+    [user, openAuthModal, pushNotification]
   );
 
   const toggleMediaFavorite = useCallback((media: MediaItem) => {
@@ -829,6 +1509,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       const existing = prev[media.id];
       const nextFav = !(existing?.is_favorite ?? false);
       const updated: UserMediaProgress = {
+        user_id: user.id,
         media_id: media.id,
         status: existing?.status ?? 'watching',
         is_favorite: nextFav,
@@ -845,6 +1526,19 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       try {
         localStorage.setItem('koup_progress_v1', JSON.stringify(next));
       } catch {}
+
+      lastSyncedProgressRef.current[media.id] = {
+        positionSec: updated.resume_position_sec || 0,
+        seasonNum: updated.last_season_num || 1,
+        episodeNum: updated.last_episode_num || 1,
+        status: updated.status,
+        watchedCount: updated.watched_episodes.length,
+        syncedAt: Date.now(),
+      };
+
+      const payload = sanitizeProgressDbPayload(updated, user.id);
+      void syncProgressRecordToSupabase(payload);
+
       return next;
     });
   }, [user, isSoftBanned, openAuthModal, pushNotification]);
@@ -869,6 +1563,25 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       try {
         localStorage.setItem('koup_fol_media_v1', JSON.stringify(next));
       } catch {}
+
+      // Persist to user_follows in Supabase
+      if (exists) {
+        void supabase
+          .from('user_follows')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('target_type', 'media')
+          .eq('target_id', media.id);
+      } else {
+        void supabase
+          .from('user_follows')
+          .insert({
+            user_id: user.id,
+            target_type: 'media',
+            target_id: media.id,
+          });
+      }
+
       return next;
     });
   }, [user, isSoftBanned, openAuthModal, pushNotification]);
@@ -888,26 +1601,39 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         return favPersonIds.length;
       }
 
-      let expectedCount = 0;
-      setFavPersonIds((prev) => {
-        const isFav = prev.includes(personId);
-        const next = isFav ? prev.filter((id) => id !== personId) : [...prev, personId];
-        expectedCount = next.length;
-        try {
-          localStorage.setItem('koup_fav_people_v1', JSON.stringify(next));
-        } catch {}
-        return next;
-      });
+      const isFav = favPersonIds.includes(personId);
+      const next = isFav ? favPersonIds.filter((id) => id !== personId) : [...favPersonIds, personId];
+      setFavPersonIds(next);
+      try {
+        localStorage.setItem('koup_fav_people_v1', JSON.stringify(next));
+      } catch {}
 
-      // Fire-and-forget RPC sync to database
-      void Promise.resolve(
-        supabase.rpc('increment_person_favorite', {
-          p_person_id: personId,
-          p_delta: favPersonIds.includes(personId) ? -1 : 1,
-        })
-      ).catch(() => {});
+      // Persist to real Supabase person_favorites table
+      // (The DB trigger update_person_fav_count automatically increments/decrements people.favorites_count)
+      try {
+        if (isFav) {
+          await supabase
+            .from('person_favorites')
+            .delete()
+            .eq('user_id', user.id)
+            .eq('person_id', personId);
+        } else {
+          await supabase
+            .from('person_favorites')
+            .insert({ user_id: user.id, person_id: personId });
+        }
+      } catch (err) {
+        console.error('Failed to sync person_favorite to Supabase:', err);
+      }
 
-      return expectedCount;
+      // Invalidate people & person caches so any subsequent fetch sees fresh data
+      try {
+        invalidateCache('top_people_');
+        invalidateCache('person_');
+        invalidateCache('people_');
+      } catch {}
+
+      return next.length;
     },
     [user, isSoftBanned, favPersonIds, openAuthModal, pushNotification]
   );
@@ -932,6 +1658,25 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       try {
         localStorage.setItem('koup_fol_people_v1', JSON.stringify(next));
       } catch {}
+
+      // Persist to user_follows in Supabase
+      if (exists) {
+        void supabase
+          .from('user_follows')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('target_type', 'person')
+          .eq('target_id', personId);
+      } else {
+        void supabase
+          .from('user_follows')
+          .insert({
+            user_id: user.id,
+            target_type: 'person',
+            target_id: personId,
+          });
+      }
+
       return next;
     });
   }, [user, isSoftBanned, openAuthModal, pushNotification]);
@@ -1047,6 +1792,9 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     async (email: string, password: string): Promise<string | null> => {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) return error.message;
+      if (data.session?.access_token) {
+        setCachedAccessToken(data.session.access_token);
+      }
       if (data.user) {
         await syncUserProfile(data.user.id, data.user);
         pushNotification('Giriş Başarılı', 'KoUp kütüphaneniz hazır.', 'success');
@@ -1066,6 +1814,16 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         },
       });
       if (error) return error.message;
+
+      // Auto-confirm user immediately so user is never blocked by expired activation link
+      try {
+        await supabase.rpc('confirm_user_by_email', { target_email: email });
+      } catch {}
+
+      if (data.session?.access_token) {
+        setCachedAccessToken(data.session.access_token);
+      }
+
       if (data.user) {
         await new Promise((r) => setTimeout(r, 600));
         await syncUserProfile(data.user.id, data.user);
@@ -1077,12 +1835,21 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = useCallback(async () => {
+    setCachedAccessToken(null);
     await supabase.auth.signOut();
     setUser(null);
+    setProgressMap({});
+    setFavPersonIds([]);
+    setFollowedMediaIds([]);
+    setFollowedPersonIds([]);
     setNotifications([]);
     try {
       localStorage.removeItem('koup_profile_v1');
       localStorage.removeItem('koup_notifs_v1');
+      localStorage.removeItem('koup_progress_v1');
+      localStorage.removeItem('koup_fav_people_v1');
+      localStorage.removeItem('koup_fol_media_v1');
+      localStorage.removeItem('koup_fol_people_v1');
     } catch {}
     invalidateCache();
   }, []);
@@ -1100,6 +1867,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       try {
         localStorage.setItem('koup_profile_v1', JSON.stringify({ ...updated, role: 'user' }));
       } catch {}
+
       return updated;
     });
   }, []);
@@ -1144,12 +1912,15 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         const updated: UserMediaProgress = existing
           ? {
               ...existing,
+              user_id: user.id,
+              media_id: mediaId,
               status,
               last_season_num: season,
               last_episode_num: episode,
               updated_at: new Date().toISOString(),
             }
           : {
+              user_id: user.id,
               media_id: mediaId,
               status,
               is_favorite: false,
@@ -1164,6 +1935,21 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         try {
           localStorage.setItem('koup_progress_v1', JSON.stringify(next));
         } catch {}
+
+        if (user) {
+          lastSyncedProgressRef.current[mediaId] = {
+            positionSec: updated.resume_position_sec || 0,
+            seasonNum: updated.last_season_num || 1,
+            episodeNum: updated.last_episode_num || 1,
+            status: updated.status,
+            watchedCount: (updated.watched_episodes || []).length,
+            syncedAt: Date.now(),
+          };
+
+          const payload = sanitizeProgressDbPayload(updated, user.id);
+          void syncProgressRecordToSupabase(payload);
+        }
+
         return next;
       });
       pushNotification('Liste Güncellendi', 'İçerik tercihiniz kaydedildi.', 'success');
@@ -1341,8 +2127,12 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       isRouletteOpen,
       setIsRouletteOpen,
       updateEpisodeProgress,
+      flushProgressSync,
       toggleEpisodeWatched,
       setLibraryStatus,
+      setMediaScore,
+      removeFromLibrary,
+      refreshUserLibrary,
       toggleMediaFavorite,
       toggleMediaFollow,
       togglePersonFavorite,
@@ -1365,8 +2155,27 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       loginWithEmail,
       registerWithEmail,
       logout,
+      confirmDialog,
+      isTrailerMuted,
+      toggleTrailerMuted,
+      setTrailerMuted,
+      navbarBehavior,
+      setNavbarBehavior,
+      floatingNavbarEnabled,
+      setFloatingNavbarEnabled,
+      autoCardTrailerEnabled,
+      setAutoCardTrailerEnabled,
     };
   }, [
+    isTrailerMuted,
+    toggleTrailerMuted,
+    setTrailerMuted,
+    navbarBehavior,
+    setNavbarBehavior,
+    floatingNavbarEnabled,
+    setFloatingNavbarEnabled,
+    autoCardTrailerEnabled,
+    setAutoCardTrailerEnabled,
     user,
     authLoading,
     progressMap,
@@ -1391,8 +2200,12 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     deviceFingerprint,
     isRouletteOpen,
     updateEpisodeProgress,
+    flushProgressSync,
     toggleEpisodeWatched,
     setLibraryStatus,
+    setMediaScore,
+    removeFromLibrary,
+    refreshUserLibrary,
     toggleMediaFavorite,
     toggleMediaFollow,
     togglePersonFavorite,
@@ -1414,6 +2227,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     loginWithEmail,
     registerWithEmail,
     logout,
+    confirmDialog,
   ]);
 
   return (
@@ -1482,6 +2296,17 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
             </div>
           )}
           {children}
+          <ConfirmModal
+            isOpen={confirmState.isOpen}
+            onClose={handleConfirmClose}
+            onConfirm={handleConfirmAccept}
+            title={confirmState.options.title}
+            message={confirmState.options.message}
+            confirmText={confirmState.options.confirmText}
+            cancelText={confirmState.options.cancelText}
+            isDestructive={confirmState.options.isDestructive}
+            icon={confirmState.options.icon}
+          />
         </>
       )}
     </KoUpContext.Provider>

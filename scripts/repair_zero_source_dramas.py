@@ -2,7 +2,7 @@
 KoUp Targeted Source Restoration Script (repair_zero_source_dramas.py)
 =====================================================================
 Sıfır kaynaklı kalan 717 dizi ve anime için çalışan platformlardan
-(WebDramaTurkey, DiziYou, DiziBox, AnimeciX, TrAnimeİzle ve Arşiv Kardeş Eşlenikleri)
+(DiziKorea, DiziYou, DiziBox, AnimeciX, TrAnimeİzle ve Arşiv Kardeş Eşlenikleri)
 canlı video embed'lerini (Vidmoly, Ok.ru, Sibnet, Doodstream, Mail.ru, DiziYou HLS, VK, Tau Video)
 çeker, SQLite (webdrama_archive.db) ve Supabase (episodes.video_sources) ile senkronize eder.
 """
@@ -278,29 +278,27 @@ class RestorationResolvers:
         return patched
 
     @staticmethod
-    def resolve_webdramaturkey(drama_info: dict, episodes: list[dict]) -> list[dict]:
+    def resolve_dizikorea(drama_info: dict, episodes: list[dict]) -> list[dict]:
         """
-        2. STRATEJİ: WebDramaTurkey Canlı Akış Çözücü
-        https://webdramaturkey2.com/dizi/{slug} -> /1-sezon/1-bolum -> ajax/embed -> Vidmoly / VK / OK.ru
+        2. STRATEJİ: DiziKorea Canlı Akış Çözücü
+        https://dizikorea3.com/dizi/{slug} -> sezon-X-bolum-Y -> player-source iframe
         """
         title = drama_info["title"]
         slug = drama_info.get("slug") or ""
         source_url = drama_info.get("source_url") or ""
 
         target_series_url = None
-        if "webdramaturkey" in source_url:
+        if "dizikorea" in source_url:
             target_series_url = source_url
         else:
             candidates = [
-                f"https://webdramaturkey2.com/dizi/{clean_slug(slug)}",
-                f"https://webdramaturkey2.com/dizi/{clean_slug(title)}",
-                f"https://webdramaturkey2.com/film/{clean_slug(slug)}",
-                f"https://webdramaturkey2.com/film/{clean_slug(title)}",
+                f"https://dizikorea3.com/dizi/{clean_slug(slug)}",
+                f"https://dizikorea3.com/dizi/{clean_slug(title)}",
             ]
             for u in candidates:
                 try:
                     html, final_u = HTTPClient.fetch_text(u, timeout=8.0)
-                    if "-bolum" in html or "data-embed" in html:
+                    if "bolum-" in html or "player-source" in html:
                         target_series_url = final_u
                         break
                 except Exception:
@@ -308,13 +306,13 @@ class RestorationResolvers:
 
         if not target_series_url:
             try:
-                search_u = f"https://webdramaturkey2.com/?s={urllib.parse.quote(title)}"
+                search_u = f"https://dizikorea3.com/?s={urllib.parse.quote(title)}"
                 html, _ = HTTPClient.fetch_text(search_u, timeout=8.0)
                 soup = BeautifulSoup(html, "html.parser")
                 nt = norm_title(title)
                 for a in soup.find_all("a", href=True):
                     h = a["href"]
-                    if "/dizi/" in h or "/film/" in h:
+                    if "/dizi/" in h or "/series/" in h:
                         t = a.get_text(strip=True)
                         if t and (norm_title(t) == nt or nt in norm_title(t)):
                             target_series_url = h
@@ -329,28 +327,21 @@ class RestorationResolvers:
             html, _ = HTTPClient.fetch_text(target_series_url, timeout=10.0)
             soup = BeautifulSoup(html, "html.parser")
             found_ep_links = {}
-            for a in soup.find_all("a", href=lambda h: h and "-bolum" in h):
+            for a in soup.find_all("a", href=lambda h: h and ("/sezon-" in h or "/bolum-" in h)):
                 h = a["href"]
-                full_h = h if h.startswith("http") else "https://webdramaturkey2.com" + h
-                ms = re.search(r"(\d+)-sezon", full_h)
-                me = re.search(r"(\d+)-bolum", full_h)
+                full_h = h if h.startswith("http") else "https://dizikorea3.com" + h
+                ms = re.search(r"sezon-(\d+)", full_h)
+                me = re.search(r"bolum-(\d+)", full_h)
                 s_no = int(ms.group(1)) if ms else 1
                 e_no = int(me.group(1)) if me else 1
                 found_ep_links[(s_no, e_no)] = full_h
-            
-            # Eğer film ise ve bölüm linki yoksa, sayfanın kendisini 1. sezon 1. bölüm yap
-            if not found_ep_links and ("data-embed" in html or "/film/" in target_series_url):
-                found_ep_links[(1, 1)] = target_series_url
         except Exception:
             return []
 
         if not found_ep_links:
             return []
 
-        sess = HTTPClient.get_cf_session() or HTTPClient.get_std_session()
         patched = []
-
-        # Her dizi için ilk 15 bölümü işle
         for ep in episodes[:15]:
             key = (ep["season_number"], ep["episode_number"])
             if key not in found_ep_links:
@@ -360,75 +351,34 @@ class RestorationResolvers:
             try:
                 ep_html, _ = HTTPClient.fetch_text(ep_url, referer=target_series_url, timeout=10.0)
                 ep_soup = BeautifulSoup(ep_html, "html.parser")
-                btns = ep_soup.find_all("button", class_=lambda c: c and "dropdown-source" in c)
-                if not btns:
-                    btns = ep_soup.find_all(attrs={"data-embed": True})
+                tabs = [b.get_text(strip=True) for b in ep_soup.select("button.player-tab")]
+                divs = ep_soup.select("div.player-source")
 
                 sources_found_this_ep = 0
-                for b in btns:
-                    eid = b.get("data-embed")
-                    if not eid:
+                for i, div in enumerate(divs):
+                    fr = div.find("iframe")
+                    url = (fr.get("data-src") or fr.get("src")) if fr else None
+                    if not url:
                         continue
-                    s_name_el = b.find("span", class_="name")
-                    s_name = s_name_el.get_text(strip=True) if s_name_el else b.get_text(strip=True)
-                    s_name = s_name.replace("Kaynak:", "").strip()
+                    url = url if url.startswith("http") else "https:" + url
+                    real_stream = repair_url(url)
+                    prov = identify_provider(real_stream)
+                    s_name = tabs[i] if i < len(tabs) else f"Kaynak {i+1}"
 
-                    post_headers = {
-                        "X-Requested-With": "XMLHttpRequest",
-                        "Referer": ep_url,
-                        "Origin": "https://webdramaturkey2.com"
-                    }
-                    if not sess:
-                        continue
-                    resp = sess.post("https://webdramaturkey2.com/ajax/embed", data={"id": str(eid)}, headers=post_headers, timeout=8)
-                    text = resp.text
-
-                    if "embed-lock" in text or "Hata" in text or "Bulunamadı" in text or "Spam" in text:
-                        continue
-
-                    m_src = re.search(r'src=["\']([^"\']+)["\']', text)
-                    if not m_src:
-                        continue
-                    v_url = m_src.group(1).strip()
-                    if v_url.startswith("/"):
-                        v_url = "https://webdramaturkey2.com" + v_url
-
-                    v_resp = sess.get(v_url, headers={"Referer": ep_url}, timeout=8)
-                    v_soup = BeautifulSoup(v_resp.text, "html.parser")
-                    ifr = v_soup.find("iframe", id="main-iframe") or v_soup.find("iframe")
-                    real_stream = ifr.get("src").strip() if ifr and ifr.get("src") else None
-
-                    if real_stream:
-                        if "bulgu.net/ok/e/" in real_stream:
-                            try:
-                                b_resp = sess.get(real_stream, headers={"Referer": ep_url}, timeout=8)
-                                qm = re.search(r"/ok/redirect\?v=([a-zA-Z0-9]+)", b_resp.text)
-                                if qm:
-                                    redir_url = f"https://bulgu.net/ok/redirect?v={qm.group(1)}"
-                                    r_resp = sess.get(redir_url, headers={"Referer": "https://bulgu.net/"}, allow_redirects=False, timeout=8)
-                                    loc = r_resp.headers.get("Location", "")
-                                    id_m = re.search(r"id=(\d+)", loc)
-                                    if id_m:
-                                        real_stream = f"https://ok.ru/videoembed/{id_m.group(1)}"
-                            except Exception:
-                                pass
-
-                        real_stream = repair_url(real_stream)
-                        prov = identify_provider(real_stream)
-                        if prov != "unknown" and "dead" not in real_stream:
-                            patched.append({
-                                "episode_id": ep["id"],
-                                "season_number": ep["season_number"],
-                                "episode_number": ep["episode_number"],
-                                "episode_name": ep["name"],
-                                "source_name": s_name or f"WDT {prov.title()}",
-                                "direct_url": real_stream,
-                                "provider": prov,
-                                "site": "webdramaturkey"
-                            })
-                            sources_found_this_ep += 1
-                            if sources_found_this_ep >= 2:
-                                break
+                    if prov != "unknown" and "dead" not in real_stream:
+                        patched.append({
+                            "episode_id": ep["id"],
+                            "season_number": ep["season_number"],
+                            "episode_number": ep["episode_number"],
+                            "episode_name": ep["name"],
+                            "source_name": s_name or f"DK {prov.title()}",
+                            "direct_url": real_stream,
+                            "provider": prov,
+                            "site": "dizikorea"
+                        })
+                        sources_found_this_ep += 1
+                        if sources_found_this_ep >= 2:
+                            break
             except Exception:
                 continue
 
@@ -1023,13 +973,13 @@ def run_restoration(
                     collected_sources.extend(ta_sources)
                     strategy_used = "TRAnimeizle Canlı Akış"
 
-        # 3. K-Drama / Asya Sağlayıcıları (WebDramaTurkey)
+        # 3. K-Drama / Asya Sağlayıcıları (DiziKorea)
         if not collected_sources and country in ("KR", "CN", "TH", "TW", "HK", "PH"):
-            if site_filter in ("all", "webdramaturkey"):
-                wdt_sources = RestorationResolvers.resolve_webdramaturkey(drama_info, episodes)
-                if wdt_sources:
-                    collected_sources.extend(wdt_sources)
-                    strategy_used = "WebDramaTurkey Canlı Akış"
+            if site_filter in ("all", "dizikorea"):
+                dk_sources = RestorationResolvers.resolve_dizikorea(drama_info, episodes)
+                if dk_sources:
+                    collected_sources.extend(dk_sources)
+                    strategy_used = "DiziKorea Canlı Akış"
 
             if not collected_sources and site_filter in ("all", "diziyou"):
                 dy_sources = RestorationResolvers.resolve_diziyou(drama_info, episodes)
@@ -1207,7 +1157,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, default=15, help="İşlenecek dizi sayısı (varsayılan: 15)")
     parser.add_argument("--drama-id", type=int, default=None, help="Yalnızca belirli bir dizi ID'sini onar")
     parser.add_argument("--offset", type=int, default=0, help="Sıfır kaynaklı listede başlama ofseti")
-    parser.add_argument("--site", type=str, default="all", choices=["all", "webdramaturkey", "diziyou", "dizibox", "animecix", "tranimeizle", "sibling"], help="Hedef sağlayıcı filtresi")
+    parser.add_argument("--site", type=str, default="all", choices=["all", "dizikorea", "diziyou", "dizibox", "animecix", "tranimeizle", "sibling"], help="Hedef sağlayıcı filtresi")
     parser.add_argument("--no-db", action="store_true", help="SQLite veritabanına yazmayı devre dışı bırak (kuru çalıştırma)")
     parser.add_argument("--no-supabase", action="store_true", help="Supabase senkronizasyonunu devre dışı bırak")
     parser.add_argument("--audit-report", type=str, default=DEFAULT_AUDIT_REPORT, help="Girdi audit raporu JSON yolu")

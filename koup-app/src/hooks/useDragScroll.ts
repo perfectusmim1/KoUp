@@ -1,4 +1,5 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect } from 'react';
+import { setAccordionDragLock } from '@/components/AccordionMediaCard';
 
 /**
  * High-performance hook providing smooth mouse drag-to-scroll for horizontal containers on PC.
@@ -16,8 +17,9 @@ export function useDragScroll<T extends HTMLElement = HTMLDivElement>() {
     if (!el) return;
 
     const onMouseDown = (e: MouseEvent) => {
-      // Only primary mouse button (left click)
-      if (e.button !== 0) return;
+      // Allow dragging across buttons/cards, only exclude text inputs/dropdowns
+      if ((e.target as HTMLElement).closest('input, textarea, select')) return;
+
       isDownRef.current = true;
       hasDraggedRef.current = false;
       startXRef.current = e.pageX - el.offsetLeft;
@@ -28,10 +30,13 @@ export function useDragScroll<T extends HTMLElement = HTMLDivElement>() {
     const onMouseMove = (e: MouseEvent) => {
       if (!isDownRef.current) return;
       const x = e.pageX - el.offsetLeft;
-      const walk = (x - startXRef.current) * 1.4; // 1.4x momentum multiplier
+      const walk = (x - startXRef.current) * 1.5; // smooth momentum multiplier
 
-      if (Math.abs(walk) > 6) {
-        hasDraggedRef.current = true;
+      if (Math.abs(walk) > 5) {
+        if (!hasDraggedRef.current) {
+          hasDraggedRef.current = true;
+          setAccordionDragLock(true);
+        }
         el.style.cursor = 'grabbing';
         el.style.userSelect = 'none';
         el.scrollLeft = scrollLeftRef.current - walk;
@@ -39,9 +44,14 @@ export function useDragScroll<T extends HTMLElement = HTMLDivElement>() {
     };
 
     const onMouseUp = () => {
-      isDownRef.current = false;
-      el.style.cursor = '';
-      el.style.removeProperty('user-select');
+      if (isDownRef.current) {
+        isDownRef.current = false;
+        el.style.cursor = '';
+        el.style.removeProperty('user-select');
+        if (hasDraggedRef.current) {
+          setAccordionDragLock(false);
+        }
+      }
     };
 
     const onMouseLeave = () => {
@@ -49,6 +59,9 @@ export function useDragScroll<T extends HTMLElement = HTMLDivElement>() {
         isDownRef.current = false;
         el.style.cursor = '';
         el.style.removeProperty('user-select');
+        if (hasDraggedRef.current) {
+          setAccordionDragLock(false);
+        }
       }
     };
 
@@ -57,11 +70,19 @@ export function useDragScroll<T extends HTMLElement = HTMLDivElement>() {
       if (hasDraggedRef.current) {
         e.preventDefault();
         e.stopPropagation();
-        hasDraggedRef.current = false;
+        setTimeout(() => {
+          hasDraggedRef.current = false;
+        }, 100);
       }
     };
 
+    // Prevent native link/image dragging from stealing mousemove events
+    const onDragStart = (e: DragEvent) => {
+      e.preventDefault();
+    };
+
     el.addEventListener('mousedown', onMouseDown);
+    el.addEventListener('dragstart', onDragStart as any);
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
     el.addEventListener('mouseleave', onMouseLeave);
@@ -69,6 +90,7 @@ export function useDragScroll<T extends HTMLElement = HTMLDivElement>() {
 
     return () => {
       el.removeEventListener('mousedown', onMouseDown);
+      el.removeEventListener('dragstart', onDragStart as any);
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
       el.removeEventListener('mouseleave', onMouseLeave);

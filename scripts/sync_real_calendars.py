@@ -1,6 +1,6 @@
 """
 KoUp Real Broadcast Calendar Synchronizer
-- Scrapes https://webdramaturkey2.com/sayfa/takvim (73 real drama cards across 7 days)
+- Scrapes https://dizikorea3.com/ (K-Drama and Asian series releases)
 - Scrapes https://www.dizibox.live/dizi-takvimi/ (63 real TV series across 7 days)
 - Fetches AniList GraphQL AiringSchedule for seasonal animes
 - Calls public.upsert_calendar_schedule RPC to link media & populate public.calendar_schedules
@@ -59,6 +59,7 @@ def call_upsert_rpc(item):
         "p_category": item.get("category", "Dizi"),
         "p_cover_image": item.get("cover_image", ""),
         "p_source_url": item.get("source_url", ""),
+        "p_sync_secret": "koup_sync_secure_token_2026",
     }
     try:
         resp = requests.post(url, headers=HEADERS, json=payload, timeout=15)
@@ -71,83 +72,135 @@ def call_upsert_rpc(item):
     return None
 
 
-def sync_webdramaturkey():
-    print("--- [1/3] Syncing WebDramaTurkey2 Calendar ---")
-    url = "https://webdramaturkey2.com/sayfa/takvim"
+def sync_dizikorea():
+    print("--- [1/3] Syncing DiziKorea Calendar (https://dizikorea3.com/dizi-takvimi) ---")
+    url = "https://dizikorea3.com/dizi-takvimi"
     html_text = ""
 
-    # Try live fetch first
-    # 1. Try scratch backup first if exists, then live
-    scratch_path = r"c:\Users\Cagan\Downloads\KoUp\scratch\webdrama_takvim.html"
-    if os.path.exists(scratch_path):
-        with open(scratch_path, "r", encoding="utf-8") as f:
-            html_text = f.read()
+    # 1. Try live fetch first
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Referer": "https://dizikorea3.com/",
+    }
+    if cfr:
+        try:
+            r = cfr.get(url, headers=headers, impersonate="chrome", timeout=12)
+            if r.status_code == 200 and ("cal-day-panel" in r.text or "calendar-page" in r.text):
+                html_text = r.text
+        except Exception as e:
+            print(f"curl_cffi live fetch error: {e}", flush=True)
 
-    # Try live fetch if scratch not present or empty
     if not html_text:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-            "Referer": "https://webdramaturkey2.com/",
-        }
-        if cfr:
+        try:
+            r = requests.get(url, headers=headers, timeout=12)
+            if r.status_code == 200 and ("cal-day-panel" in r.text or "calendar-page" in r.text):
+                html_text = r.text
+        except Exception as e:
+            print(f"requests fetch error: {e}", flush=True)
+
+    # 2. Try cached scratch backup if fetch fails
+    if not html_text:
+        scratch_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scratch", "dizikorea_takvim.html")
+        if os.path.exists(scratch_path):
+            print(f"Using cached DiziKorea calendar from {scratch_path}")
             try:
-                r = cfr.get(url, headers=headers, impersonate="chrome", timeout=12)
-                if r.status_code == 200 and '<div class="card-calendar">' in r.text:
-                    html_text = r.text
-            except Exception as e:
-                print(f"curl_cffi live fetch error: {e}", flush=True)
+                with open(scratch_path, "r", encoding="utf-8") as f:
+                    html_text = f.read()
+            except Exception:
+                pass
+
+    if not html_text:
+        print("DiziKorea calendar HTML could not be loaded!")
+        return 0
 
     soup = BeautifulSoup(html_text, "html.parser")
-    cards = soup.select(".card-calendar")
-    print(f"Found {len(cards)} calendar cards on WebDramaTurkey2", flush=True)
-
     count = 0
-    for card in cards:
-        a_tag = card.select_one("a.card-calendar-episode") or card.find("a")
-        if not a_tag:
-            continue
-        href = a_tag.get("href", "")
-        # e.g. /dizi/the-judge-from-hell or /anime/bleach
-        slug_match = re.search(r"/(?:dizi|anime|film)/([^/]+)", href)
-        slug = slug_match.group(1) if slug_match else href.strip("/").split("/")[-1]
+    day_labels = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
 
-        title_el = card.select_one(".card-calendar-episode__content-title")
-        title = title_el.get_text(strip=True) if title_el else slug
+    day_panels = soup.select(".cal-day-panel")
+    if day_panels:
+        dedup_map = {}
+        for panel in day_panels:
+            pid = panel.get("data-cal-panel")
+            try:
+                p_idx = int(pid)
+                day_num = p_idx + 1
+            except (ValueError, TypeError):
+                day_num = 1
+            dname = day_labels[p_idx] if 0 <= p_idx < len(day_labels) else "Haftalık"
 
-        badge_el = card.select_one(".card-calendar-episode__content-badge")
-        ep_label = badge_el.get_text(strip=True) if badge_el else "Yeni Bölüm"
+            items = panel.select(".cal-schedule-item")
+            for item in items:
+                href = item.get("href", "")
+                if not href:
+                    continue
 
-        img_el = card.select_one(".card-calendar-episode__image img")
-        img_src = img_el.get("src") or img_el.get("data-src") or "" if img_el else ""
+                slug_match = re.search(r"/dizi/([^/]+)", href)
+                raw_slug = slug_match.group(1) if slug_match else href.strip("/").split("/")[-1]
+                slug = re.sub(r"-(izle|dq\d*)$", "", raw_slug)
 
-        tags_el = card.select(".card-calendar-episode__content-tags span")
-        category = tags_el[0].get_text(strip=True) if len(tags_el) > 0 else "Dizi"
-        date_str = tags_el[1].get_text(strip=True) if len(tags_el) > 1 else ""
+                title_el = item.select_one(".cal-schedule-title")
+                title = html.unescape(title_el.get_text(strip=True)) if title_el else raw_slug.replace("-", " ").title()
 
-        day_num = 1
-        for dname, dval in DAY_NAME_MAP.items():
-            if dname in date_str.lower():
-                day_num = dval
-                break
+                ep_el = item.select_one(".cal-schedule-ep")
+                ep_raw = html.unescape(ep_el.get_text(strip=True)) if ep_el else "Yeni Bölüm"
 
-        full_url = f"https://webdramaturkey2.com{href}" if href.startswith("/") else href
+                genre_el = item.select_one(".cal-schedule-genre")
+                category = html.unescape(genre_el.get_text(strip=True)) if genre_el else "K-Drama"
 
-        item = {
-            "source_site": "webdramaturkey",
-            "day_of_week": day_num,
-            "date_label": date_str,
-            "title": title,
-            "slug": slug,
-            "episode_label": ep_label,
-            "category": category,
-            "cover_image": img_src,
-            "source_url": full_url,
-        }
-        res = call_upsert_rpc(item)
-        if res:
-            count += 1
+                img_el = item.select_one(".cal-schedule-poster img")
+                img_src = (img_el.get("src") or img_el.get("data-src") or "") if img_el else ""
 
-    print(f"WebDramaTurkey2 synced {count} active calendar episodes.")
+                key = (day_num, slug)
+                if key not in dedup_map:
+                    s_m = re.search(r"(\d+)\.\s*Sezon", ep_raw)
+                    s_num = int(s_m.group(1)) if s_m else 1
+                    dedup_map[key] = {
+                        "day_num": day_num,
+                        "day_name": dname,
+                        "title": title[:100],
+                        "slug": slug,
+                        "season_num": s_num,
+                        "episodes": [],
+                        "category": category,
+                        "cover_image": img_src,
+                        "source_url": href,
+                    }
+
+                e_m = re.search(r"(\d+)\.\s*B", ep_raw)
+                if e_m:
+                    dedup_map[key]["episodes"].append(int(e_m.group(1)))
+                else:
+                    dedup_map[key]["episodes"].append(ep_raw)
+                dedup_map[key]["source_url"] = href
+
+        for key, d in dedup_map.items():
+            eps = sorted([x for x in d["episodes"] if isinstance(x, int)])
+            if len(eps) > 1:
+                ep_label = f"{d['season_num']}. Sezon {eps[0]}-{eps[-1]}. Bölümler"
+            elif len(eps) == 1:
+                ep_label = f"{d['season_num']}. Sezon {eps[0]}. Bölüm"
+            else:
+                ep_label = "Yeni Bölüm"
+
+            entry = {
+                "source_site": "dizikorea",
+                "day_of_week": d["day_num"],
+                "date_label": d["day_name"],
+                "title": d["title"],
+                "slug": d["slug"],
+                "episode_label": ep_label,
+                "category": d["category"],
+                "cover_image": d["cover_image"],
+                "source_url": d["source_url"],
+            }
+            res = call_upsert_rpc(entry)
+            if res:
+                count += 1
+    else:
+        print("No .cal-day-panel elements found in DiziKorea calendar HTML.")
+
+    print(f"DiziKorea synced {count} active calendar episodes across 7 days.")
     return count
 
 
@@ -221,84 +274,163 @@ def sync_dizibox():
     return count
 
 
-def sync_anilist_airing():
-    print("--- [3/3] Syncing AniList Seasonal Airing Anime Schedule ---")
-    query = """
-    query {
-      Page(page: 1, perPage: 40) {
-        airingSchedules(notYetAired: true, sort: TIME) {
-          id
-          airingAt
-          episode
-          media {
-            id
-            title {
-              romaji
-              english
-              native
-            }
-            coverImage {
-              large
-            }
-            genres
-            averageScore
-          }
-        }
-      }
-    }
-    """
+def sync_animecix_calendar():
+    print("--- [3/3] Syncing AnimeciX Real Calendar (https://animecix.tv/calendar) ---")
+    
+    # 1. Clean up old legacy tranimeizle entries
     try:
-        r = requests.post("https://graphql.anilist.co", json={"query": query}, timeout=15)
-        if r.status_code != 200:
-            print(f"AniList GraphQL error: {r.status_code}")
-            return 0
-        data = r.json()
-        schedules = data.get("data", {}).get("Page", {}).get("airingSchedules", [])
-        print(f"Fetched {len(schedules)} airing episodes from AniList")
+        del_resp = requests.delete(
+            f"{SUPABASE_URL}/rest/v1/calendar_schedules?source_site=eq.tranimeizle",
+            headers=HEADERS,
+            timeout=10
+        )
+        if del_resp.status_code in (200, 204):
+            print("Cleaned up legacy tranimeizle entries from calendar_schedules.")
+    except Exception as e:
+        print(f"Cleanup warning: {e}")
 
-        count = 0
-        from datetime import datetime, timezone
-        for s in schedules:
-            m = s.get("media") or {}
-            romaji = m.get("title", {}).get("romaji") or m.get("title", {}).get("english") or "Anime"
-            slug = re.sub(r"[^a-z0-9]+", "-", romaji.lower()).strip("-")
-            air_ts = s.get("airingAt", 0)
-            dt = datetime.fromtimestamp(air_ts, tz=timezone.utc)
-            # Python weekday: Monday=0 .. Sunday=6 -> KoUp day_of_week: 1..7
-            day_num = dt.weekday() + 1
-            day_labels = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
-            dname = f"{day_labels[dt.weekday()]} · {dt.strftime('%H:%M')} UTC"
+    # 2. Fetch official AnimeciX calendar API
+    endpoints = [
+        "https://animecix.tv/secure/calendar",
+        "https://animecix.net/secure/calendar"
+    ]
+    data = None
+    for ep in endpoints:
+        try:
+            r = requests.get(ep, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Referer": "https://animecix.tv/calendar",
+                "Accept": "application/json"
+            }, timeout=12)
+            if r.status_code == 200:
+                data = r.json()
+                print(f"Successfully fetched calendar from {ep}")
+                break
+        except Exception as e:
+            print(f"Endpoint {ep} error: {e}")
 
-            genres = m.get("genres") or ["Anime"]
-            cover = m.get("coverImage", {}).get("large") or ""
-            ep_num = s.get("episode", 1)
+    if not data or not data.get("data"):
+        print("AnimeciX calendar data could not be fetched!")
+        return 0
+
+    days = data.get("data", [])
+    day_labels = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
+    count = 0
+
+    for idx, day in enumerate(days[:7]):
+        day_num = idx + 1
+        dname = day_labels[idx]
+        episodes = day.get("episodes", [])
+        print(f"  {dname} (Gün {day_num}): {len(episodes)} anime yayınlanıyor.")
+
+        for ep_item in episodes:
+            title_obj = ep_item.get("title") or {}
+            if isinstance(title_obj, dict):
+                title_name = title_obj.get("name") or ep_item.get("name") or "Anime"
+                poster = title_obj.get("poster") or ep_item.get("poster") or ""
+                genres = title_obj.get("genres") or ["Anime"]
+                t_id = title_obj.get("id") or ep_item.get("title_id")
+            else:
+                title_name = ep_item.get("name") or "Anime"
+                poster = ep_item.get("poster") or ""
+                genres = ["Anime"]
+                t_id = ep_item.get("title_id")
+
+            ep_num = ep_item.get("episode_number") or ep_item.get("number") or 1
+            category = genres[0] if (genres and isinstance(genres, list)) else "Anime"
+            slug = re.sub(r"[^a-z0-9]+", "-", title_name.lower()).strip("-")
 
             item = {
-                "source_site": "tranimeizle",
+                "source_site": "animecix",
                 "day_of_week": day_num,
                 "date_label": dname,
-                "title": romaji,
+                "title": title_name[:100],
                 "slug": slug,
                 "episode_label": f"{ep_num}. Bölüm",
-                "category": genres[0] if genres else "Anime",
-                "cover_image": cover,
-                "source_url": f"https://anilist.co/anime/{m.get('id')}",
+                "category": category,
+                "cover_image": poster,
+                "source_url": f"https://animecix.tv/titles/{t_id}" if t_id else "https://animecix.tv/calendar",
             }
             res = call_upsert_rpc(item)
             if res:
                 count += 1
 
-        print(f"AniList seasonal schedule synced {count} airing anime episodes.")
-        return count
+    print(f"AnimeciX synced {count} active calendar episodes across 7 days.")
+    return count
+
+
+def sync_asyaanimeleri_calendar():
+    print("--- [4/4] Syncing AsyaAnimeleri Calendar (https://asyaanimeleri.top/takvim/) ---")
+    url = "https://asyaanimeleri.top/takvim/"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Referer": "https://asyaanimeleri.top/",
+    }
+    try:
+        r = requests.get(url, headers=headers, timeout=15)
+        if r.status_code != 200:
+            print(f"AsyaAnimeleri takvim fetch failed with status {r.status_code}")
+            return 0
     except Exception as e:
-        print(f"AniList GraphQL schedule error: {e}")
+        print(f"AsyaAnimeleri takvim fetch error: {e}")
         return 0
+
+    soup = BeautifulSoup(r.text, "html.parser")
+    day_class_map = {
+        "sch_monday": (1, "Pazartesi"),
+        "sch_tuesday": (2, "Salı"),
+        "sch_wednesday": (3, "Çarşamba"),
+        "sch_thursday": (4, "Perşembe"),
+        "sch_friday": (5, "Cuma"),
+        "sch_saturday": (6, "Cumartesi"),
+        "sch_sunday": (7, "Pazar"),
+    }
+
+    count = 0
+    for sch_class, (day_num, day_name) in day_class_map.items():
+        box = soup.select_one(f".bixbox.schedulepage.{sch_class}")
+        if not box:
+            continue
+        cards = box.select(".bsx")
+        print(f"  {day_name} (Gün {day_num}): {len(cards)} Donghua / Asya animesi yayınlanıyor.")
+        for card in cards:
+            a_tag = card.find("a")
+            if not a_tag:
+                continue
+            title = a_tag.get("title") or a_tag.get_text(strip=True)
+            href = a_tag.get("href", "")
+            img = a_tag.find("img")
+            cover = img.get("src") or img.get("data-src") or "" if img else ""
+            ep_span = a_tag.select_one(".sb.Sub")
+            ep_num = ep_span.get_text(strip=True) if ep_span else ""
+            ep_label = f"{ep_num}. Bölüm" if ep_num and ep_num != "??" else "Yeni Bölüm"
+            slug = href.rstrip("/").split("/")[-1] if href else re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+
+            item = {
+                "source_site": "asyaanimeleri",
+                "day_of_week": day_num,
+                "date_label": day_name,
+                "title": title[:100],
+                "slug": slug,
+                "episode_label": ep_label,
+                "category": "Donghua & Asya Animesi",
+                "cover_image": cover,
+                "source_url": href,
+            }
+            res = call_upsert_rpc(item)
+            if res:
+                count += 1
+
+    print(f"AsyaAnimeleri synced {count} active calendar episodes across 7 days.")
+    return count
 
 
 if __name__ == "__main__":
     print("Starting KoUp Real Broadcast Calendar Synchronization...")
-    w_count = sync_webdramaturkey()
+    w_count = sync_dizikorea()
     d_count = sync_dizibox()
-    a_count = sync_anilist_airing()
+    a_count = sync_animecix_calendar()
+    asya_count = sync_asyaanimeleri_calendar()
     print("=================================================")
-    print(f"SUCCESS: Total {w_count + d_count + a_count} real schedule items synced to public.calendar_schedules!")
+    print(f"SUCCESS: Total {w_count + d_count + a_count + asya_count} real schedule items synced to public.calendar_schedules!")
+

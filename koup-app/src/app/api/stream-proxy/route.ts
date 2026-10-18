@@ -1,0 +1,400 @@
+import { NextRequest, NextResponse } from 'next/server';
+
+export const dynamic = 'force-dynamic';
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+      'Access-Control-Allow-Headers': '*',
+    },
+  });
+}
+
+const BLOCKED_HOST_PATTERNS = [
+  /^localhost$/i,
+  /\.local$/i,
+  /\.internal$/i,
+  /\.lan$/i,
+  /\.home$/i,
+  /\.arpa$/i,
+  /^metadata\.google\.internal$/i,
+  /^instance-data$/i,
+];
+
+function isBlockedIpOrHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().trim();
+  for (const pattern of BLOCKED_HOST_PATTERNS) {
+    if (pattern.test(host)) return true;
+  }
+  if (['127.0.0.1', '0.0.0.0', '::1', '169.254.169.254', 'metadata'].includes(host)) {
+    return true;
+  }
+  const ipv4PrivateRegex =
+    /^(?:127\.|10\.|192\.168\.|172\.(?:1[6-9]|2[0-9]|3[0-1])\.|169\.254\.|100\.(?:6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\.|0\.)/;
+  if (ipv4PrivateRegex.test(host)) return true;
+  if (host.startsWith('::') || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80')) {
+    return true;
+  }
+  if (/^(?:0x[0-9a-f]+|\d+)$/i.test(host)) return true;
+  return false;
+}
+
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const targetUrl = searchParams.get('url');
+  const customRef = searchParams.get('ref');
+
+  if (!targetUrl || !targetUrl.startsWith('http')) {
+    return NextResponse.json({ error: 'Invalid url parameter' }, { status: 400 });
+  }
+
+  try {
+    const parsedTarget = new URL(targetUrl);
+    if (!['http:', 'https:'].includes(parsedTarget.protocol) || isBlockedIpOrHost(parsedTarget.hostname)) {
+      return NextResponse.json({ error: 'Blocked host or protocol' }, { status: 403 });
+    }
+
+    // Determine the proper Referer & Origin to bypass hotlink protection
+    let referer = 'https://dizikorea3.com/';
+    let origin = 'https://dizikorea3.com';
+
+    if (customRef && customRef.startsWith('http')) {
+      try {
+        const refParsed = new URL(customRef);
+        referer = customRef;
+        origin = `${refParsed.protocol}//${refParsed.host}`;
+      } catch {}
+    } else if (targetUrl.includes('dizikorea')) {
+      referer = 'https://dizikorea3.com/';
+      origin = 'https://dizikorea3.com';
+    } else if (targetUrl.includes('diziyou')) {
+      referer = 'https://diziyou.co/';
+      origin = 'https://diziyou.co';
+    } else if (targetUrl.includes('dizibox') || targetUrl.includes('molystream')) {
+      referer = 'https://dizibox.tv/';
+      origin = 'https://dizibox.tv';
+    } else if (targetUrl.includes('ciner') || targetUrl.includes('showtv')) {
+      referer = 'https://www.showtv.com.tr/';
+      origin = 'https://www.showtv.com.tr';
+    } else if (targetUrl.includes('mncdn') || targetUrl.includes('puhu')) {
+      referer = 'https://puhu.tv/';
+      origin = 'https://puhu.tv';
+    } else if (targetUrl.includes('tabii')) {
+      referer = 'https://www.tabii.com/';
+      origin = 'https://www.tabii.com';
+    } else if (targetUrl.includes('twimg') || targetUrl.includes('twitter')) {
+      referer = 'https://twitter.com/';
+      origin = 'https://twitter.com';
+    } else if (targetUrl.includes('yandex') || targetUrl.includes('yadi.sk')) {
+      referer = 'https://disk.yandex.com.tr/';
+      origin = 'https://disk.yandex.com.tr';
+    } else if (targetUrl.includes('tranimeizle')) {
+      referer = 'https://tranimeizle.net/';
+      origin = 'https://tranimeizle.net';
+    } else if (targetUrl.includes('animecix') || targetUrl.includes('tau-video')) {
+      referer = 'https://animecix.net/';
+      origin = 'https://animecix.net';
+    } else if (targetUrl.includes('sibnet.ru')) {
+      referer = 'https://video.sibnet.ru/';
+      origin = 'https://video.sibnet.ru';
+    } else if (targetUrl.includes('vidmoly') || targetUrl.includes('vmoly')) {
+      referer = 'https://vidmoly.biz/';
+      origin = 'https://vidmoly.biz';
+    } else if (targetUrl.includes('sendvid')) {
+      referer = 'https://sendvid.com/';
+      origin = 'https://sendvid.com';
+    } else if (targetUrl.includes('yourupload')) {
+      referer = 'https://www.yourupload.com/';
+      origin = 'https://www.yourupload.com';
+    } else if (targetUrl.includes('mp4upload')) {
+      referer = 'https://www.mp4upload.com/';
+      origin = 'https://www.mp4upload.com';
+    } else if (targetUrl.includes('ok.ru') || targetUrl.includes('okcdn.ru') || targetUrl.includes('mycdn.me')) {
+      referer = 'https://ok.ru/';
+      origin = 'https://ok.ru';
+    } else if (targetUrl.includes('vk.com') || targetUrl.includes('vkuser') || targetUrl.includes('userapi.com')) {
+      referer = 'https://vk.com/';
+      origin = 'https://vk.com';
+    } else if (
+      targetUrl.includes('hdfilmcehennemi') ||
+      targetUrl.includes('cdnimages') ||
+      targetUrl.includes('playmix') ||
+      targetUrl.includes('rapidload') ||
+      targetUrl.includes('closeload') ||
+      targetUrl.includes('rapidrame') ||
+      targetUrl.includes('rplayer')
+    ) {
+      referer = 'https://www.hdfilmcehennemi.nl/';
+      origin = 'https://www.hdfilmcehennemi.nl';
+    } else if (
+      targetUrl.includes('pichive.online') ||
+      targetUrl.includes('hotlinger.com') ||
+      targetUrl.includes('dplayer82.site') ||
+      targetUrl.includes('dplayer') ||
+      targetUrl.includes('gew2tjg5up') ||
+      targetUrl.includes('kk6k2tczh8') ||
+      targetUrl.includes('glogv5ppja') ||
+      targetUrl.includes('slz8fn87k0') ||
+      targetUrl.includes('qakqjhcvip') ||
+      targetUrl.includes('fq6ay6al70')
+    ) {
+      if (customRef) {
+        referer = customRef;
+      } else if (targetUrl.includes('hotlinger')) {
+        referer = 'https://sn.hotlinger.com/';
+        origin = 'https://sn.hotlinger.com';
+      } else {
+        referer = 'https://four.pichive.online/';
+        origin = 'https://four.pichive.online';
+      }
+    }
+
+    const upstreamHeaders: Record<string, string> = {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+      Referer: referer,
+      Origin: origin,
+      Accept: '*/*',
+    };
+
+    // Forward Range header if client requested byte range (for video seek)
+    const rangeHeader = req.headers.get('range');
+    if (rangeHeader) {
+      upstreamHeaders['Range'] = rangeHeader;
+    }
+
+    let upstreamRes: Response | null = null;
+    try {
+      upstreamRes = await fetch(targetUrl, {
+        headers: upstreamHeaders,
+        redirect: 'follow',
+        signal: AbortSignal.timeout(12000),
+      });
+    } catch {}
+
+    // If upstream fetch failed or returned 403 (e.g. Cloudflare on Pichive/Hotlinger playlists/subtitles), fall back to curl!
+    if (!upstreamRes || (!upstreamRes.ok && upstreamRes.status !== 206)) {
+      if (
+        targetUrl.includes('pichive') ||
+        targetUrl.includes('hotlinger') ||
+        targetUrl.includes('dplayer') ||
+        targetUrl.includes('glogv5ppja') ||
+        targetUrl.includes('.vtt')
+      ) {
+        if (targetUrl.includes('.vtt')) {
+          try {
+            const { execFile } = await import('child_process');
+            const vttOutput = await new Promise<string>((resolve, reject) => {
+              execFile(
+                'curl.exe',
+                [
+                  '-s',
+                  '-L',
+                  '-H', `Referer: ${referer}`,
+                  '-H', `Origin: ${origin}`,
+                  '-H', `User-Agent: ${upstreamHeaders['User-Agent']}`,
+                  '--connect-timeout', '6',
+                  '--max-time', '10',
+                  targetUrl,
+                ],
+                { maxBuffer: 5 * 1024 * 1024 },
+                (err, stdout) => (err ? reject(err) : resolve(stdout))
+              );
+            });
+            if (vttOutput && (vttOutput.includes('WEBVTT') || vttOutput.length > 10)) {
+              return new NextResponse(vttOutput, {
+                status: 200,
+                headers: {
+                  'Content-Type': 'text/vtt; charset=utf-8',
+                  'Access-Control-Allow-Origin': '*',
+                  'Cache-Control': 'public, max-age=86400',
+                },
+              });
+            }
+          } catch {}
+        }
+
+        const isPlayListUrl =
+          targetUrl.includes('/m.php') ||
+          targetUrl.includes('/l.php') ||
+          targetUrl.includes('/ld.php') ||
+          targetUrl.includes('.m3u8');
+        if (isPlayListUrl) {
+          try {
+            const { execFile } = await import('child_process');
+            const curlOutput = await new Promise<string>((resolve, reject) => {
+              execFile(
+                'curl.exe',
+                [
+                  '-s',
+                  '-L',
+                  '-H', `Referer: ${referer}`,
+                  '-H', `User-Agent: ${upstreamHeaders['User-Agent']}`,
+                  '--connect-timeout', '6',
+                  '--max-time', '10',
+                  targetUrl,
+                ],
+                { maxBuffer: 10 * 1024 * 1024 },
+                (err, stdout) => (err ? reject(err) : resolve(stdout))
+              );
+            });
+            if (curlOutput && (curlOutput.includes('#EXTM3U') || curlOutput.includes('#EXTINF'))) {
+              return rewritePlaylist(curlOutput, targetUrl, req, referer);
+            }
+          } catch {}
+        }
+      }
+
+      if (!upstreamRes) {
+        return new NextResponse(`Upstream failed to connect`, {
+          status: 502,
+          headers: { 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+      return new NextResponse(`Upstream returned ${upstreamRes.status}`, {
+        status: upstreamRes.status,
+        headers: { 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+
+    const contentType = upstreamRes.headers.get('content-type') || '';
+    const isPlaylist =
+      contentType.includes('mpegurl') ||
+      contentType.includes('text/plain') ||
+      targetUrl.includes('.m3u8') ||
+      targetUrl.includes('master.txt') ||
+      targetUrl.includes('/m.php') ||
+      targetUrl.includes('/l.php') ||
+      targetUrl.includes('/ld.php');
+
+    if (isPlaylist) {
+      const text = await upstreamRes.text();
+
+      // Check if upstream actually returned a security error string
+      if (text.trim().toLowerCase().includes('security error')) {
+        // Retry with alternative referer variations
+        const altRes = await fetch(targetUrl, {
+          headers: {
+            ...upstreamHeaders,
+            Referer: 'https://dizikorea3.com/',
+            Origin: 'https://dizikorea3.com',
+          },
+        });
+        if (altRes.ok) {
+          const altText = await altRes.text();
+          if (!altText.trim().toLowerCase().includes('security error')) {
+            return rewritePlaylist(altText, targetUrl, req, referer);
+          }
+        }
+      }
+
+      return rewritePlaylist(text, targetUrl, req, referer);
+    }
+
+    // Binary media stream (.ts chunk, .mp4, init segment)
+    const responseHeaders = new Headers();
+    responseHeaders.set('Access-Control-Allow-Origin', '*');
+    responseHeaders.set('Access-Control-Allow-Headers', '*');
+
+    const forwardHeaders = [
+      'content-type',
+      'content-length',
+      'content-range',
+      'accept-ranges',
+      'cache-control',
+    ];
+
+    for (const h of forwardHeaders) {
+      const val = upstreamRes.headers.get(h);
+      if (val) responseHeaders.set(h, val);
+    }
+
+    if (
+      targetUrl.includes('.ts') ||
+      (targetUrl.includes('.jpg') && (targetUrl.includes('/f/') || targetUrl.includes('/o/a/') || targetUrl.includes('/m/a/') || targetUrl.includes('/dual')))
+    ) {
+      responseHeaders.set('content-type', 'video/mp2t');
+    } else if (targetUrl.includes('.mp4')) {
+      responseHeaders.set('content-type', 'video/mp4');
+    } else if (targetUrl.includes('.vtt')) {
+      responseHeaders.set('content-type', 'text/vtt; charset=utf-8');
+    }
+
+    if (!responseHeaders.has('cache-control')) {
+      responseHeaders.set('cache-control', 'public, max-age=86400, immutable');
+    }
+
+    return new NextResponse(upstreamRes.body, {
+      status: upstreamRes.status,
+      headers: responseHeaders,
+    });
+  } catch (err: any) {
+    console.error('Stream proxy error:', err);
+    return NextResponse.json(
+      { error: 'Proxy request failed', details: err?.message || String(err) },
+      { status: 502, headers: { 'Access-Control-Allow-Origin': '*' } }
+    );
+  }
+}
+
+function rewritePlaylist(
+  content: string,
+  baseTargetUrl: string,
+  req: NextRequest,
+  referer?: string
+): NextResponse {
+  const host = req.headers.get('host') || 'localhost:3000';
+  const proto = req.headers.get('x-forwarded-proto') || 'http';
+  const refSuffix = referer ? `&ref=${encodeURIComponent(referer)}` : '';
+  const proxyBase = `${proto}://${host}/api/stream-proxy?url=`;
+
+  const lines = content.split('\n');
+  const rewrittenLines = lines.map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      // Fix syntax defects in upstream master playlists (e.g. Pichive missing comma before RESOLUTION or double commas)
+      if (trimmed.startsWith('#EXT-X-STREAM-INF:')) {
+        let fixed = trimmed
+          .replace(/,,+/g, ',')
+          .replace(/([0-9a-zA-Z_"])RESOLUTION=/g, '$1,RESOLUTION=')
+          .replace(/([0-9a-zA-Z_"])NAME=/g, '$1,NAME=')
+          .replace(/([0-9a-zA-Z_"])CODECS=/g, '$1,CODECS=')
+          .replace(/,,+/g, ',');
+        return fixed;
+      }
+
+      // Check for URI in tags like #EXT-X-KEY or #EXT-X-MEDIA:TYPE=AUDIO,...URI="..."
+      if (trimmed.includes('URI="')) {
+        return trimmed.replace(/URI="([^"]+)"/g, (_, uriVal) => {
+          try {
+            const absoluteUri = new URL(uriVal, baseTargetUrl).toString();
+            return `URI="${proxyBase}${encodeURIComponent(absoluteUri)}${refSuffix}"`;
+          } catch {
+            return `URI="${uriVal}"`;
+          }
+        });
+      }
+      return line;
+    }
+
+    try {
+      const absoluteUrl = new URL(trimmed, baseTargetUrl).toString();
+      return `${proxyBase}${encodeURIComponent(absoluteUrl)}${refSuffix}`;
+    } catch {
+      return line;
+    }
+  });
+
+  return new NextResponse(rewrittenLines.join('\n'), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/vnd.apple.mpegurl',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+      'Cache-Control': 'public, max-age=60',
+    },
+  });
+}

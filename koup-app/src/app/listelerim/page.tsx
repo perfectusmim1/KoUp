@@ -370,7 +370,7 @@ export default function MyListsPage() {
                     <button
                       onClick={() => setDeletingId(l.id)}
                       className="w-7 h-7 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 flex items-center justify-center transition-all cursor-pointer opacity-70 hover:opacity-100"
-                      title="Listeyi Sil"
+                      aria-label="Listeyi Sil"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>

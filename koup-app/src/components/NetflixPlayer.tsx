@@ -1,30 +1,32 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import Hls from 'hls.js';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
-  Play,
-  Pause,
-  RotateCcw,
-  RotateCw,
   Volume2,
+  Volume1,
   VolumeX,
   Maximize,
   Minimize,
-  SkipForward,
-  SkipBack,
   Layers,
-  ListVideo,
-  Users,
-  AlertTriangle,
-  CheckCircle2,
-  Sparkles,
-  Lightbulb,
   Clock,
-  Subtitles,
-  Settings,
   X,
+  Check,
+  Lock,
+  Unlock,
+  ArrowLeft,
+  Sun,
+  RotateCw,
+  Play,
+  Lightbulb,
+  Sparkles,
+  SlidersHorizontal,
+  ChevronDown,
+  AlertTriangle,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
 import {
   MediaItem,
@@ -32,67 +34,449 @@ import {
   EpisodeSource,
   CastMember,
   getProxiedImageUrl,
-  supabase,
+  cleanMediaTitle,
+  cleanQualityLabel,
+  cleanEpisodeName,
+  formatEpisodeTitle,
+  getEpisodeProgress,
 } from '@/lib/supabase';
-import CustomSelect from '@/components/CustomSelect';
 import { useKoUp } from '@/context/KoUpContext';
+import NetflixEpisodePopover from '@/components/NetflixEpisodePopover';
 
-interface NetflixPlayerProps {
+/* ============================================================================
+   CUSTOM NETFLIX AUTHENTIC SVG ICONS (Matched to Reference Screenshots)
+   ============================================================================ */
+
+function NetflixRewind10Icon({
+  className = 'w-14 h-14',
+  isAnimating = false,
+}: {
+  className?: string;
+  isAnimating?: boolean;
+}) {
+  return (
+    <svg
+      viewBox="0 0 64 64"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={`${className} transition-transform duration-200 ease-out ${
+        isAnimating ? 'scale-90 opacity-80' : 'scale-100 opacity-100'
+      }`}
+    >
+      {/* Circular 300-degree arc */}
+      <path
+        d="M22.5 11.8C14.5 15.5 9 23.6 9 33C9 45.7 19.3 56 32 56C44.7 56 55 45.7 55 33C55 21.6 46.7 12.1 35.8 10.3"
+        stroke="currentColor"
+        strokeWidth="3.2"
+        strokeLinecap="round"
+      />
+      {/* Double left-pointing arrows at top */}
+      <path
+        d="M27.5 5.5L21 11.2L27.5 16.9"
+        stroke="currentColor"
+        strokeWidth="3.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M35.5 5.5L29 11.2L35.5 16.9"
+        stroke="currentColor"
+        strokeWidth="3.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* 10 numeral centered */}
+      <text
+        x="32"
+        y="39.5"
+        textAnchor="middle"
+        fill="currentColor"
+        fontSize="19"
+        fontWeight="700"
+        fontFamily="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Plus Jakarta Sans', sans-serif"
+        letterSpacing="-0.5"
+      >
+        10
+      </text>
+    </svg>
+  );
+}
+
+function NetflixForward10Icon({
+  className = 'w-14 h-14',
+  isAnimating = false,
+}: {
+  className?: string;
+  isAnimating?: boolean;
+}) {
+  return (
+    <svg
+      viewBox="0 0 64 64"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={`${className} transition-transform duration-200 ease-out ${
+        isAnimating ? 'scale-90 opacity-80' : 'scale-100 opacity-100'
+      }`}
+    >
+      {/* Circular 300-degree arc */}
+      <path
+        d="M41.5 11.8C49.5 15.5 55 23.6 55 33C55 45.7 44.7 56 32 56C19.3 56 9 45.7 9 33C9 21.6 17.3 12.1 28.2 10.3"
+        stroke="currentColor"
+        strokeWidth="3.2"
+        strokeLinecap="round"
+      />
+      {/* Double right-pointing arrows at top */}
+      <path
+        d="M36.5 5.5L43 11.2L36.5 16.9"
+        stroke="currentColor"
+        strokeWidth="3.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M28.5 5.5L35 11.2L28.5 16.9"
+        stroke="currentColor"
+        strokeWidth="3.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* 10 numeral centered */}
+      <text
+        x="32"
+        y="39.5"
+        textAnchor="middle"
+        fill="currentColor"
+        fontSize="19"
+        fontWeight="700"
+        fontFamily="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Plus Jakarta Sans', sans-serif"
+        letterSpacing="-0.5"
+      >
+        10
+      </text>
+    </svg>
+  );
+}
+
+function NetflixPauseBarsIcon({ className = 'w-16 h-16' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
+      <rect x="11" y="7" width="9.5" height="34" rx="1.5" fill="currentColor" />
+      <rect x="27.5" y="7" width="9.5" height="34" rx="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+function NetflixPlayTriangleIcon({ className = 'w-16 h-16' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
+      <path
+        d="M13 7.8C13 6.6 14.3 5.9 15.3 6.5L40.2 22.7C41.1 23.3 41.1 24.7 40.2 25.3L15.3 41.5C14.3 42.1 13 41.4 13 40.2V7.8Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function NetflixEpisodesIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
+      <rect x="2" y="7" width="15" height="12" rx="1.5" fill="currentColor" />
+      <path
+        d="M6 4.5H19.5C20.3284 4.5 21 5.17157 21 6V15.5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M9 2H21.5C22.3284 2 23 2.67157 23 3.5V12.5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function NetflixSpeedIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
+      <path
+        d="M4.2 18.5C2.8 16.7 2 14.4 2 12C2 6.5 6.5 2 12 2C17.5 2 22 6.5 22 12C22 14.4 21.2 16.7 19.8 18.5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M12 13L16.5 7.5"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+      />
+      <circle cx="12" cy="13" r="2" fill="currentColor" />
+    </svg>
+  );
+}
+
+function NetflixNextEpIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
+      <path
+        d="M4 5.2C4 4.4 4.9 3.9 5.6 4.4L16.2 11.2C16.8 11.6 16.8 12.4 16.2 12.8L5.6 19.6C4.9 20.1 4 19.6 4 18.8V5.2Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <line
+        x1="19.5"
+        y1="4.5"
+        x2="19.5"
+        y2="19.5"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function NetflixAudioSubtitleIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
+      <path
+        d="M20 4H4C2.9 4 2 4.9 2 6V16C2 17.1 2.9 18 4 18H7L10 21V18H20C21.1 18 22 17.1 22 16V6C22 4.9 21.1 4 20 4Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <line x1="7" y1="9" x2="17" y2="9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <line x1="7" y1="13" x2="13" y2="13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export interface SubtitleTrack {
+  label: string;
+  lang: string;
+  url: string;
+  default?: boolean;
+}
+
+export interface SubtitleCue {
+  start: number;
+  end: number;
+  text: string;
+}
+
+export interface AudioTrackOption {
+  id: number;
+  label: string;
+  name?: string;
+  lang?: string;
+}
+
+function parseWebVTT(vttText: string): SubtitleCue[] {
+  const cues: SubtitleCue[] = [];
+  const timeRegex = /(?:(\d{2}):)?(\d{2}):(\d{2})[.,](\d{3})\s*-->\s*(?:(\d{2}):)?(\d{2}):(\d{2})[.,](\d{3})/;
+  const blocks = vttText.replace(/\r\n/g, '\n').split(/\n\n+/);
+
+  const parseSec = (h: string | undefined, m: string, s: string, ms: string) => {
+    const hours = h ? parseInt(h, 10) : 0;
+    const mins = parseInt(m, 10);
+    const secs = parseInt(s, 10);
+    const millis = parseInt(ms, 10);
+    return hours * 3600 + mins * 60 + secs + millis / 1000;
+  };
+
+  for (const block of blocks) {
+    const lines = block.trim().split('\n');
+    let timeIndex = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (timeRegex.test(lines[i])) {
+        timeIndex = i;
+        break;
+      }
+    }
+    if (timeIndex === -1) continue;
+    const match = lines[timeIndex].match(timeRegex);
+    if (!match) continue;
+
+    const start = parseSec(match[1], match[2], match[3], match[4]);
+    const end = parseSec(match[5], match[6], match[7], match[8]);
+    const textLines = lines.slice(timeIndex + 1);
+    const text = textLines.join('\n').replace(/<[^>]+>/g, '').trim();
+    if (text) {
+      cues.push({ start, end, text });
+    }
+  }
+  return cues;
+}
+
+/* ============================================================================
+   STREAM URL HELPERS
+   ============================================================================ */
+
+function formatStreamUrlWithTimestamp(rawUrl: string, startSec: number): string {
+  if (!rawUrl || startSec <= 10) return rawUrl;
+  const sec = Math.floor(startSec);
+  try {
+    const u = new URL(rawUrl);
+    if (u.hostname.includes('youtube.com') || u.hostname.includes('youtu.be')) {
+      u.searchParams.set('start', String(sec));
+      return u.toString();
+    }
+    if (u.hostname.includes('ok.ru') || u.hostname.includes('odnoklassniki')) {
+      u.searchParams.set('time', String(sec));
+      return u.toString();
+    }
+    if (u.hostname.includes('dailymotion.com')) {
+      u.searchParams.set('start', String(sec));
+      return u.toString();
+    }
+    if (!u.searchParams.has('t') && !u.searchParams.has('time')) {
+      u.searchParams.set('t', String(sec));
+    }
+    u.hash = `t=${sec}`;
+    return u.toString();
+  } catch {
+    if (rawUrl.includes('#')) {
+      return `${rawUrl.split('#')[0]}#t=${sec}`;
+    }
+    return `${rawUrl}#t=${sec}`;
+  }
+}
+
+function normalizePlayerStreamUrl(rawUrl: string, startSec: number): { url: string; isYouTube: boolean } {
+  if (!rawUrl) return { url: '', isYouTube: false };
+
+  const isYt =
+    rawUrl.includes('youtube.com') ||
+    rawUrl.includes('youtu.be') ||
+    rawUrl.includes('youtube-nocookie.com');
+
+  if (isYt) {
+    let videoId = '';
+    const embedMatch = rawUrl.match(/\/embed\/([a-zA-Z0-9_\-]+)/);
+    const watchMatch = rawUrl.match(/[?&]v=([a-zA-Z0-9_\-]+)/);
+    const shortMatch = rawUrl.match(/youtu\.be\/([a-zA-Z0-9_\-]+)/);
+
+    if (embedMatch) videoId = embedMatch[1];
+    else if (watchMatch) videoId = watchMatch[1];
+    else if (shortMatch) videoId = shortMatch[1];
+
+    if (videoId) {
+      const origin =
+        typeof window !== 'undefined' && window.location.origin
+          ? window.location.origin
+          : 'http://localhost:3000';
+      const sec = Math.floor(startSec || 0);
+      const startParam = sec > 10 ? `&start=${sec}` : '';
+      const cleanYtUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&playsinline=1&rel=0&controls=0&disablekb=1&fs=0&modestbranding=1&iv_load_policy=3&origin=${encodeURIComponent(
+        origin
+      )}&widget_referrer=${encodeURIComponent(origin)}${startParam}`;
+      return { url: cleanYtUrl, isYouTube: true };
+    }
+  }
+
+  return { url: formatStreamUrlWithTimestamp(rawUrl, startSec), isYouTube: false };
+}
+
+export interface NetflixPlayerProps {
   media: MediaItem;
-  episodes: EpisodeData[];
-  currentSeason: number;
-  currentEpisode: number;
-  onSelectEpisode: (season: number, episode: number) => void;
+  episodes?: EpisodeData[];
+  currentSeason?: number;
+  currentEpisode?: number;
+  onSelectEpisode?: (season: number, episode: number) => void;
   cast?: CastMember[];
   selectedSourceIdx?: number;
   onSelectSourceIdx?: (idx: number) => void;
   selectedFansub?: string;
   cinemaLightsOff?: boolean;
   onToggleCinemaLights?: () => void;
+  ambientLightingEnabled?: boolean;
+  onToggleAmbientLighting?: () => void;
+  autoNextEnabled?: boolean;
+  onToggleAutoNext?: () => void;
+  initialSeekTime?: number;
+  isTrailerMode?: boolean;
+  trailerYoutubeId?: string | null;
+  onCloseTrailer?: () => void;
 }
+
+type ActivePanel = 'episodes' | 'speed' | 'sources' | 'audio_subtitles' | 'quality' | null;
+
+// Module-level persistent cache for episode video preview frame snapshots
+// Key: `${mediaId}_s${seasonNumber}_e${episodeNumber}` -> Data URL string
+const episodePreviewCache = new Map<string, string>();
+
+const EP_ROW_COLLAPSED_H = 44;
+const EP_ROW_EXPANDED_H = 132;
 
 export default function NetflixPlayer({
   media,
-  episodes,
-  currentSeason,
-  currentEpisode,
-  onSelectEpisode,
-  cast = [],
+  episodes = [],
+  currentSeason = 1,
+  currentEpisode = 1,
+  onSelectEpisode = () => {},
   selectedSourceIdx: propSelectedSourceIdx,
   onSelectSourceIdx,
   selectedFansub: propSelectedFansub = 'all',
   cinemaLightsOff: propCinemaLightsOff,
   onToggleCinemaLights,
+  ambientLightingEnabled: propAmbientLightingEnabled,
+  onToggleAmbientLighting: propOnToggleAmbientLighting,
+  autoNextEnabled: propAutoNextEnabled,
+  onToggleAutoNext: propOnToggleAutoNext,
+  initialSeekTime = 0,
+  isTrailerMode = false,
+  trailerYoutubeId: propTrailerYoutubeId,
+  onCloseTrailer,
 }: NetflixPlayerProps) {
+  const router = useRouter();
   const {
     progressMap,
     updateEpisodeProgress,
     toggleEpisodeWatched,
     pushNotification,
+    isTrailerMuted,
+    setTrailerMuted,
   } = useKoUp();
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null);
+  const previewSeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const scrubberRef = useRef<HTMLInputElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
-  const hideControlsTimer = useRef<NodeJS.Timeout | null>(null);
+  const hideControlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const singleClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTouchTapRef = useRef<{ time: number; x: number }>({ time: 0, x: 0 });
+  const isDraggingVolumeRef = useRef(false);
+  const volumeHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedVolumeRef = useRef(1);
 
   const currentEpObj =
     episodes.find(
       (e) =>
-        e.season_number === currentSeason && e.episode_number === currentEpisode
-    ) || episodes[0];
+        (e.season_number || 1) === currentSeason && e.episode_number === currentEpisode
+    ) ||
+    episodes.find((e) => e.episode_number === currentEpisode) ||
+    episodes[0];
 
   const availableSources: EpisodeSource[] = currentEpObj?.sources || [];
 
-  // Source selection handling (can be controlled externally or internally)
+  // Source selection state
   const [internalSourceIdx, setInternalSourceIdx] = useState(0);
   const selectedSourceIdx =
     propSelectedSourceIdx !== undefined ? propSelectedSourceIdx : internalSourceIdx;
-  const setSelectedSourceIdx = (idx: number) => {
-    if (onSelectSourceIdx) onSelectSourceIdx(idx);
-    else setInternalSourceIdx(idx);
-  };
+  const setSelectedSourceIdx = useCallback(
+    (idx: number) => {
+      if (onSelectSourceIdx) onSelectSourceIdx(idx);
+      else setInternalSourceIdx(idx);
+    },
+    [onSelectSourceIdx]
+  );
 
   const filteredSources =
     propSelectedFansub === 'all'
@@ -106,37 +490,545 @@ export default function NetflixPlayer({
   const [internalCinemaLights, setInternalCinemaLights] = useState(false);
   const cinemaLightsOff =
     propCinemaLightsOff !== undefined ? propCinemaLightsOff : internalCinemaLights;
-  const setCinemaLightsOff = (v: boolean | ((prev: boolean) => boolean)) => {
+  const toggleCinemaLights = useCallback(() => {
     if (onToggleCinemaLights) {
       onToggleCinemaLights();
     } else {
-      setInternalCinemaLights(v);
+      setInternalCinemaLights((v) => !v);
     }
-  };
+  }, [onToggleCinemaLights]);
 
-  // Stream resolution state (for Native HLS / MP4 / Tau-Video vs Iframe)
+  // Stream resolution state
   const [resolvedMode, setResolvedMode] = useState<
-    'native_hls' | 'native_mp4' | 'iframe'
-  >('iframe');
+    'native_hls' | 'native_mp4' | 'iframe' | 'trailer' | 'resolving' | 'error'
+  >(isTrailerMode ? 'trailer' : 'resolving');
   const [streamUrl, setStreamUrl] = useState<string>('');
-  const [qualities, setQualities] = useState<Array<{ label: string; url: string }>>([]);
-  const [selectedQuality, setSelectedQuality] = useState<string>('Auto');
+  const [internalTrailerYtId, setInternalTrailerYtId] = useState<string | null>(
+    propTrailerYoutubeId || null
+  );
+
+  useEffect(() => {
+    if (propTrailerYoutubeId) {
+      setInternalTrailerYtId(propTrailerYoutubeId);
+    } else if (isTrailerMode && media?.id) {
+      fetch(
+        `/api/media/trailer?id=${media.id}&slug=${encodeURIComponent(media.slug || '')}&title=${encodeURIComponent(media.title || '')}`
+      )
+        .then((r) => r.json())
+        .then((d) => {
+          if (d?.youtubeId) setInternalTrailerYtId(d.youtubeId);
+        })
+        .catch(() => {});
+    }
+  }, [propTrailerYoutubeId, isTrailerMode, media?.id, media?.slug, media?.title]);
+
+  const sendTrailerYtCommand = useCallback((func: string, args: any[] = []) => {
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
+    try {
+      win.postMessage(
+        JSON.stringify({
+          event: 'command',
+          func,
+          args,
+        }),
+        '*'
+      );
+    } catch {}
+  }, []);
+
+  const [isTrailerReady, setIsTrailerReady] = useState(false);
+  const effectiveTrailerYtId = isTrailerMode ? (internalTrailerYtId || propTrailerYoutubeId) : null;
+  const trailerStreamUrl = effectiveTrailerYtId
+    ? `https://www.youtube-nocookie.com/embed/${effectiveTrailerYtId}?autoplay=1&enablejsapi=1&controls=0&disablekb=1&fs=0&modestbranding=1&rel=0&showinfo=0&iv_load_policy=3&playsinline=1&mute=1&cc_load_policy=1&cc_lang_pref=tr&hl=tr`
+    : '';
+
+  // Auto-loop trailer and active-playback bezel suppression via YouTube postMessage telemetry
+  useEffect(() => {
+    if (!isTrailerMode || !effectiveTrailerYtId) return;
+    const handleLoop = (e: MessageEvent) => {
+      try {
+        const d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+        const isPlayingEvent =
+          (d?.event === 'onStateChange' && d?.info === 1) ||
+          (d?.event === 'infoDelivery' && d?.info?.playerState === 1);
+
+        if (isPlayingEvent) {
+          setTimeout(() => setIsTrailerReady(true), 350);
+          if (!isTrailerMuted) {
+            sendTrailerYtCommand('unMute');
+            sendTrailerYtCommand('setVolume', [85]);
+          }
+        }
+
+        if (d?.event === 'onStateChange' && d?.info === 0) {
+          sendTrailerYtCommand('seekTo', [0, true]);
+          sendTrailerYtCommand('playVideo', []);
+        }
+      } catch {}
+    };
+    window.addEventListener('message', handleLoop);
+    return () => window.removeEventListener('message', handleLoop);
+  }, [isTrailerMode, effectiveTrailerYtId, isTrailerMuted, sendTrailerYtCommand]);
+
+  const [qualities, setQualities] = useState<Array<{ label: string; url: string; levelIndex?: number }>>([]);
+  const [selectedQuality, setSelectedQuality] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return localStorage.getItem('koup_preferred_quality') || 'Otomatik';
+      } catch {}
+    }
+    return 'Otomatik';
+  });
   const [isResolving, setIsResolving] = useState(false);
 
-  // Native video state
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  // Subtitles & Dual Audio tracks state
+  const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([]);
+  const [selectedSubtitle, setSelectedSubtitle] = useState<string>('off');
+  const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([]);
+  const [activeSubtitleText, setActiveSubtitleText] = useState<string | null>(null);
+  const [audioTracks, setAudioTracks] = useState<AudioTrackOption[]>([]);
+  const [currentAudioTrackId, setCurrentAudioTrackId] = useState<number>(0);
+
+  // Native video playback & HUD state
+  const [isPlaying, setIsPlaying] = useState(isTrailerMode ? true : false);
+  const [isBuffering, setIsBuffering] = useState(false);
+  const initialCalculatedResume = (() => {
+    try {
+      if (initialSeekTime && initialSeekTime > 0) return initialSeekTime;
+      const epProg = getEpisodeProgress(
+        progressMap[media.id],
+        media.id,
+        currentSeason,
+        currentEpisode
+      );
+      if (epProg.isWatched && epProg.position >= epProg.duration * 0.92) return 0;
+      return epProg.position || 0;
+    } catch {
+      return 0;
+    }
+  })();
+  const [currentTime, setCurrentTime] = useState<number>(initialCalculatedResume);
+  const [isResumeReady, setIsResumeReady] = useState<boolean>(initialCalculatedResume <= 3);
+  const [duration, setDuration] = useState<number>(() => {
+    return (
+      (media.duration_minutes ? media.duration_minutes * 60 : 0) ||
+      progressMap[media.id]?.resume_duration_sec ||
+      (isTrailerMode ? 180 : 3600)
+    );
+  });
+  const [bufferedPercent, setBufferedPercent] = useState(0);
+
+  // Progress ticker for smooth trailer seekbar
+  useEffect(() => {
+    if (!isTrailerMode || !isPlaying) return;
+    const interval = setInterval(() => {
+      setCurrentTime((prev) => {
+        const d = duration > 0 ? duration : 180;
+        return prev < d ? prev + 0.5 : 0;
+      });
+    }, 500);
+    return () => clearInterval(interval);
+  }, [isTrailerMode, isPlaying, duration]);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [scrubTime, setScrubTime] = useState(0);
+  const [hoverTime, setHoverTime] = useState<number | null>(null);
+  const [hoverPercent, setHoverPercent] = useState<number>(0);
+  const [showRemainingTime, setShowRemainingTime] = useState(true);
+
   const [volume, setVolume] = useState(1);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(isTrailerMode ? Boolean(isTrailerMuted) : false);
+  const [showVolumeSlider, setShowVolumeSlider] = useState(false);
+  const [isDraggingVolume, setIsDraggingVolume] = useState(false);
+  const [brightness, setBrightness] = useState(100); // 45% to 130%
   const [playbackRate, setPlaybackRate] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [showOverlay, setShowOverlay] = useState(true);
-  const [autoNextEnabled, setAutoNextEnabled] = useState(true);
+  const [showOverlay, setShowOverlay] = useState(!isTrailerMode);
+  const [isScreenLocked, setIsScreenLocked] = useState(false);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [activePanel, _setActivePanel] = useState<ActivePanel>(null);
+  const activePanelRef = useRef<ActivePanel>(null);
+
+  const setActivePanel = useCallback(
+    (action: React.SetStateAction<ActivePanel>) => {
+      _setActivePanel((prev) => {
+        const next = typeof action === 'function' ? action(prev) : action;
+        activePanelRef.current = next;
+        if (next !== null && hideControlsTimer.current) {
+          clearTimeout(hideControlsTimer.current);
+          hideControlsTimer.current = null;
+        }
+        return next;
+      });
+    },
+    []
+  );
+  const [capturedFrameUrl, setCapturedFrameUrl] = useState<string | null>(null);
+
+  // Instant Seek & Volume Feedback Animations
+  const [seekFeedback, setSeekFeedback] = useState<{
+    dir: 'left' | 'right';
+    amount: number;
+    key: number;
+  } | null>(null);
+  const seekFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Netflix Mobile Double-Tap Edge Ripple Wave
+  const [mobileSeekRipple, setMobileSeekRipple] = useState<{
+    dir: 'left' | 'right';
+    amount: number;
+    key: number;
+  } | null>(null);
+  const mobileSeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [hudToast, setHudToast] = useState<{ label: string; key: number } | null>(null);
+  const hudToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const triggerHudToast = useCallback((label: string) => {
+    if (hudToastTimerRef.current) clearTimeout(hudToastTimerRef.current);
+    setHudToast({ label, key: Date.now() });
+    hudToastTimerRef.current = setTimeout(() => {
+      setHudToast(null);
+    }, 1100);
+  }, []);
+
+  // Sinematik Işıklandırma (YouTube-style Ambient Lighting)
+  const ambientCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [internalAmbientLighting, setInternalAmbientLighting] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      const saved = localStorage.getItem('koup_ambient_lighting');
+      return saved === null ? true : saved === 'true';
+    } catch {
+      return true;
+    }
+  });
+
+  const ambientLightingEnabled =
+    propAmbientLightingEnabled !== undefined ? propAmbientLightingEnabled : internalAmbientLighting;
+
+  const toggleAmbientLighting = useCallback(() => {
+    if (propOnToggleAmbientLighting) {
+      propOnToggleAmbientLighting();
+      return;
+    }
+    setInternalAmbientLighting((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('koup_ambient_lighting', String(next));
+      } catch {}
+      triggerHudToast(next ? 'Sinematik Işıklandırma: Açık' : 'Sinematik Işıklandırma: Kapalı');
+      return next;
+    });
+  }, [propOnToggleAmbientLighting, triggerHudToast]);
+
+  // Seamless quality switching helper (HLS levels & MP4 stream URLs)
+  const handleSelectQuality = useCallback(
+    (q: { label: string; url: string; levelIndex?: number }) => {
+      const cleanLabel = cleanQualityLabel(q.label);
+      setSelectedQuality(cleanLabel);
+      try {
+        localStorage.setItem('koup_preferred_quality', cleanLabel);
+      } catch {}
+
+      // 1. HLS multi-level dynamic bitrate switching
+      if (hlsRef.current && typeof q.levelIndex === 'number') {
+        hlsRef.current.currentLevel = q.levelIndex;
+        triggerHudToast(`Kalite: ${cleanLabel}`);
+        return;
+      }
+
+      // 2. Direct MP4 / source URL switching with playback time preservation
+      if (videoRef.current && q.url && q.url !== streamUrl) {
+        const cur = videoRef.current.currentTime;
+        const wasPaused = videoRef.current.paused;
+        setStreamUrl(q.url);
+        videoRef.current.src = q.url;
+        videoRef.current.currentTime = cur;
+        if (!wasPaused) {
+          videoRef.current.play().catch(() => {});
+        }
+      }
+      triggerHudToast(`Kalite: ${cleanLabel}`);
+    },
+    [streamUrl, triggerHudToast]
+  );
+
+  // Ambient lighting canvas frame sampling loop
+  useEffect(() => {
+    if (!ambientLightingEnabled || !isPlaying || isFullscreen || isTrailerMode) return;
+    const canvas = ambientCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d', { willReadFrequently: false });
+    if (!ctx) return;
+
+    let animFrame: number;
+    let lastSample = 0;
+
+    const sample = (now: number) => {
+      // Sample at ~15fps for smooth atmospheric color blending
+      if (now - lastSample >= 66) {
+        lastSample = now;
+        const v = videoRef.current;
+        if (v && v.readyState >= 2 && !v.paused) {
+          try {
+            ctx.drawImage(v, 0, 0, 32, 18);
+          } catch {}
+        }
+      }
+      animFrame = requestAnimationFrame(sample);
+    };
+
+    animFrame = requestAnimationFrame(sample);
+    return () => cancelAnimationFrame(animFrame);
+  }, [ambientLightingEnabled, isPlaying, isFullscreen, isTrailerMode]);
+
+  // Detect touch / mobile device vs desktop mouse
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(pointer: coarse)');
+    const updateTouch = () => {
+      setIsTouchDevice(mq.matches || ('ontouchstart' in window && window.innerWidth < 1024));
+    };
+    updateTouch();
+    mq.addEventListener?.('change', updateTouch);
+    window.addEventListener('resize', updateTouch);
+    return () => {
+      mq.removeEventListener?.('change', updateTouch);
+      window.removeEventListener('resize', updateTouch);
+    };
+  }, []);
+
+  const [internalAutoNext, setInternalAutoNext] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      const saved = localStorage.getItem('koup_auto_next');
+      return saved === null ? true : saved === 'true';
+    } catch {
+      return true;
+    }
+  });
+
+  const autoNextEnabled =
+    propAutoNextEnabled !== undefined ? propAutoNextEnabled : internalAutoNext;
   const [nextCountdown, setNextCountdown] = useState<number | null>(null);
 
+  const selectSubtitleDirect = useCallback(async (label: string, subList: SubtitleTrack[]) => {
+    setSelectedSubtitle(label);
+    if (label === 'off') {
+      setSubtitleCues([]);
+      setActiveSubtitleText(null);
+      return;
+    }
+    const sub = subList.find((s) => s.label === label);
+    if (sub) {
+      try {
+        const resp = await fetch(sub.url);
+        if (resp.ok) {
+          const text = await resp.text();
+          const cues = parseWebVTT(text);
+          setSubtitleCues(cues);
+        }
+      } catch {}
+    }
+  }, []);
+
+  const handleSelectSubtitle = useCallback(
+    (label: string) => {
+      selectSubtitleDirect(label, subtitles);
+      if (label === 'off') {
+        triggerHudToast('Altyazı: Kapalı');
+      } else {
+        triggerHudToast(`Altyazı: ${label}`);
+      }
+    },
+    [selectSubtitleDirect, subtitles, triggerHudToast]
+  );
+
+  const switchAudioTrack = useCallback(
+    (trackId: number) => {
+      setCurrentAudioTrackId(trackId);
+      if (hlsRef.current) {
+        hlsRef.current.audioTrack = trackId;
+        const trackObj = audioTracks.find((t) => t.id === trackId);
+        triggerHudToast(`Ses: ${trackObj?.label || 'Değiştirildi'}`);
+      }
+    },
+    [audioTracks, triggerHudToast]
+  );
+
   // Scheduled Episode Live Countdown
-  const [countdownText, setCountdownText] = useState('14 saat, 28 dakika, 19 saniye');
+  const [countdownText, setCountdownText] = useState('');
+
+  // Keep active episode frame synced when currentSeason/currentEpisode changes
+  useEffect(() => {
+    const key = `${media.id}_s${currentSeason || 1}_e${currentEpisode || 1}`;
+    const cached = episodePreviewCache.get(key);
+    setCapturedFrameUrl(cached || null);
+  }, [media.id, currentSeason, currentEpisode]);
+
+  // Capture a live video frame for the active episode preview when opening the Episodes popover
+  const captureCurrentVideoFrame = useCallback(() => {
+    const key = `${media.id}_s${currentSeason || 1}_e${currentEpisode || 1}`;
+    // If already cached, reuse immediately without recreating or redrawing canvas
+    const cached = episodePreviewCache.get(key);
+    if (cached) {
+      if (capturedFrameUrl !== cached) setCapturedFrameUrl(cached);
+      return;
+    }
+
+    const v = videoRef.current;
+    if (!v || v.readyState < 2 || !v.videoWidth || !v.videoHeight) return;
+
+    // Minimum 2nd minute (120s) preferred for authentic content scenes; if video is shorter, at least 10s
+    const isPastIntro = v.currentTime >= 120 || (v.duration > 0 && v.duration < 120 && v.currentTime >= 10);
+    if (!isPastIntro && !episodePreviewCache.has(key)) {
+      return;
+    }
+
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 320;
+      canvas.height = 180;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        // Center-crop source video frame into 16:9 (320x180) to eliminate any letterbox borders
+        const vW = v.videoWidth;
+        const vH = v.videoHeight;
+        const vAspect = vW / vH;
+        const targetAspect = 16 / 9;
+        let sx = 0;
+        let sy = 0;
+        let sw = vW;
+        let sh = vH;
+        if (vAspect > targetAspect) {
+          sw = Math.round(vH * targetAspect);
+          sx = Math.round((vW - sw) / 2);
+        } else {
+          sh = Math.round(vW / targetAspect);
+          sy = Math.round((vH - sh) / 2);
+        }
+        ctx.drawImage(v, sx, sy, sw, sh, 0, 0, 320, 180);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        if (dataUrl && dataUrl.startsWith('data:image/')) {
+          episodePreviewCache.set(key, dataUrl);
+          setCapturedFrameUrl(dataUrl);
+        }
+      }
+    } catch {
+      // Cross-origin stream without CORS headers falls back to series backdrop image
+    }
+  }, [media.id, currentSeason, currentEpisode, capturedFrameUrl]);
+
+  const seasons = Array.from(
+    new Set(episodes.map((e) => e.season_number || 1))
+  ).sort((a, b) => a - b);
+
+  // Capture video frame when episodes panel is opened
+  useEffect(() => {
+    if (activePanel !== 'episodes') return;
+    captureCurrentVideoFrame();
+  }, [activePanel, captureCurrentVideoFrame]);
+
+  // Exact resume position & duration computation
+  // Stabilize initial resume time per episode session so that frequent local progress flushes
+  // do not cause targetResume to constantly change and re-resolve the stream / re-mount HLS!
+  const epSessionKey = `${media?.id || 0}_${currentSeason}_${currentEpisode}`;
+  const epSessionRef = useRef<string>('');
+  const initialResumeRef = useRef<number>(0);
+  const targetResumeRef = useRef<number>(0);
+
+  if (epSessionRef.current !== epSessionKey) {
+    const isFirstMount = epSessionRef.current === '';
+    epSessionRef.current = epSessionKey;
+
+    const epProg = getEpisodeProgress(
+      progressMap[media.id],
+      media.id,
+      currentSeason,
+      currentEpisode
+    );
+
+    if (isFirstMount && initialSeekTime && initialSeekTime > 0) {
+      initialResumeRef.current = initialSeekTime;
+    } else if (epProg.isWatched && epProg.position >= epProg.duration * 0.92) {
+      initialResumeRef.current = 0;
+    } else if (epProg.position > 0) {
+      initialResumeRef.current = epProg.position;
+    } else {
+      initialResumeRef.current = 0;
+    }
+  }
+
+  const targetResume = initialResumeRef.current;
+  targetResumeRef.current = targetResume;
+  const userProgress = progressMap[media.id];
+
+  const mediaTotalDuration =
+    (media.duration_minutes ? media.duration_minutes * 60 : 0) ||
+    userProgress?.resume_duration_sec ||
+    3600;
+
+  // Telemetry refs for tracking progress
+  const [fallbackIframeUrl, setFallbackIframeUrl] = useState<string>('');
+  const trackedTimeRef = useRef<number>(targetResume);
+  const trackedDurationRef = useRef<number>(mediaTotalDuration);
+  const hasRealTelemetryRef = useRef<boolean>(false);
+  const isPlayingRef = useRef<boolean>(false);
+  const isScrubbingRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  useEffect(() => {
+    activePanelRef.current = activePanel;
+  }, [activePanel]);
+
+  useEffect(() => {
+    isScrubbingRef.current = isScrubbing;
+  }, [isScrubbing]);
+
+  // When episode changes, reset telemetry refs, source idx and close drawers
+  const prevEpKeyRef = useRef<string>(`${currentSeason}_${currentEpisode}`);
+  useEffect(() => {
+    const key = `${currentSeason}_${currentEpisode}`;
+    if (prevEpKeyRef.current !== key) {
+      prevEpKeyRef.current = key;
+      trackedTimeRef.current = targetResume;
+      trackedDurationRef.current = mediaTotalDuration;
+      setCurrentTime(targetResume);
+      setDuration(mediaTotalDuration);
+      setIsResumeReady(targetResume <= 3);
+      hasRealTelemetryRef.current = false;
+      setActivePanel(null);
+      setSelectedSourceIdx(0);
+    }
+  }, [currentSeason, currentEpisode, mediaTotalDuration, targetResume, setSelectedSourceIdx]);
+
+  const sendSeekToIframe = useCallback((timeSec: number) => {
+    if (!iframeRef.current?.contentWindow) return;
+    const win = iframeRef.current.contentWindow;
+    const sec = Math.floor(timeSec);
+    try {
+      win.postMessage(JSON.stringify({ event: 'seek', time: sec }), '*');
+    } catch {}
+    try {
+      win.postMessage(JSON.stringify({ method: 'setCurrentTime', value: sec }), '*');
+    } catch {}
+    try {
+      win.postMessage(JSON.stringify({ type: 'player:seek', data: { time: sec } }), '*');
+    } catch {}
+    try {
+      win.postMessage({ type: 'seek', time: sec, seconds: sec }, '*');
+    } catch {}
+    try {
+      win.postMessage(
+        JSON.stringify({ event: 'command', func: 'seekTo', args: [sec, true] }),
+        '*'
+      );
+    } catch {}
+  }, []);
 
   // Reset internal source index when episode changes
   useEffect(() => {
@@ -144,7 +1036,7 @@ export default function NetflixPlayer({
     setNextCountdown(null);
   }, [currentSeason, currentEpisode]);
 
-  // Fullscreen change synchronization with browser events (e.g. Esc key)
+  // Fullscreen change synchronization
   useEffect(() => {
     const handleFullscreenChange = () => {
       const activeFs = Boolean(
@@ -153,6 +1045,11 @@ export default function NetflixPlayer({
           (document as any).mozFullScreenElement
       );
       setIsFullscreen(activeFs);
+      if (!activeFs) {
+        try {
+          (screen.orientation as any)?.unlock?.();
+        } catch {}
+      }
     };
 
     document.addEventListener('fullscreenchange', handleFullscreenChange);
@@ -163,7 +1060,7 @@ export default function NetflixPlayer({
     };
   }, []);
 
-  // Global unmount cleanup: destroy HLS, pause video, clear timers
+  // Global unmount cleanup
   useEffect(() => {
     return () => {
       if (hlsRef.current) {
@@ -177,64 +1074,124 @@ export default function NetflixPlayer({
         videoRef.current.removeAttribute('src');
         videoRef.current.load();
       }
-      if (hideControlsTimer.current) {
-        clearTimeout(hideControlsTimer.current);
-        hideControlsTimer.current = null;
-      }
+      if (hideControlsTimer.current) clearTimeout(hideControlsTimer.current);
+      if (singleClickTimerRef.current) clearTimeout(singleClickTimerRef.current);
+      if (seekFeedbackTimerRef.current) clearTimeout(seekFeedbackTimerRef.current);
+      if (hudToastTimerRef.current) clearTimeout(hudToastTimerRef.current);
     };
   }, []);
 
-  // Fullscreen toggle event listener for external buttons
+  const toggleFullscreen = useCallback(async () => {
+    const el = containerRef.current;
+    const video = videoRef.current as any;
+    if (!el) return;
+
+    const isCurrentlyFs = Boolean(
+      document.fullscreenElement || (document as any).webkitFullscreenElement
+    );
+
+    if (!isCurrentlyFs) {
+      if (el.requestFullscreen) {
+        await el.requestFullscreen().catch(() => {});
+      } else if ((el as any).webkitRequestFullscreen) {
+        (el as any).webkitRequestFullscreen();
+      } else if (video?.webkitEnterFullscreen) {
+        video.webkitEnterFullscreen();
+      }
+      try {
+        await (screen.orientation as any)?.lock?.('landscape');
+      } catch {}
+    } else {
+      if (document.exitFullscreen) {
+        await document.exitFullscreen().catch(() => {});
+      } else if ((document as any).webkitExitFullscreen) {
+        (document as any).webkitExitFullscreen();
+      }
+    }
+  }, []);
+
+  // External fullscreen trigger event listener
   useEffect(() => {
     const handleFsTrigger = () => {
-      if (!containerRef.current) return;
-      if (!document.fullscreenElement) {
-        containerRef.current.requestFullscreen().catch(() => {});
-      } else {
-        document.exitFullscreen().catch(() => {});
-      }
+      toggleFullscreen();
     };
     window.addEventListener('koup-toggle-fullscreen', handleFsTrigger);
     return () => window.removeEventListener('koup-toggle-fullscreen', handleFsTrigger);
-  }, []);
+  }, [toggleFullscreen]);
 
   // Resolve active source via /api/resolve-stream
+  const activeSourceUrl = activeSource?.direct_url || '';
+  const activeSourceProvider = activeSource?.provider || '';
+
   useEffect(() => {
-    if (!activeSource) return;
+    if (isTrailerMode) {
+      setResolvedMode('trailer');
+      setIsResolving(false);
+      return;
+    }
+    if (!activeSourceUrl) return;
     let cancelled = false;
 
     async function resolve() {
-      if (!activeSource || !activeSource.direct_url) {
-        setResolvedMode('iframe');
-        setStreamUrl('');
-        return;
-      }
       setIsResolving(true);
+      setResolvedMode('resolving');
+      const normalizedFallback = normalizePlayerStreamUrl(activeSourceUrl, targetResume).url;
+      setFallbackIframeUrl(normalizedFallback);
+
       try {
-        const sourceUrl = activeSource.direct_url;
-        const sourceProvider = activeSource.provider || '';
         const params = new URLSearchParams({
-          url: sourceUrl,
-          provider: sourceProvider,
+          url: activeSourceUrl,
+          provider: activeSourceProvider,
         });
-        const resp = await fetch(`/api/resolve-stream?${params.toString()}`);
+        const resp = await fetch(`/api/resolve-stream?${params.toString()}`, { cache: 'no-store' });
         const data = await resp.json();
         if (cancelled) return;
 
+        if (resp.status === 410 || data.isDead) {
+          setResolvedMode('error');
+          return;
+        }
+
         if (data.mode === 'native_hls' || data.mode === 'native_mp4') {
           setResolvedMode(data.mode);
-          setStreamUrl(data.streamUrl);
           setQualities(data.qualities || []);
-          setSelectedQuality(data.qualities?.[0]?.label || '1080p');
+          const savedPref = typeof window !== 'undefined' ? localStorage.getItem('koup_preferred_quality') : null;
+          const matchedPref = savedPref && savedPref !== 'Otomatik'
+            ? (data.qualities || []).find((q: any) => cleanQualityLabel(q.label) === cleanQualityLabel(savedPref))
+            : null;
+          setSelectedQuality(matchedPref ? cleanQualityLabel(matchedPref.label) : cleanQualityLabel(data.qualities?.[0]?.label || 'Otomatik'));
+          const targetStream = matchedPref?.url || data.streamUrl || data.qualities?.[0]?.url || '';
+          setStreamUrl(targetStream);
+          const incomingSubs: SubtitleTrack[] = data.subtitles || [];
+          setSubtitles(incomingSubs);
+          if (incomingSubs.length > 0) {
+            const trSub = incomingSubs.find((s) => s.lang === 'tr') || incomingSubs[0];
+            if (trSub) {
+              selectSubtitleDirect(trSub.label, incomingSubs);
+            }
+          } else {
+            setSelectedSubtitle('off');
+            setSubtitleCues([]);
+            setActiveSubtitleText(null);
+          }
+          if (data.fallbackIframe) {
+            setFallbackIframeUrl(
+              normalizePlayerStreamUrl(data.fallbackIframe, targetResume).url
+            );
+          }
         } else {
           setResolvedMode('iframe');
-          setStreamUrl(sourceUrl);
+          setStreamUrl(data.iframeUrl || normalizedFallback);
           setQualities([]);
+          setSubtitles([]);
+          setSelectedSubtitle('off');
+          setSubtitleCues([]);
+          setActiveSubtitleText(null);
+          setAudioTracks([]);
         }
       } catch {
-        if (!cancelled && activeSource?.direct_url) {
-          setResolvedMode('iframe');
-          setStreamUrl(activeSource.direct_url);
+        if (!cancelled && activeSourceUrl) {
+          setResolvedMode('error');
         }
       } finally {
         if (!cancelled) setIsResolving(false);
@@ -245,12 +1202,12 @@ export default function NetflixPlayer({
     return () => {
       cancelled = true;
     };
-  }, [activeSource]);
+  }, [activeSourceUrl, activeSourceProvider, selectedSourceIdx]);
 
-  // Attach HLS.js or direct MP4 when resolvedMode is native, and clean up properly on change
+  // Attach HLS.js or direct MP4 when resolvedMode is native
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !streamUrl) return;
+    if (!video || !streamUrl || resolvedMode === 'iframe') return;
 
     if (hlsRef.current) {
       hlsRef.current.stopLoad();
@@ -259,23 +1216,130 @@ export default function NetflixPlayer({
       hlsRef.current = null;
     }
 
-    const savedResume = progressMap[media.id]?.resume_position_sec || 0;
+    setIsBuffering(true);
 
     if (resolvedMode === 'native_hls') {
       if (Hls.isSupported()) {
+        const resumeSec = targetResumeRef.current;
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
           maxBufferLength: 30,
           maxMaxBufferLength: 60,
+          startPosition: resumeSec > 3 ? resumeSec : -1,
         });
         hlsRef.current = hls;
         hls.loadSource(streamUrl);
         hls.attachMedia(video);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          if (savedResume > 15) video.currentTime = savedResume;
+        hls.on(Hls.Events.MANIFEST_PARSED, (_ev, data) => {
+          setIsBuffering(false);
+          const resumeSec = targetResumeRef.current;
+          if (resumeSec > 3) {
+            try {
+              video.currentTime = resumeSec;
+            } catch {}
+          } else {
+            setIsResumeReady(true);
+          }
+          video.playbackRate = playbackRate;
           video.play().catch(() => {});
+
+          if (data?.levels && data.levels.length > 0) {
+            const hlsQualities: Array<{ label: string; url: string; levelIndex?: number }> = [
+              { label: 'Otomatik', url: '', levelIndex: -1 },
+            ];
+            const sortedLevels = data.levels
+              .map((lvl: any, index: number) => ({ lvl, index }))
+              .sort((a: any, b: any) => {
+                const hA = a.lvl.height || (a.lvl.attrs?.RESOLUTION ? parseInt(a.lvl.attrs.RESOLUTION.split('x')[1] || '0', 10) : 0) || a.lvl.bitrate || 0;
+                const hB = b.lvl.height || (b.lvl.attrs?.RESOLUTION ? parseInt(b.lvl.attrs.RESOLUTION.split('x')[1] || '0', 10) : 0) || b.lvl.bitrate || 0;
+                return hB - hA;
+              });
+
+            const seenLabels = new Set<string>();
+            const defaultRankLabels = ['1080p', '720p', '480p', '360p'];
+
+            for (let rank = 0; rank < sortedLevels.length; rank++) {
+              const item = sortedLevels[rank];
+              const lvl = item.lvl;
+              let label = '';
+
+              if (lvl.height && lvl.height > 0) {
+                label = `${lvl.height}p`;
+              } else if (lvl.attrs?.RESOLUTION) {
+                const m = String(lvl.attrs.RESOLUTION).match(/\d+x(\d+)/);
+                if (m?.[1]) label = `${m[1]}p`;
+              } else if (lvl.name || lvl.attrs?.NAME) {
+                const n = String(lvl.name || lvl.attrs?.NAME).toUpperCase();
+                if (n.includes('FHD') || n.includes('1080')) label = '1080p';
+                else if (n.includes('HD') || n.includes('720')) label = '720p';
+                else if (n.includes('SD') || n.includes('480')) label = '480p';
+                else if (n.includes('360')) label = '360p';
+              } else if (lvl.bitrate) {
+                if (lvl.bitrate >= 2000000) label = '1080p';
+                else if (lvl.bitrate >= 1000000) label = '720p';
+                else if (lvl.bitrate >= 500000) label = '480p';
+                else label = '360p';
+              }
+
+              if (!label || seenLabels.has(label)) {
+                const fallback = defaultRankLabels.find((l) => !seenLabels.has(l));
+                label = fallback || `${Math.max(360, 1080 - rank * 360)}p`;
+              }
+
+              seenLabels.add(label);
+              hlsQualities.push({
+                label,
+                url: '',
+                levelIndex: item.index,
+              });
+            }
+            const savedPref = typeof window !== 'undefined' ? localStorage.getItem('koup_preferred_quality') : null;
+            let appliedQuality = 'Otomatik';
+            if (savedPref && savedPref !== 'Otomatik') {
+              const matched = hlsQualities.find(
+                (q) =>
+                  q.label.toLowerCase() === savedPref.toLowerCase() ||
+                  (savedPref.includes('1080') && q.label.includes('1080')) ||
+                  (savedPref.includes('720') && q.label.includes('720'))
+              );
+              if (matched && matched.levelIndex !== undefined && matched.levelIndex >= 0) {
+                hls.currentLevel = matched.levelIndex;
+                appliedQuality = matched.label;
+              }
+            }
+            setQualities(hlsQualities);
+            setSelectedQuality(appliedQuality);
+          }
         });
+
+        hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_ev, data) => {
+          if (data?.audioTracks && data.audioTracks.length > 0) {
+            const mapped = data.audioTracks.map((t, idx) => {
+              const name = (t.name || '').toLowerCase();
+              const lang = (t.lang || '').toLowerCase();
+              let label = t.name || `Ses ${idx + 1}`;
+              if (name.includes('turkish') || name.includes('türk') || lang === 'tr') {
+                label = 'Türkçe (Dublaj)';
+              } else if (name.includes('original') || name.includes('eng') || lang === 'en') {
+                label = 'Orijinal Ses';
+              }
+              return {
+                id: idx,
+                name: t.name,
+                lang: t.lang,
+                label,
+              };
+            });
+            setAudioTracks(mapped);
+            setCurrentAudioTrackId(hls.audioTrack >= 0 ? hls.audioTrack : 0);
+          }
+        });
+
+        hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_ev, data) => {
+          setCurrentAudioTrackId(data.id);
+        });
+
         hls.on(Hls.Events.ERROR, (_ev, errData) => {
           if (errData.fatal) {
             switch (errData.type) {
@@ -286,8 +1350,10 @@ export default function NetflixPlayer({
                 hls.recoverMediaError();
                 break;
               default:
-                // Auto-failover to next working source
-                if (selectedSourceIdx + 1 < filteredSources.length) {
+                if (fallbackIframeUrl) {
+                  setStreamUrl(fallbackIframeUrl);
+                  setResolvedMode('iframe');
+                } else if (selectedSourceIdx + 1 < filteredSources.length) {
                   pushNotification(
                     'Otomatik Yedek Kaynağa Geçildi',
                     `${activeSource?.source_name} yanıt vermedi, sıradaki kaynağa geçiliyor.`,
@@ -303,12 +1369,12 @@ export default function NetflixPlayer({
         });
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = streamUrl;
-        if (savedResume > 15) video.currentTime = savedResume;
+        video.playbackRate = playbackRate;
         video.play().catch(() => {});
       }
     } else if (resolvedMode === 'native_mp4') {
       video.src = streamUrl;
-      if (savedResume > 15) video.currentTime = savedResume;
+      video.playbackRate = playbackRate;
       video.play().catch(() => {});
     }
 
@@ -327,21 +1393,268 @@ export default function NetflixPlayer({
     };
   }, [resolvedMode, streamUrl]);
 
-  // Listen to postMessage from OK.RU / VK / Dailymotion iframes
+  // Loaded metadata resume seeking for Native video
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || resolvedMode === 'iframe') return;
+
+    let seekApplied = false;
+
+    const handleLoadedMetadata = () => {
+      setIsBuffering(false);
+      if (video.duration && !Number.isNaN(video.duration)) {
+        setDuration(video.duration);
+      }
+      const resumeSec = targetResumeRef.current;
+      if (!seekApplied && resumeSec > 3) {
+        seekApplied = true;
+        try {
+          video.currentTime = resumeSec;
+        } catch {}
+      } else if (resumeSec <= 3) {
+        setIsResumeReady(true);
+      }
+    };
+
+    const safetyTimer = setTimeout(() => {
+      setIsResumeReady(true);
+    }, 2500);
+
+    video.addEventListener('loadedmetadata', handleLoadedMetadata);
+    video.addEventListener('canplay', handleLoadedMetadata);
+    return () => {
+      clearTimeout(safetyTimer);
+      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      video.removeEventListener('canplay', handleLoadedMetadata);
+    };
+  }, [resolvedMode, streamUrl, currentSeason, currentEpisode]);
+
+  // Iframe seek to targetResume once active source resolves
+  useEffect(() => {
+    if (resolvedMode === 'iframe' && targetResumeRef.current > 3) {
+      const timer = setTimeout(() => {
+        sendSeekToIframe(targetResumeRef.current);
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [resolvedMode, streamUrl, currentSeason, currentEpisode, sendSeekToIframe]);
+
+  // Centralized flush helper for local-first tracking and smart Supabase egress sync
+  const flushCurrentProgress = useCallback(
+    (reason: 'playback' | 'pause' | 'exit' | 'completed' = 'exit', keepalive = false) => {
+      if (isTrailerMode) return;
+
+      const isIframe = resolvedMode === 'iframe';
+      const curPos = isIframe
+        ? trackedTimeRef.current
+        : videoRef.current && !Number.isNaN(videoRef.current.currentTime) && videoRef.current.currentTime > 0
+        ? Math.floor(videoRef.current.currentTime)
+        : trackedTimeRef.current;
+      const curDur = isIframe
+        ? trackedDurationRef.current || mediaTotalDuration
+        : videoRef.current?.duration && !Number.isNaN(videoRef.current.duration)
+        ? Math.floor(videoRef.current.duration)
+        : trackedDurationRef.current || mediaTotalDuration;
+
+      if (curPos > 0 || reason === 'completed') {
+        updateEpisodeProgress(
+          media,
+          currentSeason,
+          currentEpisode,
+          formatEpisodeTitle(
+            currentEpObj?.episode_name,
+            currentSeason,
+            currentEpisode
+          ),
+          curPos,
+          curDur,
+          reason === 'completed',
+          { reason, keepalive }
+        );
+      }
+    },
+    [
+      isTrailerMode,
+      resolvedMode,
+      media,
+      currentSeason,
+      currentEpisode,
+      currentEpObj,
+      mediaTotalDuration,
+      updateEpisodeProgress,
+    ]
+  );
+
+  // Native video frequent local-first progress tracking (4s interval, 0 network overhead)
+  useEffect(() => {
+    if (resolvedMode === 'iframe' || !isPlaying || isTrailerMode) return;
+
+    const interval = setInterval(() => {
+      if (videoRef.current && !videoRef.current.paused) {
+        flushCurrentProgress('playback', false);
+      }
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [resolvedMode, isPlaying, isTrailerMode, flushCurrentProgress]);
+
+  // Native video flush on pagehide, beforeunload, visibilitychange and unmount
+  useEffect(() => {
+    if (resolvedMode === 'iframe' || isTrailerMode) return;
+
+    const handleBeforeUnload = () => flushCurrentProgress('exit', true);
+    const handlePageHide = () => flushCurrentProgress('exit', true);
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        flushCurrentProgress('exit', false);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handlePageHide);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handlePageHide);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      flushCurrentProgress('exit', false);
+    };
+  }, [resolvedMode, isTrailerMode, flushCurrentProgress]);
+
+  // Episode navigation computation
+  const currentEpIndex = episodes.findIndex(
+    (e) =>
+      (e.season_number || 1) === currentSeason && e.episode_number === currentEpisode
+  );
+  const nextEp =
+    currentEpIndex >= 0 && currentEpIndex + 1 < episodes.length
+      ? episodes[currentEpIndex + 1]
+      : null;
+
+  const handleNextEpisode = useCallback(() => {
+    if (nextEp) {
+      flushCurrentProgress('exit', false);
+      onSelectEpisode(nextEp.season_number || currentSeason, nextEp.episode_number);
+    }
+  }, [nextEp, flushCurrentProgress, onSelectEpisode, currentSeason]);
+
+  // Listen to real postMessage telemetry from compatible external players (YouTube, Player.js, JWPlayer, Video.js)
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       try {
-        const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-        if (data?.event === 'ended' && autoNextEnabled) {
-          handleNextEpisode();
+        let data = e.data;
+        if (typeof data === 'string') {
+          try {
+            data = JSON.parse(data);
+          } catch {}
         }
-      } catch {
-        // ignore
-      }
+        if (!data || typeof data !== 'object') return;
+
+        const incomingTime =
+          data.info?.currentTime ??
+          data.time ??
+          data.currentTime ??
+          data.seconds ??
+          data.position ??
+          data.data?.time ??
+          data.data?.currentTime ??
+          (data.event === 'timeupdate' && typeof data.value === 'number'
+            ? data.value
+            : undefined);
+
+        const incomingDur =
+          data.info?.duration ??
+          data.duration ??
+          data.totalTime ??
+          data.data?.duration ??
+          (data.event === 'timeupdate' && typeof data.duration === 'number'
+            ? data.duration
+            : undefined);
+
+        if (typeof incomingTime === 'number' && !Number.isNaN(incomingTime) && incomingTime > 0) {
+          trackedTimeRef.current = Math.floor(incomingTime);
+          hasRealTelemetryRef.current = true;
+          if (isTrailerMode) {
+            setCurrentTime(incomingTime);
+          }
+        }
+        if (typeof incomingDur === 'number' && !Number.isNaN(incomingDur) && incomingDur > 0) {
+          trackedDurationRef.current = Math.floor(incomingDur);
+          if (isTrailerMode) {
+            setDuration(incomingDur);
+            setIsBuffering(false);
+          }
+        }
+
+        if (isTrailerMode && data.info?.playerState != null) {
+          if (data.info.playerState === 1) {
+            setIsPlaying(true);
+            setIsBuffering(false);
+          } else if (data.info.playerState === 2) {
+            setIsPlaying(false);
+          } else if (data.info.playerState === 0) {
+            setIsPlaying(false);
+          }
+        } else if (!isTrailerMode && (data.info?.playerState === 2 || data.event === 'pause')) {
+          setIsPlaying(false);
+          flushCurrentProgress('pause', false);
+        }
+
+        const isEndedEvent =
+          data?.event === 'ended' ||
+          data?.event === 'finish' ||
+          (data?.event === 'infoDelivery' && data?.info?.playerState === 0) ||
+          (data?.event === 'onStateChange' && data?.info === 0);
+
+        if (isEndedEvent && !isTrailerMode) {
+          flushCurrentProgress('completed', false);
+          if (autoNextEnabled && nextEp) {
+            handleNextEpisode();
+          }
+        }
+      } catch {}
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [autoNextEnabled, currentSeason, currentEpisode]);
+  }, [autoNextEnabled, handleNextEpisode, nextEp, flushCurrentProgress, isTrailerMode]);
+
+  // Universal Iframe Progress & Resume Sync
+  // Frequent local-first updates (4s interval) + Smart Supabase egress sync
+  useEffect(() => {
+    if (resolvedMode !== 'iframe' || isTrailerMode) return;
+
+    const syncInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        // If external iframe doesn't have postMessage, increment elapsed active time
+        if (!hasRealTelemetryRef.current) {
+          trackedTimeRef.current += 4;
+        }
+        flushCurrentProgress('playback', false);
+      }
+    }, 4000);
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        flushCurrentProgress('exit', false);
+      }
+    };
+
+    const handleBeforeUnload = () => flushCurrentProgress('exit', true);
+    const handlePageHide = () => flushCurrentProgress('exit', true);
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => {
+      clearInterval(syncInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handlePageHide);
+      flushCurrentProgress('exit', false);
+    };
+  }, [resolvedMode, isTrailerMode, flushCurrentProgress]);
 
   // Listen to koup-seek-player custom event from comment timestamps
   useEffect(() => {
@@ -353,12 +1666,7 @@ export default function NetflixPlayer({
           videoRef.current.currentTime = sec;
           videoRef.current.play().catch(() => {});
         } else if (iframeRef.current) {
-          try {
-            iframeRef.current.contentWindow?.postMessage(
-              JSON.stringify({ event: 'seek', time: sec }),
-              '*'
-            );
-          } catch {}
+          sendSeekToIframe(sec);
         }
         containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
@@ -366,7 +1674,7 @@ export default function NetflixPlayer({
 
     window.addEventListener('koup-seek-player', handleSeekEvent);
     return () => window.removeEventListener('koup-seek-player', handleSeekEvent);
-  }, []);
+  }, [sendSeekToIframe]);
 
   const isTrulyScheduled =
     currentEpObj?.status === 'scheduled' &&
@@ -375,7 +1683,7 @@ export default function NetflixPlayer({
         new Date(currentEpObj.scheduled_release_at).getTime() > Date.now()
     );
 
-  // Scheduled Episode Live Countdown Timer - strictly for genuine future scheduled releases
+  // Scheduled Episode Live Countdown Timer
   useEffect(() => {
     if (!isTrulyScheduled || !currentEpObj?.scheduled_release_at) {
       setCountdownText('');
@@ -396,241 +1704,531 @@ export default function NetflixPlayer({
     return () => clearInterval(timer);
   }, [isTrulyScheduled, currentEpObj?.scheduled_release_at]);
 
-  const triggerControlsVisibility = useCallback(() => {
-    setShowOverlay(true);
+  /* ==========================================================================
+      ZERO-LAG HUD VISIBILITY & TRANSPORT ACTIONS
+     ========================================================================== */
+
+  const scheduleHideOverlay = useCallback(() => {
     if (hideControlsTimer.current) clearTimeout(hideControlsTimer.current);
+    if (activePanelRef.current !== null) return;
     hideControlsTimer.current = setTimeout(() => {
-      setShowOverlay(false);
-    }, 3400);
+      if (
+        isPlayingRef.current &&
+        !activePanelRef.current &&
+        !isScrubbingRef.current
+      ) {
+        setShowOverlay(false);
+        setShowVolumeSlider(false);
+      }
+    }, 700);
   }, []);
 
-  const toggleFullscreen = async () => {
-    const el = containerRef.current;
-    if (!el) return;
-    if (!document.fullscreenElement) {
-      await el.requestFullscreen().catch(() => {});
-    } else {
-      await document.exitFullscreen().catch(() => {});
+  const revealControls = useCallback(() => {
+    setShowOverlay((prev) => (prev ? prev : true));
+    if (!activePanelRef.current) {
+      scheduleHideOverlay();
     }
-  };
+  }, [scheduleHideOverlay]);
 
-  // Keyboard shortcuts with strict input isolation:
-  // F fullscreen, Space play/pause, ArrowLeft/Right 10s, L Cinema Mode, N Next Episode
+  // Keep overlay visible when paused, scrubbing, hovering or when a drawer/panel is open
+  useEffect(() => {
+    if (!isPlaying || activePanel !== null || isScrubbing || hoverTime !== null) {
+      setShowOverlay(true);
+      if (hideControlsTimer.current) {
+        clearTimeout(hideControlsTimer.current);
+        hideControlsTimer.current = null;
+      }
+    } else {
+      scheduleHideOverlay();
+    }
+  }, [isPlaying, activePanel, isScrubbing, hoverTime, scheduleHideOverlay]);
+
+  const togglePlayPause = useCallback(() => {
+    if (isTrailerMode) {
+      if (isPlaying) {
+        sendTrailerYtCommand('pauseVideo');
+        setIsPlaying(false);
+      } else {
+        sendTrailerYtCommand('playVideo');
+        setIsPlaying(true);
+      }
+      revealControls();
+      return;
+    }
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) {
+      setIsPlaying(true);
+      v.play().catch(() => {
+        setIsPlaying(false);
+      });
+    } else {
+      setIsPlaying(false);
+      v.pause();
+    }
+    revealControls();
+  }, [revealControls, isTrailerMode, isPlaying, sendTrailerYtCommand]);
+
+  const seekBy = useCallback(
+    (deltaSec: number, revealHud = false, triggerFeedback = false) => {
+      const dir = deltaSec < 0 ? 'left' : 'right';
+      const absDelta = Math.abs(deltaSec);
+
+      if (isTrailerMode) {
+        const maxDur = duration > 0 ? duration : 180;
+        const nextTime = Math.max(0, Math.min(maxDur, currentTime + deltaSec));
+        sendSeekToIframe(nextTime);
+        setCurrentTime(nextTime);
+
+        if (triggerFeedback) {
+          setSeekFeedback((prev) => {
+            const accumulated =
+              prev && prev.dir === dir ? prev.amount + absDelta : absDelta;
+            return {
+              dir,
+              amount: accumulated,
+              key: Date.now(),
+            };
+          });
+
+          if (seekFeedbackTimerRef.current) clearTimeout(seekFeedbackTimerRef.current);
+          seekFeedbackTimerRef.current = setTimeout(() => {
+            setSeekFeedback(null);
+          }, 750);
+        }
+
+        if (revealHud) {
+          revealControls();
+        }
+        return;
+      }
+
+      const v = videoRef.current;
+      if (!v) {
+        if (iframeRef.current) {
+          const maxDur = duration > 0 ? duration : 3600;
+          const nextTime = Math.max(0, Math.min(maxDur, currentTime + deltaSec));
+          sendSeekToIframe(nextTime);
+          setCurrentTime(nextTime);
+        }
+      } else {
+        const maxDur = v.duration && !Number.isNaN(v.duration) ? v.duration : duration || 3600;
+        const nextTime = Math.max(0, Math.min(maxDur, v.currentTime + deltaSec));
+        v.currentTime = nextTime;
+        setCurrentTime(nextTime);
+      }
+
+      if (triggerFeedback) {
+        setSeekFeedback((prev) => {
+          const accumulated =
+            prev && prev.dir === dir ? prev.amount + absDelta : absDelta;
+          return {
+            dir,
+            amount: accumulated,
+            key: Date.now(),
+          };
+        });
+
+        if (seekFeedbackTimerRef.current) clearTimeout(seekFeedbackTimerRef.current);
+        seekFeedbackTimerRef.current = setTimeout(() => {
+          setSeekFeedback(null);
+        }, 750);
+      }
+
+      if (revealHud) {
+        revealControls();
+      }
+    },
+    [duration, revealControls, isTrailerMode, currentTime, sendSeekToIframe]
+  );
+
+  const triggerMobileSeek = useCallback(
+    (dir: 'left' | 'right') => {
+      const delta = dir === 'left' ? -10 : 10;
+      seekBy(delta, false, false);
+      setMobileSeekRipple((prev) => {
+        const accumulated = prev && prev.dir === dir ? prev.amount + 10 : 10;
+        return { dir, amount: accumulated, key: Date.now() };
+      });
+      if (mobileSeekTimerRef.current) clearTimeout(mobileSeekTimerRef.current);
+      mobileSeekTimerRef.current = setTimeout(() => {
+        setMobileSeekRipple(null);
+      }, 700);
+    },
+    [seekBy]
+  );
+
+  // Accurate database-driven intro skip handler (no fake hardcoded timers)
+  const hasIntro =
+    currentEpObj?.intro_start_sec != null &&
+    currentEpObj?.intro_end_sec != null &&
+    currentEpObj.intro_end_sec > currentEpObj.intro_start_sec;
+
+  const isInsideIntro =
+    hasIntro &&
+    currentTime >= currentEpObj.intro_start_sec! &&
+    currentTime < currentEpObj.intro_end_sec!;
+
+  const handleSkipIntro = useCallback(() => {
+    if (currentEpObj?.intro_end_sec) {
+      const target = currentEpObj.intro_end_sec;
+      if (videoRef.current) {
+        videoRef.current.currentTime = target;
+        setCurrentTime(target);
+      } else if (iframeRef.current) {
+        sendSeekToIframe(target);
+      }
+      triggerHudToast('İntro Atlandı');
+      revealControls();
+    }
+  }, [currentEpObj?.intro_end_sec, sendSeekToIframe, triggerHudToast, revealControls]);
+
+  const adjustVolume = useCallback(
+    (delta: number) => {
+      const currentEffective = isMuted ? 0 : volume;
+      const nextVol = Math.max(0, Math.min(1, Math.round((currentEffective + delta) * 100) / 100));
+      setVolume(nextVol);
+      setIsMuted(nextVol === 0);
+      if (isTrailerMode) {
+        sendTrailerYtCommand('setVolume', [Math.round(nextVol * 100)]);
+        if (nextVol === 0) sendTrailerYtCommand('mute');
+        else sendTrailerYtCommand('unMute');
+      } else if (videoRef.current) {
+        videoRef.current.volume = nextVol;
+        videoRef.current.muted = nextVol === 0;
+      }
+      triggerHudToast(`Ses: %${Math.round(nextVol * 100)}`);
+      revealControls();
+    },
+    [isMuted, volume, isTrailerMode, sendTrailerYtCommand, triggerHudToast, revealControls]
+  );
+
+  const toggleMute = useCallback(() => {
+    const nextMute = !isMuted;
+    setIsMuted(nextMute);
+    if (isTrailerMode && setTrailerMuted) {
+      setTrailerMuted(nextMute);
+    }
+    if (nextMute) {
+      if (volume > 0) savedVolumeRef.current = volume;
+    } else {
+      const restored = savedVolumeRef.current > 0 ? savedVolumeRef.current : 0.5;
+      setVolume(restored);
+      if (isTrailerMode) {
+        sendTrailerYtCommand('setVolume', [Math.round(restored * 100)]);
+      } else if (videoRef.current) {
+        videoRef.current.volume = restored;
+      }
+    }
+    if (isTrailerMode) {
+      if (nextMute) sendTrailerYtCommand('mute');
+      else sendTrailerYtCommand('unMute');
+    } else if (videoRef.current) {
+      videoRef.current.muted = nextMute;
+    }
+    const currentToastVol = nextMute ? 0 : (savedVolumeRef.current || volume || 0.5);
+    triggerHudToast(nextMute ? 'Ses Kapatıldı' : `Ses: %${Math.round(currentToastVol * 100)}`);
+    revealControls();
+  }, [isMuted, volume, isTrailerMode, setTrailerMuted, sendTrailerYtCommand, triggerHudToast, revealControls]);
+
+  // Complete Keyboard Shortcuts (Space/K, ArrowLeft/J, ArrowRight, ArrowUp/Down, M, F, N, S, E, L, 0-9, Esc)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // 1. Ignore if typing in ANY input, textarea, contenteditable, select, or role="textbox"
       const targetEl = e.target as HTMLElement | null;
       if (
         targetEl &&
-        (targetEl.closest('input, textarea, select, [contenteditable="true"], [role="textbox"], form') ||
+        (targetEl.closest('input:not([type="range"]), textarea, select, [contenteditable="true"], [role="textbox"], form') ||
           targetEl.isContentEditable ||
-          ['INPUT', 'TEXTAREA', 'SELECT'].includes(targetEl.tagName))
+          ['TEXTAREA', 'SELECT'].includes(targetEl.tagName) ||
+          (targetEl.tagName === 'INPUT' && (targetEl as HTMLInputElement).type !== 'range'))
       ) {
         return;
       }
 
-      const activeEl = document.activeElement as HTMLElement | null;
-      if (
-        activeEl &&
-        (activeEl.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]') ||
-          activeEl.isContentEditable ||
-          ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName))
-      ) {
-        return;
-      }
-
-      // 2. Ignore browser modifier shortcuts (Ctrl+F, Cmd+F, Alt+Tab, etc.)
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 
       const key = e.key.toLowerCase();
 
+      if (key === 'escape') {
+        if (activePanel) {
+          e.preventDefault();
+          setActivePanel(null);
+          return;
+        }
+        if (isTrailerMode && onCloseTrailer) {
+          e.preventDefault();
+          onCloseTrailer();
+          return;
+        }
+      }
+
+      if (isScreenLocked) return;
+
       if (key === 'f') {
         e.preventDefault();
         toggleFullscreen();
-      } else if (key === 'l') {
+        return;
+      }
+      if (key === 'l' || key === 'c') {
         e.preventDefault();
-        setCinemaLightsOff((v) => !v);
-      } else if (key === 'n') {
+        toggleCinemaLights();
+        return;
+      }
+      if (key === 'n' && !isTrailerMode) {
         e.preventDefault();
         handleNextEpisode();
-      } else if (resolvedMode !== 'iframe' && videoRef.current) {
-        if (key === ' ' || e.code === 'Space') {
+        return;
+      }
+      if (key === 'e' && !isTrailerMode) {
+        e.preventDefault();
+        setActivePanel((prev) => (prev === 'episodes' ? null : 'episodes'));
+        return;
+      }
+      if (key === 's' && isInsideIntro && !isTrailerMode) {
+        e.preventDefault();
+        handleSkipIntro();
+        return;
+      }
+
+      if (isTrailerMode || (resolvedMode !== 'iframe' && videoRef.current)) {
+        if (key === ' ' || e.code === 'Space' || key === 'k') {
           e.preventDefault();
-          if (videoRef.current.paused) videoRef.current.play().catch(() => {});
-          else videoRef.current.pause();
+          togglePlayPause();
         } else if (key === 'arrowright') {
           e.preventDefault();
-          videoRef.current.currentTime = Math.min(
-            videoRef.current.duration || 3600,
-            videoRef.current.currentTime + 10
-          );
-        } else if (key === 'arrowleft') {
+          seekBy(10);
+        } else if (key === 'arrowleft' || key === 'j') {
           e.preventDefault();
-          videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 10);
+          seekBy(-10);
+        } else if (key === 'arrowup') {
+          e.preventDefault();
+          adjustVolume(0.1);
+        } else if (key === 'arrowdown') {
+          e.preventDefault();
+          adjustVolume(-0.1);
+        } else if (key === 'm') {
+          e.preventDefault();
+          toggleMute();
+        } else if (/^[0-9]$/.test(key)) {
+          e.preventDefault();
+          const pct = Number(key) / 10;
+          if (isTrailerMode) {
+            const d = duration > 0 ? duration : 180;
+            const t = d * pct;
+            sendSeekToIframe(t);
+            setCurrentTime(t);
+            revealControls();
+          } else if (videoRef.current?.duration) {
+            videoRef.current.currentTime = videoRef.current.duration * pct;
+            setCurrentTime(videoRef.current.currentTime);
+            revealControls();
+          }
         }
       }
     };
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [resolvedMode, currentSeason, currentEpisode, nextCountdown]);
+  }, [
+    activePanel,
+    isScreenLocked,
+    resolvedMode,
+    isInsideIntro,
+    handleSkipIntro,
+    toggleFullscreen,
+    toggleCinemaLights,
+    handleNextEpisode,
+    togglePlayPause,
+    seekBy,
+    adjustVolume,
+    toggleMute,
+    triggerHudToast,
+    revealControls,
+  ]);
 
-  const currentEpIndex = episodes.findIndex(
-    (e) =>
-      e.season_number === currentSeason && e.episode_number === currentEpisode
-  );
-  const prevEp = currentEpIndex > 0 ? episodes[currentEpIndex - 1] : null;
-  const nextEp =
-    currentEpIndex >= 0 && currentEpIndex + 1 < episodes.length
-      ? episodes[currentEpIndex + 1]
-      : null;
-
-  const handleNextEpisode = () => {
-    if (nextEp) {
-      toggleEpisodeWatched(media, currentEpisode, false);
-      onSelectEpisode(nextEp.season_number, nextEp.episode_number);
+  // Handle stage surface pointer click / double-click / mobile double-tap
+  const handleStagePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Ignore if user clicked inside an interactive control or open drawer
+    if ((e.target as HTMLElement).closest('[data-netflix-control="true"]')) {
+      return;
     }
-  };
 
-  const handlePrevEpisode = () => {
-    if (prevEp) {
-      onSelectEpisode(prevEp.season_number, prevEp.episode_number);
+    if (activePanel) {
+      setActivePanel(null);
+      return;
+    }
+
+    if (isScreenLocked) {
+      setShowOverlay((prev) => !prev);
+      scheduleHideOverlay();
+      return;
+    }
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relX = (e.clientX - rect.left) / Math.max(1, rect.width);
+    const now = Date.now();
+
+    if (e.pointerType === 'touch') {
+      const timeSinceLast = now - lastTouchTapRef.current.time;
+      if (timeSinceLast < 300) {
+        // Double tap on mobile: Left 38% rewinds 10s, Right 38% forwards 10s
+        if (singleClickTimerRef.current) clearTimeout(singleClickTimerRef.current);
+        if (relX < 0.38) {
+          triggerMobileSeek('left');
+        } else if (relX > 0.62) {
+          triggerMobileSeek('right');
+        } else {
+          togglePlayPause();
+        }
+        lastTouchTapRef.current = { time: 0, x: 0 };
+        return;
+      }
+
+      lastTouchTapRef.current = { time: now, x: relX };
+      singleClickTimerRef.current = setTimeout(() => {
+        setShowOverlay((prev) => {
+          const next = !prev;
+          if (next) scheduleHideOverlay();
+          return next;
+        });
+      }, 210);
+    } else {
+      // Desktop mouse: immediate play/pause, double-click toggles fullscreen
+      const timeSinceLast = now - lastTouchTapRef.current.time;
+      if (timeSinceLast < 260) {
+        lastTouchTapRef.current = { time: 0, x: 0 };
+        togglePlayPause();
+        toggleFullscreen();
+        return;
+      }
+      lastTouchTapRef.current = { time: now, x: relX };
+      togglePlayPause();
     }
   };
 
   const formatTime = (sec: number) => {
-    if (!sec || Number.isNaN(sec)) return '00:00';
-    const m = Math.floor(sec / 60);
-    const s = Math.floor(sec % 60);
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    if (!sec || Number.isNaN(sec) || sec < 0) return '0:00';
+    const totalSec = Math.floor(sec);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = Math.floor(totalSec % 60);
+    if (h > 0) {
+      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+    return `${m}:${String(s).padStart(2, '0')}`;
   };
 
+  const effectiveTime = isScrubbing ? scrubTime : currentTime;
+  const safeDuration = duration > 0 ? duration : isTrailerMode ? 180 : mediaTotalDuration || 100;
+  const remainingSec = Math.max(0, safeDuration - effectiveTime);
+
+  const cleanTitle = cleanMediaTitle(media.title);
+  const episodeDisplayTitle = isTrailerMode
+    ? `${cleanTitle} • Resmi Tanıtım Fragmanı`
+    : formatEpisodeTitle(
+        currentEpObj?.episode_name,
+        currentSeason,
+        currentEpisode,
+        { includeSeasonPrefix: true }
+      );
+
+  const fallbackBackdropUrl = getProxiedImageUrl(
+    media.backdrop_image || media.cover_image,
+    media.title
+  );
+
+
+
   return (
-    <div className="relative">
-      {/* Cinema Lights-Off Backdrop */}
-      {cinemaLightsOff && (
+    <div className={isTrailerMode ? "w-full h-full flex items-center justify-center overflow-hidden" : "relative"}>
+      {/* SİNEMATİK IŞIKLANDIRMA (YouTube-Style Ambient Lighting Aura) */}
+      {ambientLightingEnabled && !isFullscreen && !isTrailerMode && (
         <div
-          onClick={() => setCinemaLightsOff(false)}
-          className="fixed inset-0 bg-black/95 z-40 transition-opacity duration-500"
-        />
+          aria-hidden="true"
+          className="ambient-light-aura absolute -inset-6 sm:-inset-12 -z-10 pointer-events-none select-none transition-opacity duration-1000 ease-out"
+          style={{ opacity: isPlaying ? 0.8 : 0.35 }}
+        >
+          {/* Real-time ambient canvas sampled directly from active video */}
+          <canvas
+            ref={ambientCanvasRef}
+            width={32}
+            height={18}
+            className="w-full h-full object-cover filter blur-[45px] sm:blur-[75px] md:blur-[105px] scale-[1.12] sm:scale-[1.18] transform-gpu rounded-3xl"
+          />
+
+          {/* Ambient radiant fallback aura blending smoothly into website glass background */}
+          <div
+            className="absolute inset-0 filter blur-[60px] sm:blur-[90px] scale-[1.15] opacity-60 rounded-3xl -z-10"
+            style={{
+              backgroundImage:
+                media?.backdrop_image || media?.cover_image
+                  ? `url(${getProxiedImageUrl(
+                      media.backdrop_image || media.cover_image,
+                      media.cover_image,
+                      media.title,
+                      'w780'
+                    )})`
+                  : undefined,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+            }}
+          />
+        </div>
       )}
 
       {/* MAIN UNIFIED KOUP NETFLIX PLAYER CONTAINER */}
       <div
         id="koup-player-container"
         ref={containerRef}
-        onMouseMove={triggerControlsVisibility}
-        onClick={triggerControlsVisibility}
-        style={
-          isFullscreen || cinemaLightsOff
-            ? undefined
-            : { maxWidth: 'min(1040px, calc(68vh * 16 / 9))' }
-        }
-        className={`relative mx-auto w-full select-none transition-all duration-300 bg-black overflow-hidden ${
-          isFullscreen || cinemaLightsOff
+        onPointerMove={(e) => {
+          if (e.pointerType !== 'touch') {
+            revealControls();
+          }
+        }}
+        onMouseLeave={() => {
+          if (isPlaying && !activePanel && !isScrubbing) {
+            setShowOverlay(false);
+            setShowVolumeSlider(false);
+          }
+        }}
+        style={isFullscreen || isTrailerMode ? undefined : { width: '100%', height: '100%' }}
+        className={`relative mx-auto select-none bg-black overflow-hidden ${
+          !showOverlay && isPlaying ? 'cursor-none' : 'cursor-default'
+        } ${
+          isFullscreen
             ? 'fixed inset-0 z-50 w-screen h-screen max-w-none rounded-none border-none aspect-auto flex flex-col justify-center items-center'
-            : 'aspect-video rounded-3xl border border-white/15 shadow-[0_30px_90px_rgba(0,0,0,0.95)] z-20'
+            : isTrailerMode
+            ? 'w-full h-full max-w-[calc(100dvh*16/9)] max-h-[100dvh] aspect-video rounded-none border-none shadow-none z-20 flex flex-col justify-center'
+            : `w-full aspect-video rounded-2xl sm:rounded-3xl border z-20 transition-all duration-300 ${
+                cinemaLightsOff
+                  ? 'border-sky-500/30 shadow-[0_0_30px_rgba(41,151,255,0.15),0_10px_25px_rgba(0,0,0,0.5)]'
+                  : 'border-white/10 shadow-[0_10px_25px_rgba(0,0,0,0.45)]'
+              }`
         }`}
       >
-        {/* Sleek Minimal HUD (In Fullscreen OR Cinema Theater Mode when mouse is moving) */}
-        {(isFullscreen || cinemaLightsOff) && (
-          <div
-            className={`absolute top-0 left-0 right-0 z-40 p-4 sm:p-6 bg-gradient-to-b from-black/90 via-black/40 to-transparent transition-opacity duration-300 ${
-              showOverlay ? 'opacity-100' : 'opacity-0 pointer-events-none'
-            }`}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                {cinemaLightsOff && !isFullscreen ? (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleCinemaLights?.();
-                    }}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white text-xs font-semibold backdrop-blur-md transition-all cursor-pointer shadow-lg"
-                    title="Sinema Modundan Çık (Esc veya L)"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                    <span>Sinema Modundan Çık (ESC)</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleFullscreen();
-                    }}
-                    className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all cursor-pointer"
-                    title="Tam Ekrandan Çık (Esc veya F)"
-                  >
-                    <Minimize className="w-4 h-4" />
-                  </button>
-                )}
-                <div>
-                  <div className="text-sm sm:text-base font-bold text-white">
-                    {media.title}
-                  </div>
-                  <div className="text-xs text-white/60">
-                    S{currentSeason} : B{currentEpisode} · {currentEpObj?.episode_name || `${currentEpisode}. Bölüm`}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="px-3 py-1 rounded-full bg-white/10 text-white/80 font-mono text-xs border border-white/15">
-                  {activeSource?.source_name || 'KoUp Stream'}
-                </span>
-                {!isFullscreen ? (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleFullscreen();
-                    }}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-md transition-all cursor-pointer"
-                    title="Tam Ekran (F)"
-                  >
-                    <Maximize className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Tam Ekran</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleFullscreen();
-                    }}
-                    className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all cursor-pointer"
-                    title="Tam Ekrandan Çık (F)"
-                  >
-                    <Minimize className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* CORE VIDEO AREA: SCHEDULED COUNTDOWN OR SOURCE PREPARATION OR NATIVE PLAYER */}
+        {/* CORE VIDEO AREA */}
         {isTrulyScheduled ? (
-          <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-gradient-to-b from-[#090D14] to-[#08080A]">
-            <div className="w-14 h-14 rounded-3xl bg-sky-500/15 border border-sky-400/30 flex items-center justify-center mb-4">
-              <Clock className="w-7 h-7 text-sky-400 animate-pulse" />
+          <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-gradient-to-b from-[#0c0c0e] to-black">
+            <div className="w-14 h-14 rounded-3xl bg-[#E50914]/15 border border-[#E50914]/30 flex items-center justify-center mb-4">
+              <Clock className="w-7 h-7 text-[#E50914] animate-pulse" />
             </div>
-            <div className="text-xs font-mono uppercase tracking-widest text-sky-300 mb-1">
+            <div className="text-xs font-mono uppercase tracking-widest text-white/60 mb-1">
               Yayın Takvimi · Canlı Geri Sayım
             </div>
             <h3 className="text-2xl sm:text-4xl font-mono font-extrabold text-white tracking-tight mb-4">
               {countdownText || 'Hesaplanıyor...'}
             </h3>
-            <div className="max-w-lg px-5 py-3 rounded-2xl bg-sky-950/50 border border-sky-400/30 text-xs sm:text-sm text-sky-200 leading-relaxed">
+            <div className="max-w-lg px-5 py-3 rounded-2xl bg-white/[0.04] border border-white/10 text-xs sm:text-sm text-white/80 leading-relaxed">
               {currentEpObj?.translation_note ||
                 'Çeviri işlemi için bölümün orijinal yayını bekleniyor. Bölüm yayınlandığı anda kaynaklar eklenecektir.'}
             </div>
           </div>
         ) : availableSources.length === 0 ? (
-          <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-gradient-to-b from-[#0a0c12] to-[#08080A]">
+          <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-gradient-to-b from-[#0c0c0e] to-black">
             <div className="w-14 h-14 rounded-3xl bg-white/10 border border-white/15 flex items-center justify-center mb-4">
-              <Layers className="w-7 h-7 text-sky-400" />
+              <Layers className="w-7 h-7 text-[#E50914]" />
             </div>
-            <div className="text-xs font-mono uppercase tracking-widest text-sky-400 mb-1">
+            <div className="text-xs font-mono uppercase tracking-widest text-[#E50914] mb-1">
               Kaynak Durumu
             </div>
             <h3 className="text-xl sm:text-2xl font-bold text-white tracking-tight mb-2">
@@ -639,41 +2237,192 @@ export default function NetflixPlayer({
             <p className="max-w-md text-xs sm:text-sm text-white/60 mb-5 leading-relaxed">
               Sunucular otomatik taranıyor veya video akışı güncelleniyor. Lütfen birkaç dakika sonra yeniden deneyin.
             </p>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => window.location.reload()}
-                className="px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-2 border border-white/15 cursor-pointer transition-all active:scale-95"
-              >
-                <RotateCw className="w-3.5 h-3.5" />
-                <span>Sayfayı Yenile</span>
-              </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-5 py-2.5 rounded-full bg-[#E50914] hover:bg-[#f40612] text-white text-xs font-bold flex items-center gap-2 cursor-pointer transition-transform active:scale-95"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+              <span>Sayfayı Yenile</span>
+            </button>
+          </div>
+        ) : resolvedMode === 'resolving' ? (
+          <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-black relative">
+            {(media.backdrop_image || media.cover_image) && (
+              <img
+                src={getProxiedImageUrl(
+                  media.backdrop_image || media.cover_image,
+                  media.cover_image,
+                  media.title,
+                  'w1280'
+                )}
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 w-full h-full object-cover opacity-20 filter blur-sm pointer-events-none"
+              />
+            )}
+            <div className="relative z-10 flex flex-col items-center gap-3">
+              <div className="w-12 h-12 rounded-full border-4 border-white/15 border-t-[#E50914] animate-spin" />
+              <div className="text-white/80 text-xs font-medium tracking-wide">
+                Video akışı hazırlanıyor...
+              </div>
             </div>
           </div>
-        ) : resolvedMode === 'native_hls' || resolvedMode === 'native_mp4' ? (
-          /* LAYER 1: 100% NATIVE KOUP NETFLIX PLAYER (DiziYou HLS, HDFilm HLS, Tau-Video MP4) */
-          <div className="relative w-full h-full bg-black flex items-center justify-center">
-            <video
-              ref={videoRef}
-              playsInline
-              onPlay={() => setIsPlaying(true)}
-              onPause={() => {
-                setIsPlaying(false);
-                if (videoRef.current) {
-                  updateEpisodeProgress(
-                    media,
-                    currentSeason,
-                    currentEpisode,
-                    currentEpObj?.episode_name || `${currentEpisode}. Bölüm`,
-                    videoRef.current.currentTime,
-                    videoRef.current.duration || 3600
-                  );
+        ) : resolvedMode === 'error' ? (
+          <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-gradient-to-b from-[#0c0c0e] to-black relative">
+            <div className="w-14 h-14 rounded-3xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-4">
+              <AlertTriangle className="w-7 h-7 text-[#E50914]" />
+            </div>
+            <div className="text-xs font-mono uppercase tracking-widest text-[#E50914] mb-1">
+              Kaynak Durumu
+            </div>
+            <h3 className="text-xl sm:text-2xl font-bold text-white tracking-tight mb-2">
+              Bu Kaynağa Şu Anda Erişilemiyor
+            </h3>
+            <p className="max-w-md text-xs sm:text-sm text-white/60 mb-5 leading-relaxed">
+              Bu video sunucusu geçici olarak yanıt vermiyor. Lütfen alternatif kaynakları deneyin.
+            </p>
+            {filteredSources.length > 1 && (
+              <div className="flex flex-wrap items-center justify-center gap-2 max-w-lg mb-5">
+                {filteredSources.map((s, idx) => (
+                  <button
+                    key={`${s.embed_id || s.direct_url}_${idx}`}
+                    type="button"
+                    onClick={() => setSelectedSourceIdx(idx)}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                      selectedSourceIdx === idx
+                        ? 'bg-[#E50914] text-white shadow-md shadow-[#E50914]/25'
+                        : 'bg-white/10 hover:bg-white/20 text-white/80'
+                    }`}
+                  >
+                    {s.source_name || `Kaynak ${idx + 1}`}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button
+              onClick={() => window.location.reload()}
+              className="px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-2 cursor-pointer transition-transform active:scale-95"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+              <span>Sayfayı Yenile</span>
+            </button>
+          </div>
+        ) : resolvedMode === 'native_hls' || resolvedMode === 'native_mp4' || resolvedMode === 'trailer' ? (
+          /* ==================================================================
+             LAYER 1: AUTHENTIC NETFLIX NATIVE PLAYER (HLS / MP4 / Trailer)
+             ================================================================== */
+          <div
+            onPointerUp={handleStagePointerUp}
+            className="relative w-full h-full bg-black flex items-center justify-center overflow-hidden"
+          >
+            {resolvedMode === 'trailer' ? (
+              <div className="absolute inset-0 overflow-hidden pointer-events-none flex items-center justify-center select-none bg-black">
+                {/* Backdrop / Poster while loading trailer */}
+                {(media.backdrop_image || media.cover_image) && (
+                  <img
+                    src={getProxiedImageUrl(
+                      media.backdrop_image || media.cover_image,
+                      media.cover_image,
+                      media.title,
+                      'w1280'
+                    )}
+                    alt=""
+                    aria-hidden="true"
+                    className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-700 ${
+                      isTrailerReady ? 'opacity-0' : 'opacity-60'
+                    }`}
+                  />
+                )}
+                {!isTrailerReady && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="w-12 h-12 rounded-full border-4 border-white/15 border-t-[#E50914] animate-spin" />
+                  </div>
+                )}
+                <iframe
+                  ref={iframeRef}
+                  key={trailerStreamUrl}
+                  src={trailerStreamUrl}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  onLoad={() => {
+                    setTimeout(() => setIsTrailerReady(true), 1500);
+                  }}
+                  className={`w-[138%] h-[138%] min-w-[138%] min-h-[138%] border-0 pointer-events-none select-none transition-opacity duration-700 ${
+                    isTrailerReady ? 'opacity-100' : 'opacity-0'
+                  }`}
+                />
+              </div>
+            ) : (
+              <video
+                ref={videoRef}
+                playsInline
+                style={
+                  brightness !== 100
+                    ? { filter: `brightness(${brightness}%)` }
+                    : undefined
                 }
+                onPlay={() => {
+                  setIsPlaying(true);
+                  setIsBuffering(false);
+                }}
+                onPlaying={() => {
+                  setIsPlaying(true);
+                  setIsBuffering(false);
+                }}
+                onWaiting={() => setIsBuffering(true)}
+                onCanPlay={() => {
+                  setIsBuffering(false);
+                  if (targetResumeRef.current <= 3) setIsResumeReady(true);
+                }}
+                onSeeked={() => {
+                  setIsBuffering(false);
+                  setIsResumeReady(true);
+                }}
+                onPause={() => {
+                  setIsPlaying(false);
+                  setTimeout(() => {
+                    flushCurrentProgress('pause', false);
+                  }, 60);
+                }}
+              onProgress={() => {
+                const v = videoRef.current;
+                if (!v || !v.duration || v.buffered.length === 0) return;
+                const bufferedEnd = v.buffered.end(v.buffered.length - 1);
+                setBufferedPercent(
+                  Math.min(100, Math.max(0, (bufferedEnd / v.duration) * 100))
+                );
               }}
               onTimeUpdate={() => {
                 const v = videoRef.current;
-                if (!v) return;
-                setCurrentTime(v.currentTime);
-                setDuration(v.duration || 0);
+                if (!v || isScrubbingRef.current) return;
+                const resumeSec = targetResumeRef.current;
+                if (resumeSec > 3 && !isResumeReady && v.currentTime >= resumeSec - 2) {
+                  setIsResumeReady(true);
+                }
+                const isInitialSeeking = resumeSec > 3 && v.currentTime < 1.5;
+                if (!isInitialSeeking) {
+                  setCurrentTime(v.currentTime);
+                }
+                if (v.currentTime > 0) {
+                  trackedTimeRef.current = Math.floor(v.currentTime);
+                }
+                // Auto-capture frame for episode preview cache once playback reaches >= 120s
+                if (v.currentTime >= 120 && v.currentTime <= 126) {
+                  const epKey = `${media.id}_s${currentSeason || 1}_e${currentEpisode || 1}`;
+                  if (!episodePreviewCache.has(epKey)) {
+                    captureCurrentVideoFrame();
+                  }
+                }
+                // Subtitle cue matching for authentic Netflix subtitle rendering
+                if (subtitleCues.length > 0) {
+                  const t = v.currentTime;
+                  const cur = subtitleCues.find((c) => t >= c.start && t <= c.end);
+                  setActiveSubtitleText(cur ? cur.text : null);
+                } else if (activeSubtitleText) {
+                  setActiveSubtitleText(null);
+                }
+                if (v.duration && !Number.isNaN(v.duration) && v.duration !== duration) {
+                  setDuration(v.duration);
+                }
                 if (
                   autoNextEnabled &&
                   v.duration > 120 &&
@@ -681,243 +2430,1565 @@ export default function NetflixPlayer({
                   v.duration - v.currentTime > 0 &&
                   nextEp
                 ) {
-                  setNextCountdown(Math.ceil(v.duration - v.currentTime));
+                  const rem = Math.ceil(v.duration - v.currentTime);
+                  setNextCountdown((prev) => (prev === rem ? prev : rem));
                 } else {
-                  setNextCountdown(null);
+                  setNextCountdown((prev) => (prev === null ? prev : null));
                 }
               }}
               onEnded={() => {
-                updateEpisodeProgress(
-                  media,
-                  currentSeason,
-                  currentEpisode,
-                  currentEpObj?.episode_name || `${currentEpisode}. Bölüm`,
-                  duration,
-                  duration,
-                  true
-                );
+                flushCurrentProgress('completed', false);
                 if (autoNextEnabled && nextEp) {
                   handleNextEpisode();
                 }
               }}
               onError={() => {
+                if (fallbackIframeUrl) {
+                  setStreamUrl(fallbackIframeUrl);
+                }
                 setResolvedMode('iframe');
               }}
-              className="w-full h-full object-contain"
-            />
-
-            {/* Skip Intro & Auto-Next Floating Cards */}
-            {currentTime >= 15 && currentTime <= 105 && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (videoRef.current) videoRef.current.currentTime += 85;
-                }}
-                className="absolute bottom-24 right-6 z-30 px-4 py-2 rounded-full bg-white/95 text-black font-bold text-xs shadow-2xl hover:scale-105 transition-all cursor-pointer flex items-center gap-1.5"
-              >
-                <span>İntroyu Atla (+85sn)</span>
-                <SkipForward className="w-3.5 h-3.5 fill-black" />
-              </button>
-            )}
-
-            {nextCountdown !== null && nextEp && (
-              <div className="absolute bottom-24 right-6 z-30 p-4 rounded-2xl apple-glass border border-sky-400/40 flex items-center gap-3 shadow-2xl">
-                <div>
-                  <div className="text-[11px] font-mono text-sky-300">
-                    Sonraki Bölüm ({nextCountdown} sn)
-                  </div>
-                  <div className="text-xs font-bold text-white">
-                    {nextEp.episode_number}. Bölüm
-                  </div>
-                </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleNextEpisode();
-                  }}
-                  className="px-3.5 py-1.5 rounded-full bg-white text-black text-xs font-bold cursor-pointer"
-                >
-                  Hemen Geç
-                </button>
-              </div>
-            )}
-
-            {/* Custom Netflix Bottom Scrubber Bar */}
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className={`absolute bottom-0 left-0 right-0 z-30 p-4 sm:p-6 bg-gradient-to-t from-black/95 via-black/70 to-transparent transition-opacity duration-300 ${
-                showOverlay ? 'opacity-100' : 'opacity-0 pointer-events-none'
+              className={`w-full h-full object-contain pointer-events-none transition-opacity duration-300 ${
+                isResumeReady || targetResumeRef.current <= 3 ? 'opacity-100' : 'opacity-0'
               }`}
-            >
-              {/* Spectral Timeline Scrubber */}
-              <div className="mb-3 flex items-center gap-3">
-                <input
-                  type="range"
-                  min={0}
-                  max={duration || 100}
-                  value={currentTime}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    setCurrentTime(val);
-                    if (videoRef.current) videoRef.current.currentTime = val;
-                  }}
-                  className="w-full h-1.5 accent-sky-400 bg-white/25 rounded-full cursor-pointer"
-                />
-                <span className="text-xs font-mono text-white/80 shrink-0">
-                  {formatTime(currentTime)} / {formatTime(duration)}
-                </span>
+            />
+          )}
+
+            {/* NETFLIX BUFFERING RING (Suppressed when HUD controls are visible so it never collides with center play/pause button) */}
+            {!showOverlay && (isBuffering || isResolving || (!isResumeReady && targetResumeRef.current > 3)) && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full border-4 border-white/15 border-t-[#E50914] animate-spin" />
               </div>
+            )}
 
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => {
-                      const v = videoRef.current;
-                      if (!v) return;
-                      if (v.paused) v.play().catch(() => {});
-                      else v.pause();
-                    }}
-                    className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition-all cursor-pointer"
+            {/* NETFLIX AUTHENTIC SUBTITLE OVERLAY */}
+            {activeSubtitleText && (
+              <div
+                className={`pointer-events-none absolute inset-x-0 transition-all duration-200 z-30 flex justify-center px-4 sm:px-8 text-center ${
+                  showOverlay
+                    ? 'bottom-20 sm:bottom-24 md:bottom-28'
+                    : 'bottom-6 sm:bottom-10 md:bottom-12'
+                }`}
+              >
+                <div
+                  style={{
+                    fontFamily:
+                      '"Netflix Sans", "Helvetica Neue", Segoe UI, Roboto, Ubuntu, sans-serif',
+                    textShadow:
+                      '0 0 4px rgba(0,0,0,0.8), 0 2px 4px rgba(0,0,0,0.9)',
+                  }}
+                  className="text-white font-normal text-xl sm:text-3xl md:text-[34px] lg:text-[38px] max-w-5xl tracking-normal select-none leading-snug whitespace-pre-line"
+                >
+                  {activeSubtitleText}
+                </div>
+              </div>
+            )}
+
+            {/* TRANSIENT KEYBOARD/VOLUME STATUS PILL */}
+            {hudToast && (
+              <div
+                key={hudToast.key}
+                className="absolute top-12 sm:top-16 left-1/2 -translate-x-1/2 z-40 px-3.5 sm:px-4 py-1.5 rounded-full bg-black/85 border border-white/15 text-white text-[11px] sm:text-sm font-semibold tracking-wide pointer-events-none shadow-2xl"
+              >
+                {hudToast.label}
+              </div>
+            )}
+
+            {/* NETFLIX AUTHENTIC MOBILE DOUBLE-TAP EDGE RIPPLE WAVE */}
+            <AnimatePresence>
+              {mobileSeekRipple && (
+                <motion.div
+                  key={`mobile-ripple-${mobileSeekRipple.key}`}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.18, ease: 'easeOut' }}
+                  className={`absolute inset-y-0 z-35 pointer-events-none flex flex-col items-center justify-center select-none ${
+                    mobileSeekRipple.dir === 'left'
+                      ? 'left-0 w-2/5 rounded-r-[100%] bg-gradient-to-r from-white/[0.22] via-white/[0.08] to-transparent'
+                      : 'right-0 w-2/5 rounded-l-[100%] bg-gradient-to-l from-white/[0.22] via-white/[0.08] to-transparent'
+                  }`}
+                >
+                  <motion.div
+                    animate={
+                      mobileSeekRipple.dir === 'left'
+                        ? { x: [0, -8, 0] }
+                        : { x: [0, 8, 0] }
+                    }
+                    transition={{ repeat: Infinity, duration: 0.45, ease: 'easeInOut' }}
+                    className="flex items-center text-white"
                   >
-                    {isPlaying ? (
-                      <Pause className="w-4 h-4 fill-black" />
+                    {mobileSeekRipple.dir === 'left' ? (
+                      <ChevronsLeft className="w-9 h-9 sm:w-11 sm:h-11 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]" />
                     ) : (
-                      <Play className="w-4 h-4 fill-black ml-0.5" />
+                      <ChevronsRight className="w-9 h-9 sm:w-11 sm:h-11 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]" />
                     )}
-                  </button>
+                  </motion.div>
+                  <div className="text-white font-bold text-xs sm:text-sm tracking-wide mt-1 drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]">
+                    {mobileSeekRipple.amount} saniye
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
+            {/* SCREEN LOCKED OVERLAY */}
+            {isScreenLocked ? (
+              <div
+                className={`netflix-hud-layer absolute inset-0 z-40 flex flex-col items-center justify-between p-4 sm:p-8 bg-black/25 ${
+                  showOverlay ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                }`}
+              >
+                <div className="w-full flex justify-end">
                   <button
-                    onClick={() => {
-                      if (videoRef.current) videoRef.current.currentTime -= 10;
+                    type="button"
+                    data-netflix-control="true"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsScreenLocked(false);
+                      triggerHudToast('Ekran Kilidi Açıldı');
+                      revealControls();
                     }}
-                    title="10 Saniye Geri (Sol Ok)"
-                    className="w-9 h-9 rounded-full apple-glass-pill flex items-center justify-center text-white hover:text-sky-300 cursor-pointer"
+                    className="flex items-center gap-2 px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full bg-black/80 hover:bg-black text-white border border-white/25 text-xs sm:text-sm font-bold shadow-2xl cursor-pointer transition-transform active:scale-95"
                   >
-                    <RotateCcw className="w-4 h-4" />
+                    <Lock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#E50914]" />
+                    <span>Ekran Kilitli · Kilidi Aç</span>
                   </button>
+                </div>
+                <div />
+              </div>
+            ) : (
+              /* ================================================================
+                 AUTHENTIC NETFLIX FULL HUD OVERLAY (PROPORTIONALLY SIZED FOR MOBILE)
+                 ================================================================ */
+              <div
+                className={`netflix-hud-layer absolute inset-0 z-30 flex flex-col justify-between h-full overflow-hidden transition-colors duration-200 pointer-events-none ${
+                  showOverlay ? 'bg-black/40' : 'bg-transparent'
+                }`}
+              >
+                {/* 1. TOP BAR */}
+                <div
+                  data-netflix-control="true"
+                  onClick={(e) => e.stopPropagation()}
+                  className={`w-full px-3 sm:px-8 pt-2 sm:pt-6 pb-1 sm:pb-6 bg-gradient-to-b from-black/85 via-black/40 to-transparent flex items-center justify-between gap-2.5 sm:gap-4 shrink-0 transition-opacity duration-200 ${
+                    showOverlay ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                  }`}
+                >
+                  {/* Left: Back Arrow ONLY on Mobile, Fullscreen, or Trailer Mode; on PC windowed mode use spacer */}
+                  <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                    {isTrailerMode ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (onCloseTrailer) onCloseTrailer();
+                          else router.back();
+                        }}
+                        aria-label="Fragmandan Çık"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-all cursor-pointer shrink-0"
+                      >
+                        <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                        <span className="hidden sm:inline">Geri</span>
+                      </button>
+                    ) : isTouchDevice || isFullscreen ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isFullscreen) {
+                            toggleFullscreen();
+                          } else {
+                            router.push(`/seri/${media.slug}`);
+                          }
+                        }}
+                        aria-label="Geri"
+                        className="p-1 sm:p-1.5 text-white/90 hover:text-white hover:scale-110 active:scale-95 transition-transform cursor-pointer shrink-0"
+                      >
+                        <ArrowLeft className="w-5 h-5 sm:w-7 sm:h-7 stroke-[2.2]" />
+                      </button>
+                    ) : (
+                      <div className="w-8 shrink-0" />
+                    )}
 
-                  <button
-                    onClick={() => {
-                      if (videoRef.current) videoRef.current.currentTime += 10;
-                    }}
-                    title="10 Saniye İleri (Sağ Ok)"
-                    className="w-9 h-9 rounded-full apple-glass-pill flex items-center justify-center text-white hover:text-sky-300 cursor-pointer"
-                  >
-                    <RotateCw className="w-4 h-4" />
-                  </button>
+                    {isTouchDevice && (
+                      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                        {isTrailerMode && (
+                          <span className="px-1.5 py-0.5 rounded bg-[#E50914] text-white font-black text-[9px] tracking-wider uppercase shrink-0">
+                            FRAGMAN
+                          </span>
+                        )}
+                        <span className="text-white font-bold text-xs sm:text-sm truncate max-w-[240px] sm:max-w-xs">
+                          {episodeDisplayTitle}
+                        </span>
+                      </div>
+                    )}
+                  </div>
 
-                  <div className="hidden sm:flex items-center gap-2">
-                    <button
-                      onClick={() => {
-                        const nextMute = !isMuted;
-                        setIsMuted(nextMute);
-                        if (videoRef.current) videoRef.current.muted = nextMute;
-                      }}
-                      className="text-white/80 hover:text-white cursor-pointer"
-                    >
-                      {isMuted ? (
-                        <VolumeX className="w-4 h-4" />
-                      ) : (
-                        <Volume2 className="w-4 h-4" />
+                  {/* Center (PC Only): Centered Episode Title or Fragman Banner */}
+                  {!isTouchDevice && (
+                    <div className="flex items-center justify-center gap-2.5 min-w-0 text-center">
+                      {isTrailerMode && (
+                        <span className="px-2 py-0.5 rounded bg-[#E50914] text-white font-black text-[10px] tracking-wider uppercase shrink-0">
+                          FRAGMAN
+                        </span>
                       )}
-                    </button>
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={isMuted ? 0 : volume}
-                      onChange={(e) => {
-                        const v = Number(e.target.value);
-                        setVolume(v);
-                        setIsMuted(v === 0);
-                        if (videoRef.current) {
-                          videoRef.current.volume = v;
-                          videoRef.current.muted = v === 0;
-                        }
-                      }}
-                      className="w-20 h-1 accent-white bg-white/25 rounded-full cursor-pointer"
-                    />
+                      <h2 className="text-white font-semibold text-sm sm:text-base lg:text-lg tracking-tight truncate drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]">
+                        {isTrailerMode ? cleanMediaTitle(media.title) : episodeDisplayTitle}
+                      </h2>
+                    </div>
+                  )}
+
+                  {/* Right: Actions */}
+                  <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+                    {isTrailerMode ? (
+                      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                        {episodes && episodes.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (onCloseTrailer) onCloseTrailer();
+                              const epNum = currentEpisode || 1;
+                              const sQuery = currentSeason && currentSeason > 1 ? `?season=${currentSeason}` : '';
+                              router.push(`/seri/${media.slug}/${epNum}${sQuery}`);
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white text-black hover:bg-white/90 text-xs font-bold shadow-md cursor-pointer transition-transform active:scale-95"
+                          >
+                            <Play className="w-3.5 h-3.5 fill-black" />
+                            <span className="hidden sm:inline">
+                              {currentEpisode && currentEpisode > 1
+                                ? `${currentEpisode}. Bölümü İzle`
+                                : '1. Bölümü İzle'}
+                            </span>
+                          </button>
+                        )}
+                        {onCloseTrailer && (
+                          <button
+                            type="button"
+                            onClick={onCloseTrailer}
+                            aria-label="Kapat"
+                            className="p-1.5 rounded-full bg-black/60 hover:bg-black/90 text-white/80 hover:text-white border border-white/20 transition-all cursor-pointer"
+                          >
+                            <X className="w-5 h-5" />
+                          </button>
+                        )}
+                      </div>
+                    ) : isTouchDevice ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsScreenLocked(true);
+                            setActivePanel(null);
+                            triggerHudToast('Ekran Kilitlendi');
+                          }}
+                          aria-label="Ekran Kontrollerini Kilitle"
+                          className="p-1 text-white/90 hover:text-white active:scale-95 transition-transform cursor-pointer"
+                        >
+                          <Unlock className="w-4 h-4 sm:w-5 sm:h-5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={toggleFullscreen}
+                          aria-label={isFullscreen ? 'Tam Ekrandan Çık' : 'Tam Ekran'}
+                          className="p-1 text-white/90 hover:text-white active:scale-95 transition-transform cursor-pointer"
+                        >
+                          {isFullscreen ? (
+                            <X className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.2]" />
+                          ) : (
+                            <Maximize className="w-4 h-4 sm:w-5 sm:h-5" />
+                          )}
+                        </button>
+                      </>
+                    ) : (
+                      <div className="w-8 flex justify-end">
+                        {isFullscreen && (
+                          <button
+                            type="button"
+                            onClick={toggleFullscreen}
+                            aria-label="Tam Ekrandan Çık (Esc / F)"
+                            className="p-1.5 text-white/85 hover:text-white hover:scale-110 active:scale-95 transition-transform cursor-pointer"
+                          >
+                            <X className="w-6 h-6 stroke-[2.2]" />
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* Right Native Controls: Quality, Speed, Next Episode */}
-                <div className="flex items-center gap-2">
-                  {qualities.length > 1 && (
-                    <CustomSelect
-                      value={selectedQuality}
-                      onChange={(val) => {
-                        const q = qualities.find((x) => x.label === val);
-                        if (q && videoRef.current) {
-                          const t = videoRef.current.currentTime;
-                          setSelectedQuality(q.label);
-                          setStreamUrl(q.url);
-                          setTimeout(() => {
-                            if (videoRef.current) videoRef.current.currentTime = t;
-                          }, 150);
-                        }
-                      }}
-                      variant="dark"
-                      size="sm"
-                      direction="up"
-                      options={qualities.map((q) => ({ value: q.label, label: q.label }))}
-                    />
+                {/* 2. MIDDLE STAGE: Left Brightness + Center Transport Trio + Right Volume */}
+                <div className="relative flex-1 flex items-center justify-center px-2 sm:px-10 min-h-0 overflow-hidden pointer-events-none">
+                  {/* MOBILE: Left Vertical Brightness Bar */}
+                  {isTouchDevice && (
+                    <div
+                      data-netflix-control="true"
+                      onClick={(e) => e.stopPropagation()}
+                      className={`flex flex-col items-center gap-1 sm:gap-2.5 absolute left-2 sm:left-6 top-1/2 -translate-y-1/2 z-30 transition-opacity duration-200 ${
+                        showOverlay ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBrightness(100);
+                          triggerHudToast('Parlaklık: %100');
+                        }}
+                        aria-label="Parlaklığı Sıfırla (%100)"
+                        className="text-white/85 active:text-white cursor-pointer p-0.5"
+                      >
+                        <Sun className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
+                      </button>
+                      <div className="relative h-14 sm:h-24 w-1 sm:w-1.5 rounded-full bg-white/25 overflow-hidden flex flex-col justify-end">
+                        <div
+                          style={{
+                            height: `${((brightness - 45) / (130 - 45)) * 100}%`,
+                          }}
+                          className="w-full bg-white rounded-full transition-[height] duration-75"
+                        />
+                        <input
+                          type="range"
+                          min={45}
+                          max={130}
+                          step={1}
+                          value={brightness}
+                          aria-label="Ekran parlaklığı"
+                          onChange={(e) => setBrightness(Number(e.target.value))}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer [writing-mode:vertical-lr] [direction:rtl]"
+                        />
+                      </div>
+                    </div>
                   )}
 
-                  <CustomSelect
-                    value={String(playbackRate)}
-                    onChange={(val) => {
-                      const r = Number(val);
-                      setPlaybackRate(r);
-                      if (videoRef.current) videoRef.current.playbackRate = r;
-                    }}
-                    variant="dark"
-                    size="sm"
-                    direction="up"
-                    options={[0.75, 1, 1.25, 1.5, 2].map((r) => ({
-                      value: String(r),
-                      label: `${r}x Hız`,
-                    }))}
-                  />
-
-                  {nextEp && (
-                    <button
-                      onClick={handleNextEpisode}
-                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white text-black text-xs font-bold hover:scale-105 transition-all cursor-pointer"
+                  {/* Center Transport Controls: In regular playback only show trio; when playing, keep center clear (no ||). In trailer mode, keep center completely clear while playing, only show play button if paused */}
+                  {!isTrailerMode ? (
+                    <div
+                      className="flex items-center justify-center gap-6 sm:gap-16 md:gap-24 pointer-events-none select-none"
                     >
-                      <span>Sonraki Bölüm</span>
-                      <SkipForward className="w-3.5 h-3.5 fill-black" />
+                      {/* Rewind 10s Button */}
+                      <button
+                        type="button"
+                        data-netflix-control="true"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          seekBy(-10, true);
+                        }}
+                        aria-label="10 Saniye Geri Sar"
+                        className={`text-white hover:scale-110 active:scale-90 transition-all duration-200 cursor-pointer p-1 sm:p-2 focus:outline-none ${
+                          showOverlay
+                            ? 'opacity-100 scale-100 pointer-events-auto'
+                            : 'opacity-0 scale-75 pointer-events-none'
+                        }`}
+                      >
+                        <NetflixRewind10Icon
+                          key={seekFeedback?.key}
+                          className="w-8 h-8 sm:w-13 sm:h-13 md:w-16 md:h-16 drop-shadow-[0_4px_12px_rgba(0,0,0,0.6)]"
+                          isAnimating={seekFeedback?.dir === 'left'}
+                        />
+                      </button>
+
+                      {/* Center Play / Pause Button */}
+                      <button
+                        type="button"
+                        data-netflix-control="true"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          togglePlayPause();
+                        }}
+                        aria-label={isPlaying ? 'Duraklat' : 'Oynat'}
+                        className={`text-white hover:scale-110 active:scale-90 transition-all duration-200 cursor-pointer p-1 sm:p-2 focus:outline-none flex items-center justify-center ${
+                          showOverlay
+                            ? 'opacity-100 scale-100 pointer-events-auto'
+                            : 'opacity-0 scale-75 pointer-events-none'
+                        }`}
+                      >
+                        {isPlaying ? (
+                          <NetflixPauseBarsIcon className="w-10 h-10 sm:w-18 sm:h-18 md:w-22 md:h-22 drop-shadow-[0_4px_16px_rgba(0,0,0,0.7)]" />
+                        ) : (
+                          <NetflixPlayTriangleIcon className="w-10 h-10 sm:w-18 sm:h-18 md:w-22 md:h-22 drop-shadow-[0_4px_16px_rgba(0,0,0,0.7)]" />
+                        )}
+                      </button>
+
+                      {/* Forward 10s Button */}
+                      <button
+                        type="button"
+                        data-netflix-control="true"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          seekBy(10, true);
+                        }}
+                        aria-label="10 Saniye İleri Sar"
+                        className={`text-white hover:scale-110 active:scale-90 transition-all duration-200 cursor-pointer p-1 sm:p-2 focus:outline-none ${
+                          showOverlay
+                            ? 'opacity-100 scale-100 pointer-events-auto'
+                            : 'opacity-0 scale-75 pointer-events-none'
+                        }`}
+                      >
+                        <NetflixForward10Icon
+                          key={seekFeedback?.key}
+                          className="w-8 h-8 sm:w-13 sm:h-13 md:w-16 md:h-16 drop-shadow-[0_4px_12px_rgba(0,0,0,0.6)]"
+                          isAnimating={seekFeedback?.dir === 'right'}
+                        />
+                      </button>
+                    </div>
+                  ) : (
+                    /* Trailer Mode: Center is 100% clean while playing. If paused, show Play triangle to resume */
+                    <div className="flex items-center justify-center gap-6 sm:gap-16 md:gap-24 pointer-events-none select-none">
+                      {seekFeedback?.dir === 'left' && (
+                        <div className="text-white p-1 sm:p-2 animate-in fade-in zoom-in-95 duration-150">
+                          <NetflixRewind10Icon
+                            key={seekFeedback?.key}
+                            className="w-8 h-8 sm:w-13 sm:h-13 md:w-16 md:h-16 drop-shadow-[0_4px_12px_rgba(0,0,0,0.6)]"
+                            isAnimating={true}
+                          />
+                        </div>
+                      )}
+                      {!isPlaying && (
+                        <button
+                          type="button"
+                          data-netflix-control="true"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            togglePlayPause();
+                          }}
+                          aria-label="Oynat"
+                          className="p-3 sm:p-4 rounded-full bg-black/60 hover:bg-black/80 text-white border border-white/20 hover:scale-110 active:scale-95 transition-all cursor-pointer shadow-2xl backdrop-blur-md pointer-events-auto"
+                        >
+                          <NetflixPlayTriangleIcon className="w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16 drop-shadow-[0_4px_16px_rgba(0,0,0,0.7)]" />
+                        </button>
+                      )}
+                      {seekFeedback?.dir === 'right' && (
+                        <div className="text-white p-1 sm:p-2 animate-in fade-in zoom-in-95 duration-150">
+                          <NetflixForward10Icon
+                            key={seekFeedback?.key}
+                            className="w-8 h-8 sm:w-13 sm:h-13 md:w-16 md:h-16 drop-shadow-[0_4px_12px_rgba(0,0,0,0.6)]"
+                            isAnimating={true}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* MOBILE: Right Vertical Volume Bar */}
+                  {isTouchDevice && (
+                    <div
+                      data-netflix-control="true"
+                      onClick={(e) => e.stopPropagation()}
+                      className={`flex flex-col items-center gap-1 sm:gap-2.5 absolute right-2 sm:right-6 top-1/2 -translate-y-1/2 z-30 transition-opacity duration-200 ${
+                        showOverlay ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={toggleMute}
+                        aria-label={isMuted ? 'Sesi Aç' : 'Sesi Kapat'}
+                        className="text-white/85 active:text-white cursor-pointer p-0.5"
+                      >
+                        {isMuted || volume === 0 ? (
+                          <VolumeX className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-[#E50914]" />
+                        ) : volume < 0.5 ? (
+                          <Volume1 className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
+                        ) : (
+                          <Volume2 className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
+                        )}
+                      </button>
+                      <div className="relative h-14 sm:h-24 w-1 sm:w-1.5 rounded-full bg-white/25 overflow-hidden flex flex-col justify-end">
+                        <div
+                          style={{
+                            height: `${(isMuted ? 0 : volume) * 100}%`,
+                          }}
+                          className="w-full bg-white rounded-full transition-[height] duration-75"
+                        />
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.02}
+                          value={isMuted ? 0 : volume}
+                          aria-label="Ses seviyesi"
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            setVolume(v);
+                            setIsMuted(v === 0);
+                            if (videoRef.current) {
+                              videoRef.current.volume = v;
+                              videoRef.current.muted = v === 0;
+                            }
+                            revealControls();
+                          }}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer [writing-mode:vertical-lr] [direction:rtl]"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. BOTTOM SECTION: Scrubber Timeline + Dedicated PC / Mobile Action Row */}
+                <div
+                  data-netflix-control="true"
+                  onClick={(e) => e.stopPropagation()}
+                  className={`w-full px-3 sm:px-8 pb-1.5 sm:pb-5 pt-1.5 sm:pt-6 bg-gradient-to-t from-black/95 via-black/65 to-transparent space-y-1 sm:space-y-2.5 shrink-0 transition-opacity duration-200 ${
+                    showOverlay ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                  }`}
+                >
+                  {/* Floating Skip Intro & Auto-Next Buttons right above scrubber */}
+                  {(isInsideIntro || (nextCountdown !== null && nextEp)) && (
+                    <div className="flex items-center justify-end gap-2.5">
+                      {isInsideIntro && (
+                        <button
+                          type="button"
+                          onClick={handleSkipIntro}
+                          className="px-3 sm:px-4 py-1 sm:py-1.5 rounded bg-white hover:bg-white/90 text-black font-bold text-xs sm:text-sm tracking-wide shadow-2xl transition-transform active:scale-95 cursor-pointer flex items-center gap-1.5"
+                        >
+                          <span>İntroyu Atla</span>
+                          <span className="text-[10px] text-black/60 hidden sm:inline">(S)</span>
+                        </button>
+                      )}
+
+                      {nextCountdown !== null && nextEp && (
+                        <button
+                          type="button"
+                          onClick={handleNextEpisode}
+                          className="px-3 sm:px-4 py-1 sm:py-1.5 rounded bg-white hover:bg-white/90 text-black font-bold text-xs sm:text-sm tracking-wide shadow-2xl transition-transform active:scale-95 cursor-pointer flex items-center gap-1.5"
+                        >
+                          <NetflixNextEpIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                          <span>Sonraki Bölüm ({nextCountdown} sn)</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* RED TIMELINE SCRUBBER + RIGHT TIMESTAMP */}
+                  <div className="flex items-center gap-2.5 sm:gap-4">
+                    <div
+                      className="relative flex-1 flex items-center"
+                      onPointerMove={(e) => {
+                        if (isTouchDevice) return;
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const pct = Math.max(
+                          0,
+                          Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width))
+                        );
+                        setHoverPercent(pct * 100);
+                        setHoverTime(pct * safeDuration);
+                      }}
+                      onPointerLeave={() => setHoverTime(null)}
+                    >
+                      {/* Visual amber segment indicating intro position on scrubber */}
+                      {hasIntro && safeDuration > 0 && (
+                        <div
+                          style={{
+                            left: `${(currentEpObj.intro_start_sec! / safeDuration) * 100}%`,
+                            width: `${((currentEpObj.intro_end_sec! - currentEpObj.intro_start_sec!) / safeDuration) * 100}%`,
+                          }}
+                          className="absolute top-1/2 -translate-y-1/2 h-1 bg-amber-400/90 rounded-sm pointer-events-none z-10 shadow-[0_0_8px_rgba(251,191,36,0.7)]"
+                        />
+                      )}
+
+                      {/* PC Hover Timestamp Tooltip */}
+                      {!isTouchDevice && hoverTime !== null && (
+                        <div
+                          style={{
+                            left: `${Math.min(94, Math.max(6, hoverPercent))}%`,
+                          }}
+                          className="-translate-x-1/2 -top-8 absolute px-2.5 py-1 rounded bg-black/90 border border-white/20 text-white font-mono text-xs font-bold pointer-events-none shadow-lg whitespace-nowrap"
+                        >
+                          {formatTime(hoverTime)}
+                        </div>
+                      )}
+
+                      <input
+                        ref={scrubberRef}
+                        type="range"
+                        min={0}
+                        max={safeDuration}
+                        step={0.1}
+                        value={effectiveTime}
+                        aria-label="Video ilerleme çubuğu"
+                        aria-valuetext={`${formatTime(effectiveTime)} / ${formatTime(safeDuration)}`}
+                        style={
+                          {
+                            '--attr-min': 0,
+                            '--attr-max': safeDuration,
+                            '--control-value': effectiveTime,
+                            '--buffered-progress': `${bufferedPercent}%`,
+                          } as React.CSSProperties
+                        }
+                        onPointerDown={() => {
+                          setIsScrubbing(true);
+                          setScrubTime(currentTime);
+                        }}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setScrubTime(val);
+                          setCurrentTime(val);
+                          if (isTrailerMode) {
+                            sendSeekToIframe(val);
+                          } else if (videoRef.current) {
+                            videoRef.current.currentTime = val;
+                          }
+                        }}
+                        onPointerUp={(e) => {
+                          const val = Number((e.target as HTMLInputElement).value);
+                          if (isTrailerMode) {
+                            sendSeekToIframe(val);
+                          } else if (videoRef.current) {
+                            videoRef.current.currentTime = val;
+                          }
+                          setCurrentTime(val);
+                          setIsScrubbing(false);
+                        }}
+                        className="netflix-scrubber"
+                      />
+                    </div>
+
+                    {/* Right Timestamp */}
+                    <button
+                      type="button"
+                      onClick={() => setShowRemainingTime((v) => !v)}
+                      aria-label="Süre görünümünü değiştir"
+                      className="text-[11px] sm:text-sm font-semibold text-white/95 hover:text-white tabular-nums shrink-0 cursor-pointer min-w-[42px] sm:min-w-[54px] text-right"
+                    >
+                      {showRemainingTime
+                        ? formatTime(remainingSec)
+                        : `${formatTime(effectiveTime)} / ${formatTime(safeDuration)}`}
                     </button>
+                  </div>
+
+                  {/* Quality Popover Reusable Renderer - Perfectly Centered Above Quality Button */}
+                  {(() => null)()}
+
+                  {/* DEDICATED ACTION BAR: PC vs MOBILE */}
+                  {isTouchDevice ? (
+                    /* MOBILE ACTION BAR (Proportionally fitted for mobile windowed mode) */
+                    <div className="flex items-center justify-around gap-1 sm:gap-3 pt-0 overflow-visible text-[11px] sm:text-xs">
+                      {!isTrailerMode && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActivePanel((prev) => (prev === 'speed' ? null : 'speed'))
+                            }
+                            aria-label={`Oynatma Hızı (${playbackRate}x)`}
+                            className={`flex items-center gap-1 py-1 text-xs font-medium cursor-pointer shrink-0 ${
+                              activePanel === 'speed' ? 'text-[#E50914] font-bold' : 'text-white/90'
+                            }`}
+                          >
+                            <NetflixSpeedIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                            <span>Hız ({playbackRate}x)</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActivePanel((prev) =>
+                                prev === 'episodes' ? null : 'episodes'
+                              )
+                            }
+                            aria-label="Bölümler"
+                            className={`flex items-center gap-1 py-1 text-xs font-medium cursor-pointer shrink-0 ${
+                              activePanel === 'episodes'
+                                ? 'text-[#E50914] font-bold'
+                                : 'text-white/90'
+                            }`}
+                          >
+                            <NetflixEpisodesIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                            <span>Bölümler</span>
+                          </button>
+
+                          {qualities.length > 0 && (
+                            <div className="relative flex items-center shrink-0">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setActivePanel((prev) =>
+                                    prev === 'quality' ? null : 'quality'
+                                  )
+                                }
+                                aria-label={`Kalite (${cleanQualityLabel(selectedQuality)})`}
+                                className={`flex items-center gap-1 py-1 text-xs font-medium cursor-pointer shrink-0 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] ${
+                                  activePanel === 'quality'
+                                    ? 'text-[#E50914] font-bold drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]'
+                                    : 'text-white/90 hover:text-white'
+                                }`}
+                              >
+                                <SlidersHorizontal className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                                <span>{cleanQualityLabel(selectedQuality)}</span>
+                              </button>
+
+                              <AnimatePresence>
+                                {activePanel === 'quality' && (
+                                  <motion.div
+                                    key="panel-quality-mobile"
+                                    initial={{ opacity: 0, scale: 0.94, y: 10 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.94, y: 10 }}
+                                    transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                                    data-netflix-control="true"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-50 min-w-[170px] max-w-[220px] max-h-[240px] overflow-y-auto no-scrollbar p-2.5 rounded-xl bg-[#181818]/95 backdrop-blur-xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1 select-none"
+                                  >
+                                    <div className="flex items-center justify-between border-b border-white/10 pb-1.5 mb-1 px-1">
+                                      <span className="text-white/60 font-semibold text-[11px] uppercase tracking-wider">
+                                        Kalite Seçimi
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setActivePanel(null)}
+                                        aria-label="Kapat"
+                                        className="text-white/50 hover:text-white p-0.5 rounded cursor-pointer"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                    {qualities.map((q, qIdx) => {
+                                      const cleanLabel = cleanQualityLabel(q.label);
+                                      const isSelected = cleanQualityLabel(selectedQuality) === cleanLabel;
+                                      return (
+                                        <button
+                                          key={`${cleanLabel}-${q.url || ''}-${qIdx}`}
+                                          type="button"
+                                          onClick={() => {
+                                            handleSelectQuality(q);
+                                            setActivePanel(null);
+                                          }}
+                                          className={`w-full px-2.5 py-1.5 rounded-lg text-left text-xs font-medium flex items-center justify-between gap-3 transition-colors cursor-pointer ${
+                                            isSelected
+                                              ? 'text-white font-bold bg-white/10'
+                                              : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                                          }`}
+                                        >
+                                          <span>{cleanLabel}</span>
+                                          {isSelected && (
+                                            <Check className="w-4 h-4 text-white stroke-[2.5] shrink-0" />
+                                          )}
+                                        </button>
+                                      );
+                                    })}
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          )}
+
+                          {(audioTracks.length > 1 || subtitles.length > 0) && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setActivePanel((prev) =>
+                                  prev === 'audio_subtitles' ? null : 'audio_subtitles'
+                                )
+                              }
+                              aria-label="Ses ve Altyazı"
+                              className={`flex items-center gap-1 py-1 text-xs font-medium cursor-pointer shrink-0 ${
+                                activePanel === 'audio_subtitles'
+                                  ? 'text-[#E50914] font-bold'
+                                  : 'text-white/90'
+                              }`}
+                            >
+                              <NetflixAudioSubtitleIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                              <span>Ses & Altyazı</span>
+                            </button>
+                          )}
+
+                          {nextEp && (
+                            <button
+                              type="button"
+                              onClick={handleNextEpisode}
+                              aria-label={`Sonraki Bölüm: ${nextEp.episode_number}. Bölüm`}
+                              className="flex items-center gap-1 py-1 text-xs font-medium text-white/90 cursor-pointer shrink-0"
+                            >
+                              <NetflixNextEpIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                              <span>Sonraki</span>
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    /* PC ACTION BAR */
+                    <div className="flex items-center justify-between gap-2 sm:gap-4 md:gap-6 pt-0.5 min-w-0 flex-nowrap">
+                      <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+                        <button
+                          type="button"
+                          onClick={togglePlayPause}
+                          aria-label={isPlaying ? 'Duraklat (Space / K)' : 'Oynat (Space / K)'}
+                          className="text-white/95 hover:text-white hover:scale-110 active:scale-95 transition-transform cursor-pointer"
+                        >
+                          {isPlaying ? (
+                            <NetflixPauseBarsIcon className="w-6 h-6" />
+                          ) : (
+                            <NetflixPlayTriangleIcon className="w-6 h-6" />
+                          )}
+                        </button>
+
+                        {/* VERTICAL POPPING VOLUME CONTROL */}
+                        <div
+                          className="relative flex items-center shrink-0"
+                          onMouseEnter={() => {
+                            if (volumeHideTimerRef.current) {
+                              clearTimeout(volumeHideTimerRef.current);
+                              volumeHideTimerRef.current = null;
+                            }
+                            setShowVolumeSlider(true);
+                          }}
+                          onMouseLeave={() => {
+                            if (isDraggingVolumeRef.current) return;
+                            volumeHideTimerRef.current = setTimeout(() => {
+                              if (!isDraggingVolumeRef.current) {
+                                setShowVolumeSlider(false);
+                              }
+                            }, 350);
+                          }}
+                          onWheel={(e) => {
+                            e.preventDefault();
+                            adjustVolume(e.deltaY < 0 ? 0.05 : -0.05);
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={toggleMute}
+                            aria-label={isMuted ? 'Sesi Aç (M)' : 'Sesi Kapat (M)'}
+                            className="text-white hover:scale-110 active:scale-95 transition-transform cursor-pointer p-1"
+                          >
+                            {isMuted || volume === 0 ? (
+                              <VolumeX className="w-5 h-5 text-white" />
+                            ) : volume < 0.5 ? (
+                              <Volume1 className="w-5 h-5 text-white" />
+                            ) : (
+                              <Volume2 className="w-5 h-5 text-white" />
+                            )}
+                          </button>
+
+                          {/* Vertical Popover Opening Upwards (Matched to Reference Screenshot) */}
+                          <div
+                            className={`absolute bottom-full left-1/2 -translate-x-1/2 pb-2.5 z-50 transition-all duration-200 ease-out origin-bottom ${
+                              showVolumeSlider
+                                ? 'opacity-100 scale-100 pointer-events-auto translate-y-0'
+                                : 'opacity-0 scale-95 pointer-events-none translate-y-2'
+                            }`}
+                          >
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-8 sm:w-8.5 h-24 sm:h-28 bg-[#262626] border border-white/10 rounded-xl shadow-[0_8px_24px_rgba(0,0,0,0.85)] flex items-center justify-center select-none py-3 px-2"
+                            >
+                              {/* Vertical Slider Track with Generous Hit Area */}
+                              <div
+                                className="relative h-full w-full flex items-center justify-center cursor-pointer select-none group/slider touch-none"
+                                onPointerDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  isDraggingVolumeRef.current = true;
+                                  setIsDraggingVolume(true);
+                                  setShowVolumeSlider(true);
+                                  if (volumeHideTimerRef.current) {
+                                    clearTimeout(volumeHideTimerRef.current);
+                                    volumeHideTimerRef.current = null;
+                                  }
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  const updateFromClientY = (clientY: number) => {
+                                    const rawPct = (rect.bottom - clientY) / rect.height;
+                                    const clamped = Math.max(0, Math.min(1, rawPct));
+                                    const rounded = Math.round(clamped * 100) / 100;
+                                    setVolume(rounded);
+                                    setIsMuted(rounded === 0);
+                                    if (rounded > 0) savedVolumeRef.current = rounded;
+                                    if (isTrailerMode) {
+                                      sendTrailerYtCommand('setVolume', [Math.round(rounded * 100)]);
+                                      if (rounded === 0) sendTrailerYtCommand('mute');
+                                      else sendTrailerYtCommand('unMute');
+                                    } else if (videoRef.current) {
+                                      videoRef.current.volume = rounded;
+                                      videoRef.current.muted = rounded === 0;
+                                    }
+                                  };
+                                  updateFromClientY(e.clientY);
+
+                                  const handleMove = (ev: PointerEvent) => {
+                                    updateFromClientY(ev.clientY);
+                                  };
+                                  const onPointerUp = () => {
+                                    isDraggingVolumeRef.current = false;
+                                    setIsDraggingVolume(false);
+                                    window.removeEventListener('pointermove', handleMove);
+                                    window.removeEventListener('pointerup', onPointerUp);
+                                    window.removeEventListener('pointercancel', onPointerUp);
+                                  };
+                                  window.addEventListener('pointermove', handleMove);
+                                  window.addEventListener('pointerup', onPointerUp);
+                                  window.addEventListener('pointercancel', onPointerUp);
+                                }}
+                              >
+                                {/* Background Track Groove */}
+                                <div className="relative w-1 sm:w-1.5 h-full bg-white/20 rounded-full flex flex-col justify-end pointer-events-none overflow-visible">
+                                  {/* Red Fill Rising from Bottom */}
+                                  <div
+                                    style={{ height: `${(isMuted ? 0 : volume) * 100}%` }}
+                                    className={`w-full bg-[#E50914] rounded-full relative ${
+                                      isDraggingVolume ? 'transition-none' : 'transition-[height] duration-150 ease-out'
+                                    }`}
+                                  >
+                                    {/* Red Knob/Thumb at Top of Fill */}
+                                    <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full bg-[#E50914] shadow-[0_1px_3px_rgba(0,0,0,0.6)]" />
+                                  </div>
+                                </div>
+
+                                <input
+                                  type="range"
+                                  min={0}
+                                  max={1}
+                                  step={0.01}
+                                  value={isMuted ? 0 : volume}
+                                  aria-label="Ses seviyesi"
+                                  onChange={(e) => {
+                                    const v = Number(e.target.value);
+                                    setVolume(v);
+                                    setIsMuted(v === 0);
+                                    if (v > 0) savedVolumeRef.current = v;
+                                    if (isTrailerMode) {
+                                      sendTrailerYtCommand('setVolume', [Math.round(v * 100)]);
+                                      if (v === 0) sendTrailerYtCommand('mute');
+                                      else sendTrailerYtCommand('unMute');
+                                    } else if (videoRef.current) {
+                                      videoRef.current.volume = v;
+                                      videoRef.current.muted = v === 0;
+                                    }
+                                  }}
+                                  className="sr-only"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {!isTrailerMode && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActivePanel((prev) => (prev === 'speed' ? null : 'speed'))
+                            }
+                            aria-label="Oynatma Hızı"
+                            className={`flex items-center gap-1.5 py-1 text-sm font-medium transition-all cursor-pointer shrink-0 whitespace-nowrap ${
+                              activePanel === 'speed'
+                                ? 'text-[#E50914] font-bold'
+                                : 'text-white/90 hover:text-white'
+                            }`}
+                          >
+                            <NetflixSpeedIcon className="w-5 h-5 shrink-0" />
+                            <span className="hidden sm:inline">Hız ({playbackRate}x)</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 sm:gap-4 md:gap-6 shrink-0 flex-nowrap min-w-0">
+                        {!isTrailerMode && (
+                          <>
+                            <div className="relative flex items-center shrink-0">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setActivePanel((prev) =>
+                                    prev === 'episodes' ? null : 'episodes'
+                                  )
+                                }
+                                aria-label="Bölümler (E)"
+                                className={`flex items-center gap-1.5 py-1 text-sm font-medium transition-all cursor-pointer shrink-0 whitespace-nowrap ${
+                                  activePanel === 'episodes'
+                                    ? 'text-[#E50914] font-bold'
+                                    : 'text-white/90 hover:text-white'
+                                }`}
+                              >
+                                <NetflixEpisodesIcon className="w-5 h-5 shrink-0" />
+                                <span className="hidden sm:inline">Bölümler</span>
+                              </button>
+
+                              <AnimatePresence>
+                                {activePanel === 'episodes' && (
+                                  <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-50">
+                                    <NetflixEpisodePopover
+                                      media={media}
+                                      episodes={episodes}
+                                      currentSeason={currentSeason}
+                                      currentEpisode={currentEpisode}
+                                      seasons={seasons}
+                                      effectiveTime={effectiveTime}
+                                      safeDuration={safeDuration}
+                                      progressMap={progressMap}
+                                      toggleEpisodeWatched={toggleEpisodeWatched}
+                                      onSelectEpisode={onSelectEpisode}
+                                      flushCurrentProgress={flushCurrentProgress}
+                                      onClose={() => setActivePanel(null)}
+                                      capturedFrameUrl={capturedFrameUrl}
+                                      fallbackBackdropUrl={fallbackBackdropUrl}
+                                      episodePreviewCache={episodePreviewCache}
+                                    />
+                                  </div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+
+                            {(audioTracks.length > 1 || subtitles.length > 0) && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setActivePanel((prev) =>
+                                    prev === 'audio_subtitles' ? null : 'audio_subtitles'
+                                  )
+                                }
+                                aria-label="Ses ve Altyazı"
+                                className={`flex items-center gap-1.5 py-1 text-sm font-medium transition-all cursor-pointer shrink-0 whitespace-nowrap ${
+                                  activePanel === 'audio_subtitles'
+                                    ? 'text-[#E50914] font-bold'
+                                    : 'text-white/90 hover:text-white'
+                                }`}
+                              >
+                                <NetflixAudioSubtitleIcon className="w-5 h-5 shrink-0" />
+                                <span className="hidden md:inline">Ses ve Altyazı</span>
+                              </button>
+                            )}
+
+                            {nextEp && (
+                              <button
+                                type="button"
+                                onClick={handleNextEpisode}
+                                aria-label={`Sonraki Bölüm (N): ${nextEp.episode_number}. Bölüm`}
+                                className="flex items-center gap-1.5 py-1 text-sm font-medium text-white/90 hover:text-white transition-all cursor-pointer shrink-0 whitespace-nowrap"
+                              >
+                                <NetflixNextEpIcon className="w-5 h-5 shrink-0" />
+                                <span className="hidden sm:inline">Sonraki Bölüm</span>
+                              </button>
+                            )}
+
+                            {qualities.length > 0 && (
+                              <div className="relative flex items-center shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setActivePanel((prev) =>
+                                      prev === 'quality' ? null : 'quality'
+                                    )
+                                  }
+                                  aria-label={`Video Kalitesi: ${cleanQualityLabel(selectedQuality)}`}
+                                  className={`flex items-center gap-1.5 py-1 text-sm font-medium transition-all cursor-pointer shrink-0 whitespace-nowrap ${
+                                    activePanel === 'quality'
+                                      ? 'text-[#E50914] font-bold'
+                                      : 'text-white/90 hover:text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]'
+                                  }`}
+                                >
+                                  <SlidersHorizontal className="w-4 h-4 shrink-0" />
+                                  <span>{cleanQualityLabel(selectedQuality)}</span>
+                                  <ChevronDown
+                                    className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                                      activePanel === 'quality' ? 'rotate-180 text-white' : 'text-white/60'
+                                    }`}
+                                  />
+                                </button>
+
+                                <AnimatePresence>
+                                    {activePanel === 'quality' && (
+                                      <motion.div
+                                        key="panel-quality-pc"
+                                        initial={{ opacity: 0, scale: 0.94, y: 10 }}
+                                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                                        exit={{ opacity: 0, scale: 0.94, y: 10 }}
+                                        transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                                        data-netflix-control="true"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-50 min-w-[170px] max-w-[220px] max-h-[300px] overflow-y-auto no-scrollbar p-2.5 rounded-xl bg-[#181818]/95 backdrop-blur-xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1 select-none"
+                                      >
+                                        <div className="flex items-center justify-between border-b border-white/10 pb-1.5 mb-1 px-1">
+                                          <span className="text-white/60 font-semibold text-[11px] uppercase tracking-wider">
+                                            Kalite Seçimi
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() => setActivePanel(null)}
+                                            aria-label="Kapat"
+                                            className="text-white/50 hover:text-white p-0.5 rounded cursor-pointer"
+                                          >
+                                            <X className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                        {qualities.map((q, qIdx) => {
+                                          const cleanLabel = cleanQualityLabel(q.label);
+                                          const isSelected = cleanQualityLabel(selectedQuality) === cleanLabel;
+                                          return (
+                                            <button
+                                              key={`${cleanLabel}-${q.url || ''}-${qIdx}`}
+                                              type="button"
+                                              onClick={() => {
+                                                handleSelectQuality(q);
+                                                setActivePanel(null);
+                                              }}
+                                              className={`w-full px-2.5 py-1.5 rounded-lg text-left text-xs font-medium flex items-center justify-between gap-3 transition-colors cursor-pointer ${
+                                                isSelected
+                                                  ? 'text-white font-bold bg-white/10'
+                                                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                                              }`}
+                                            >
+                                              <span>{cleanLabel}</span>
+                                              {isSelected && (
+                                                <Check className="w-4 h-4 text-white stroke-[2.5] shrink-0" />
+                                              )}
+                                            </button>
+                                          );
+                                        })}
+                                      </motion.div>
+                                    )}
+                                  </AnimatePresence>
+                                </div>
+                            )}
+                          </>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={toggleFullscreen}
+                          aria-label={isFullscreen ? 'Tam Ekrandan Çık (F)' : 'Tam Ekran (F)'}
+                          className="text-white/90 hover:text-white hover:scale-110 active:scale-95 transition-transform cursor-pointer p-1 shrink-0"
+                        >
+                          {isFullscreen ? (
+                            <Minimize className="w-5 h-5" />
+                          ) : (
+                            <Maximize className="w-5 h-5" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
-            </div>
+            )}
+
+            {/* ================================================================
+               IN-PLAYER NETFLIX POPOVERS (Speed, Floating Episodes, Sources)
+               ================================================================ */}
+            <AnimatePresence>
+              {/* A. AUTHENTIC NETFLIX PLAYBACK SPEED POPOVER */}
+              {activePanel === 'speed' && (() => {
+                const SPEED_RATES = [
+                  { value: 0.5, label: '0.5x' },
+                  { value: 0.75, label: '0.75x' },
+                  { value: 1, label: '1x (Normal)' },
+                  { value: 1.25, label: '1.25x' },
+                  { value: 1.5, label: '1.5x' },
+                ];
+
+                const currentRate = playbackRate || 1;
+                let activeIndex = SPEED_RATES.findIndex((r) => r.value === currentRate);
+                if (activeIndex === -1) {
+                  let minDiff = Infinity;
+                  let closestIdx = 2;
+                  SPEED_RATES.forEach((r, idx) => {
+                    const diff = Math.abs(r.value - currentRate);
+                    if (diff < minDiff) {
+                      minDiff = diff;
+                      closestIdx = idx;
+                    }
+                  });
+                  activeIndex = closestIdx;
+                }
+                const activePercent = (activeIndex / (SPEED_RATES.length - 1)) * 100;
+
+                const applySpeed = (rate: number) => {
+                  setPlaybackRate(rate);
+                  if (videoRef.current) videoRef.current.playbackRate = rate;
+                  triggerHudToast(`Hız: ${rate === 1 ? '1x' : `${rate}x`}`);
+                };
+
+                const updateSpeedFromX = (clientX: number, trackEl: HTMLElement) => {
+                  const rect = trackEl.getBoundingClientRect();
+                  const rawPct = (clientX - rect.left) / Math.max(1, rect.width);
+                  const clamped = Math.max(0, Math.min(1, rawPct));
+                  const closestIdx = Math.round(clamped * (SPEED_RATES.length - 1));
+                  const targetRate = SPEED_RATES[closestIdx].value;
+                  applySpeed(targetRate);
+                };
+
+                const handleTrackPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  try {
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  } catch {}
+                  updateSpeedFromX(e.clientX, e.currentTarget);
+                };
+
+                const handleTrackPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+                  if (e.buttons === 0) return;
+                  if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  updateSpeedFromX(e.clientX, e.currentTarget);
+                };
+
+                const handleTrackPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  try {
+                    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                    }
+                  } catch {}
+                };
+
+                return (
+                  <motion.div
+                    key="panel-speed"
+                    initial={{ opacity: 0, scale: 0.94, y: 12 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.94, y: 12 }}
+                    transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                    data-netflix-control="true"
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onPointerUp={(e) => e.stopPropagation()}
+                    className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 sm:top-auto sm:bottom-20 sm:left-6 md:left-8 sm:translate-x-0 sm:translate-y-0 z-50 w-[92vw] sm:w-[430px] max-w-[430px] p-4 sm:p-6 rounded-xl bg-[#222222] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.9)] select-none"
+                  >
+                    {/* Title */}
+                    <div className="text-white font-bold text-base sm:text-[17px] tracking-normal mb-8">
+                      Oynatma Hızı
+                    </div>
+
+                    {/* Horizontal Segmented Track with Equal Spacing */}
+                    <div
+                      className="relative mx-4 sm:mx-6 h-8 flex items-center cursor-pointer select-none touch-none mb-6"
+                      onPointerDown={handleTrackPointerDown}
+                      onPointerMove={handleTrackPointerMove}
+                      onPointerUp={handleTrackPointerUp}
+                      onPointerCancel={handleTrackPointerUp}
+                    >
+                      {/* Gray Connecting Track Line */}
+                      <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-[2px] bg-[#666666] rounded-full pointer-events-none" />
+
+                      {/* Active Indicator: Gray-Bordered Ring with White Center Dot */}
+                      <div
+                        style={{ left: `${activePercent}%` }}
+                        className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 rounded-full border-2 border-[#a3a3a3] bg-[#222222] shadow-md flex items-center justify-center transition-[left] duration-150 ease-out pointer-events-none z-10"
+                      >
+                        <div className="w-2.5 h-2.5 rounded-full bg-white" />
+                      </div>
+
+                      {/* Dots and Labels */}
+                      {SPEED_RATES.map((item, idx) => {
+                        const pct = (idx / (SPEED_RATES.length - 1)) * 100;
+                        const isSelected = idx === activeIndex;
+
+                        return (
+                          <div
+                            key={item.value}
+                            style={{ left: `${pct}%` }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              applySpeed(item.value);
+                            }}
+                            className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 flex flex-col items-center cursor-pointer group py-3"
+                          >
+                            {/* Unselected small circle */}
+                            <div
+                              className={`w-2 sm:w-2.5 h-2 sm:h-2.5 rounded-full transition-all duration-150 ${
+                                isSelected
+                                  ? 'opacity-0 scale-50'
+                                  : 'bg-[#d6d6d6] group-hover:scale-125 group-hover:bg-white'
+                              }`}
+                            />
+
+                            {/* Label underneath */}
+                            <span
+                              className={`absolute top-7 whitespace-nowrap transition-colors duration-150 select-none ${
+                                isSelected
+                                  ? 'text-white font-bold text-xs sm:text-[14px]'
+                                  : 'text-[#a3a3a3] font-medium text-xs sm:text-[14px] group-hover:text-white'
+                              }`}
+                            >
+                              {item.label}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                );
+              })()}
+
+              {/* B. AUTHENTIC NETFLIX FLOATING EPISODE POPOVER (Mobile / Touch Viewport Centered) */}
+              {isTouchDevice && activePanel === 'episodes' && (
+                <div className="fixed sm:absolute bottom-16 sm:bottom-20 left-1/2 -translate-x-1/2 z-50">
+                  <NetflixEpisodePopover
+                    media={media}
+                    episodes={episodes}
+                    currentSeason={currentSeason}
+                    currentEpisode={currentEpisode}
+                    seasons={seasons}
+                    effectiveTime={effectiveTime}
+                    safeDuration={safeDuration}
+                    progressMap={progressMap}
+                    toggleEpisodeWatched={toggleEpisodeWatched}
+                    onSelectEpisode={onSelectEpisode}
+                    flushCurrentProgress={flushCurrentProgress}
+                    onClose={() => setActivePanel(null)}
+                    capturedFrameUrl={capturedFrameUrl}
+                    fallbackBackdropUrl={fallbackBackdropUrl}
+                    episodePreviewCache={episodePreviewCache}
+                  />
+                </div>
+              )}
+
+
+
+              {/* D. NETFLIX AUDIO & SUBTITLES POPOVER (Matched to Reference Screenshots) */}
+              {activePanel === 'audio_subtitles' && (
+                <motion.div
+                  key="panel-audio-subtitles"
+                  initial={{ opacity: 0, scale: 0.95, y: 12 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 12 }}
+                  transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                  data-netflix-control="true"
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute bottom-12 sm:bottom-20 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-md sm:max-w-xl p-5 sm:p-6 rounded-xl bg-[#181818]/95 backdrop-blur-xl border border-white/10 shadow-[0_24px_60px_rgba(0,0,0,0.95)] space-y-4 max-h-[80%] overflow-y-auto custom-scrollbar select-none"
+                >
+                  <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                    <span className="text-sm sm:text-base font-bold text-white tracking-wide">
+                      Ses ve Altyazı
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setActivePanel(null)}
+                      aria-label="Kapat"
+                      className="text-white/60 hover:text-white cursor-pointer p-1 rounded-lg hover:bg-white/10 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    {/* LEFT COLUMN: AUDIO */}
+                    <div className="space-y-2.5">
+                      <div className="text-white font-bold text-sm sm:text-base tracking-wide">
+                        Seslendirme / Dublaj
+                      </div>
+                      <div className="space-y-0.5">
+                        {audioTracks.length > 0 ? (
+                          audioTracks.map((track) => {
+                            const isSelected = currentAudioTrackId === track.id;
+                            return (
+                              <button
+                                key={`audio-${track.id}`}
+                                type="button"
+                                onClick={() => switchAudioTrack(track.id)}
+                                className={`w-full px-2.5 py-1.5 rounded-md text-left text-xs sm:text-sm flex items-center gap-2.5 cursor-pointer transition-colors ${
+                                  isSelected
+                                    ? 'text-white font-medium hover:bg-white/10'
+                                    : 'text-zinc-400 font-medium hover:text-white hover:bg-white/10'
+                                }`}
+                              >
+                                {isSelected ? (
+                                  <Check className="w-4 h-4 text-white stroke-[2.5] shrink-0" />
+                                ) : (
+                                  <div className="w-4 h-4 shrink-0" />
+                                )}
+                                <span className="truncate">{track.label}</span>
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <button
+                            type="button"
+                            className="w-full px-2.5 py-1.5 rounded-md text-left text-xs sm:text-sm flex items-center gap-2.5 cursor-default text-white font-medium hover:bg-white/10"
+                          >
+                            <Check className="w-4 h-4 text-white stroke-[2.5] shrink-0" />
+                            <span className="truncate">Orijinal [Varsayılan]</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* RIGHT COLUMN: SUBTITLES */}
+                    <div className="space-y-2.5 border-t sm:border-t-0 sm:border-l border-white/10 pt-4 sm:pt-0 sm:pl-6">
+                      <div className="text-white font-bold text-sm sm:text-base tracking-wide">
+                        Altyazı
+                      </div>
+                      <div className="space-y-0.5">
+                        {/* Off option */}
+                        <button
+                          type="button"
+                          onClick={() => handleSelectSubtitle('off')}
+                          className={`w-full px-2.5 py-1.5 rounded-md text-left text-xs sm:text-sm flex items-center gap-2.5 cursor-pointer transition-colors ${
+                            selectedSubtitle === 'off'
+                              ? 'text-white font-medium hover:bg-white/10'
+                              : 'text-zinc-400 font-medium hover:text-white hover:bg-white/10'
+                          }`}
+                        >
+                          {selectedSubtitle === 'off' ? (
+                            <Check className="w-4 h-4 text-white stroke-[2.5] shrink-0" />
+                          ) : (
+                            <div className="w-4 h-4 shrink-0" />
+                          )}
+                          <span>Kapalı</span>
+                        </button>
+
+                        {/* Subtitle track list */}
+                        {subtitles.map((sub) => {
+                          const isSelected = selectedSubtitle === sub.label;
+                          return (
+                            <button
+                              key={`sub-${sub.label}`}
+                              type="button"
+                              onClick={() => handleSelectSubtitle(sub.label)}
+                              className={`w-full px-2.5 py-1.5 rounded-md text-left text-xs sm:text-sm flex items-center gap-2.5 cursor-pointer transition-colors ${
+                                isSelected
+                                  ? 'text-white font-medium hover:bg-white/10'
+                                  : 'text-zinc-400 font-medium hover:text-white hover:bg-white/10'
+                              }`}
+                            >
+                              {isSelected ? (
+                                <Check className="w-4 h-4 text-white stroke-[2.5] shrink-0" />
+                              ) : (
+                                <div className="w-4 h-4 shrink-0" />
+                              )}
+                              <span className="truncate">{sub.label}</span>
+                            </button>
+                          );
+                        })}
+
+                        {subtitles.length === 0 && (
+                          <div className="text-xs text-zinc-500 italic py-1 px-2.5">
+                            Harici altyazı yok
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         ) : (
-          /* LAYER 2: UNIVERSAL IFRAME SHELL WITH UNOBSTRUCTED NATIVE CONTROLS + TOP NETFLIX DOCK */
+          /* ==================================================================
+             LAYER 2: UNIVERSAL IFRAME SHELL WITH NETFLIX TOP HUD
+             ================================================================== */
           <div className="relative w-full h-full bg-black">
             {isResolving && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-20">
-                <div className="text-xs font-mono text-sky-400 animate-pulse">
-                  KoUp Stream Köprüsü hazırlanıyor...
+              <div className="absolute inset-0 flex items-center justify-center bg-black/85 z-20">
+                <div className="w-12 h-12 rounded-full border-4 border-white/15 border-t-[#E50914] animate-spin" />
+              </div>
+            )}
+
+            {/* Netflix Top Bar in Fullscreen for Iframe Mode */}
+            {isFullscreen && (
+              <div
+                className={`netflix-hud-layer absolute top-0 left-0 right-0 z-40 px-6 py-4 bg-gradient-to-b from-black/90 via-black/40 to-transparent flex items-center justify-between gap-4 ${
+                  showOverlay ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={toggleFullscreen}
+                    className="p-1.5 text-white hover:scale-110 transition-transform cursor-pointer"
+                  >
+                    <ArrowLeft className="w-6 h-6" />
+                  </button>
+                  <span className="text-sm sm:text-base font-semibold text-white">
+                    {episodeDisplayTitle}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  {nextEp && (
+                    <button
+                      type="button"
+                      onClick={handleNextEpisode}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded bg-white text-black text-xs font-bold cursor-pointer"
+                    >
+                      <NetflixNextEpIcon className="w-4 h-4" />
+                      <span>Sonraki Bölüm</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={toggleFullscreen}
+                    className="p-1.5 text-white hover:scale-110 transition-transform cursor-pointer"
+                  >
+                    <Minimize className="w-5 h-5" />
+                  </button>
                 </div>
               </div>
             )}
+
             {streamUrl ? (
-              <iframe
-                ref={iframeRef}
-                key={streamUrl}
-                src={streamUrl}
-                allowFullScreen
-                allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-                referrerPolicy="no-referrer"
-                className="w-full h-full border-0"
-              />
+              <>
+
+                {(() => {
+                  const isCurrentYouTube =
+                    Boolean(
+                      streamUrl &&
+                        (streamUrl.includes('youtube.com') ||
+                          streamUrl.includes('youtu.be') ||
+                          streamUrl.includes('youtube-nocookie.com'))
+                    ) || activeSource?.provider === 'youtube';
+
+                  return (
+                    <div className="relative w-full h-full overflow-hidden flex items-center justify-center">
+                      <iframe
+                        ref={iframeRef}
+                        key={streamUrl}
+                        src={streamUrl}
+                        allowFullScreen
+                        onLoad={() => {
+                          const win = iframeRef.current?.contentWindow;
+                          if (!win) return;
+                          try {
+                            win.postMessage(
+                              JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }),
+                              '*'
+                            );
+                            win.postMessage(
+                              JSON.stringify({
+                                event: 'command',
+                                func: 'addEventListener',
+                                args: ['onStateChange'],
+                                id: 1,
+                                channel: 'widget',
+                              }),
+                              '*'
+                            );
+                            win.postMessage(
+                              JSON.stringify({
+                                context: 'player.js',
+                                method: 'addEventListener',
+                                value: 'timeupdate',
+                              }),
+                              '*'
+                            );
+                            win.postMessage(
+                              JSON.stringify({
+                                context: 'player.js',
+                                method: 'addEventListener',
+                                value: 'ended',
+                              }),
+                              '*'
+                            );
+                          } catch {}
+                        }}
+                        allow={
+                          isCurrentYouTube
+                            ? 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
+                            : 'autoplay; fullscreen; encrypted-media; picture-in-picture'
+                        }
+                        referrerPolicy={
+                          isCurrentYouTube ? 'strict-origin-when-cross-origin' : 'no-referrer'
+                        }
+                        className={
+                          isCurrentYouTube
+                            ? 'w-[138%] h-[138%] min-w-[138%] min-h-[138%] border-0'
+                            : 'w-full h-full border-0'
+                        }
+                      />
+                    </div>
+                  );
+                })()}
+              </>
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-black">
-                <div className="text-xs font-mono text-white/50 animate-pulse">
-                  Oynatıcı ve akış hazırlanıyor...
-                </div>
+                <div className="w-12 h-12 rounded-full border-4 border-white/15 border-t-[#E50914] animate-spin" />
               </div>
             )}
           </div>

@@ -97,27 +97,36 @@ export async function POST(req: NextRequest) {
       .replace(/^-+|-+$/g, '') || 'liste';
     const slug = `${baseSlug}-${Date.now().toString(36)}`;
 
-    const { data, error } = await supabase
-      .from('custom_lists')
-      .insert({
-        user_id,
-        slug,
-        title: cleanTitle,
-        description: description?.trim() || null,
-        visibility: visibility === 'private' ? 'private' : 'public',
-        media_ids: Array.isArray(media_ids) ? media_ids : [],
-        likes_count: 0,
-        follower_count: 0,
-      })
-      .select('*')
-      .single();
+    const { data, error } = await supabase.rpc('create_custom_list', {
+      p_user_id: user_id,
+      p_title: cleanTitle,
+      p_description: description?.trim() || null,
+      p_visibility: visibility === 'private' ? 'private' : 'public',
+      p_media_ids: Array.isArray(media_ids) ? media_ids : [],
+    });
 
     if (error) {
-      console.error('Failed to create custom list:', error);
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: 500 }
-      );
+      console.warn('Failed to create custom list via RPC, trying direct insert:', error);
+      const { data: insertData, error: insertErr } = await supabase
+        .from('custom_lists')
+        .insert({
+          user_id,
+          title: cleanTitle,
+          description: description?.trim() || null,
+          visibility: visibility === 'private' ? 'private' : 'public',
+          media_ids: Array.isArray(media_ids) ? media_ids : [],
+          slug,
+        })
+        .select()
+        .single();
+
+      if (insertErr) {
+        return NextResponse.json(
+          { success: false, error: insertErr.message },
+          { status: 500 }
+        );
+      }
+      return NextResponse.json({ success: true, list: insertData });
     }
 
     return NextResponse.json({ success: true, list: data });
