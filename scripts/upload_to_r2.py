@@ -7,8 +7,8 @@ import boto3
 from botocore.config import Config
 
 R2_ENDPOINT = os.getenv("CF_R2_ENDPOINT", "https://03a5ec82372e5d09633fa832dbcef3dc.r2.cloudflarestorage.com")
-R2_ACCESS_KEY = os.getenv("CF_R2_ACCESS_KEY_ID", "bc0f38da20841757ccb88ff226c887ee")
-R2_SECRET_KEY = os.getenv("CF_R2_SECRET_ACCESS_KEY", "656c9814db311efa2cacdd351f1002ac21626df1ae4722b395e56ae62f6ac692")
+R2_ACCESS_KEY = os.getenv("CF_R2_ACCESS_KEY_ID", "")
+R2_SECRET_KEY = os.getenv("CF_R2_SECRET_ACCESS_KEY", "")
 R2_BUCKET = os.getenv("CF_R2_BUCKET", "koup-archive")
 
 SOURCES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "r2_bundles", "sources")

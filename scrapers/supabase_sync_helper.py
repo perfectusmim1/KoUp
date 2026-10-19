@@ -50,8 +50,8 @@ SUPABASE_URL, SUPABASE_KEY = _load_supabase_creds()
 def _load_r2_creds():
     env_path = os.path.join(_ROOT, "koup-app", ".env.local")
     endpoint = os.environ.get("CF_R2_ENDPOINT", "https://03a5ec82372e5d09633fa832dbcef3dc.r2.cloudflarestorage.com")
-    access_key = os.environ.get("CF_R2_ACCESS_KEY_ID", "bc0f38da20841757ccb88ff226c887ee")
-    secret_key = os.environ.get("CF_R2_SECRET_ACCESS_KEY", "656c9814db311efa2cacdd351f1002ac21626df1ae4722b395e56ae62f6ac692")
+    access_key = os.environ.get("CF_R2_ACCESS_KEY_ID", "")
+    secret_key = os.environ.get("CF_R2_SECRET_ACCESS_KEY", "")
     bucket = os.environ.get("CF_R2_BUCKET", "koup-archive")
     if os.path.exists(env_path):
         try:

@@ -14,8 +14,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 const serviceRoleKey =
   typeof window === 'undefined'
-    ? process.env.SUPABASE_SERVICE_ROLE_KEY ||
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvY3Zjb3RtaWt6bHdiYWV6ZHBsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MjEzOTY1MSwiZXhwIjoyMTA3NzE1NjUxfQ.K78fnOdpdiZiZHxT_Yy80cTWsdFCHP2uDLMrpfL1Ceg'
+    ? process.env.SUPABASE_SERVICE_ROLE_KEY
     : undefined;
 
 export const supabaseAdmin =
