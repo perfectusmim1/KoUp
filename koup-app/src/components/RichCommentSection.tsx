@@ -654,8 +654,12 @@ export default function RichCommentSection({
 
   const handleEditorInput = useCallback(() => {
     if (!editorRef.current) return;
-    const text = editorRef.current.innerText || '';
-    const clean = text.replace(/[\u200B\r\n\t ]/g, '');
+    const text =
+      editorRef.current.innerText ||
+      editorRef.current.textContent ||
+      editorRef.current.innerHTML?.replace(/<[^>]*>/g, '') ||
+      '';
+    const clean = text.replace(/[\u200B\u00A0\r\n\t ]/g, '');
     setHasText(clean.length > 0);
     setCharCount(text.trim().length);
     saveSelection();
@@ -888,8 +892,20 @@ export default function RichCommentSection({
       return;
     }
 
-    const rawText = (editorRef.current?.innerText || '').replace(/\u200B/g, '').trim();
-    if (!rawText && !selectedGif && !selectedSticker) return;
+    const rawText = (
+      editorRef.current?.innerText ||
+      editorRef.current?.textContent ||
+      editorRef.current?.innerHTML?.replace(/<[^>]*>/g, '') ||
+      ''
+    )
+      .replace(/[\u200B\u00A0]/g, ' ')
+      .trim();
+
+    if (!rawText && !selectedGif && !selectedSticker) {
+      pushNotification('Eksik Bilgi', 'Lütfen bir yorum yazın.', 'info');
+      editorRef.current?.focus();
+      return;
+    }
 
     if (rawText) {
       const limitErr = checkCommentRateLimit(rawText);

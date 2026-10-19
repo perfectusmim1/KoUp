@@ -6,7 +6,6 @@ import {
   Heart,
   Search,
   Sparkles,
-  Trophy,
   Bell,
   Clapperboard,
   Mic,
@@ -92,21 +91,14 @@ export default function ActorsLeaderboardPage() {
       {/* HEADER & FILTER BAR */}
       <div className="rounded-3xl bg-[#0f0f11] p-6 sm:p-8 border border-white/[0.08] shadow-2xl flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div className="space-y-2">
-          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-white/45">
-            <Trophy className="w-3.5 h-3.5 text-amber-300" />
-            <span>21.814 Oyuncu, Anime Karakteri & Seiyuu • Canlı Favori Sıralaması</span>
-          </div>
           <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
-            Oyuncular & Anime Karakterleri Evreni
+            Oyuncular & Karakterler
           </h1>
-          <p className="text-sm text-white/60 max-w-2xl">
-            En çok favori alan K-Drama/C-Drama oyuncularını, AniList anime karakterlerini ve Japonca seslendirmenleri keşfet, favorile ve yorum bırak.
-          </p>
         </div>
 
         {/* Search & Sort Controls */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)]">
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] mx-auto sm:mx-0">
             <Search className="w-4 h-4 text-white/60 shrink-0" />
             <input
               type="text"
@@ -132,18 +124,20 @@ export default function ActorsLeaderboardPage() {
             )}
           </div>
 
-          <CustomSelect
-            value={sortBy}
-            onChange={(val) => {
-              setSortBy(val as 'favs' | 'dramas');
-              setCurrentPage(1);
-            }}
-            variant="pill"
-            options={[
-              { value: 'favs', label: 'En Çok Favorilenenler' },
-              { value: 'dramas', label: 'En Çok Yapımda Rol Alan' },
-            ]}
-          />
+          <div className="mx-auto sm:mx-0">
+            <CustomSelect
+              value={sortBy}
+              onChange={(val) => {
+                setSortBy(val as 'favs' | 'dramas');
+                setCurrentPage(1);
+              }}
+              variant="pill"
+              options={[
+                { value: 'favs', label: 'En Çok Favorilenenler' },
+                { value: 'dramas', label: 'En Çok Yapımda Rol Alan' },
+              ]}
+            />
+          </div>
         </div>
       </div>
 

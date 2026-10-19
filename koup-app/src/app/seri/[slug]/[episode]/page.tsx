@@ -358,7 +358,12 @@ export default function EpisodeWatchPage({
         }
         const res = await fetch(`/api/sources/${mediaItem.id}`, { cache: 'no-store' });
         const payload = await res.json();
-        const rawEps: EpisodeData[] = payload.episodes || [];
+        const rawEps: EpisodeData[] = (payload.episodes || []).map((ep: EpisodeData) => ({
+          ...ep,
+          sources: (ep.sources || []).filter(
+            (s) => s?.direct_url && s.direct_url.startsWith('http') && !s.direct_url.includes('javascript:') && !s.direct_url.includes('void(0)')
+          ),
+        }));
         if (isCancelled) return;
 
         // Sort episodes strictly by season then episode number

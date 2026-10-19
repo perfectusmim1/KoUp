@@ -376,14 +376,13 @@ export async function GET(req: NextRequest) {
       const mId = embedUrl.match(/embed\/(?:sheila\/)?([a-zA-Z0-9-]+)/);
       const videoId = mId?.[1];
       if (videoId) {
-        const hlsUrl = `https://dbx.molystream.org/embed/sheila/${videoId}`;
-        const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(hlsUrl)}&ref=${encodeURIComponent('https://dbx.molystream.org/')}`;
+        const fullEmbed = `https://dbx.molystream.org/embed/${videoId}`;
         return NextResponse.json({
-          mode: 'native_hls',
-          streamUrl: proxiedStream,
-          streamType: 'hls',
-          directUrl: hlsUrl,
-          qualities: [{ label: '1080p (Full HD)', url: proxiedStream }],
+          mode: 'iframe',
+          iframeUrl: fullEmbed,
+          streamUrl: fullEmbed,
+          directUrl: fullEmbed,
+          fallbackIframe: fullEmbed,
         });
       }
     } catch {}

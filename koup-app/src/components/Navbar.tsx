@@ -214,7 +214,7 @@ export default function Navbar() {
           setIsSearching(false);
         }
       }
-    }, 160);
+    }, 120);
 
     return () => {
       active = false;
@@ -266,6 +266,22 @@ export default function Navbar() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
+
+  // Lock body scroll and dynamic viewport rubber-banding when mobile drawer is open
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+
+    const originalOverflow = document.body.style.overflow;
+    const originalTouchAction = document.body.style.touchAction;
+
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.touchAction = originalTouchAction;
+    };
+  }, [mobileMenuOpen]);
 
   const [optimisticPath, setOptimisticPath] = useState<string | null>(null);
 
@@ -983,15 +999,16 @@ export default function Navbar() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
               onClick={() => setMobileMenuOpen(false)}
-              className="pointer-events-auto fixed inset-0 z-40 bg-black/75 backdrop-blur-md lg:hidden"
+              className="pointer-events-auto fixed inset-0 z-40 bg-black/80 touch-none overscroll-none lg:hidden"
             />
             <motion.div
               initial={{ x: '-100%' }}
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
-              transition={{ type: 'spring', damping: 28, stiffness: 280 }}
-              className="pointer-events-auto lg:hidden fixed top-0 left-0 bottom-0 w-[290px] max-w-[85vw] h-full bg-[#0a0a0c]/98 backdrop-blur-2xl p-6 border-r border-white/15 shadow-2xl z-50 flex flex-col justify-between"
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="pointer-events-auto lg:hidden fixed top-0 left-0 w-[290px] max-w-[85vw] h-[100dvh] bg-[#0c0d12] p-6 border-r border-white/15 shadow-2xl z-50 flex flex-col justify-between overscroll-contain touch-pan-y will-change-transform"
             >
               {/* Drawer Top Header */}
               <div>

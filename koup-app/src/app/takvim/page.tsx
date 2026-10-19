@@ -50,13 +50,6 @@ const DAYS = [
   { id: 7, name: 'Pazar', short: 'PAZ' },
 ];
 
-const CATEGORY_FILTERS = [
-  { id: 'all', label: 'Tüm Kategoriler' },
-  { id: 'kdrama', label: 'K-Drama & Asya Dizileri' },
-  { id: 'anime', label: 'Animeler' },
-  { id: 'dizi', label: 'Popüler & Global Diziler' },
-];
-
 function isScheduleAnime(item: CalendarScheduleItem): boolean {
   return (
     item.source_site === 'tranimeizle' ||
@@ -122,7 +115,6 @@ export default function CalendarPage() {
   );
 
   const [selectedDay, setSelectedDay] = useState<number>(todayDay);
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [schedules, setSchedules] = useState<CalendarScheduleItem[]>(() => initialData?.schedules || []);
   const [enabledScrapers, setEnabledScrapers] = useState<string[]>(() => initialData?.enabledScrapers || []);
   const [isLoading, setIsLoading] = useState(() => !initialData?.schedules || initialData.schedules.length === 0);
@@ -177,33 +169,20 @@ export default function CalendarPage() {
 
   const activeDayName = DAYS.find((d) => d.id === selectedDay)?.name || 'Pazartesi';
 
-  const displayedSchedules = schedules.filter((item) => {
-    if (selectedCategory === 'all') return true;
-    if (selectedCategory === 'anime') return isScheduleAnime(item);
-    if (selectedCategory === 'kdrama') return isScheduleKdrama(item);
-    if (selectedCategory === 'dizi') return !isScheduleAnime(item) && !isScheduleKdrama(item);
-    return true;
-  });
+  const displayedSchedules = schedules;
 
   return (
     <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 space-y-8">
       {/* Header Banner Card */}
       <div className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/10 shadow-2xl flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-        <div className="space-y-2">
-          <div className="text-[11px] font-mono font-bold uppercase tracking-[0.2em] text-white/50 flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-sky-400" />
-            <span>Yayın Takvimi • Canlı Yayın Akışı & Yeni Bölümler</span>
-          </div>
+        <div>
           <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
-            Yayın Takvimi & Yeni Bölüm Programı
+            Yayın Takvimi
           </h1>
-          <p className="text-sm text-white/60 max-w-2xl">
-            Aktif yayını devam eden Kore dizileri, Asya yapımları ve popüler animelerin haftalık yayın programı. Yeni bölümler yayınlandığı gün güncellenir.
-          </p>
         </div>
 
         {/* 7-Day Selector Tabs */}
-        <div className="grid grid-cols-7 gap-1.5 glass-pill-dark p-1.5 rounded-2xl shrink-0">
+        <div className="grid grid-cols-7 gap-1 sm:gap-1.5 glass-pill-dark p-1 sm:p-1.5 rounded-2xl shrink-0 w-full lg:w-auto">
           {DAYS.map((d) => {
             const active = selectedDay === d.id;
             return (
@@ -213,7 +192,7 @@ export default function CalendarPage() {
                   triggerSound?.('click');
                   setSelectedDay(d.id);
                 }}
-                className={`relative px-3 py-2.5 rounded-xl text-center transition-colors cursor-pointer ${
+                className={`flex flex-col items-center justify-center text-center w-full min-w-0 p-1 sm:p-2.5 rounded-xl cursor-pointer relative transition-colors ${
                   active ? 'text-black font-bold' : 'text-white/70 hover:text-white'
                 }`}
               >
@@ -224,48 +203,16 @@ export default function CalendarPage() {
                     className="absolute inset-0 rounded-xl bg-white shadow-[0_0_20px_rgba(255,255,255,0.35)]"
                   />
                 )}
-                <div className="relative z-10 text-xs font-mono font-bold">
+                <span className="w-full text-center relative z-10 text-xs font-mono font-bold">
                   {d.short}
-                </div>
-                <div className="relative z-10 hidden sm:block text-[10px] opacity-75">
+                </span>
+                <span className="w-full text-center relative z-10 hidden sm:block text-[10px] opacity-75">
                   {d.name}
-                </div>
+                </span>
               </button>
             );
           })}
         </div>
-      </div>
-
-      {/* Category Filter Pills with Fluid Spring Sliding Pill */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-mono text-white/45 mr-1">Kategori:</span>
-        {CATEGORY_FILTERS.map((cf) => {
-          const active = selectedCategory === cf.id;
-          return (
-            <button
-              key={cf.id}
-              onClick={() => {
-                triggerSound?.('click');
-                setSelectedCategory(cf.id);
-              }}
-              className={`relative px-3.5 py-1.5 rounded-full text-xs font-mono transition-colors duration-200 cursor-pointer border ${
-                active
-                  ? 'text-black font-bold border-white'
-                  : 'bg-white/[0.04] text-white/70 border-white/10 hover:text-white hover:border-white/20'
-              }`}
-            >
-              {active && (
-                <motion.span
-                  layoutId="calendar-category-pill"
-                  initial={false}
-                  transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
-                  className="absolute inset-0 rounded-full bg-white shadow-[0_0_16px_rgba(255,255,255,0.25)]"
-                />
-              )}
-              <span className="relative z-10">{cf.label}</span>
-            </button>
-          );
-        })}
       </div>
 
       {/* Day Overview Banner */}
@@ -305,13 +252,13 @@ export default function CalendarPage() {
             {activeDayName} gününe ait aktif yayın bulunamadı
           </h3>
           <p className="text-xs text-white/50 max-w-md mx-auto">
-            Seçili gün veya kategori için yeni bölüm yayını bulunmuyor.
+            Seçili gün için yeni bölüm yayını bulunmuyor.
           </p>
         </div>
       ) : (
         <AnimatePresence mode="wait">
           <motion.div
-            key={`${selectedDay}-${selectedCategory}`}
+            key={selectedDay}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

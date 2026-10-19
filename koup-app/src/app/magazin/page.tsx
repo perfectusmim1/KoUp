@@ -6,7 +6,6 @@ import {
   Flame,
   Search,
   RefreshCw,
-  Newspaper,
   Layers,
   X,
 } from 'lucide-react';
@@ -168,29 +167,22 @@ export default function MagazineHubPage() {
       {/* HEADER */}
       <div className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/15 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2.5 text-xs font-semibold uppercase tracking-widest text-white/50">
-            <Newspaper className="w-4 h-4 text-white/60" />
-            <span>Magazin & Gündem</span>
-          </div>
           <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
-            Magazin & Dizi Gündemi
+            Magazin
           </h1>
-          <p className="text-sm text-white/65 max-w-2xl">
-            AsyaMag ve KoreZin canlı haber akışıyla Güney Kore, Çin, Tayland ve Japonya eğlence dünyasından en son haberler, K-Pop gelişmeleri, dedikodular ve dizi duyuruları.
-          </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-col sm:flex-row items-center sm:items-center gap-3 w-full sm:w-auto">
           <button
             onClick={() => loadMagazine(true)}
             disabled={isRefreshing}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-full apple-glass-pill text-xs font-bold text-amber-300 hover:text-white border border-amber-400/30 cursor-pointer"
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-full apple-glass-pill text-xs font-bold text-amber-300 hover:text-white border border-amber-400/30 cursor-pointer mx-auto sm:mx-0"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
             <span>{isRefreshing ? 'Canlı Çekiliyor...' : 'Canlı Akışı Yenile'}</span>
           </button>
 
-          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)]">
+          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] mx-auto sm:mx-0">
             <Search className="w-4 h-4 text-white/60 shrink-0" />
             <input
               type="text"
