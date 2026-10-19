@@ -239,7 +239,9 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
       try {
         const { data: dbUser } = await supabase
           .from('profiles')
-          .select('*')
+          .select(
+            'id, username, display_name, avatar_url, banner_url, bio, role, is_private, hide_watch_history, hide_library, hide_comments, stats_episodes_watched, stats_series_completed, stats_movies_completed, stats_anime_completed, stats_total_minutes, mdl_username, anilist_username, created_at'
+          )
           .ilike('username', targetUsername)
           .maybeSingle();
 
@@ -250,38 +252,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
         } else if (user && user.username.toLowerCase() === targetUsername.toLowerCase()) {
           setProfileData(user);
         } else {
-          // Graceful fallback profile
-          setProfileData({
-            id: `guest-${targetUsername}`,
-            username: targetUsername,
-            display_name: targetUsername,
-            bio: 'K-Drama, C-Drama ve Anime tutkunu • KoUp Sinema Severi',
-            avatar_url: null,
-            banner_url: null,
-            role: 'user',
-            is_private: false,
-            hide_watch_history: false,
-            hide_library: false,
-            hide_comments: false,
-            notification_settings: {
-              sound_enabled: true,
-              sound_tone: 'apple_glass',
-              sound_volume: 0.7,
-              mute_during_fullscreen: true,
-              notify_new_episode: true,
-              notify_followed_actor: true,
-              notify_comment_reply: true,
-              notify_list_activity: true,
-            },
-            stats_episodes_watched: 0,
-            stats_series_completed: 0,
-            stats_movies_completed: 0,
-            stats_anime_completed: 0,
-            stats_total_minutes: 0,
-            mdl_username: null,
-            anilist_username: null,
-            anilist_auto_sync: false,
-          });
+          setProfileData(null);
         }
       } catch (err) {
         console.error('Failed to load profile:', err);
