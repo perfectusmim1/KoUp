@@ -13,6 +13,8 @@ export async function OPTIONS() {
   });
 }
 
+const CURL_BIN = process.platform === 'win32' ? 'curl.exe' : 'curl';
+
 const BLOCKED_HOST_PATTERNS = [
   /^localhost$/i,
   /\.local$/i,
@@ -82,8 +84,8 @@ export async function GET(req: NextRequest) {
       referer = 'https://dizikorea3.com/';
       origin = 'https://dizikorea3.com';
     } else if (targetUrl.includes('diziyou')) {
-      referer = 'https://diziyou.co/';
-      origin = 'https://diziyou.co';
+      referer = 'https://diziyou.one/';
+      origin = 'https://diziyou.one';
     } else if (targetUrl.includes('dizibox') || targetUrl.includes('molystream')) {
       referer = 'https://dizibox.tv/';
       origin = 'https://dizibox.tv';
@@ -215,6 +217,7 @@ export async function GET(req: NextRequest) {
         targetUrl.includes('hotlinger') ||
         targetUrl.includes('dplayer') ||
         targetUrl.includes('glogv5ppja') ||
+        targetUrl.includes('diziyou') ||
         targetUrl.includes('.vtt')
       ) {
         if (targetUrl.includes('.vtt')) {
@@ -222,7 +225,7 @@ export async function GET(req: NextRequest) {
             const { execFile } = await import('child_process');
             const vttOutput = await new Promise<string>((resolve, reject) => {
               execFile(
-                'curl.exe',
+                CURL_BIN,
                 [
                   '-s',
                   '-L',
@@ -260,7 +263,7 @@ export async function GET(req: NextRequest) {
             const { execFile } = await import('child_process');
             const curlOutput = await new Promise<string>((resolve, reject) => {
               execFile(
-                'curl.exe',
+                CURL_BIN,
                 [
                   '-s',
                   '-L',

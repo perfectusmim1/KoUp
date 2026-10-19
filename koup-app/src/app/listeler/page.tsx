@@ -217,9 +217,6 @@ export default function PublicListsPage() {
           <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight">
             Listeler
           </h1>
-          <p className="text-sm sm:text-base text-white/55 max-w-2xl mt-2 leading-relaxed font-medium">
-            KoUp topluluğu ve sinemaseverler tarafından derlenen en popüler Asya dizileri, animeler ve tematik başyapıt seçkileri.
-          </p>
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
@@ -388,13 +385,13 @@ export default function PublicListsPage() {
                     </div>
 
                     {/* List Title */}
-                    <h3 className="text-xl sm:text-2xl font-black text-white group-hover:text-sky-300 transition-colors tracking-tight line-clamp-1 leading-tight">
+                    <h3 className="text-xl sm:text-2xl font-black text-white group-hover:text-sky-300 transition-colors tracking-tight line-clamp-1 leading-tight break-words">
                       {list.title}
                     </h3>
 
                     {/* Description */}
                     {list.description && (
-                      <p className="text-xs text-white/50 line-clamp-2 mt-1.5 leading-relaxed font-normal">
+                      <p className="text-xs text-white/50 line-clamp-2 mt-1.5 leading-relaxed font-normal break-words">
                         {list.description}
                       </p>
                     )}
@@ -509,7 +506,6 @@ export default function PublicListsPage() {
                   </div>
                   <div>
                     <h3 className="text-lg font-bold text-white">Yeni Liste Oluştur</h3>
-                    <p className="text-xs text-white/50">Dilediğin yapımları toplayıp toplulukla paylaş</p>
                   </div>
                 </div>
                 <button
@@ -528,9 +524,10 @@ export default function PublicListsPage() {
                   <input
                     type="text"
                     required
+                    maxLength={60}
                     value={newListTitle}
                     onChange={(e) => setNewListTitle(e.target.value)}
-                    placeholder="Örn: 2024 Favori K-Dramalarım, Ağlatan Başyapıtlar..."
+                    placeholder=""
                     className="w-full px-4 py-2.5 rounded-full bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/35 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-all font-medium"
                   />
                 </div>
@@ -541,9 +538,10 @@ export default function PublicListsPage() {
                   </label>
                   <textarea
                     rows={3}
+                    maxLength={250}
                     value={newListDesc}
                     onChange={(e) => setNewListDesc(e.target.value)}
-                    placeholder="Listenin teması veya izleme önerileri hakkında kısa not..."
+                    placeholder=""
                     className="w-full px-4 py-2.5 rounded-2xl bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/35 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-all resize-none font-medium"
                   />
                 </div>
@@ -562,12 +560,9 @@ export default function PublicListsPage() {
                           : 'bg-white/[0.02] border-white/10 text-white/60 hover:border-white/20'
                       }`}
                     >
-                      <div className="flex items-center gap-1.5 text-xs font-bold mb-0.5">
+                      <div className="flex items-center gap-1.5 text-xs font-bold">
                         <Globe className="w-3.5 h-3.5 text-sky-400" />
                         <span>Herkese Açık</span>
-                      </div>
-                      <div className="text-[11px] text-white/50">
-                        Topluluk listeleri sayfasında ve profilinizde herkes görebilir.
                       </div>
                     </button>
 
@@ -580,12 +575,9 @@ export default function PublicListsPage() {
                           : 'bg-white/[0.02] border-white/10 text-white/60 hover:border-white/20'
                       }`}
                     >
-                      <div className="flex items-center gap-1.5 text-xs font-bold mb-0.5">
+                      <div className="flex items-center gap-1.5 text-xs font-bold">
                         <Lock className="w-3.5 h-3.5 text-amber-400" />
                         <span>Gizli Liste</span>
-                      </div>
-                      <div className="text-[11px] text-white/50">
-                        Yalnızca siz görebilir ve düzenleyebilirsiniz.
                       </div>
                     </button>
                   </div>

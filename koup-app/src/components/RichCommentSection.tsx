@@ -2235,7 +2235,7 @@ export default function RichCommentSection({
                 onClick={() => editorRef.current?.focus()}
                 className="absolute top-3.5 left-4 right-4 text-sm text-white/35 pointer-events-none select-none font-normal"
               >
-                Düşüncelerini, teorilerini veya sahne analizini yaz... (İpucu: Yazıyı seçip yukarıdaki butonlarla başlık yapabilir veya renklendirebilirsin!)
+                Yorum yaz...
               </div>
             )}
             <div
@@ -2245,6 +2245,8 @@ export default function RichCommentSection({
               aria-multiline="true"
               aria-label="Yorum İçeriği"
               onInput={handleEditorInput}
+              onCompositionEnd={handleEditorInput}
+              onTouchEnd={handleEditorInput}
               onKeyUp={() => {
                 saveSelection();
                 updateActiveFormats();
@@ -2309,9 +2311,9 @@ export default function RichCommentSection({
             </span>
             <button
               type="submit"
-              disabled={isSubmitting || cooldownSec > 0 || (!hasText && !selectedGif && !selectedSticker)}
+              disabled={isSubmitting || cooldownSec > 0}
               className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition-all ${
-                isSubmitting || cooldownSec > 0 || (!hasText && !selectedGif && !selectedSticker)
+                isSubmitting || cooldownSec > 0
                   ? 'bg-white/20 text-white/50 cursor-not-allowed'
                   : 'bg-[#2997ff] hover:bg-sky-400 text-white shadow-[0_0_20px_rgba(41,151,255,0.45)] hover:shadow-[0_0_28px_rgba(41,151,255,0.7)] cursor-pointer'
               }`}

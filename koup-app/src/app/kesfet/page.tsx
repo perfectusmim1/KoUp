@@ -16,6 +16,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Check,
   X,
 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -51,8 +52,25 @@ const COUNTRIES = [
   { id: 'US', label: 'ABD & Global', code: 'US' },
 ];
 
+const YEAR_OPTIONS = [
+  { value: 'ALL', label: 'Tüm Yıllar' },
+  { value: '2026', label: '2026' },
+  { value: '2025', label: '2025' },
+  { value: '2024', label: '2024' },
+  { value: '2023', label: '2023' },
+  { value: '2022', label: '2022' },
+  { value: '2021', label: '2021' },
+  { value: '2020', label: '2020' },
+  { value: '2019', label: '2019' },
+  { value: '2018', label: '2018' },
+  { value: '2015-2017', label: '2015 - 2017' },
+  { value: '2010-2014', label: '2010 - 2014' },
+  { value: '2000-2009', label: '2000 - 2009' },
+  { value: '1990-1999', label: '1990 - 1999' },
+  { value: '1990 Öncesi', label: '1990 Öncesi' },
+];
+
 const GENRES = [
-  'Tümü',
   'Romantik',
   'Dram',
   'Aksiyon',
@@ -63,7 +81,42 @@ const GENRES = [
   'Doğaüstü',
   'Bilim Kurgu',
   'Macera',
+  'Suç',
+  'Tarih',
+  'Aile',
+  'Gençlik',
+  'Okul',
+  'Psikolojik',
+  'Korku',
+  'BL',
+  'GL',
+  'Melodram',
+  'Spor',
+  'Müzik',
+  'Yaşamdan Kesitler',
+  'Askeri',
+  'Siyaset',
+  'Hukuk',
+  'Tıp',
+  'İntikam',
 ];
+
+function applyYearFilter(query: any, yearFilter: string) {
+  if (!yearFilter || yearFilter === 'ALL') return query;
+  if (/^\d{4}$/.test(yearFilter)) {
+    return query.eq('release_year', Number(yearFilter));
+  }
+  if (yearFilter.includes('-')) {
+    const [start, end] = yearFilter.split('-').map(Number);
+    if (start && end) {
+      return query.gte('release_year', start).lte('release_year', end);
+    }
+  }
+  if (yearFilter === '1990 Öncesi' || yearFilter.toLowerCase().includes('öncesi')) {
+    return query.lt('release_year', 1990);
+  }
+  return query;
+}
 
 function DiscoverContent() {
   const router = useRouter();
@@ -74,14 +127,20 @@ function DiscoverContent() {
 
   const initialType = searchParams.get('type') || 'ALL';
   const initialCountry = searchParams.get('country') || 'ALL';
-  const initialCategory = searchParams.get('category') || searchParams.get('genre') || 'Tümü';
+  const initialYear = searchParams.get('year') || 'ALL';
+  const initialCategoryParam = searchParams.get('category') || searchParams.get('genre') || '';
+  const initialGenres = initialCategoryParam && initialCategoryParam !== 'Tümü'
+    ? initialCategoryParam.split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
   const initialSort = (searchParams.get('sort') as any) || 'views';
   const initialQ = searchParams.get('q') || '';
   const initialPage = Math.max(1, Number(searchParams.get('page')) || 1);
+
   const [isMounted, setIsMounted] = useState(false);
   const [typeFilter, setTypeFilter] = useState(initialType);
   const [countryFilter, setCountryFilter] = useState(initialCountry);
-  const [genreFilter, setGenreFilter] = useState(initialCategory);
+  const [yearFilter, setYearFilter] = useState(initialYear);
+  const [selectedGenres, setSelectedGenres] = useState<string[]>(initialGenres);
   const [sortBy, setSortBy] = useState<'latest' | 'views' | 'rating' | 'year'>(initialSort);
   const [searchQuery, setSearchQuery] = useState(initialQ);
   const [debouncedQuery, setDebouncedQuery] = useState(initialQ);
@@ -117,12 +176,14 @@ function DiscoverContent() {
   useEffect(() => {
     const t = searchParams.get('type');
     const c = searchParams.get('country');
+    const y = searchParams.get('year');
     const q = searchParams.get('q');
     const s = searchParams.get('sort');
     const p = searchParams.get('page');
     const cat = searchParams.get('category') || searchParams.get('genre');
     if (t) setTypeFilter(t);
     if (c) setCountryFilter(c.toUpperCase());
+    if (y) setYearFilter(y);
     if (q !== null) {
       setSearchQuery(q);
       setDebouncedQuery(q);
@@ -133,9 +194,13 @@ function DiscoverContent() {
     if (p) {
       setCurrentPage(Math.max(1, Number(p) || 1));
     }
-    if (cat) {
-      const matched = GENRES.find((g) => g.toLowerCase() === cat.toLowerCase());
-      setGenreFilter(matched || cat);
+    if (cat !== null) {
+      if (!cat || cat === 'Tümü') {
+        setSelectedGenres([]);
+      } else {
+        const parts = cat.split(',').map((g) => g.trim()).filter(Boolean);
+        setSelectedGenres(parts);
+      }
     }
   }, [searchParams]);
 
@@ -144,8 +209,9 @@ function DiscoverContent() {
 
     async function loadCatalog() {
       const { normalized, raw } = normalizeSearchQuery(debouncedQuery);
-      const cacheKey = `kesfet_${typeFilter}_${countryFilter}_${genreFilter}_${sortBy}_${normalized || 'all'}_p${currentPage}`;
-      const countKey = `kesfet_count_${typeFilter}_${countryFilter}_${genreFilter}_${normalized || 'all'}`;
+      const genresKey = selectedGenres.length > 0 ? selectedGenres.slice().sort().join('-') : 'all';
+      const cacheKey = `kesfet_${typeFilter}_${countryFilter}_${yearFilter}_${genresKey}_${sortBy}_${normalized || 'all'}_p${currentPage}`;
+      const countKey = `kesfet_count_${typeFilter}_${countryFilter}_${yearFilter}_${genresKey}_${normalized || 'all'}`;
 
       const cached = getCache<MediaItem[]>(cacheKey, true);
       const cachedCount = getCache<number>(countKey, true);
@@ -164,27 +230,29 @@ function DiscoverContent() {
       try {
         const [data, countRes] = await Promise.all([
           cachedQuery(cacheKey, 60_000, async () => {
-            // 1. High-performance multi-token fuzzy search via search_media RPC
-            try {
-              const rpcRes = await supabase.rpc('search_media', {
-                p_query: raw,
-                p_type: typeFilter,
-                p_country: countryFilter,
-                p_genre: genreFilter,
-                p_sort: sortBy,
-                p_limit: ITEMS_PER_PAGE,
-                p_offset: offset,
-              });
+            // 1. High-performance multi-token fuzzy search via search_media RPC if standard filters
+            if (yearFilter === 'ALL' && selectedGenres.length <= 1 && raw.length >= 2) {
+              try {
+                const rpcRes = await supabase.rpc('search_media', {
+                  p_query: raw,
+                  p_type: typeFilter,
+                  p_country: countryFilter,
+                  p_genre: selectedGenres.length === 1 ? selectedGenres[0] : 'Tümü',
+                  p_sort: sortBy,
+                  p_limit: ITEMS_PER_PAGE,
+                  p_offset: offset,
+                });
 
-              if (rpcRes.data && Array.isArray(rpcRes.data) && rpcRes.data.length > 0) {
-                const results = rpcRes.data as MediaItem[];
-                return raw.length >= 2 ? rankSearchResults(results, raw) : results;
+                if (rpcRes.data && Array.isArray(rpcRes.data) && rpcRes.data.length > 0) {
+                  const results = rpcRes.data as MediaItem[];
+                  return rankSearchResults(results, raw);
+                }
+              } catch (rpcErr) {
+                console.warn('search_media RPC notice:', rpcErr);
               }
-            } catch (rpcErr) {
-              console.warn('search_media RPC notice:', rpcErr);
             }
 
-            // 2. Direct database query fallback with trigram indexing
+            // 2. Direct database query with multi-genre & year support
             let query = supabase.from('media').select('*');
 
             if (typeFilter !== 'ALL') {
@@ -193,9 +261,11 @@ function DiscoverContent() {
             if (countryFilter !== 'ALL') {
               query = query.eq('country_code', countryFilter);
             }
-            if (genreFilter !== 'Tümü') {
-              query = query.contains('categories', [genreFilter]);
+            if (selectedGenres.length > 0) {
+              query = query.contains('categories', selectedGenres);
             }
+            query = applyYearFilter(query, yearFilter);
+
             if (normalized.length >= 2 || raw.length >= 2) {
               query = query.or(`title.ilike.%${raw}%,slug.ilike.%${normalized || raw}%,search_text.ilike.%${normalized || raw}%`);
             }
@@ -224,18 +294,37 @@ function DiscoverContent() {
             return (resData as MediaItem[]) || [];
           }),
           cachedQuery(countKey, 120_000, async () => {
-            try {
-              const rpcCount = await supabase.rpc('count_search_media', {
-                p_query: raw,
-                p_type: typeFilter,
-                p_country: countryFilter,
-                p_genre: genreFilter,
-              });
-              if (rpcCount.data !== null && rpcCount.data !== undefined) {
-                return Number(rpcCount.data);
+            if (yearFilter === 'ALL' && selectedGenres.length <= 1) {
+              try {
+                const rpcCount = await supabase.rpc('count_search_media', {
+                  p_query: raw,
+                  p_type: typeFilter,
+                  p_country: countryFilter,
+                  p_genre: selectedGenres.length === 1 ? selectedGenres[0] : 'Tümü',
+                });
+                if (rpcCount.data !== null && rpcCount.data !== undefined && Number(rpcCount.data) > 0) {
+                  return Number(rpcCount.data);
+                }
+              } catch (cntErr) {
+                console.warn('count_search_media RPC notice:', cntErr);
               }
-            } catch (cntErr) {
-              console.warn('count_search_media RPC notice:', cntErr);
+            }
+
+            try {
+              let cQuery = supabase.from('media').select('*', { count: 'exact', head: true });
+              if (typeFilter !== 'ALL') cQuery = cQuery.eq('content_type', typeFilter);
+              if (countryFilter !== 'ALL') cQuery = cQuery.eq('country_code', countryFilter);
+              if (selectedGenres.length > 0) cQuery = cQuery.contains('categories', selectedGenres);
+              cQuery = applyYearFilter(cQuery, yearFilter);
+              if (normalized.length >= 2 || raw.length >= 2) {
+                cQuery = cQuery.or(`title.ilike.%${raw}%,slug.ilike.%${normalized || raw}%,search_text.ilike.%${normalized || raw}%`);
+              }
+              const { count, error } = await cQuery;
+              if (!error && typeof count === 'number') {
+                return count;
+              }
+            } catch (err) {
+              console.warn('count query notice:', err);
             }
             return 0;
           }),
@@ -257,7 +346,7 @@ function DiscoverContent() {
     return () => {
       active = false;
     };
-  }, [typeFilter, countryFilter, genreFilter, sortBy, debouncedQuery, currentPage]);
+  }, [typeFilter, countryFilter, yearFilter, selectedGenres, sortBy, debouncedQuery, currentPage]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / ITEMS_PER_PAGE));
 
@@ -283,6 +372,12 @@ function DiscoverContent() {
     return [1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages];
   };
 
+  const countryOptions = COUNTRIES.map((c) => ({
+    value: c.id,
+    label: c.label,
+    icon: c.code ? <CountryFlag code={c.code} size="sm" /> : <Globe className="w-3.5 h-3.5 text-sky-400" />,
+  }));
+
   return (
     <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 space-y-8">
       {/* FILTER CONTROL PANEL (Clean Dark Surface, Zero Emojis, Fluid Spring Tabs) */}
@@ -294,17 +389,16 @@ function DiscoverContent() {
               <span suppressHydrationWarning>
                 {isMounted && totalCount > 0
                   ? `${totalCount.toLocaleString('tr-TR')} Master Yapım`
-                  : '26.750+ Master Yapım'}{' '}
-                • Çok Boyutlu Katalog Motoru
+                  : '26.750+ Master Yapım'}
               </span>
             </div>
             <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight mt-1">
-              Keşfet • Dizi, Anime & Film Arşivi
+              Keşfet
             </h1>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)]">
+          <div className="flex flex-col sm:flex-row items-center sm:items-center gap-3 w-full sm:w-auto">
+            <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] w-full sm:w-auto justify-between sm:justify-start">
               <Search className="w-4 h-4 text-white/60 shrink-0" />
               <input
                 type="text"
@@ -314,7 +408,7 @@ function DiscoverContent() {
                   setCurrentPage(1);
                 }}
                 placeholder="Başlık, orijinal ad veya AKA ara..."
-                className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-56 sm:w-64 font-medium"
+                className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full sm:w-64 font-medium"
               />
               {searchQuery && (
                 <button
@@ -327,25 +421,49 @@ function DiscoverContent() {
               )}
             </div>
 
-            <CustomSelect
-              value={sortBy}
-              onChange={(val) => {
-                setSortBy(val as any);
-                setCurrentPage(1);
-              }}
-              variant="pill"
-              aria-label="Sıralama Ölçütü"
-              options={[
-                { value: 'latest', label: 'Son Eklenen' },
-                { value: 'views', label: 'En Çok İzlenen & Kaynaklı' },
-                { value: 'rating', label: 'En Yüksek Puanlı (MDL / AL / IMDb)' },
-                { value: 'year', label: 'En Yeni Yıl (2026 → Eski)' },
-              ]}
-            />
+            <div className="flex flex-wrap items-center justify-center gap-2.5 w-full sm:w-auto">
+              <CustomSelect
+                value={countryFilter}
+                onChange={(val) => {
+                  setCountryFilter(val);
+                  setCurrentPage(1);
+                }}
+                variant="pill"
+                aria-label="Ülke Filtresi"
+                options={countryOptions}
+              />
+
+              <CustomSelect
+                value={yearFilter}
+                onChange={(val) => {
+                  setYearFilter(val);
+                  setCurrentPage(1);
+                }}
+                variant="pill"
+                aria-label="Yıl Filtresi"
+                options={YEAR_OPTIONS}
+              />
+
+              <CustomSelect
+                value={sortBy}
+                onChange={(val) => {
+                  setSortBy(val as any);
+                  setCurrentPage(1);
+                }}
+                variant="pill"
+                aria-label="Sıralama Ölçütü"
+                options={[
+                  { value: 'latest', label: 'Son Eklenen' },
+                  { value: 'views', label: 'En Çok İzlenen' },
+                  { value: 'rating', label: 'En Yüksek Puanlı' },
+                  { value: 'year', label: 'En Yeni Yıl' },
+                ]}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Type + Country Row with Fluid Spring Sliding Pills */}
+        {/* Content Type Row with Fluid Spring Sliding Pills */}
         <div
           ref={typeRowRef}
           className="flex items-center gap-2 pt-2 border-t border-white/[0.06] overflow-x-auto no-scrollbar pb-1.5 [-webkit-overflow-scrolling:touch]"
@@ -383,108 +501,80 @@ function DiscoverContent() {
               </button>
             );
           })}
-
-          <div className="h-5 w-px bg-white/10 mx-1 shrink-0 hidden sm:block" />
-
-          {(() => {
-            const hasCountry = COUNTRIES.some((c) => c.id === countryFilter);
-            const countriesList = hasCountry
-              ? COUNTRIES
-              : [
-                  ...COUNTRIES,
-                  {
-                    id: countryFilter,
-                    label: countryFilter,
-                    code: countryFilter,
-                  },
-                ];
-
-            return countriesList.map((c) => {
-              const active = countryFilter === c.id;
-              return (
-                <button
-                  key={c.id}
-                  onClick={() => {
-                    triggerSound('click');
-                    setCountryFilter(c.id);
-                    setCurrentPage(1);
-                  }}
-                  className={`relative shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors duration-200 cursor-pointer ${
-                    active ? 'text-black' : 'glass-pill text-white/75 hover:text-white'
-                  }`}
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="kesfet-country-active-pill"
-                      initial={false}
-                      transition={{
-                        type: 'spring',
-                        stiffness: 480,
-                        damping: 34,
-                        mass: 0.6,
-                      }}
-                      className="absolute inset-0 rounded-full bg-white shadow-[0_0_24px_rgba(255,255,255,0.4)]"
-                    />
-                  )}
-                  {c.code ? (
-                    <span className="relative z-10 flex items-center mr-0.5">
-                      <CountryFlag code={c.code} size="sm" />
-                    </span>
-                  ) : (
-                    <Globe className="w-3.5 h-3.5 relative z-10" />
-                  )}
-                  <span className="relative z-10">{c.label}</span>
-                </button>
-              );
-            });
-          })()}
         </div>
 
-        {/* Genre Chips with Fluid Spring Sliding Pill */}
+        {/* Multi-Select Genre Chips with Drag-Scroll */}
         <div
           ref={genreRowRef}
           className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1.5 [-webkit-overflow-scrolling:touch]"
         >
-          {(() => {
-            const genresList =
-              genreFilter !== 'Tümü' && !GENRES.includes(genreFilter)
-                ? [genreFilter, ...GENRES]
-                : GENRES;
+          <button
+            onClick={() => {
+              triggerSound('click');
+              setSelectedGenres([]);
+              setCurrentPage(1);
+            }}
+            className={`relative shrink-0 px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-colors duration-200 cursor-pointer ${
+              selectedGenres.length === 0
+                ? 'text-black font-bold'
+                : 'bg-white/[0.04] text-white/65 border border-white/10 hover:text-white'
+            }`}
+          >
+            {selectedGenres.length === 0 && (
+              <motion.span
+                layoutId="kesfet-genre-active-pill"
+                initial={false}
+                transition={{
+                  type: 'spring',
+                  stiffness: 480,
+                  damping: 34,
+                  mass: 0.6,
+                }}
+                className="absolute inset-0 rounded-full bg-white shadow-[0_0_20px_rgba(255,255,255,0.35)]"
+              />
+            )}
+            <span className="relative z-10">Tümü</span>
+          </button>
 
-            return genresList.map((g) => {
-              const active = genreFilter === g;
-              return (
-                <button
-                  key={g}
-                  onClick={() => {
-                    triggerSound('click');
-                    setGenreFilter(g);
-                    setCurrentPage(1);
-                  }}
-                  className={`relative shrink-0 px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-colors duration-200 cursor-pointer ${
-                    active
-                      ? 'text-black'
-                      : 'bg-white/[0.04] text-white/65 border border-white/10 hover:text-white'
-                  }`}
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="kesfet-genre-active-pill"
-                      initial={false}
-                      transition={{
-                        type: 'spring',
-                        stiffness: 480,
-                        damping: 34,
-                        mass: 0.6,
-                      }}
-                      className="absolute inset-0 rounded-full bg-white shadow-[0_0_20px_rgba(255,255,255,0.35)]"
-                    />
-                  )}
-                  <span className="relative z-10">{g}</span>
-                </button>
-              );
-            });
-          })()}
+          {selectedGenres.length > 0 && (
+            <button
+              onClick={() => {
+                triggerSound('click');
+                setSelectedGenres([]);
+                setCurrentPage(1);
+              }}
+              className="relative shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30 hover:bg-rose-500/25 transition-colors cursor-pointer"
+            >
+              <X className="w-3 h-3" />
+              <span>Temizle ({selectedGenres.length})</span>
+            </button>
+          )}
+
+          {GENRES.map((g) => {
+            const active = selectedGenres.includes(g);
+            return (
+              <button
+                key={g}
+                onClick={() => {
+                  triggerSound('click');
+                  setCurrentPage(1);
+                  setSelectedGenres((prev) =>
+                    prev.includes(g)
+                      ? prev.filter((item) => item !== g)
+                      : [...prev, g]
+                  );
+                }}
+                className={`relative shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-all duration-200 cursor-pointer ${
+                  active
+                    ? 'bg-white text-black font-bold shadow-[0_0_16px_rgba(255,255,255,0.35)]'
+                    : 'bg-white/[0.04] text-white/65 border border-white/10 hover:text-white'
+                }`}
+              >
+                {active && <Check className="w-3 h-3 stroke-[3] text-black" />}
+                <span>{g}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 

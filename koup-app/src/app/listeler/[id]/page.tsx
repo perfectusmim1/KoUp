@@ -551,12 +551,7 @@ export default function ListDetailPage({
         <div className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div className="space-y-4 flex-1">
             {/* Header Tags */}
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="px-3 py-1 rounded-full bg-sky-500/15 border border-sky-400/30 text-sky-400 font-mono text-[11px] font-bold tracking-wider flex items-center gap-1.5">
-                <ListOrdered className="w-3.5 h-3.5" />
-                <span>Özel Koleksiyon</span>
-              </span>
-
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
               {list.visibility === 'public' ? (
                 <span className="px-2.5 py-1 rounded-full bg-white/[0.06] border border-white/10 text-white/60 font-mono text-[11px] flex items-center gap-1">
                   <Globe className="w-3 h-3 text-sky-400" />
@@ -571,19 +566,19 @@ export default function ListDetailPage({
             </div>
 
             {/* List Title */}
-            <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight">
+            <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight text-center md:text-left break-words">
               {list.title}
             </h1>
 
             {/* Description */}
             {list.description && (
-              <p className="text-sm sm:text-base text-white/65 max-w-3xl leading-relaxed font-normal">
+              <p className="text-sm sm:text-base text-white/65 max-w-3xl leading-relaxed font-normal text-center md:text-left break-words">
                 {list.description}
               </p>
             )}
 
             {/* Creator Pill & Stats */}
-            <div className="flex flex-wrap items-center gap-4 pt-2">
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 pt-2">
               <Link
                 href={`/profil/${encodeURIComponent(list.creator?.username || '')}`}
                 className="inline-flex items-center gap-2.5 p-1.5 pr-4 rounded-full bg-white/[0.04] border border-white/10 hover:border-white/20 transition-all group"
@@ -600,16 +595,16 @@ export default function ListDetailPage({
                   )}
                 </div>
                 <div className="flex flex-col text-left">
-                  <span className="text-xs font-bold text-white group-hover:text-sky-300 transition-colors">
+                  <span className="text-xs font-bold text-white group-hover:text-sky-300 transition-colors truncate max-w-[140px] sm:max-w-none">
                     {list.creator?.display_name || list.creator?.username}
                   </span>
-                  <span className="text-[10px] font-mono text-white/45">
+                  <span className="text-[10px] font-mono text-white/45 truncate max-w-[140px] sm:max-w-none">
                     @{list.creator?.username}
                   </span>
                 </div>
               </Link>
 
-              <div className="flex items-center gap-3 text-xs font-mono text-white/50">
+              <div className="flex items-center gap-3 text-xs font-mono text-white/50 justify-center">
                 <span className="flex items-center gap-1.5">
                   <Film className="w-3.5 h-3.5 text-sky-400" />
                   <strong className="text-white font-bold">{list.items.length}</strong> Yapım
@@ -628,10 +623,10 @@ export default function ListDetailPage({
           </div>
 
           {/* Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2.5 relative z-10 shrink-0">
+          <div className="flex flex-col md:flex-row items-center gap-2.5 relative z-10 shrink-0 w-full md:w-auto">
             <button
               onClick={handleToggleLike}
-              className={`flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-bold cursor-pointer transition-all ${
+              className={`flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-bold cursor-pointer transition-all w-full md:w-auto ${
                 isLiked
                   ? 'bg-rose-500 text-white shadow-[0_0_20px_rgba(244,63,94,0.35)]'
                   : 'glass-pill text-white/80 hover:text-white'
@@ -642,30 +637,37 @@ export default function ListDetailPage({
             </button>
 
             {isOwner && (
-              <>
-                <button
-                  onClick={() => setIsAddModalOpen(true)}
-                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 cursor-pointer shadow-lg transition-all"
-                >
-                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                  <span>Dizi Ekle</span>
-                </button>
+              <div className="flex flex-col md:flex-row items-center gap-2.5 w-full md:w-auto">
+                {/* On mobile: Dizi Ekle and Düzenle side by side */}
+                <div className="flex items-center justify-center gap-2 w-full md:w-auto">
+                  <button
+                    onClick={() => setIsAddModalOpen(true)}
+                    className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 cursor-pointer shadow-lg transition-all"
+                  >
+                    <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                    <span>Dizi Ekle</span>
+                  </button>
 
-                <button
-                  onClick={() => setIsEditModalOpen(true)}
-                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-full glass-pill text-xs font-semibold text-white/80 hover:text-white cursor-pointer"
-                >
-                  <span>Düzenle</span>
-                </button>
+                  <button
+                    onClick={() => setIsEditModalOpen(true)}
+                    className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full glass-pill text-xs font-semibold text-white/80 hover:text-white cursor-pointer"
+                  >
+                    <span>Düzenle</span>
+                  </button>
+                </div>
 
-                <button
-                  onClick={handleDeleteList}
-                  className="flex items-center gap-1.5 px-3 py-2.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold hover:bg-rose-500/25 cursor-pointer"
-                  aria-label="Listeyi Sil"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </>
+                {/* On mobile: Sil button centered underneath them */}
+                <div className="flex items-center justify-center w-full md:w-auto">
+                  <button
+                    onClick={handleDeleteList}
+                    className="flex items-center justify-center gap-1.5 px-4 md:px-3 py-2 md:py-2.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold hover:bg-rose-500/25 cursor-pointer transition-all"
+                    aria-label="Listeyi Sil"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span className="md:hidden">Listeyi Sil</span>
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -964,9 +966,10 @@ export default function ListDetailPage({
                   <input
                     type="text"
                     required
+                    maxLength={60}
                     value={editTitle}
                     onChange={(e) => setEditTitle(e.target.value)}
-                    placeholder="Liste başlığı..."
+                    placeholder=""
                     className="koup-input text-xs py-2.5 px-4 font-medium"
                   />
                 </div>
@@ -977,9 +980,10 @@ export default function ListDetailPage({
                   </label>
                   <textarea
                     rows={3}
+                    maxLength={250}
                     value={editDesc}
                     onChange={(e) => setEditDesc(e.target.value)}
-                    placeholder="Listenin açıklaması..."
+                    placeholder=""
                     className="koup-input text-xs py-2.5 px-4 font-medium resize-none"
                   />
                 </div>

@@ -165,6 +165,10 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
 
   useEffect(() => {
     const updateRowCapacity = () => {
+      if (typeof window !== 'undefined' && window.innerWidth < 640) {
+        setCardsPerRow(2);
+        return;
+      }
       const w =
         libraryContainerRef.current?.clientWidth ||
         (typeof window !== 'undefined' ? Math.min(window.innerWidth - 64, 1568) : 1320);
@@ -1239,10 +1243,15 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                       ).map((rowItems, rowIdx) => (
                         <div
                           key={`lib-row-${rowIdx}`}
-                          className="flex items-center gap-4 flex-nowrap overflow-visible"
+                          className="grid grid-cols-2 sm:flex sm:items-center gap-3 sm:gap-4 sm:flex-nowrap overflow-visible"
                         >
                           {rowItems.map((m) => (
-                            <AccordionMediaCard key={m.id} item={m} />
+                            <div
+                              key={m.id}
+                              className="w-full sm:w-auto sm:shrink-0 min-w-0 max-sm:[&_.koup-accordion-card]:!w-full max-sm:[&_.koup-accordion-card]:!h-[240px]"
+                            >
+                              <AccordionMediaCard item={m} />
+                            </div>
                           ))}
                         </div>
                       ))}

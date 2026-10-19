@@ -6,6 +6,8 @@ const CACHE_HEADERS = {
   'Cache-Control': 'no-store, no-cache, must-revalidate',
 };
 
+const CURL_BIN = process.platform === 'win32' ? 'curl.exe' : 'curl';
+
 // In-memory cache for resolved stream URLs (prevents upstream rate limits & 429 errors)
 interface ResolvedCacheEntry {
   data: any;
@@ -114,7 +116,7 @@ export async function GET(req: NextRequest) {
         const { execFile } = await import('child_process');
         const pageHtml = await new Promise<string>((resolve, reject) => {
           execFile(
-            'curl.exe',
+            CURL_BIN,
             [
               '-s',
               '-L',
@@ -135,7 +137,7 @@ export async function GET(req: NextRequest) {
         const { execFile } = await import('child_process');
         const pageHtml = await new Promise<string>((resolve, reject) => {
           execFile(
-            'curl.exe',
+            CURL_BIN,
             [
               '-s',
               '-L',
@@ -161,7 +163,7 @@ export async function GET(req: NextRequest) {
       const { execFile } = await import('child_process');
       const iframeHtml = await new Promise<string>((resolve, reject) => {
         execFile(
-          'curl.exe',
+          CURL_BIN,
           [
             '-s',
             '-L',
@@ -186,7 +188,7 @@ export async function GET(req: NextRequest) {
 
         const s2JsonStr = await new Promise<string>((resolve, reject) => {
           execFile(
-            'curl.exe',
+            CURL_BIN,
             [
               '-s',
               '-L',
@@ -460,7 +462,7 @@ export async function GET(req: NextRequest) {
             const { execFile } = await import('child_process');
             html = await new Promise<string>((resolve, reject) => {
               execFile(
-                'curl.exe',
+                CURL_BIN,
                 [
                   '-s',
                   '-L',
@@ -719,6 +721,19 @@ export async function GET(req: NextRequest) {
         // proceed to iframe fallback
       }
     }
+  }
+
+  // Diziyou direct HLS (storage.diziyou.one has access-control-allow-origin: * open CORS)
+  if (url.includes('storage.diziyou') || url.includes('diziyou.one') || provider === 'diziyou-hls') {
+    return NextResponse.json(
+      {
+        mode: 'native_hls',
+        streamUrl: url,
+        qualities: [{ label: '1080p', url: url }],
+        fallbackIframe: url,
+      },
+      { headers: CACHE_HEADERS }
+    );
   }
 
   // 2. Direct HLS / MP4 pass-through (with stream-proxy for CDNs and CORS protection)

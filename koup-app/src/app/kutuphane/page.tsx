@@ -281,109 +281,69 @@ export default function KutuphanePage() {
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="rounded-3xl bg-[#0f0f11] p-4 sm:p-5 border border-white/[0.08] flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl">
-        {/* Status Pills */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0 no-scrollbar">
+      <div className="rounded-3xl bg-[#0f0f11] p-4 sm:p-5 border border-white/[0.08] flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
+        {/* Content Type Filter */}
+        <div className="flex items-center gap-1 p-1 rounded-full glass-pill-dark border border-white/12 shrink-0 mx-auto sm:mx-0">
           {[
-            { id: 'ALL' as const, label: 'Tümü' },
-            { id: 'watching' as const, label: 'İzleniyor' },
-            { id: 'completed' as const, label: 'Tamamlandı' },
-            { id: 'plan_to_watch' as const, label: 'Planlanan' },
-            { id: 'on_hold' as const, label: 'Beklemede' },
-            { id: 'dropped' as const, label: 'Bıraktım' },
-          ].map((st) => {
-            const active = activeStatus === st.id;
+            { id: 'ALL' as const, label: 'Hepsi' },
+            { id: 'drama' as const, label: 'Dizi' },
+            { id: 'anime' as const, label: 'Anime' },
+            { id: 'movie' as const, label: 'Film' },
+          ].map((tp) => {
+            const active = activeType === tp.id;
             return (
               <button
-                key={st.id}
+                key={tp.id}
                 onClick={() => {
                   triggerSound('click');
-                  setActiveStatus(st.id);
+                  setActiveType(tp.id);
                   setCurrentPage(1);
                 }}
-                className={`relative px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors duration-200 cursor-pointer shrink-0 ${
+                className={`relative px-3 py-1 rounded-full text-[11px] font-semibold transition-colors duration-200 cursor-pointer ${
                   active
-                    ? 'text-black'
-                    : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10'
+                    ? 'text-white'
+                    : 'text-white/60 hover:text-white'
                 }`}
               >
                 {active && (
                   <motion.span
-                    layoutId="kutuphane-status-active-pill"
+                    layoutId="kutuphane-type-active-pill"
                     initial={false}
                     transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
-                    className="absolute inset-0 rounded-full bg-white shadow-md"
+                    className="absolute inset-0 rounded-full bg-sky-500 shadow-[0_0_12px_rgba(14,165,233,0.45)]"
                   />
                 )}
-                <span className="relative z-10">{st.label}</span>
+                <span className="relative z-10 font-bold">{tp.label}</span>
               </button>
             );
           })}
         </div>
 
-        {/* Content Type Filter & Search Input */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-          <div className="flex items-center gap-1 p-1 rounded-full glass-pill-dark border border-white/12 shrink-0">
-            {[
-              { id: 'ALL' as const, label: 'Hepsi' },
-              { id: 'drama' as const, label: 'Dizi' },
-              { id: 'anime' as const, label: 'Anime' },
-              { id: 'movie' as const, label: 'Film' },
-            ].map((tp) => {
-              const active = activeType === tp.id;
-              return (
-                <button
-                  key={tp.id}
-                  onClick={() => {
-                    triggerSound('click');
-                    setActiveType(tp.id);
-                    setCurrentPage(1);
-                  }}
-                  className={`relative px-3 py-1 rounded-full text-[11px] font-semibold transition-colors duration-200 cursor-pointer ${
-                    active
-                      ? 'text-white'
-                      : 'text-white/60 hover:text-white'
-                  }`}
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="kutuphane-type-active-pill"
-                      initial={false}
-                      transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
-                      className="absolute inset-0 rounded-full bg-sky-500 shadow-[0_0_12px_rgba(14,165,233,0.45)]"
-                    />
-                  )}
-                  <span className="relative z-10 font-bold">{tp.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] min-w-[200px]">
-            <Search className="w-3.5 h-3.5 text-white/60 shrink-0" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
+        {/* Search Input */}
+        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] min-w-[200px]">
+          <Search className="w-3.5 h-3.5 text-white/60 shrink-0" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
+            placeholder="Kütüphanede ara..."
+            className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full font-medium"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => {
+                setSearchQuery('');
                 setCurrentPage(1);
               }}
-              placeholder="Kütüphanede ara..."
-              className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full font-medium"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setCurrentPage(1);
-                }}
-                className="text-white/40 hover:text-white transition-colors cursor-pointer"
-                aria-label="Aramayı temizle"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
+              className="text-white/40 hover:text-white transition-colors cursor-pointer"
+              aria-label="Aramayı temizle"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 

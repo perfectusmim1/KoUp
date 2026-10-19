@@ -335,9 +335,6 @@ export default function NotificationsPage() {
             <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-white">
               Bildirimler
             </h1>
-            <p className="text-sm sm:text-base text-white/60 mt-2 font-light max-w-2xl leading-relaxed">
-              Takip ettiğin Asya dizilerinin yeni bölümleri, favori oyuncularının yeni projeleri ve yorumlarına gelen yanıtların tümü burada listelenir.
-            </p>
           </div>
 
           {/* Action Toolbar */}

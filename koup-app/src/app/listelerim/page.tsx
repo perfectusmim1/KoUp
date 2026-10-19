@@ -259,9 +259,6 @@ export default function MyListsPage() {
           <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
             Özel Listelerim
           </h1>
-          <p className="text-xs sm:text-sm text-white/55 max-w-2xl">
-            Favori dizi ve anime sahnelerini, tematik seçkilerinizi derleyin; herkese açık paylaşın veya tamamen gizli tutun.
-          </p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -427,12 +424,12 @@ export default function MyListsPage() {
                     <Link
                       href={`/listeler/${l.slug || l.id}`}
                       onClick={() => triggerSound('click')}
-                      className="text-base sm:text-lg font-bold text-white group-hover:text-sky-300 transition-colors line-clamp-1"
+                      className="text-base sm:text-lg font-bold text-white group-hover:text-sky-300 transition-colors line-clamp-1 break-words"
                     >
                       {l.title}
                     </Link>
                     {l.description ? (
-                      <p className="text-xs text-white/55 mt-1 line-clamp-2 leading-relaxed">
+                      <p className="text-xs text-white/55 mt-1 line-clamp-2 leading-relaxed break-words">
                         {l.description}
                       </p>
                     ) : (
@@ -470,7 +467,7 @@ export default function MyListsPage() {
                       <div className="w-10 h-10 rounded-full bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400">
                         <Trash2 className="w-5 h-5" />
                       </div>
-                      <div className="text-xs font-bold text-white">
+                      <div className="text-xs font-bold text-white line-clamp-2 break-words">
                         &quot;{l.title}&quot; listesini silmek istiyor musunuz?
                       </div>
                       <div className="flex items-center gap-2 pt-1">
@@ -559,9 +556,10 @@ export default function MyListsPage() {
                   <input
                     type="text"
                     required
+                    maxLength={60}
                     value={modalTitle}
                     onChange={(e) => setModalTitle(e.target.value)}
-                    placeholder="Örn: En İyi Wuxia & Tarihi Seçkim"
+                    placeholder=""
                     className="koup-input text-xs py-2.5 px-4 font-medium"
                   />
                 </div>
@@ -572,9 +570,10 @@ export default function MyListsPage() {
                   </label>
                   <textarea
                     rows={3}
+                    maxLength={250}
                     value={modalDesc}
                     onChange={(e) => setModalDesc(e.target.value)}
-                    placeholder="Listenizin teması, seçtiğiniz yapımlar hakkında kısa bir not..."
+                    placeholder=""
                     className="koup-input text-xs py-2.5 px-4 font-medium resize-none"
                   />
                 </div>
@@ -601,9 +600,6 @@ export default function MyListsPage() {
                         <Globe className={`w-3.5 h-3.5 ${modalVisibility === 'public' ? 'text-sky-400' : 'text-white/50'}`} />
                         <span>Herkese Açık</span>
                       </div>
-                      <p className="text-[11px] text-white/50 mt-1">
-                        Topluluk listeler sayfasında ve profilinizde görünür.
-                      </p>
                     </button>
 
                     <button
@@ -622,9 +618,6 @@ export default function MyListsPage() {
                         <Lock className={`w-3.5 h-3.5 ${modalVisibility === 'private' ? 'text-amber-400' : 'text-white/50'}`} />
                         <span>Gizli Liste</span>
                       </div>
-                      <p className="text-[11px] text-white/50 mt-1">
-                        Yalnızca siz görebilir ve yönetebilirsiniz.
-                      </p>
                     </button>
                   </div>
                 </div>
