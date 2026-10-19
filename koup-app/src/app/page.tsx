@@ -190,6 +190,13 @@ export default function HomePage() {
     }
     if (top10Movies && top10Movies.length > 0) {
       setTop10MoviesItems(top10Movies.slice(0, 10));
+    } else {
+      const fallbackFilms = [...(kds || []), ...(ans || []), ...(cds || []), ...(gls || [])].filter(
+        (m) => m.content_type === 'film' || m.content_type === 'movie'
+      );
+      if (fallbackFilms.length > 0) {
+        setTop10MoviesItems(fallbackFilms.slice(0, 10));
+      }
     }
     if (kds) setKdramaItems(kds);
     if (cds) setCdramaItems(cds);
@@ -220,13 +227,13 @@ export default function HomePage() {
 
   useEffect(() => {
     // 1. Instantly populate on client mount from memory or localStorage cache for 0ms transition
-    const cached = memoryHomeBundle || getCache<HomeDataBundle>('home_catalog_bundle_v4');
+    const cached = memoryHomeBundle || getCache<HomeDataBundle>('home_catalog_bundle_v5');
     if (cached) {
       applyBundle(cached);
     }
 
     async function fetchHomeData() {
-      const homeData = await cachedQuery('home_catalog_bundle_v4', 300_000, async () => {
+      const homeData = await cachedQuery('home_catalog_bundle_v5', 300_000, async () => {
         const [
           featRes,
           kdRes,
@@ -320,6 +327,25 @@ export default function HomePage() {
           }
         }
 
+        let movieItems = top10MoviesRes.error
+          ? []
+          : ((top10MoviesRes.data as MediaItem[]) || []);
+        if (movieItems.length < 10) {
+          const { data: fallbackMovies } = await supabase
+            .from('media')
+            .select('*')
+            .eq('content_type', 'film')
+            .not('cover_image', 'is', null)
+            .order('imdb_rating', { ascending: false, nullsFirst: false })
+            .order('views_total', { ascending: false, nullsFirst: false })
+            .limit(10);
+          if (fallbackMovies && fallbackMovies.length > 0) {
+            const seen = new Set(movieItems.map((m) => m.id));
+            const extra = fallbackMovies.filter((m) => !seen.has(m.id));
+            movieItems = [...movieItems, ...extra].slice(0, 10);
+          }
+        }
+
         return {
           feats: featItems,
           kds: (kdRes.data as MediaItem[]) || [],
@@ -332,9 +358,7 @@ export default function HomePage() {
           top10Series: top10SeriesRes.error
             ? []
             : ((top10SeriesRes.data as MediaItem[]) || []),
-          top10Movies: top10MoviesRes.error
-            ? []
-            : ((top10MoviesRes.data as MediaItem[]) || []),
+          top10Movies: movieItems,
         };
       });
 

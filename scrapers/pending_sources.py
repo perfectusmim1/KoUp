@@ -268,14 +268,19 @@ def list_pending(
     drama_id: Optional[int] = None,
     max_attempts: Optional[int] = None,
     apply_backoff: bool = False,
+    domain: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Loads pending episodes from SQLite ordered by oldest last_source_check (NULLs first).
-    Supports min_age_minutes filter, drama_id filter, max_attempts ceiling, and backoff filtering.
+    Supports min_age_minutes filter, drama_id filter, max_attempts ceiling, domain filter, and backoff filtering.
     """
     cur = conn.cursor()
     conditions = ["e.source_status = 'pending'"]
     params: List[Any] = []
+
+    if domain:
+        conditions.append("e.episode_url LIKE ?")
+        params.append(f"%{domain}%")
 
     if drama_id is not None:
         conditions.append("e.drama_id = ?")
@@ -317,7 +322,11 @@ def list_pending(
         FROM episodes e
         JOIN dramas d ON e.drama_id = d.id
         WHERE {where_clause}
-        ORDER BY CASE WHEN e.last_source_check IS NULL THEN 0 ELSE 1 END ASC,
+        ORDER BY CASE
+                    WHEN e.episode_url LIKE '%dizikorea%' OR e.episode_url LIKE '%asyawatch%' OR e.episode_url LIKE '%ddizi%' OR e.episode_url LIKE '%dizibox%' THEN 0
+                    ELSE 1
+                 END ASC,
+                 CASE WHEN e.last_source_check IS NULL THEN 0 ELSE 1 END ASC,
                  e.last_source_check ASC,
                  e.id ASC
         LIMIT ?

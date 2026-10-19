@@ -103,11 +103,56 @@ def upload_to_r2(local_path: str, r2_key: str) -> bool:
         return False
 
 
+def download_db_from_r2(local_path: str = None) -> bool:
+    """Downloads the master SQLite database from Cloudflare R2 if missing or needed."""
+    try:
+        import boto3
+        from botocore.config import Config
+
+        if not local_path:
+            local_path = os.path.join(_ROOT, "webdrama_archive.db")
+        endpoint, access_key, secret_key, bucket = _load_r2_creds()
+        if not (endpoint and access_key and secret_key and bucket):
+            print("[R2_DOWNLOAD_ERROR] Missing Cloudflare R2 credentials.", flush=True)
+            return False
+
+        cfg = Config(retries={"max_attempts": 3, "mode": "standard"}, connect_timeout=15, read_timeout=120)
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=endpoint,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            region_name="auto",
+            config=cfg,
+        )
+        temp_path = local_path + ".download.tmp"
+        print(f"[R2_DOWNLOAD] Downloading db/webdrama_archive.db from R2 ({bucket})...", flush=True)
+        s3.download_file(bucket, "db/webdrama_archive.db", temp_path)
+        if os.path.exists(temp_path) and os.path.getsize(temp_path) > 10_000_000:
+            if os.path.exists(local_path):
+                try:
+                    os.remove(local_path)
+                except Exception:
+                    pass
+            os.rename(temp_path, local_path)
+            print(f"[R2_DOWNLOAD] Successfully downloaded webdrama_archive.db ({os.path.getsize(local_path)} bytes).", flush=True)
+            return True
+        else:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            print("[R2_DOWNLOAD_ERROR] Downloaded DB file is missing or too small.", flush=True)
+            return False
+    except Exception as e:
+        print(f"[R2_DOWNLOAD_ERROR] {e}", flush=True)
+        return False
+
+
 def backup_db_to_r2() -> bool:
     """Backs up the local SQLite webdrama_archive.db file to R2 under db/webdrama_archive.db."""
     db_path = os.path.join(_ROOT, "webdrama_archive.db")
-    if os.path.exists(db_path):
+    if os.path.exists(db_path) and os.path.getsize(db_path) > 10_000_000:
         return upload_to_r2(db_path, "db/webdrama_archive.db")
+    print(f"[R2_BACKUP_SKIPPED] Local DB file does not exist or is too small (<10MB).", flush=True)
     return False
 
 
@@ -455,18 +500,26 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
             )
 
             # 3. Upsert episodes into Supabase public.episodes table with their sources
-            sb_episodes = []
+            sb_episodes_map = {}
             for ep in ep_out:
+                s_num = ep.get("season_number") or 1
+                e_num = ep.get("episode_number")
+                key = (s_num, e_num)
                 is_pend = bool(ep.get("pending"))
-                sb_episodes.append({
+                candidate = {
                     "media_id": drama_id,
-                    "season_number": ep.get("season_number") or 1,
-                    "episode_number": ep.get("episode_number"),
-                    "episode_name": ep.get("episode_name") or f"Bölüm {ep.get('episode_number')}",
+                    "season_number": s_num,
+                    "episode_number": e_num,
+                    "episode_name": ep.get("episode_name") or f"Bölüm {e_num}",
                     "episode_type": ep.get("episode_type") or "normal",
                     "status": "pending_source" if is_pend else "published",
                     "video_sources": ep.get("sources") or [],
-                })
+                }
+                # If duplicate season/episode exists in SQLite, keep the one with sources
+                if key not in sb_episodes_map or (len(candidate["video_sources"]) > len(sb_episodes_map[key]["video_sources"])):
+                    sb_episodes_map[key] = candidate
+
+            sb_episodes = list(sb_episodes_map.values())
             if sb_episodes:
                 for i in range(0, len(sb_episodes), 50):
                     chunk = sb_episodes[i : i + 50]

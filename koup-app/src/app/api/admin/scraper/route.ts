@@ -91,6 +91,16 @@ const SCRAPER_METAS: Record<string, ScraperMeta> = {
     description: '8900+ global dizi, anime ve K-Drama arşivi. AES-256 çözülmüş katalog ve 1080p HLS akışları.',
     targetCategory: 'Global & Anime',
   },
+  dizifon: {
+    id: 'dizifon',
+    name: 'DiziFon (Asya, Çin & K-Drama HD Arşiv)',
+    domain: 'https://www.dizifon.cc',
+    logoText: 'DiziFon',
+    badgeColor: 'from-amber-600 to-yellow-500',
+    protocol: 'OK.ru HD + Vidmoly + YouTube HD Akış Çözücü',
+    description: '3500+ Asya, Kore, Çin ve Hint dizisi. vdo-src üzerinden doğrudan OK.ru ve Vidmoly 1080p akışları.',
+    targetCategory: 'Asya & K-Drama',
+  },
 };
 
 let archiveDb: DatabaseSync | null = null;
@@ -122,8 +132,8 @@ export async function GET(req: NextRequest) {
 
     const db = getArchiveDb();
 
-    // 1. Fetch scraper configs from Supabase (active 7)
-    const activeIds = ['ddizi', 'animecix', 'dizibox', 'dizikorea', 'hdfilm', 'asyawatch', 'dizilla'];
+    // 1. Fetch scraper configs from Supabase (active 8)
+    const activeIds = ['ddizi', 'animecix', 'dizibox', 'dizikorea', 'hdfilm', 'asyawatch', 'dizilla', 'dizifon'];
     let query = supabase.from('scraper_configs').select('*').in('id', activeIds);
     if (scraperId) {
       query = query.eq('id', scraperId);
@@ -161,6 +171,7 @@ export async function GET(req: NextRequest) {
           const isHdfilm = bot.id === 'hdfilm';
           const isAsyawatch = bot.id === 'asyawatch';
           const isDizilla = bot.id === 'dizilla';
+          const isDizifon = bot.id === 'dizifon';
           const countStmt = isHdfilm
             ? db.prepare(
                 "SELECT COUNT(*) as c FROM episode_sources WHERE site LIKE '%hdfilm%' OR provider LIKE '%hdfilm%' OR provider = 'rapidrame' OR provider = 'close'"
@@ -173,10 +184,14 @@ export async function GET(req: NextRequest) {
             ? db.prepare(
                 "SELECT COUNT(*) as c FROM episode_sources WHERE site LIKE '%dizilla%' OR provider LIKE '%dizilla%'"
               )
+            : isDizifon
+            ? db.prepare(
+                "SELECT COUNT(*) as c FROM episode_sources WHERE site LIKE '%dizifon%' OR provider LIKE '%dizifon%'"
+              )
             : db.prepare(
                 'SELECT COUNT(*) as c FROM episode_sources WHERE site = ? OR provider = ?'
               );
-          const countRow = (isHdfilm || isAsyawatch || isDizilla ? countStmt.get() : countStmt.get(bot.id, bot.id)) as { c?: number } | undefined;
+          const countRow = (isHdfilm || isAsyawatch || isDizilla || isDizifon ? countStmt.get() : countStmt.get(bot.id, bot.id)) as { c?: number } | undefined;
           if (countRow?.c) {
             realCount = countRow.c;
           }
@@ -274,6 +289,26 @@ export async function GET(req: NextRequest) {
                    JOIN episodes e ON es.episode_id = e.id
                    JOIN dramas d ON e.drama_id = d.id
                    WHERE es.site LIKE '%dizilla%' OR es.provider LIKE '%dizilla%'
+                   ORDER BY es.id DESC
+                   LIMIT 16`).all();
+        } else if (selectedBot.id === 'dizifon') {
+          rows = db.prepare(`SELECT 
+                     es.id AS source_id,
+                     d.id AS media_id,
+                     d.title AS drama_title,
+                     d.slug AS drama_slug,
+                     d.cover_image,
+                     e.season_number,
+                     e.episode_number,
+                     e.episode_name,
+                     es.source_name,
+                     es.provider,
+                     es.direct_url,
+                     es.created_at
+                   FROM episode_sources es
+                   JOIN episodes e ON es.episode_id = e.id
+                   JOIN dramas d ON e.drama_id = d.id
+                   WHERE es.site LIKE '%dizifon%' OR es.provider LIKE '%dizifon%'
                    ORDER BY es.id DESC
                    LIMIT 16`).all();
         } else {

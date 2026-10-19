@@ -1,9 +1,9 @@
 """
 KoUp Otomatik Veri Güncelleme & 24s Watchdog Pipeline (GitHub Actions / Admin Trigger)
 - AsyaMag (https://asyamag.com) yeni haber ve dedikodu içeriklerini çeker ve oyuncu/dizilerle eşler
-- DiziBox (https://www.dizibox.live/) yeni dizi ve bölümleri king.php -> molystream çözücüsüyle çeker
-- DiziKorea (https://dizikorea3.com), TrAnimeİzle (https://www.tranimeizle.live) ve DiziYou son bölümleri kontrol eder
-- 24 Saatlik Watchdog Doğrulaması: Son 24 saatte eklenen bölümlerin eksik alternatif kaynaklarını tamamlar
+- DiziKorea (https://dizikorea3.com), DiziBox (https://www.dizibox.live/) ve DiziFon (https://www.dizifon.cc/) son bölümleri kontrol eder
+- Bekleyen Kaynak Çözücü: Çapraz arama (DiziKorea, AsyaWatch, DiziFon, AnimeciX) ile eksik kaynakları tamamlar
+- 24 Saatlik Watchdog Doğrulaması: Eklenen bölümlerin kaynak sağlığını doğrular
 """
 
 import os
@@ -75,73 +75,106 @@ def sync_asyamag(limit: int = 15) -> int:
     return 0
 
 
+from database import get_connection
+from scrapers.supabase_sync_helper import backup_db_to_r2, download_db_from_r2
+
+
+def ensure_database_ready():
+    """Cloud ortamında veya yerelde SQLite DB yoksa R2'den indirir."""
+    db_path = os.path.join(_ROOT, "webdrama_archive.db")
+    if not os.path.exists(db_path) or os.path.getsize(db_path) < 10_000_000:
+        print("[DB Init] webdrama_archive.db bulunamadı veya boyutu küçük. Cloudflare R2'den indiriliyor...", flush=True)
+        ok = download_db_from_r2(db_path)
+        if ok:
+            print(f"[DB Init] Veritabanı başarıyla hazırlandı ({os.path.getsize(db_path):,} bayt).", flush=True)
+        else:
+            print("[DB Init] R2'den veritabanı indirilemedi, sıfırdan oluşturulacak.", flush=True)
+
+
 def sync_dizibox_latest(limit: int = 10) -> int:
-    """https://www.dizibox.live/ son eklenen yabancı dizileri ve king.php -> molystream kaynaklarını tarar."""
-    base_url = "https://www.dizibox.live"
-    print(f"[DiziBox] {base_url}/dizi-arsivi/ üzerinden son {limit} dizi taranıyor...")
+    """https://www.dizibox.live/ son eklenen yabancı dizileri ve king.php -> molystream kaynaklarını tarar ve ekler."""
+    print(f"[DiziBox] Canlı tarayıcı başlatılıyor (limit: {limit})...", flush=True)
     try:
-        sess = cfr.Session(impersonate="chrome") if cfr else requests.Session()
-        resp = sess.get(f"{base_url}/dizi-arsivi/", timeout=20)
-        if resp.status_code != 200:
-            print(f"[DiziBox] HTTP {resp.status_code} döndü.")
-            return 0
-        soup = BeautifulSoup(resp.text, "html.parser")
-        series_urls = []
-        for a in soup.find_all("a", href=True):
-            h = a["href"] or ""
-            if re.match(r"(https://www\.dizibox\.live)?/diziler/[a-z0-9-]+/?$", h):
-                full = h if h.startswith("http") else base_url + h
-                if full not in series_urls:
-                    series_urls.append(full)
-        series_urls = series_urls[:limit]
-        print(f"[DiziBox] {len(series_urls)} güncel dizi sayfası bulundu.")
-        return len(series_urls)
+        from scrapers.live_scanner import scan_dizibox, build_drama_index
+        conn = get_connection()
+        cur = conn.cursor()
+        try:
+            idx = build_drama_index(cur)
+            delta, _ = scan_dizibox(conn, cur, idx, limit=limit)
+            print(f"[DiziBox] {delta} yeni/güncel bölüm kaynağı işlendi.")
+            return delta
+        finally:
+            conn.close()
     except Exception as e:
-        print(f"[DiziBox] Tarama uyarısı: {e}")
-    return 0
+        print(f"[DiziBox] Tarama hatası: {e}", flush=True)
+        return 0
 
 
 def sync_dizikorea_latest(limit: int = 10) -> int:
-    """https://dizikorea3.com üzerinden son eklenen K-Drama içeriklerini kontrol eder."""
-    base_url = "https://dizikorea3.com"
-    print(f"[DiziKorea] {base_url} üzerinden son {limit} Kore dizisi taranıyor...")
+    """https://dizikorea3.com üzerinden son eklenen K-Drama içeriklerini tarar ve ekler."""
+    print(f"[DiziKorea] Canlı tarayıcı başlatılıyor (limit: {limit})...", flush=True)
     try:
-        sess = cfr.Session(impersonate="chrome") if cfr else requests.Session()
-        resp = sess.get(f"{base_url}/", headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0"}, timeout=20)
-        if resp.status_code != 200:
-            print(f"[DiziKorea] HTTP {resp.status_code} döndü.")
-            return 0
-        soup = BeautifulSoup(resp.text, "html.parser")
-        series_urls = []
-        for a in soup.find_all("a", href=True):
-            h = a["href"] or ""
-            if re.search(r"/(?:dizi|series)/[a-z0-9-]+/?$", h):
-                full = h if h.startswith("http") else base_url + h
-                if full not in series_urls:
-                    series_urls.append(full)
-        series_urls = series_urls[:limit]
-        print(f"[DiziKorea] {len(series_urls)} güncel dizi bağlantısı tespit edildi.")
-        return len(series_urls)
+        from scrapers.live_scanner import scan_dizikorea, build_drama_index
+        conn = get_connection()
+        cur = conn.cursor()
+        try:
+            idx = build_drama_index(cur)
+            delta, _ = scan_dizikorea(conn, cur, idx, limit=limit)
+            print(f"[DiziKorea] {delta} yeni/güncel bölüm kaynağı işlendi.")
+            return delta
+        finally:
+            conn.close()
     except Exception as e:
-        print(f"[DiziKorea] Tarama uyarısı: {e}")
-    return 0
+        print(f"[DiziKorea] Tarama hatası: {e}", flush=True)
+        return 0
+
+
+def sync_dizifon_latest(limit: int = 10) -> int:
+    """https://www.dizifon.cc/ üzerinden son eklenen Asya, Kore ve Çin dizi bölümlerini tarar ve ekler."""
+    print(f"[DiziFon] Canlı tarayıcı başlatılıyor (limit: {limit})...", flush=True)
+    try:
+        from scrapers.live_scanner import scan_dizifon, build_drama_index
+        conn = get_connection()
+        cur = conn.cursor()
+        try:
+            idx = build_drama_index(cur)
+            delta, _ = scan_dizifon(conn, cur, idx, limit=limit)
+            print(f"[DiziFon] {delta} yeni/güncel bölüm kaynağı işlendi.")
+            return delta
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[DiziFon] Tarama hatası: {e}", flush=True)
+        return 0
+
+
+def run_pending_resolver(limit: int = 100, batch_dramas: int = 25) -> dict:
+    """Bekleyen bölümleri doğrudan ve çapraz site araması ile oynatılabilir kaynaklara bağlar."""
+    print(f"[Pending Resolver] En fazla {limit} bekleyen bölüm ve {batch_dramas} dizi için çapraz arama başlatılıyor...", flush=True)
+    try:
+        from scripts.recheck_pending_episodes import recheck_pending
+        summary = recheck_pending(limit=limit, cross_site=True, batch_dramas=batch_dramas)
+        print(f"[Pending Resolver] Çözülen: {summary.get('resolved', 0)} | Kalan: {summary.get('pending', 0)}", flush=True)
+        return summary
+    except Exception as e:
+        print(f"[Pending Resolver] Hata: {e}", flush=True)
+        return {}
 
 
 def run_watchdog_check() -> int:
-    print("[Watchdog 24h] Son 24-36 saat içinde eklenen bölümlerin kaynak sağlığı doğrulanıyor...")
+    print("[Watchdog 24h] Son 24-36 saat içinde eklenen bölümlerin kaynak sağlığı doğrulanıyor...", flush=True)
     try:
-        r = requests.get(
-            f"{SUPABASE_URL}/rest/v1/episodes?select=id,media_id,season_number,episode_number,watchdog_checked_at&watchdog_checked_at=is.null&limit=25",
-            headers=HEADERS,
-            timeout=15,
-        )
-        if r.status_code == 200:
-            eps = r.json()
-            print(f"[Watchdog 24h] {len(eps)} bölüm doğrulandı.")
-            return len(eps)
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id, episode_url FROM episodes WHERE source_status='active' ORDER BY id DESC LIMIT 20")
+        rows = cur.fetchall()
+        conn.close()
+        print(f"[Watchdog 24h] {len(rows)} aktif bölüm doğrulandı.", flush=True)
+        return len(rows)
     except Exception as e:
-        print(f"[Watchdog 24h] Hata: {e}")
-    return 0
+        print(f"[Watchdog 24h] Hata: {e}", flush=True)
+        return 0
+
 
 
 def main():
@@ -150,12 +183,16 @@ def main():
         "--target",
         type=str,
         default="all",
-        help="Hedef: all | asyamag | dizibox | dizikorea | tranimeizle | diziyou | watchdog_24h",
+        help="Hedef: all | asyamag | dizibox | dizikorea | dizifon | pending_resolver | calendar | watchdog_24h",
     )
+    parser.add_argument("--pending-limit", type=int, default=100, help="Bekleyen bölüm kontrol limiti")
+    parser.add_argument("--batch-dramas", type=int, default=25, help="Çapraz aranacak dizi sayısı")
     args = parser.parse_args()
 
     target = args.target.lower()
     print(f"KoUp Otomasyon Pipeline Başlatıldı — Hedef: {target}")
+
+    ensure_database_ready()
 
     if target in ("all", "asyamag"):
         sync_asyamag(15)
@@ -165,6 +202,12 @@ def main():
 
     if target in ("all", "dizikorea"):
         sync_dizikorea_latest(10)
+
+    if target in ("all", "dizifon"):
+        sync_dizifon_latest(10)
+
+    if target in ("all", "pending_resolver", "pending"):
+        run_pending_resolver(limit=args.pending_limit, batch_dramas=args.batch_dramas)
 
     if target in ("all", "calendar", "takvim"):
         try:
@@ -178,7 +221,16 @@ def main():
     if target in ("all", "watchdog_24h"):
         run_watchdog_check()
 
+    try:
+        conn = get_connection()
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+        conn.close()
+        backup_db_to_r2()
+    except Exception as e:
+        print(f"[R2 Sync] Yedekleme uyarısı: {e}")
+
     print("KoUp Otomasyon Pipeline başarıyla tamamlandı.")
+
 
 
 if __name__ == "__main__":
