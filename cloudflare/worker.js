@@ -158,8 +158,8 @@ export default {
       }
 
       if (request.method === 'PUT' || request.method === 'POST') {
-        const auth = request.headers.get('Authorization') || url.searchParams.get('secret');
-        if (auth !== 'koup_r2_secret_2026' && auth !== env.R2_SECRET) {
+        const auth = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') || url.searchParams.get('secret');
+        if (!env.R2_SECRET || auth !== env.R2_SECRET) {
           return new Response(JSON.stringify({ error: 'Unauthorized' }), {
             status: 401,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },

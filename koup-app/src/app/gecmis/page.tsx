@@ -243,6 +243,7 @@ export default function WatchHistoryPage() {
               stats.progressPercent
             );
 
+            const seriesUrl = media?.slug ? `/seri/${media.slug}` : `/seri/${item.media_id}`;
             const playUrl = media?.slug
               ? `/seri/${media.slug}/${stats.nextEpisode}?season=${stats.season}`
               : `/seri/${item.media_id}`;
@@ -304,7 +305,7 @@ export default function WatchHistoryPage() {
                     </div>
 
                     <Link
-                      href={playUrl}
+                      href={seriesUrl}
                       onClick={() => triggerSound('click')}
                       className="block mt-1 text-sm sm:text-base font-bold text-white hover:text-sky-300 transition-colors truncate"
                     >

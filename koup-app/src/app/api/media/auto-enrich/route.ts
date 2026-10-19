@@ -6,7 +6,7 @@ import { supabase, supabaseAdmin, cleanOverviewText, cleanScrapedSlug } from '@/
 
 export const dynamic = 'force-dynamic';
 
-const TMDB_API_KEY = process.env.TMDB_API_KEY || '4c092d2cfd6d9c0e3aa3dab12c7d4756';
+const TMDB_API_KEY = process.env.TMDB_API_KEY || '';
 
 let archiveDb: DatabaseSync | null = null;
 function getArchiveDb(): DatabaseSync | null {

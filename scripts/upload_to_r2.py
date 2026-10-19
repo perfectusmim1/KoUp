@@ -6,10 +6,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import boto3
 from botocore.config import Config
 
-R2_ENDPOINT = os.getenv("CF_R2_ENDPOINT", "https://03a5ec82372e5d09633fa832dbcef3dc.r2.cloudflarestorage.com")
-R2_ACCESS_KEY = os.getenv("CF_R2_ACCESS_KEY_ID", "")
-R2_SECRET_KEY = os.getenv("CF_R2_SECRET_ACCESS_KEY", "")
-R2_BUCKET = os.getenv("CF_R2_BUCKET", "koup-archive")
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+from scrapers.supabase_sync_helper import _load_r2_creds
+
+R2_ENDPOINT, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET = _load_r2_creds()
 
 SOURCES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "r2_bundles", "sources")
 

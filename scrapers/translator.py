@@ -15,8 +15,30 @@ import time
 import urllib.parse
 import urllib.request
 
+import os
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _load_tmdb_key():
+    key = os.environ.get("TMDB_API_KEY", "")
+    if not key:
+        env_path = os.path.join(_ROOT, "koup-app", ".env.local")
+        if os.path.exists(env_path):
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("TMDB_API_KEY="):
+                            key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                            break
+            except Exception:
+                pass
+    return key
+
+
+TMDB_API_KEY = _load_tmdb_key()
 ctx = ssl.create_default_context()
-TMDB_API_KEY = "42125c682636b68d10d70b487c692685"
 
 ASIAN_COUNTRIES = {"KR", "JP", "CN", "TW", "TH", "HK", "PH", "ID", "MY", "SG", "VN"}
 ASIAN_LANGS = {"ko", "ja", "zh", "cn", "th", "tl", "id", "ms", "vi"}

@@ -240,7 +240,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
         const { data: dbUser } = await supabase
           .from('profiles')
           .select(
-            'id, username, display_name, avatar_url, banner_url, bio, role, is_private, hide_watch_history, hide_library, hide_comments, stats_episodes_watched, stats_series_completed, stats_movies_completed, stats_anime_completed, stats_total_minutes, mdl_username, anilist_username, created_at'
+            'id, username, display_name, avatar_url, banner_url, bio, role, is_private, hide_watch_history, hide_library, hide_comments, stats_episodes_watched, stats_series_completed, stats_movies_completed, stats_anime_completed, stats_total_minutes, mdl_username, anilist_username, notification_settings, anilist_auto_sync, created_at'
           )
           .ilike('username', targetUsername)
           .maybeSingle();
@@ -248,7 +248,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
         if (!isMounted) return;
 
         if (dbUser) {
-          setProfileData(dbUser as UserProfile);
+          setProfileData(dbUser as unknown as UserProfile);
         } else if (user && user.username.toLowerCase() === targetUsername.toLowerCase()) {
           setProfileData(user);
         } else {
@@ -555,26 +555,29 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
   const activeProgMap = isOwner && Object.keys(progressMap).length > 0 ? progressMap : targetProgressMap;
   const progressItems = Object.values(activeProgMap);
 
-  // Active watching list for history tab
+  // Watched media map for quick lookups
+  const watchedMediaMap = useMemo(() => {
+    const map = new Map<number, MediaItem>();
+    watchedMedia.forEach((m) => map.set(m.id, m));
+    return map;
+  }, [watchedMedia]);
+
+  // Active watching list for history tab (aligned with /gecmis)
   const activeWatchingList = useMemo(() => {
-    if (isOwner && continueWatchingList.length > 0) return continueWatchingList;
     return Object.values(activeProgMap)
-      .filter((p) => {
-        if (!p.media) return false;
-        if (p.status === 'watching') return true;
-        const pos = p.resume_position_sec || 0;
-        const dur = p.resume_duration_sec || 3600;
-        if (pos > 15 && dur > 0 && pos / dur < 0.85 && p.status !== 'dropped') {
-          return true;
-        }
-        if ((p.watched_episodes || []).length > 0 && p.status !== 'dropped') {
-          return true;
-        }
-        return false;
+      .map((item) => (item.media ? item : { ...item, media: watchedMediaMap.get(item.media_id) }))
+      .filter((item) => {
+        if (!item.media && !watchedMediaMap.has(item.media_id)) return false;
+        if (item.status === 'dropped') return false;
+        return (
+          item.status === 'watching' ||
+          item.status === 'completed' ||
+          (item.watched_episodes && item.watched_episodes.length > 0) ||
+          (item.resume_position_sec && item.resume_position_sec > 15)
+        );
       })
-      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-      .slice(0, 30);
-  }, [isOwner, continueWatchingList, activeProgMap]);
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+  }, [activeProgMap, watchedMediaMap]);
 
   // Filtered watched media
   const filteredWatchedMedia = watchedMedia.filter((m) => {
@@ -667,6 +670,36 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
           <p className="text-xs text-white/50 font-mono tracking-wider">Profil Yükleniyor...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Not Found Gate: When username does not exist in Supabase
+  if (!profileData) {
+    return (
+      <div className="pt-36 pb-24 max-w-xl mx-auto px-5 text-center">
+        <div className="rounded-3xl bg-[#0f0f13] p-10 sm:p-14 border border-white/10 space-y-5 shadow-2xl">
+          <div className="w-20 h-20 rounded-3xl bg-white/5 border border-white/10 text-white/40 flex items-center justify-center mx-auto shadow-inner">
+            <UserX className="w-10 h-10" />
+          </div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-white/60 font-mono text-xs uppercase tracking-wider font-bold">
+            Profil Bulunamadı
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            Kullanıcı Bulunamadı
+          </h2>
+          <p className="text-sm text-white/60 leading-relaxed max-w-md mx-auto">
+            Aradığınız @{targetUsername} kullanıcı profili mevcut değil veya hesap silinmiş olabilir.
+          </p>
+          <div className="pt-3">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all shadow-lg"
+            >
+              <span>Ana Sayfaya Dön</span>
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -789,11 +822,17 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                       </span>
                     )}
 
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-black/45 backdrop-blur-md text-white border border-white/15">
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold backdrop-blur-md border ${
+                        isPrivate
+                          ? 'bg-amber-400/15 text-amber-300 border-amber-400/35 shadow-[0_0_12px_rgba(251,191,36,0.15)]'
+                          : 'bg-black/45 text-white/80 border-white/15'
+                      }`}
+                    >
                       {isPrivate ? (
                         <>
-                          <Lock className="w-3 h-3 text-sky-400" />
-                          <span>Gizli Profil</span>
+                          <Lock className="w-3 h-3 text-amber-400" />
+                          <span>Gizli Hesap</span>
                         </>
                       ) : (
                         <>
@@ -889,17 +928,24 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
 
       {/* PRIVATE PROFILE STATE FOR VISITORS */}
       {isPrivate && !isOwner ? (
-        <div className="rounded-3xl bg-[#0f0f11] p-12 sm:p-16 text-center border border-white/[0.08] space-y-4">
-          <div className="w-16 h-16 rounded-full bg-sky-500/10 border border-sky-400/30 flex items-center justify-center mx-auto text-sky-400 shadow-[0_0_24px_rgba(56,189,248,0.2)]">
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-3xl bg-[#0f0f11]/90 backdrop-blur-2xl p-12 sm:p-16 text-center border border-white/[0.08] space-y-4 shadow-2xl relative overflow-hidden"
+        >
+          <div className="absolute top-0 right-1/2 translate-x-1/2 w-48 h-48 bg-amber-400/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="w-16 h-16 rounded-2xl bg-amber-400/10 border border-amber-400/30 flex items-center justify-center mx-auto text-amber-400 shadow-[0_0_24px_rgba(251,191,36,0.2)] relative z-10">
             <Lock className="w-8 h-8" />
           </div>
-          <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-            Bu Profil Gizlidir
-          </h2>
-          <p className="text-xs sm:text-sm text-white/50 max-w-md mx-auto leading-relaxed">
-            @{currentDisplayProfile?.username} profilini gizli hesap olarak ayarlamıştır. Kütüphane, izleme geçmişi ve özel listeler yalnızca kullanıcının kendisine görünür.
-          </p>
-        </div>
+          <div className="space-y-1.5 relative z-10">
+            <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+              Bu Profil Gizlidir
+            </h2>
+            <p className="text-xs sm:text-sm text-white/50 max-w-md mx-auto leading-relaxed">
+              @{currentDisplayProfile?.username} profilini gizli hesap olarak kullanmaktadır. Kütüphane, izleme geçmişi, özel listeler ve istatistikler yalnızca kullanıcının kendisine görünür.
+            </p>
+          </div>
+        </motion.div>
       ) : (
         /* TAB CONTENT */
         <AnimatePresence mode="wait">
@@ -1247,8 +1293,8 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                   )}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {activeWatchingList.map((item) => {
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+                  {activeWatchingList.map((item, idx) => {
                     const media = item.media;
                     const stats = getEpisodeProgressStats(item, media);
                     const barPct = Math.max(
@@ -1256,66 +1302,131 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                       stats.progressPercent
                     );
 
+                    const seriesUrl = media?.slug
+                      ? `/seri/${media.slug}`
+                      : `/seri/${item.media_id}`;
+
+                    const playUrl = media?.slug
+                      ? `/seri/${media.slug}/${stats.nextEpisode}?season=${stats.season}`
+                      : `/seri/${item.media_id}`;
+
                     return (
                       <div
-                        key={item.media_id}
-                        className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-4 flex gap-4 hover:border-white/20 transition-all group"
+                        key={`profile-history-${item.media_id}-${stats.season}-${stats.nextEpisode}-${idx}`}
+                        className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-4 sm:p-5 flex gap-4 hover:border-white/20 transition-all group relative overflow-hidden shadow-xl"
                       >
-                        <div className="relative w-20 h-28 rounded-2xl overflow-hidden bg-black/60 shrink-0 border border-white/10">
+                        {/* Poster image (NO zoom or scale on hover/focus) */}
+                        <Link
+                          href={playUrl}
+                          onClick={() => triggerSound?.('click')}
+                          className="relative w-24 h-34 sm:w-28 sm:h-38 rounded-2xl overflow-hidden bg-black/60 shrink-0 border border-white/10 group-hover:border-white/25 transition-colors isolate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                        >
                           {media?.cover_image ? (
                             <img
                               src={getProxiedImageUrl(media.cover_image, media.title)}
                               alt={media.title || 'Kapak'}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              className="w-full h-full object-cover transition-transform duration-200 ease-out transform-gpu will-change-transform backface-hidden"
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center text-white/30">
                               <FilmIcon />
                             </div>
                           )}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                        </div>
+                          <div className="absolute inset-0 bg-black/35 flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200 ease-out pointer-events-none">
+                            <div className="w-10 h-10 rounded-full bg-black/75 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-xl transition-all duration-200 ease-out">
+                              <Play className="w-4 h-4 fill-white text-white ml-0.5" />
+                            </div>
+                          </div>
+                        </Link>
 
-                        <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+                        {/* Content Details */}
+                        <div className="flex-1 min-w-0 flex flex-col justify-between py-1">
                           <div>
-                            <h4 className="text-sm font-bold text-white truncate">
-                              {media?.title || `Yapım #${item.media_id}`}
-                            </h4>
-                            <div className="text-xs text-sky-400 font-mono mt-0.5">
-                              {isOwner
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-md bg-white/[0.06] text-white/70">
+                                {stats.isFilm
+                                  ? 'FİLM'
+                                  : media?.content_type === 'anime'
+                                  ? 'ANİME'
+                                  : 'DİZİ'}
+                              </span>
+                              {stats.isAllWatched ? (
+                                <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1 font-semibold">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  <span>Tamamlandı</span>
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-mono text-sky-400 font-semibold">
+                                  {stats.isFilm
+                                    ? stats.resumePos > 60
+                                      ? `${Math.floor(stats.resumePos / 60)}/${Math.max(1, Math.floor(stats.resumeDur / 60))} Dk`
+                                      : 'İzleniyor'
+                                    : `${stats.watchedCount}/${stats.totalEpisodes} Bölüm`}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Series Name -> links directly to series detail page */}
+                            <Link
+                              href={seriesUrl}
+                              onClick={() => triggerSound?.('click')}
+                              className="block mt-1 text-sm sm:text-base font-bold text-white hover:text-sky-300 transition-colors truncate"
+                            >
+                              {cleanMediaTitle(media?.title) || `Yapım #${item.media_id}`}
+                            </Link>
+
+                            <div className="text-xs text-sky-400 font-mono font-semibold mt-0.5 truncate">
+                              {stats.isAllWatched
+                                ? stats.isFilm
+                                  ? 'Film Tamamlandı'
+                                  : `${stats.season}. Sezon · Tüm Bölümler İzlendi`
+                                : stats.isFilm
+                                ? 'Kaldığın Yerden Devam Et'
+                                : isOwner
                                 ? `Sıradaki: ${stats.season}. Sezon · ${stats.nextEpisode}. Bölüm`
                                 : `Kaldığı Yer: ${stats.season}. Sezon · ${stats.nextEpisode}. Bölüm`}
                             </div>
-                            <p className="text-[11px] text-white/50 truncate mt-0.5">
-                              {stats.watchedCount} / {stats.totalEpisodes} Bölüm İzlendi
-                            </p>
                           </div>
 
-                          <div className="space-y-2 mt-2">
-                            {/* Episode Progress bar */}
+                          <div className="space-y-2.5 mt-3">
+                            {/* Episode / Film Progress bar */}
                             <div className="space-y-1">
                               <div className="flex justify-between text-[10px] font-mono text-white/50">
-                                <span>Bölüm İlerlemesi</span>
+                                <span>
+                                  {stats.isFilm
+                                    ? stats.isAllWatched
+                                      ? 'Film İzlendi'
+                                      : stats.resumePos > 60
+                                      ? `${Math.floor(stats.resumePos / 60)} Dk İzlendi`
+                                      : 'İzleniyor'
+                                    : `${stats.watchedCount} Bölüm İzlendi`}
+                                </span>
                                 <span>%{stats.progressPercent}</span>
                               </div>
-                              <div className="h-1 rounded-full bg-white/10 overflow-hidden">
+                              <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
                                 <div
-                                  className="h-full bg-sky-400 rounded-full"
+                                  className="h-full bg-sky-400 rounded-full transition-all duration-300"
                                   style={{ width: `${barPct}%` }}
                                 />
                               </div>
                             </div>
 
+                            {/* Resume Action Button */}
                             <Link
-                              href={
-                                media?.slug
-                                  ? `/seri/${media.slug}/${stats.nextEpisode}?season=${stats.season}`
-                                  : `/seri/${item.media_id}`
-                              }
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-[11px] font-semibold transition-all w-fit"
+                              href={playUrl}
+                              onClick={() => triggerSound?.('click')}
+                              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all w-fit glow-white cursor-pointer"
                             >
-                              <Play className="w-3 h-3 text-sky-400 fill-sky-400" />
-                              <span>{isOwner ? `${stats.nextEpisode}. Bölümden Devam Et` : `${stats.nextEpisode}. Bölümü İzle`}</span>
+                              <Play className="w-3 h-3 fill-black" />
+                              <span>
+                                {stats.isAllWatched
+                                  ? 'Tekrar İzle'
+                                  : stats.isFilm
+                                  ? 'Filme Devam Et'
+                                  : isOwner
+                                  ? `${stats.nextEpisode}. Bölümden Devam Et`
+                                  : `${stats.nextEpisode}. Bölümü İzle`}
+                              </span>
                             </Link>
                           </div>
                         </div>

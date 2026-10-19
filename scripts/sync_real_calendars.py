@@ -22,11 +22,12 @@ except ImportError:
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "https://aocvcotmikzlwbaezdpl.supabase.co")
-SUPABASE_KEY = os.environ.get(
-    "SUPABASE_SERVICE_ROLE_KEY",
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvY3Zjb3RtaWt6bHdiYWV6ZHBsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MjEzOTY1MSwiZXhwIjoyMTA3NzE1NjUxfQ.K78fnOdpdiZiZHxT_Yy80cTWsdFCHP2uDLMrpfL1Ceg",
-)
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+from scrapers.supabase_sync_helper import _load_supabase_creds
+
+SUPABASE_URL, SUPABASE_KEY = _load_supabase_creds()
 
 HEADERS = {
     "apikey": SUPABASE_KEY,

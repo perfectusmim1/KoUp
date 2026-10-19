@@ -3,7 +3,7 @@ import { supabase, supabaseAdmin, cleanScrapedSlug } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
-const TMDB_API_KEY = process.env.TMDB_API_KEY || '4c092d2cfd6d9c0e3aa3dab12c7d4756';
+const TMDB_API_KEY = process.env.TMDB_API_KEY || '';
 
 interface TrailerResult {
   youtubeId: string | null;
