@@ -435,18 +435,7 @@ def extract_sources_for_episode(ep_url: str) -> tuple:
             is_ph = page_is_placeholder(ep_html)
             out = []
 
-            # 1. YouTube embed
-            yt_match = re.search(
-                r'src=["\'](?:/player/telif/index\.php\?id=)?(https?://(?:www\.)?youtube\.com/watch\?v=[a-zA-Z0-9_\-]+|https?://youtu\.be/[a-zA-Z0-9_\-]+)["\']',
-                ep_html,
-            )
-            if yt_match:
-                v_id_m = re.search(r"(?:v=|youtu\.be/)([a-zA-Z0-9_\-]+)", yt_match.group(1))
-                if v_id_m:
-                    out.append(("YouTube HD", f"https://www.youtube.com/embed/{v_id_m.group(1)}?autoplay=1&enablejsapi=1", "youtube", "ddizi", None))
-                    return out, False
-
-            # 2. DDizi Native JWPlayer
+            # 1. DDizi Native JWPlayer (En yüksek öncelik: Gerçek HLS veya MP4)
             player_paths = re.findall(r'<iframe[^>]+src=["\'](/player/oynat/[a-zA-Z0-9]+)["\']', ep_html)
             if not player_paths:
                 player_paths = re.findall(r'<iframe[^>]+src=["\'](https?://[^"\']*/player/oynat/[a-zA-Z0-9]+)["\']', ep_html)
@@ -456,24 +445,38 @@ def extract_sources_for_episode(ep_url: str) -> tuple:
                 p_url = p_path if p_path.startswith("http") else f"https://www.ddizi.tel{p_path}"
                 p_html = fetch_html(p_url, referer=ep_url, timeout=10)
                 if p_html:
+                    # HLS (.m3u8) akış kontrolü
+                    m3u8_matches = re.findall(r'file:\s*["\'](https?:\\?/\\?/[^"\']+\.m3u8[^"\']*)["\']', p_html)
+                    for raw_m in m3u8_matches:
+                        clean_m = raw_m.replace(r"\/", "/")
+                        if clean_m.startswith("http"):
+                            out.append(("DDizi HLS", clean_m, "hls", "ddizi", None))
+                            return out, False
+
+                    # Kalıcı MP4 akış kontrolü
+                    raw_files = re.findall(r'file:\s*["\']([^"\']+)["\']', p_html)
+                    for raw_f in raw_files:
+                        clean_u = raw_f.replace(r"\/", "/")
+                        if clean_u.startswith("http") and "videoplayback" not in clean_u and ".mp4" in clean_u:
+                            out.append(("DDizi HD", clean_u, "mp4", "ddizi", None))
+                            return out, False
+
+                    # Sadece yerel video yoksa YouTube
                     yt_thumb = re.search(r"https?://(?:i\d*\.)?ytimg\.com/vi/([a-zA-Z0-9_\-]+)/", p_html)
                     if yt_thumb:
                         out.append(("YouTube HD", f"https://www.youtube.com/embed/{yt_thumb.group(1)}?autoplay=1&enablejsapi=1", "youtube", "ddizi", None))
                         return out, False
 
-                    m3u8_matches = re.findall(r'file:\s*["\'](https?:\\?/\\?/[^"\']+\.m3u8[^"\']*)["\']', p_html)
-                    for raw_m in m3u8_matches:
-                        clean_m = raw_m.replace(r"\/", "/")
-                        if clean_m.startswith("http"):
-                            out.append(("DDizi HLS", clean_m, "ddizi", "ddizi", None))
-                            return out, False
-
-                    raw_files = re.findall(r'file:\s*["\']([^"\']+)["\']', p_html)
-                    for raw_f in raw_files:
-                        clean_u = raw_f.replace(r"\/", "/")
-                        if clean_u.startswith("http") and "videoplayback" not in clean_u and ".mp4" in clean_u:
-                            out.append(("DDizi HD", clean_u, "ddizi", "ddizi", None))
-                            return out, False
+            # 2. DDizi Telif / Harici YouTube kontrolü
+            yt_match = re.search(
+                r'src=["\'](?:/player/telif/index\.php\?id=)?(https?://(?:www\.)?youtube\.com/watch\?v=[a-zA-Z0-9_\-]+|https?://youtu\.be/[a-zA-Z0-9_\-]+)["\']',
+                ep_html,
+            )
+            if yt_match:
+                v_id_m = re.search(r"(?:v=|youtu\.be/)([a-zA-Z0-9_\-]+)", yt_match.group(1))
+                if v_id_m:
+                    out.append(("YouTube HD", f"https://www.youtube.com/embed/{v_id_m.group(1)}?autoplay=1&enablejsapi=1", "youtube", "ddizi", None))
+                    return out, False
 
             return out, is_ph
         except Exception:

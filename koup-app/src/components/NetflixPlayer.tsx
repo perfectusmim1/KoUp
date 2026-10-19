@@ -30,6 +30,7 @@ import {
   AlertTriangle,
   ChevronsLeft,
   ChevronsRight,
+  ExternalLink,
 } from 'lucide-react';
 import {
   MediaItem,
@@ -4086,6 +4087,34 @@ export default function NetflixPlayer({
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
+                  {(() => {
+                    const isYt =
+                      Boolean(
+                        streamUrl &&
+                          (streamUrl.includes('youtube.com') ||
+                            streamUrl.includes('youtu.be') ||
+                            streamUrl.includes('youtube-nocookie.com'))
+                      ) || activeSource?.provider === 'youtube';
+                    let ytWatch = '';
+                    if (isYt && streamUrl) {
+                      const vMatch = streamUrl.match(/\/embed\/([a-zA-Z0-9_\-]+)/) || streamUrl.match(/[?&]v=([a-zA-Z0-9_\-]+)/);
+                      if (vMatch) ytWatch = `https://www.youtube.com/watch?v=${vMatch[1]}`;
+                    }
+                    if (!isYt || !ytWatch) return null;
+                    return (
+                      <a
+                        href={ytWatch}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#E50914] hover:bg-[#b80710] text-white text-xs font-bold transition-all shadow-lg hover:scale-105 active:scale-95 cursor-pointer shrink-0"
+                        title="YouTube'da Yeni Sekmede Aç"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>YouTube'da Aç</span>
+                      </a>
+                    );
+                  })()}
                   {!isMovie && nextEp && (
                     <button
                       type="button"
@@ -4119,8 +4148,28 @@ export default function NetflixPlayer({
                           streamUrl.includes('youtube-nocookie.com'))
                     ) || activeSource?.provider === 'youtube';
 
+                  let ytWatchUrl = '';
+                  if (isCurrentYouTube && streamUrl) {
+                    const vMatch = streamUrl.match(/\/embed\/([a-zA-Z0-9_\-]+)/) || streamUrl.match(/[?&]v=([a-zA-Z0-9_\-]+)/);
+                    if (vMatch) ytWatchUrl = `https://www.youtube.com/watch?v=${vMatch[1]}`;
+                  }
+
                   return (
                     <div className="relative w-full h-full overflow-hidden flex items-center justify-center">
+                      {isCurrentYouTube && ytWatchUrl && (
+                        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 pointer-events-auto bg-black/85 backdrop-blur-md border border-white/15 rounded-full px-4 py-1.5 flex items-center gap-2 text-xs text-zinc-300 shadow-2xl">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          <span>Yayıncı harici oynatmayı kısıtladıysa:</span>
+                          <a
+                            href={ytWatchUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[#E50914] hover:text-[#ff3b47] font-semibold underline underline-offset-2 flex items-center gap-1"
+                          >
+                            YouTube'da Doğrudan İzle <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                      )}
                       <iframe
                         ref={iframeRef}
                         key={streamUrl}

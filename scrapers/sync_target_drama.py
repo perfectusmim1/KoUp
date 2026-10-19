@@ -607,7 +607,42 @@ def sync_ddizi_target(conn, cur, drama, target_url=None):
                     p_url = p_path if p_path.startswith('http') else 'https://www.ddizi.tel' + p_path
                     p_html = fetch_html(p_url, referer=ep_url)
                     if p_html:
-                        # YouTube poster kontrolü
+                        # 1. HLS (.m3u8) akış kontrolü (Öncelikli - Tam oynatılabilir)
+                        m3u8_matches = re.findall(r'file:\s*["\'](https?:\\?/\\?/[^"\']+\.m3u8[^"\']*)["\']', p_html)
+                        if not m3u8_matches:
+                            m3u8_matches = re.findall(r'["\'](https?:\\?/\\?/[^"\']+\.m3u8[^"\']*)["\']', p_html)
+                        added_native = False
+                        for raw_m in m3u8_matches:
+                            clean_m = raw_m.replace('\\/', '/')
+                            if clean_m.startswith('http'):
+                                if add_source(cur, ep_id, 'DDizi HLS', clean_m, 'hls', 'ddizi'):
+                                    sources_added += 1
+                                    safe_commit(conn)
+                                    log("DDizi", f"S{s_num}E{e_num} -> DDizi HLS eklendi: {clean_m[:60]}")
+                                    added_native = True
+                                    break
+                        if added_native:
+                            reconcile_episode(cur, ep_id, is_placeholder=False)
+                            safe_commit(conn)
+                            continue
+
+                        # 2. Kalıcı MP4 akış kontrolü (Öncelikli)
+                        raw_files = re.findall(r'file:\s*["\']([^"\']+)["\']', p_html)
+                        for raw_f in raw_files:
+                            clean_u = raw_f.replace('\\/', '/')
+                            if clean_u.startswith('http') and 'videoplayback' not in clean_u and 'googlevideo' not in clean_u and '.mp4' in clean_u:
+                                if add_source(cur, ep_id, 'DDizi HD', clean_u, 'mp4', 'ddizi'):
+                                    sources_added += 1
+                                    safe_commit(conn)
+                                    log("DDizi", f"S{s_num}E{e_num} -> DDizi HD eklendi: {clean_u[:60]}")
+                                    added_native = True
+                                    break
+                        if added_native:
+                            reconcile_episode(cur, ep_id, is_placeholder=False)
+                            safe_commit(conn)
+                            continue
+
+                        # 3. Yalnızca yerel video yoksa YouTube kontrolü
                         yt_thumb = re.search(r'https?://(?:i\d*\.)?ytimg\.com/vi/([a-zA-Z0-9_\-]+)/', p_html)
                         if yt_thumb:
                             embed_url = f"https://www.youtube.com/embed/{yt_thumb.group(1)}?autoplay=1&enablejsapi=1"
@@ -618,36 +653,6 @@ def sync_ddizi_target(conn, cur, drama, target_url=None):
                                 reconcile_episode(cur, ep_id, is_placeholder=False)
                                 safe_commit(conn)
                                 continue
-
-                        # HLS (.m3u8) akış kontrolü
-                        m3u8_matches = re.findall(r'file:\s*["\'](https?:\\?/\\?/[^"\']+\.m3u8[^"\']*)["\']', p_html)
-                        if not m3u8_matches:
-                            m3u8_matches = re.findall(r'["\'](https?:\\?/\\?/[^"\']+\.m3u8[^"\']*)["\']', p_html)
-                        added_m3u8 = False
-                        for raw_m in m3u8_matches:
-                            clean_m = raw_m.replace('\\/', '/')
-                            if clean_m.startswith('http'):
-                                if add_source(cur, ep_id, 'DDizi HLS', clean_m, 'ddizi', 'ddizi'):
-                                    sources_added += 1
-                                    safe_commit(conn)
-                                    log("DDizi", f"S{s_num}E{e_num} -> DDizi HLS eklendi.")
-                                    added_m3u8 = True
-                                    break
-                        if added_m3u8:
-                            reconcile_episode(cur, ep_id, is_placeholder=False)
-                            safe_commit(conn)
-                            continue
-
-                        # Kalıcı MP4 akış kontrolü
-                        raw_files = re.findall(r'file:\s*["\']([^"\']+)["\']', p_html)
-                        for raw_f in raw_files:
-                            clean_u = raw_f.replace('\\/', '/')
-                            if clean_u.startswith('http') and 'videoplayback' not in clean_u and 'googlevideo' not in clean_u and '.mp4' in clean_u:
-                                if add_source(cur, ep_id, 'DDizi HD', clean_u, 'ddizi', 'ddizi'):
-                                    sources_added += 1
-                                    safe_commit(conn)
-                                    log("DDizi", f"S{s_num}E{e_num} -> DDizi HD eklendi.")
-                                    break
         except Exception as e:
             log("DDizi", f"S{s_num}E{e_num} hata: {e}")
 
