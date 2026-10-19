@@ -821,15 +821,13 @@ export default function EpisodeWatchPage({
                       s.stream_type === 'hls' ||
                       s.stream_type === 'tau' ||
                       s.stream_type === 'mp4';
-                    let baseName = (s.source_name || `Kaynak ${idx + 1}`).trim();
-                    baseName = baseName.replace(/\s*\(\d+p\)/gi, '').replace(/\s*\(HD\)/gi, '').trim();
-                    const qualityTag = cleanQualityLabel(s.quality_label || (isNative ? '1080p' : 'HD'));
+                    let baseName = cleanSourceName(s.source_name || `Kaynak ${idx + 1}`);
                     const isExternalFansub =
                       s.fansub &&
                       !['varsayılan', 'asyawatch', 'dizilla', 'orijinal', 'koup', 'webdrama'].includes(
                         s.fansub.toLowerCase()
                       );
-                    const label = `${baseName}${isExternalFansub ? ` · ${s.fansub}` : ''} (${qualityTag})`;
+                    const label = `${baseName}${isExternalFansub ? ` · ${s.fansub}` : ''}`;
                     return {
                       value: String(idx),
                       label,

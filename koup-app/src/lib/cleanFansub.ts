@@ -115,6 +115,12 @@ export function cleanSourceName(raw: string | null | undefined): string {
   s = s.replace(/https?:\/\/\S+/gi, '');
   s = s.replace(/(?:www\.)?discord(?:\.gg|app\.com|\.com|\.me)\/[^\s|]+/gi, '');
   s = s.replace(/\bwww\.[a-zA-Z0-9\-_.]+\.[a-zA-Z]{2,}[^\s|]*/gi, '');
+  // Remove quality tags like (1080p), (720p), (HD), (FHD), 1080p, HD etc.
+  s = s.replace(/\s*\(\s*\d+p\s*\)/gi, '');
+  s = s.replace(/\s*\(\s*(?:HD|FHD|UHD|4K|HQ)\s*\)/gi, '');
+  s = s.replace(/\b\d+p\b/gi, '');
+  s = s.replace(/\b(?:FHD|UHD|4K|HQ)\b/gi, '');
+  s = s.replace(/\bHD\b/gi, '');
   s = s.replace(/\s+/g, ' ').trim();
 
   return s || 'Kaynak';
