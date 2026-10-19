@@ -25,6 +25,8 @@ import {
   Radio,
   Volume2,
   VolumeX,
+  Bell,
+  Eye,
 } from 'lucide-react';
 import {
   supabase,
@@ -36,6 +38,7 @@ import {
   getEpisodeProgressStats,
   cleanOverviewText,
   cleanMediaTitle,
+  formatViewCount,
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
 import AccordionMediaCard, { requestAccordionHover, preloadMediaImages } from '@/components/AccordionMediaCard';
@@ -48,6 +51,11 @@ import {
   openCookiePreferencesModal,
 } from '@/lib/tasteProfile';
 import { useDragScroll } from '@/hooks/useDragScroll';
+
+// Vitrin Trailer Reveal & Seamless Loop Timing
+const HERO_TRAILER_FIRST_REVEAL_SEC = 3.9;
+const HERO_TRAILER_RESUME_REVEAL_SEC = 2.0;
+const HERO_TRAILER_LOOP_LEAD_SEC = 0.6;
 
 declare global {
   interface Window {
@@ -65,6 +73,9 @@ interface HomeDataBundle {
   episodes: any[];
   people: PersonItem[];
   magPosts: MagazinePost[];
+  // Server-side weekly trending (Supabase RPC get_weekly_top10)
+  top10Series?: MediaItem[];
+  top10Movies?: MediaItem[];
   recentEpsProcessed?: any[];
 }
 
@@ -98,6 +109,8 @@ export default function HomePage() {
     updateWatchStatus,
     togglePersonFavorite,
     personFavorites,
+    followedPersonIds,
+    togglePersonFollow,
     triggerSound,
     isTrailerMuted,
     toggleTrailerMuted,
@@ -111,11 +124,33 @@ export default function HomePage() {
   const [heroTrailerEnded, setHeroTrailerEnded] = useState(false);
   const heroSectionRef = useRef<HTMLElement | null>(null);
   const [isHeroInViewport, setIsHeroInViewport] = useState(true);
+  const [isDesktop, setIsDesktop] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const checkDesktop = () => {
+      setIsDesktop(window.innerWidth >= 768);
+    };
+    checkDesktop();
+    window.addEventListener('resize', checkDesktop);
+    return () => window.removeEventListener('resize', checkDesktop);
+  }, []);
   const heroPlayerRef = useRef<any>(null);
   const heroPlayerContainerRef = useRef<HTMLDivElement | null>(null);
   const heroTrailerTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Live mirrors for YouTube player callbacks (avoid stale closures)
+  const heroRevealedRef = useRef(false);
+  const heroPauseTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isTrailerMutedRef = useRef(isTrailerMuted);
+  const isHeroInViewportRef = useRef(isHeroInViewport);
+  useEffect(() => {
+    isTrailerMutedRef.current = isTrailerMuted;
+  }, [isTrailerMuted]);
+  useEffect(() => {
+    isHeroInViewportRef.current = isHeroInViewport;
+  }, [isHeroInViewport]);
 
-  const [top10Items, setTop10Items] = useState<MediaItem[]>([]);
+  const [top10SeriesItems, setTop10SeriesItems] = useState<MediaItem[]>([]);
+  const [top10MoviesItems, setTop10MoviesItems] = useState<MediaItem[]>([]);
   const [kdramaItems, setKdramaItems] = useState<MediaItem[]>([]);
   const [cdramaItems, setCdramaItems] = useState<MediaItem[]>([]);
   const [animeItems, setAnimeItems] = useState<MediaItem[]>([]);
@@ -124,21 +159,37 @@ export default function HomePage() {
   const [topPeople, setTopPeople] = useState<PersonItem[]>([]);
   const [magPosts, setMagPosts] = useState<MagazinePost[]>([]);
 
-  const top10ScrollRef = useDragScroll<HTMLDivElement>();
+  const top10SeriesScrollRef = useDragScroll<HTMLDivElement>();
+  const top10MoviesScrollRef = useDragScroll<HTMLDivElement>();
   const heroThumbnailsRef = useDragScroll<HTMLDivElement>();
 
   const applyBundle = (bundle: HomeDataBundle) => {
     memoryHomeBundle = bundle;
-    const { feats, kds, cds, ans, gls, people, magPosts: initialMagPosts } = bundle;
+    const {
+      feats,
+      kds,
+      cds,
+      ans,
+      gls,
+      people,
+      magPosts: initialMagPosts,
+      top10Series,
+      top10Movies,
+    } = bundle;
     if (feats?.length || kds?.length) {
       setHeroItems(feats && feats.length > 0 ? feats.slice(0, 6) : (kds || []).slice(0, 6));
     }
-    if (kds?.length || ans?.length || cds?.length) {
-      setTop10Items([
-        ...(kds || []).slice(0, 4),
-        ...(ans || []).slice(0, 4),
-        ...(cds || []).slice(0, 2),
+    if (top10Series && top10Series.length > 0) {
+      setTop10SeriesItems(top10Series.slice(0, 10));
+    } else if (kds?.length || ans?.length || cds?.length) {
+      setTop10SeriesItems([
+        ...(kds || []).filter((m) => m.content_type !== 'film').slice(0, 4),
+        ...(ans || []).filter((m) => m.content_type !== 'film').slice(0, 4),
+        ...(cds || []).filter((m) => m.content_type !== 'film').slice(0, 2),
       ]);
+    }
+    if (top10Movies && top10Movies.length > 0) {
+      setTop10MoviesItems(top10Movies.slice(0, 10));
     }
     if (kds) setKdramaItems(kds);
     if (cds) setCdramaItems(cds);
@@ -160,6 +211,8 @@ export default function HomePage() {
         ...(cds || []),
         ...(gls || []),
         ...(feats || []),
+        ...(top10Series || []),
+        ...(top10Movies || []),
       ];
       registerMediaItems(allRowItems);
     }
@@ -167,13 +220,13 @@ export default function HomePage() {
 
   useEffect(() => {
     // 1. Instantly populate on client mount from memory or localStorage cache for 0ms transition
-    const cached = memoryHomeBundle || getCache<HomeDataBundle>('home_catalog_bundle');
+    const cached = memoryHomeBundle || getCache<HomeDataBundle>('home_catalog_bundle_v4');
     if (cached) {
       applyBundle(cached);
     }
 
     async function fetchHomeData() {
-      const homeData = await cachedQuery('home_catalog_bundle', 300_000, async () => {
+      const homeData = await cachedQuery('home_catalog_bundle_v4', 300_000, async () => {
         const [
           featRes,
           kdRes,
@@ -183,6 +236,8 @@ export default function HomePage() {
           epRes,
           peopRes,
           magRes,
+          top10SeriesRes,
+          top10MoviesRes,
         ] = await Promise.all([
           supabase
             .from('media')
@@ -236,6 +291,17 @@ export default function HomePage() {
             .select('*')
             .order('published_at', { ascending: false })
             .limit(8),
+          // Separate Top 10 Series & Top 10 Movies from real user activity + cumulative views
+          supabase.rpc('get_weekly_top10', {
+            p_limit: 10,
+            p_days: 7,
+            p_category: 'series',
+          }),
+          supabase.rpc('get_weekly_top10', {
+            p_limit: 10,
+            p_days: 7,
+            p_category: 'film',
+          }),
         ]);
 
         let featItems = (featRes.data as MediaItem[]) || [];
@@ -263,6 +329,12 @@ export default function HomePage() {
           episodes: epRes.data || [],
           people: (peopRes.data as PersonItem[]) || [],
           magPosts: (magRes.data as MagazinePost[]) || [],
+          top10Series: top10SeriesRes.error
+            ? []
+            : ((top10SeriesRes.data as MediaItem[]) || []),
+          top10Movies: top10MoviesRes.error
+            ? []
+            : ((top10MoviesRes.data as MediaItem[]) || []),
         };
       });
 
@@ -316,8 +388,8 @@ export default function HomePage() {
   useEffect(() => {
     if (isHeroPaused || !isHeroInViewport || heroItems.length <= 1) return;
 
-    // While trailer is actively looping, provide a 35-second cinematic showcase before auto-advancing
-    if (isHeroTrailerReady && !heroTrailerEnded) {
+    // While trailer is actively looping on desktop/PC, provide a 35-second cinematic showcase before auto-advancing
+    if (isDesktop && isHeroTrailerReady && !heroTrailerEnded) {
       const trailerAdvanceTimer = setTimeout(() => {
         setHeroIdx((prev) => (prev + 1) % heroItems.length);
       }, 35000);
@@ -330,7 +402,7 @@ export default function HomePage() {
     }, delayMs);
 
     return () => clearTimeout(t);
-  }, [isHeroPaused, isHeroInViewport, heroItems.length, isHeroTrailerReady, heroTrailerEnded]);
+  }, [isHeroPaused, isHeroInViewport, heroItems.length, isHeroTrailerReady, heroTrailerEnded, isDesktop]);
 
   // Pause hero trailer video and slide advance when scrolled out of viewport (or tab hidden)
   useEffect(() => {
@@ -339,34 +411,49 @@ export default function HomePage() {
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        setIsHeroInViewport(entry.isIntersecting);
+        const inView = entry.isIntersecting;
+        isHeroInViewportRef.current = inView;
+        setIsHeroInViewport(inView);
       },
       { threshold: 0.12 }
     );
     observer.observe(el);
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
+    const checkInView = () => {
+      if (typeof document !== 'undefined' && (document.hidden || document.visibilityState === 'hidden')) {
+        isHeroInViewportRef.current = false;
         setIsHeroInViewport(false);
       } else {
         if (heroSectionRef.current) {
           const rect = heroSectionRef.current.getBoundingClientRect();
           const inView = rect.bottom > 100 && rect.top < window.innerHeight - 100;
+          isHeroInViewportRef.current = inView;
           setIsHeroInViewport(inView);
         }
       }
     };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    const handleBlur = () => {
+      // User minimized or switched away from the browser window: mute and pause immediately!
+      isHeroInViewportRef.current = false;
+      setIsHeroInViewport(false);
+    };
+
+    document.addEventListener('visibilitychange', checkInView);
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('focus', checkInView);
 
     return () => {
       observer.disconnect();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('visibilitychange', checkInView);
+      window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('focus', checkInView);
     };
   }, []);
 
   const activeHero = heroItems[heroIdx] || heroItems[0];
 
-  // Fetch trailer for active Hero vitrin after a smooth 950ms stabilization delay
+  // Fetch trailer for active Hero vitrin after a smooth 150ms stabilization delay (PC / Desktop Only)
   useEffect(() => {
     setHeroTrailerYtId(null);
     setIsHeroTrailerReady(false);
@@ -374,7 +461,8 @@ export default function HomePage() {
     if (heroTrailerTimerRef.current) {
       clearTimeout(heroTrailerTimerRef.current);
     }
-    if (!activeHero?.id) return;
+    // Strictly disable vitrin trailer on mobile devices
+    if (!isDesktop || !activeHero?.id) return;
 
     const currentHeroId = activeHero.id;
     heroTrailerTimerRef.current = setTimeout(async () => {
@@ -389,18 +477,18 @@ export default function HomePage() {
           setHeroTrailerYtId(d.youtubeId);
         }
       } catch {}
-    }, 950);
+    }, 150);
 
     return () => {
       if (heroTrailerTimerRef.current) {
         clearTimeout(heroTrailerTimerRef.current);
       }
     };
-  }, [activeHero?.id, activeHero?.slug, activeHero?.title]);
+  }, [activeHero?.id, activeHero?.slug, activeHero?.title, isDesktop]);
 
-  // Load YouTube IFrame API script once globally
+  // Load YouTube IFrame API script once globally (PC / Desktop Only)
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || !isDesktop) return;
     if (!window.YT) {
       const existingScript = document.getElementById('youtube-iframe-api');
       if (!existingScript) {
@@ -410,11 +498,11 @@ export default function HomePage() {
         document.body.appendChild(tag);
       }
     }
-  }, []);
+  }, [isDesktop]);
 
-  // Initialize and manage YouTube IFrame Player instance for active Hero trailer
+  // Initialize and manage YouTube IFrame Player instance for active Hero trailer (PC / Desktop Only)
   useEffect(() => {
-    if (!heroTrailerYtId) {
+    if (!isDesktop || !heroTrailerYtId) {
       if (heroPlayerRef.current) {
         try {
           heroPlayerRef.current.destroy();
@@ -427,7 +515,124 @@ export default function HomePage() {
     }
 
     let isSubscribed = true;
-    let revealTimer: NodeJS.Timeout | null = null;
+    let progressPoll: ReturnType<typeof setInterval> | null = null;
+    let bufferHideTimer: ReturnType<typeof setTimeout> | null = null;
+    let playRevealTimer: ReturnType<typeof setTimeout> | null = null;
+    let revealBaseline: number | null = null;
+    let hasRevealedOnce = false;
+    let lastLoopAt = 0;
+
+    const clearPlayReveal = () => {
+      if (playRevealTimer) {
+        clearTimeout(playRevealTimer);
+        playRevealTimer = null;
+      }
+    };
+
+    const triggerReveal = (player: any) => {
+      if (!isSubscribed || heroRevealedRef.current) return;
+      if (!isHeroInViewportRef.current || (typeof document !== 'undefined' && document.hidden)) {
+        try {
+          player.mute();
+          player.pauseVideo();
+        } catch {}
+        return;
+      }
+      heroRevealedRef.current = true;
+      hasRevealedOnce = true;
+      setIsHeroTrailerReady(true);
+      if (!isTrailerMutedRef.current) {
+        try {
+          player.unMute();
+          player.setVolume(85);
+        } catch {}
+      }
+    };
+
+    const setHidden = (player?: any) => {
+      clearPlayReveal();
+      if (heroRevealedRef.current) {
+        heroRevealedRef.current = false;
+        setIsHeroTrailerReady(false);
+      }
+      if (player) {
+        try {
+          player.mute();
+        } catch {}
+      }
+    };
+
+    const stopProgressPoll = () => {
+      if (progressPoll) clearInterval(progressPoll);
+      progressPoll = null;
+    };
+
+    const startProgressPoll = (player: any) => {
+      stopProgressPoll();
+      clearPlayReveal();
+
+      if (!isHeroInViewportRef.current || (typeof document !== 'undefined' && document.hidden)) {
+        try {
+          player.mute();
+          player.pauseVideo();
+        } catch {}
+        return;
+      }
+
+      // Reliable 1.35s countdown: YouTube's center play button overlay finishes fading out in ~1.0-1.2s.
+      // At 1.35s, it is guaranteed gone.
+      const delayMs = (hasRevealedOnce ? HERO_TRAILER_RESUME_REVEAL_SEC : HERO_TRAILER_FIRST_REVEAL_SEC) * 1000;
+      playRevealTimer = setTimeout(() => {
+        if (!isSubscribed) return;
+        if (!isHeroInViewportRef.current || (typeof document !== 'undefined' && document.hidden)) {
+          clearPlayReveal();
+          return;
+        }
+        triggerReveal(player);
+      }, delayMs);
+
+      progressPoll = setInterval(() => {
+        if (!isSubscribed) return stopProgressPoll();
+        if (!isHeroInViewportRef.current || (typeof document !== 'undefined' && document.hidden)) {
+          stopProgressPoll();
+          clearPlayReveal();
+          try {
+            player.mute();
+            player.pauseVideo();
+          } catch {}
+          return;
+        }
+        let t = NaN;
+        let dur = 0;
+        try {
+          t = player.getCurrentTime();
+          dur = player.getDuration() || 0;
+        } catch {
+          return;
+        }
+        if (!Number.isFinite(t)) return;
+
+        if (!heroRevealedRef.current) {
+          if (revealBaseline === null || t < revealBaseline) {
+            revealBaseline = t;
+          } else if (
+            t - revealBaseline >=
+            (hasRevealedOnce ? HERO_TRAILER_RESUME_REVEAL_SEC : HERO_TRAILER_FIRST_REVEAL_SEC)
+          ) {
+            clearPlayReveal();
+            triggerReveal(player);
+          }
+        }
+
+        // Loop just before the end so YouTube's end screen / replay button never renders
+        if (dur > 5 && t >= dur - HERO_TRAILER_LOOP_LEAD_SEC && Date.now() - lastLoopAt > 2000) {
+          lastLoopAt = Date.now();
+          try {
+            player.seekTo(0, true);
+          } catch {}
+        }
+      }, 150);
+    };
 
     const initPlayer = () => {
       if (!isSubscribed || !heroPlayerContainerRef.current) return;
@@ -463,12 +668,11 @@ export default function HomePage() {
           events: {
             onReady: (e: any) => {
               if (!isSubscribed) return;
-              if (isHeroInViewport) {
+              try {
+                e.target.mute();
+              } catch {}
+              if (isHeroInViewportRef.current) {
                 e.target.playVideo();
-                if (!isTrailerMuted) {
-                  e.target.unMute();
-                  e.target.setVolume(85);
-                }
               }
             },
             onStateChange: (e: any) => {
@@ -476,40 +680,60 @@ export default function HomePage() {
               const YTState = window.YT?.PlayerState;
               if (!YTState) return;
 
-              // 1. Trailer is actively playing:
-              // YouTube's native play button and title overlay appear for the first ~1.8-2.0 seconds.
-              // We keep the trailer invisible behind the series backdrop for 2.4s so that YouTube's
-              // on-screen play button/overlay completely vanishes before revealing the video!
+              // 1. PLAYING: start countdown & poll. Video is revealed after 1.35s once YouTube's
+              //    own center play button has completely faded away. Audio unmutes at that exact moment.
               if (e.data === YTState.PLAYING) {
+                if (!isHeroInViewportRef.current || (typeof document !== 'undefined' && document.hidden)) {
+                  try {
+                    e.target.mute();
+                    e.target.pauseVideo();
+                  } catch {}
+                  return;
+                }
                 setHeroTrailerEnded(false);
-                if (revealTimer) clearTimeout(revealTimer);
-                revealTimer = setTimeout(() => {
-                  if (!isSubscribed) return;
-                  setIsHeroTrailerReady(true);
-                  if (!isTrailerMuted) {
-                    try {
-                      e.target.unMute();
-                      e.target.setVolume(85);
-                    } catch {}
-                  }
-                }, 2400);
+                if (bufferHideTimer) {
+                  clearTimeout(bufferHideTimer);
+                  bufferHideTimer = null;
+                }
+                if (!heroRevealedRef.current) revealBaseline = null;
+                startProgressPoll(e.target);
               }
-              // 2. Trailer Paused (2): Immediately hide video and cancel pending reveal so pause bezel is NEVER visible!
-              else if (e.data === YTState.PAUSED) {
-                if (revealTimer) clearTimeout(revealTimer);
-                setIsHeroTrailerReady(false);
+              // 2. BUFFERING: hide only if YouTube's spinner would stay on screen
+              else if (e.data === YTState.BUFFERING) {
+                if (bufferHideTimer) clearTimeout(bufferHideTimer);
+                bufferHideTimer = setTimeout(() => {
+                  try {
+                    if (e.target.getPlayerState() === YTState.BUFFERING) {
+                      revealBaseline = null;
+                      setHidden(e.target);
+                    }
+                  } catch {}
+                }, 450);
               }
-              // 3. Trailer Ended (0): Automatically loop seamlessly by seeking back to 0 without ever showing replay UI
+              // 3. PAUSED / CUED / UNSTARTED: hide immediately and mute so the pause bezel / play button is NEVER visible
+              else if (
+                e.data === YTState.PAUSED ||
+                e.data === YTState.CUED ||
+                e.data === -1
+              ) {
+                stopProgressPoll();
+                revealBaseline = null;
+                setHidden(e.target);
+              }
+              // 4. ENDED (fallback if the pre-end loop was missed): hide, restart silently
               else if (e.data === YTState.ENDED) {
+                revealBaseline = null;
+                setHidden(e.target);
                 try {
-                  e.target.seekTo(0);
+                  e.target.seekTo(0, true);
                   e.target.playVideo();
                 } catch {}
               }
             },
             onError: () => {
               if (!isSubscribed) return;
-              if (revealTimer) clearTimeout(revealTimer);
+              stopProgressPoll();
+              setHidden();
               setIsHeroTrailerReady(false);
               setHeroTrailerEnded(true);
             },
@@ -520,19 +744,26 @@ export default function HomePage() {
       }
     };
 
-    if (window.YT && window.YT.Player) {
+    let didInit = false;
+    const initOnce = () => {
+      if (didInit) return;
+      didInit = true;
       initPlayer();
+    };
+
+    if (window.YT && window.YT.Player) {
+      initOnce();
     } else {
       const prevCallback = window.onYouTubeIframeAPIReady;
       window.onYouTubeIframeAPIReady = () => {
         if (typeof prevCallback === 'function') prevCallback();
-        initPlayer();
+        initOnce();
       };
       // Fallback check if script loads without triggering callback
       const checkInterval = setInterval(() => {
         if (window.YT && window.YT.Player) {
           clearInterval(checkInterval);
-          initPlayer();
+          initOnce();
         }
       }, 200);
       setTimeout(() => clearInterval(checkInterval), 4000);
@@ -540,7 +771,9 @@ export default function HomePage() {
 
     return () => {
       isSubscribed = false;
-      if (revealTimer) clearTimeout(revealTimer);
+      stopProgressPoll();
+      clearPlayReveal();
+      if (bufferHideTimer) clearTimeout(bufferHideTimer);
       if (heroPlayerRef.current) {
         try {
           heroPlayerRef.current.destroy();
@@ -548,32 +781,35 @@ export default function HomePage() {
         heroPlayerRef.current = null;
       }
     };
-  }, [heroTrailerYtId]);
+  }, [heroTrailerYtId, isDesktop]);
 
   // Synchronize playback when hero scrolls into or out of view
   useEffect(() => {
     const p = heroPlayerRef.current;
     if (!p) return;
+    if (heroPauseTimerRef.current) {
+      clearTimeout(heroPauseTimerRef.current);
+      heroPauseTimerRef.current = null;
+    }
     try {
-      if (isHeroInViewport) {
+      if (isHeroInViewport && (typeof document === 'undefined' || !document.hidden)) {
         if (!heroTrailerEnded && heroTrailerYtId) {
           p.playVideo();
-          if (!isTrailerMuted) {
+          if (!isTrailerMuted && heroRevealedRef.current && isHeroTrailerReady) {
             p.unMute();
             p.setVolume(85);
           }
         }
       } else {
+        heroRevealedRef.current = false;
         setIsHeroTrailerReady(false);
-        // Delay pauseVideo by 750ms so CSS opacity fadeout completes first, preventing YouTube's native '||' pause bezel from appearing!
-        setTimeout(() => {
-          try {
-            p.pauseVideo();
-          } catch {}
-        }, 750);
+        try {
+          p.mute();
+          p.pauseVideo();
+        } catch {}
       }
     } catch {}
-  }, [isHeroInViewport, heroTrailerEnded, heroTrailerYtId, isTrailerMuted]);
+  }, [isHeroInViewport, heroTrailerEnded, heroTrailerYtId, isTrailerMuted, isHeroTrailerReady]);
 
   // Synchronize Hero YouTube player volume & mute state whenever global isTrailerMuted changes
   useEffect(() => {
@@ -583,35 +819,42 @@ export default function HomePage() {
         if (isTrailerMuted) {
           p.mute();
         } else {
-          p.unMute();
-          p.setVolume(85);
+          // Strictly only unmute if the trailer has actually been revealed to the user!
+          if (heroRevealedRef.current && isHeroTrailerReady) {
+            p.unMute();
+            p.setVolume(85);
+          }
         }
       } catch {}
     }
-  }, [isTrailerMuted]);
+  }, [isTrailerMuted, isHeroTrailerReady]);
 
   const continueWatchingItems = useMemo(() => {
     if (!user) return [];
     const watchingProgressList = Object.values(progressMap)
-      .filter(
-        (p) =>
-          p.status === 'watching' ||
-          (Array.isArray(p.watched_episodes) &&
-            p.watched_episodes.length > 0 &&
-            p.status !== 'completed' &&
-            p.status !== 'dropped')
-      )
+      .filter((p) => {
+        if (p.status === 'dropped') return false;
+        if (p.status === 'watching') return true;
+        const pos = p.resume_position_sec || 0;
+        const dur = p.resume_duration_sec || 3600;
+        if (pos > 15 && dur > 0 && pos / dur < 0.85) return true;
+        return (
+          Array.isArray(p.watched_episodes) &&
+          p.watched_episodes.length > 0 &&
+          p.status !== 'completed'
+        );
+      })
       .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
     if (watchingProgressList.length === 0) return [];
 
-    const pool = [...kdramaItems, ...animeItems, ...cdramaItems, ...heroItems];
+    const pool = [...kdramaItems, ...animeItems, ...cdramaItems, ...globalItems, ...heroItems];
     const poolMap = new Map<number, MediaItem>();
     pool.forEach((m) => poolMap.set(m.id, m));
 
     const seen = new Set<number>();
     const result: MediaItem[] = [];
     for (const p of watchingProgressList) {
-      const mediaItem = p.media || poolMap.get(p.media_id);
+      const mediaItem = poolMap.get(p.media_id) || p.media;
       if (mediaItem && !seen.has(mediaItem.id)) {
         seen.add(mediaItem.id);
         result.push(mediaItem);
@@ -619,7 +862,7 @@ export default function HomePage() {
       }
     }
     return result;
-  }, [user, progressMap, kdramaItems, animeItems, cdramaItems, heroItems]);
+  }, [user, progressMap, kdramaItems, animeItems, cdramaItems, globalItems, heroItems]);
 
   const [tasteVersion, setTasteVersion] = useState(0);
 
@@ -734,8 +977,8 @@ export default function HomePage() {
                 />
               </AnimatePresence>
 
-              {/* Dynamic 16:9 Cinema Hero Trailer Video (Netflix Style) */}
-              {heroTrailerYtId && (
+              {/* Dynamic 16:9 Cinema Hero Trailer Video (Netflix Style - PC / Desktop Only) */}
+              {isDesktop && heroTrailerYtId && (
                 <div
                   className={`hidden md:block absolute inset-0 w-full h-full overflow-hidden transition-opacity duration-700 pointer-events-none select-none z-0 ${
                     isHeroTrailerReady && !heroTrailerEnded ? 'opacity-100' : 'opacity-0'
@@ -763,11 +1006,11 @@ export default function HomePage() {
               <div className="absolute inset-y-0 left-0 w-full sm:w-3/5 md:w-[46%] bg-gradient-to-r from-[#080808]/85 via-[#080808]/40 to-transparent pointer-events-none z-10" />
 
               {/* 4. Top-edge navbar blend */}
-              <div className="absolute inset-x-0 top-0 h-24 sm:h-28 bg-gradient-to-b from-[#080808]/80 via-[#080808]/30 to-transparent pointer-events-none z-10" />
+              <div className="absolute inset-x-0 top-0 h-28 sm:h-36 bg-gradient-to-b from-[#080808]/65 via-[#080808]/20 to-transparent pointer-events-none z-10" />
             </div>
 
-            {/* Top-Right Hero Mute/Unmute Button (Netflix Style: Pure white icon with shadow) */}
-            {heroTrailerYtId && isHeroTrailerReady && !heroTrailerEnded && (
+            {/* Top-Right Hero Mute/Unmute Button (Netflix Style: Pure white icon with shadow - PC / Desktop Only) */}
+            {isDesktop && heroTrailerYtId && isHeroTrailerReady && !heroTrailerEnded && (
               <div className="hidden md:block absolute top-20 sm:top-24 md:top-28 right-4 sm:right-6 md:right-14 z-30">
                 <button
                   type="button"
@@ -859,6 +1102,7 @@ export default function HomePage() {
                       const heroStats = getEpisodeProgressStats(heroProg, activeHero);
                       const hasWatchedProgress =
                         heroStats.watchedCount > 0 || heroProg?.status === 'watching';
+                      const isHeroFilm = activeHero.content_type === 'film' || activeHero.content_type === 'movie';
 
                       return (
                         <Link
@@ -873,7 +1117,11 @@ export default function HomePage() {
                         >
                           <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-black shrink-0" />
                           <span>
-                            {hasWatchedProgress
+                            {isHeroFilm
+                              ? hasWatchedProgress
+                                ? 'Filme Devam Et'
+                                : 'Filmi İzle'
+                              : hasWatchedProgress
                               ? `${heroStats.nextEpisode}. Bölümden Devam Et`
                               : 'Hemen İzle'}
                           </span>
@@ -1012,6 +1260,7 @@ export default function HomePage() {
               {continueWatchingItems.map((item) => {
                 const prog = progressMap[item.id];
                 const stats = getEpisodeProgressStats(prog, item);
+                const isFilmItem = item.content_type === 'film' || item.content_type === 'movie' || stats.isFilm;
                 const barPct = Math.max(
                   stats.watchedCount > 0 ? 6 : 3,
                   stats.progressPercent
@@ -1049,11 +1298,17 @@ export default function HomePage() {
                             {cleanMediaTitle(item.title)}
                           </span>
                           <span className="text-[10px] sm:text-[11px] text-sky-400 font-semibold tracking-wide mt-0.5 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
-                            S{stats.season} • {stats.nextEpisode}. Bölümden Devam Et
+                            {isFilmItem
+                              ? 'Filme Devam Et'
+                              : `S${stats.season} • ${stats.nextEpisode}. Bölümden Devam Et`}
                           </span>
                         </div>
                         <span className="text-[10px] sm:text-[11px] font-mono text-white/80 shrink-0 px-2 py-0.5 rounded-lg bg-black/60 backdrop-blur-md border border-white/15 shadow-sm">
-                          {stats.watchedCount}/{stats.totalEpisodes} Bölüm
+                          {isFilmItem
+                            ? stats.resumePos > 60
+                              ? `${Math.floor(stats.resumePos / 60)}/${Math.max(1, Math.floor(stats.resumeDur / 60))} Dk`
+                              : 'FİLM'
+                            : `${stats.watchedCount}/${stats.totalEpisodes} Bölüm`}
                         </span>
                       </div>
 
@@ -1073,19 +1328,19 @@ export default function HomePage() {
         )}
 
         {/* =====================================================================
-            3. TOP 10 WITH INTEGRATED STROKE OUTLINE NUMERALS (Exact ui/code.html Section 3)
+            3A. TOP 10 DİZİLER WITH INTEGRATED STROKE OUTLINE NUMERALS
         ===================================================================== */}
-        {top10Items.length > 0 && (
+        {top10SeriesItems.length > 0 && (
           <section className="w-full px-4 sm:px-6 md:px-14 cv-auto max-w-full">
             <div className="flex flex-col gap-1 mb-6 sm:mb-8">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase text-white/40">
-                  Trendler
+                <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase text-sky-400/80">
+                  Trend Diziler
                 </span>
                 <div className="flex items-center gap-1.5 sm:gap-2">
                   <button
                     onClick={() =>
-                      top10ScrollRef.current?.scrollBy({ left: -320, behavior: 'smooth' })
+                      top10SeriesScrollRef.current?.scrollBy({ left: -320, behavior: 'smooth' })
                     }
                     aria-label="Geri"
                     className="w-8 h-8 sm:w-10 sm:h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
@@ -1094,7 +1349,7 @@ export default function HomePage() {
                   </button>
                   <button
                     onClick={() =>
-                      top10ScrollRef.current?.scrollBy({ left: 320, behavior: 'smooth' })
+                      top10SeriesScrollRef.current?.scrollBy({ left: 320, behavior: 'smooth' })
                     }
                     aria-label="İleri"
                     className="w-8 h-8 sm:w-10 sm:h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
@@ -1104,15 +1359,15 @@ export default function HomePage() {
                 </div>
               </div>
               <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white mt-0.5">
-                Bugün Türkiye&apos;de En Popüler 10 İçerik
+                Bugün Türkiye&apos;de En Popüler 10 Dizi
               </h2>
             </div>
 
             <div
-              ref={top10ScrollRef}
+              ref={top10SeriesScrollRef}
               className="flex items-end gap-4 sm:gap-8 md:gap-10 overflow-x-auto overflow-y-hidden overscroll-y-auto overscroll-x-contain pb-6 pt-3 no-scrollbar snap-x snap-mandatory [-webkit-overflow-scrolling:touch] h-[240px] sm:h-[320px] md:h-[380px] max-w-full"
             >
-              {top10Items.map((item, idx) => (
+              {top10SeriesItems.map((item, idx) => (
                 <Link
                   key={item.id}
                   href={`/seri/${item.slug}`}
@@ -1133,9 +1388,90 @@ export default function HomePage() {
                       className="absolute inset-0 w-full h-full object-cover"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-black/40 to-transparent" />
-                    <div className="relative z-10 flex flex-col">
+                    <div className="relative z-10 flex flex-col gap-0.5">
                       <span className="text-xs sm:text-[15px] font-bold text-white truncate">
-                        {item.title}
+                        {cleanMediaTitle(item.title)}
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-mono text-sky-300/90">
+                        <Eye className="w-3 h-3 text-sky-400 shrink-0" />
+                        <span>{formatViewCount(item.views_total ?? item.views_count ?? 0)}</span>
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* =====================================================================
+            3B. TOP 10 FİLMLER WITH INTEGRATED STROKE OUTLINE NUMERALS
+        ===================================================================== */}
+        {top10MoviesItems.length > 0 && (
+          <section className="w-full px-4 sm:px-6 md:px-14 cv-auto max-w-full">
+            <div className="flex flex-col gap-1 mb-6 sm:mb-8">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase text-amber-400/80">
+                  Trend Filmler
+                </span>
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <button
+                    onClick={() =>
+                      top10MoviesScrollRef.current?.scrollBy({ left: -320, behavior: 'smooth' })
+                    }
+                    aria-label="Geri"
+                    className="w-8 h-8 sm:w-10 sm:h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </button>
+                  <button
+                    onClick={() =>
+                      top10MoviesScrollRef.current?.scrollBy({ left: 320, behavior: 'smooth' })
+                    }
+                    aria-label="İleri"
+                    className="w-8 h-8 sm:w-10 sm:h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+                  >
+                    <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </button>
+                </div>
+              </div>
+              <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white mt-0.5">
+                Bugün Türkiye&apos;de En Popüler 10 Film
+              </h2>
+            </div>
+
+            <div
+              ref={top10MoviesScrollRef}
+              className="flex items-end gap-4 sm:gap-8 md:gap-10 overflow-x-auto overflow-y-hidden overscroll-y-auto overscroll-x-contain pb-6 pt-3 no-scrollbar snap-x snap-mandatory [-webkit-overflow-scrolling:touch] h-[240px] sm:h-[320px] md:h-[380px] max-w-full"
+            >
+              {top10MoviesItems.map((item, idx) => (
+                <Link
+                  key={item.id}
+                  href={`/seri/${item.slug}`}
+                  prefetch={true}
+                  className="shrink-0 flex items-end group cursor-pointer snap-start relative pl-2 sm:pl-4 md:pl-6"
+                >
+                  {/* Netflix/Apple TV+ Top 10 Stroke Numeral */}
+                  <span className="text-[72px] sm:text-[110px] md:text-[145px] font-black leading-[0.78] tracking-tighter text-stroke-numeral select-none pointer-events-none drop-shadow-[0_12px_24px_rgba(0,0,0,0.95)] -translate-x-2 sm:-translate-x-4 md:-translate-x-6 -mr-4 sm:-mr-6 md:-mr-8 z-0">
+                    {idx + 1}
+                  </span>
+
+                  <div className="relative z-10 w-28 sm:w-40 md:w-52 min-w-[112px] sm:min-w-[160px] aspect-[2/3] rounded-xl sm:rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 group-hover:border-white/30 shadow-[0_20px_45px_rgba(0,0,0,0.85)] group-hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-end p-2.5 sm:p-4">
+                    <img
+                      src={getProxiedImageUrl(item.cover_image, item.title)}
+                      alt={item.title}
+                      loading="lazy"
+                      decoding="async"
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-black/40 to-transparent" />
+                    <div className="relative z-10 flex flex-col gap-0.5">
+                      <span className="text-xs sm:text-[15px] font-bold text-white truncate">
+                        {cleanMediaTitle(item.title)}
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-mono text-amber-300/90">
+                        <Eye className="w-3 h-3 text-amber-400 shrink-0" />
+                        <span>{formatViewCount(item.views_total ?? item.views_count ?? 0)}</span>
                       </span>
                     </div>
                   </div>
@@ -1198,6 +1534,7 @@ export default function HomePage() {
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
                 {topPeople.slice(0, 12).map((person, idx) => {
                   const isFav = personFavorites.includes(person.id);
+                  const isFollowed = followedPersonIds.includes(person.id);
                   return (
                     <div
                       key={person.id}
@@ -1207,17 +1544,44 @@ export default function HomePage() {
                         #{idx + 1}
                       </span>
 
-                      <button
-                        onClick={() => togglePersonFavorite(person.id)}
-                        aria-label="Favorilere Ekle"
-                        className={`absolute top-2 right-2 sm:top-2.5 sm:right-2.5 w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
-                          isFav
-                            ? 'bg-rose-500 border-rose-300 text-white'
-                            : 'bg-black/60 border-white/15 text-white/70 hover:text-white'
-                        }`}
-                      >
-                        <Heart className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${isFav ? 'fill-white' : ''}`} />
-                      </button>
+                      {/* Favorite (Like) & Follow (New Series Alert) Buttons */}
+                      <div className="absolute top-2 right-2 sm:top-2.5 sm:right-2.5 flex items-center gap-1.5 z-10">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            togglePersonFavorite(person.id, person.name);
+                          }}
+                          aria-label={isFav ? "Favorilerden Çıkar" : "Favorilere Ekle (Beğen)"}
+                          title={isFav ? "Favorilerimde" : "Favorilere Ekle (Beğen)"}
+                          className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
+                            isFav
+                              ? 'bg-rose-500 border-rose-300 text-white shadow-[0_0_10px_rgba(244,63,94,0.4)]'
+                              : 'bg-black/60 border-white/15 text-white/70 hover:text-white hover:border-white/40'
+                          }`}
+                        >
+                          <Heart className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${isFav ? 'fill-white' : ''}`} />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            togglePersonFollow(person.id, person.name);
+                          }}
+                          aria-label={isFollowed ? "Takibi Bırak" : "Takip Et (Yeni Seri Bildirimi)"}
+                          title={isFollowed ? "Takip Ediliyor (Yeni seriler bildirilecek)" : "Takip Et (Yeni serilerinde bildirim al)"}
+                          className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
+                            isFollowed
+                              ? 'bg-sky-400 border-sky-300 text-slate-950 shadow-[0_0_10px_rgba(56,189,248,0.4)]'
+                              : 'bg-black/60 border-white/15 text-white/70 hover:text-white hover:border-white/40'
+                          }`}
+                        >
+                          <Bell className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${isFollowed ? 'fill-slate-950' : ''}`} />
+                        </button>
+                      </div>
 
                       <Link href={`/oyuncu/${person.slug}`} prefetch={true} className="flex flex-col items-center w-full">
                         <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden border border-white/15 group-hover:border-white/40 transition-all mb-2.5 sm:mb-3">
@@ -1433,8 +1797,8 @@ function AccordionRow({
         onMouseLeave={() => requestAccordionHover(null)}
         className="flex items-center gap-3 sm:gap-4 overflow-x-auto min-h-[300px] sm:min-h-[330px] py-2 sm:py-3 no-scrollbar [-webkit-overflow-scrolling:touch] max-w-full"
       >
-        {items.map((item) => (
-          <AccordionMediaCard key={item.id} item={item} />
+        {items.map((item, idx) => (
+          <AccordionMediaCard key={item.id} item={item} priority={idx < 4} />
         ))}
       </div>
     </section>

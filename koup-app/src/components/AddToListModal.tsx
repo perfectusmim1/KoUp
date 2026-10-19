@@ -102,9 +102,9 @@ export default function AddToListModal({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isOpen, onClose]);
 
-  if (!mounted || !isOpen) return null;
+  if (!mounted) return null;
 
-  if (!user) {
+  if (isOpen && !user) {
     onClose();
     openAuthModal('Listelerinizi yönetebilmek için lütfen giriş yapın.');
     return null;
@@ -113,7 +113,7 @@ export default function AddToListModal({
   const mediaIdNum = Number(media.id);
 
   const handleToggle = async (list: CustomListRecord) => {
-    if (togglingId !== null) return;
+    if (!user || togglingId !== null) return;
     setTogglingId(list.id);
     triggerSound('click');
 
@@ -140,7 +140,7 @@ export default function AddToListModal({
         body: JSON.stringify({
           action,
           media_id: mediaIdNum,
-          user_id: user.id,
+          user_id: user?.id,
         }),
       });
 
@@ -180,7 +180,7 @@ export default function AddToListModal({
 
   const handleCreateList = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle.trim()) return;
+    if (!user || !newTitle.trim()) return;
 
     setIsCreating(true);
     setCreateError(null);
@@ -193,7 +193,7 @@ export default function AddToListModal({
         body: JSON.stringify({
           title: newTitle.trim(),
           visibility: newVisibility,
-          user_id: user.id,
+          user_id: user?.id,
           media_ids: [mediaIdNum],
         }),
       });
@@ -233,29 +233,31 @@ export default function AddToListModal({
 
   return createPortal(
     <AnimatePresence>
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4"
-        role="dialog"
-        aria-modal="true"
-        aria-label={`${media.title} listeye ekle`}
-      >
-        {/* Backdrop */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={onClose}
-          className="fixed inset-0 bg-black/75 backdrop-blur-md cursor-pointer"
-        />
-
-        {/* Modal Window */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.94, y: 14 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.94, y: 14 }}
-          transition={{ duration: 0.2, ease: 'easeOut' }}
-          className="relative z-10 w-full max-w-md rounded-3xl bg-[#121216]/95 border border-white/10 p-6 sm:p-7 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.2)] backdrop-blur-2xl text-white"
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${media.title} listeye ekle`}
         >
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/80 backdrop-blur-md cursor-pointer"
+          />
+
+          {/* Modal Window */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.94, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.94, y: 16 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="relative z-10 w-full max-w-md rounded-3xl bg-[#121216]/95 border border-white/10 p-6 sm:p-7 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.2)] backdrop-blur-2xl text-white"
+          >
           {/* Close Button */}
           <button
             type="button"
@@ -377,7 +379,7 @@ export default function AddToListModal({
                   setShowCreateForm(true);
                   triggerSound('click');
                 }}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl apple-glass-pill hover:bg-white/15 text-xs font-bold text-white border border-white/15 transition-all cursor-pointer shadow-sm active:scale-95"
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl apple-glass-pill hover:bg-white/15 text-xs font-bold text-white border border-white/15 transition-all cursor-pointer shadow-sm"
               >
                 <Plus className="w-4 h-4 text-sky-400" />
                 <span>Yeni Liste Oluştur</span>
@@ -404,42 +406,67 @@ export default function AddToListModal({
                   onChange={(e) => setNewTitle(e.target.value)}
                   placeholder="Liste Adı (Örn: En İyi Romantikler)..."
                   maxLength={60}
-                  className="w-full px-4 py-2.5 rounded-full bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-all font-medium"
+                  className="koup-input text-xs py-2.5 px-4 font-medium"
                   autoFocus
                 />
 
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-1 p-1 rounded-full bg-white/5 border border-white/10 text-xs">
+                <div className="flex items-center justify-between gap-3 pt-1">
+                  {/* Sliding Pill Visibility Selector */}
+                  <div className="relative flex items-center p-1 rounded-full bg-white/[0.06] border border-white/10 text-xs">
                     <button
                       type="button"
-                      onClick={() => setNewVisibility('public')}
-                      className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                      onClick={() => {
+                        triggerSound('click');
+                        setNewVisibility('public');
+                      }}
+                      className={`relative z-10 px-3.5 py-1.5 rounded-full text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
                         newVisibility === 'public'
-                          ? 'bg-sky-500 text-white font-bold'
+                          ? 'text-white'
                           : 'text-white/60 hover:text-white'
                       }`}
                     >
-                      <Globe className="w-3 h-3" />
-                      <span>Herkese Açık</span>
+                      {newVisibility === 'public' && (
+                        <motion.div
+                          layoutId="addToListVisPill"
+                          className="absolute inset-0 rounded-full bg-sky-500 shadow-[0_0_14px_rgba(14,165,233,0.5)]"
+                          transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                        />
+                      )}
+                      <span className="relative z-10 flex items-center gap-1.5">
+                        <Globe className="w-3.5 h-3.5" />
+                        <span>Herkese Açık</span>
+                      </span>
                     </button>
                     <button
                       type="button"
-                      onClick={() => setNewVisibility('private')}
-                      className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                      onClick={() => {
+                        triggerSound('click');
+                        setNewVisibility('private');
+                      }}
+                      className={`relative z-10 px-3.5 py-1.5 rounded-full text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
                         newVisibility === 'private'
-                          ? 'bg-sky-500 text-white font-bold'
+                          ? 'text-white'
                           : 'text-white/60 hover:text-white'
                       }`}
                     >
-                      <Lock className="w-3 h-3" />
-                      <span>Gizli</span>
+                      {newVisibility === 'private' && (
+                        <motion.div
+                          layoutId="addToListVisPill"
+                          className="absolute inset-0 rounded-full bg-sky-500 shadow-[0_0_14px_rgba(14,165,233,0.5)]"
+                          transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                        />
+                      )}
+                      <span className="relative z-10 flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5" />
+                        <span>Gizli</span>
+                      </span>
                     </button>
                   </div>
 
                   <button
                     type="submit"
                     disabled={isCreating || !newTitle.trim()}
-                    className="flex-1 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-white font-bold text-xs transition-all shadow-[0_0_15px_rgba(41,151,255,0.4)] disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5"
+                    className="flex-1 py-2 px-4 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white font-bold text-xs transition-all shadow-[0_0_18px_rgba(41,151,255,0.4)] disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5"
                   >
                     {isCreating ? (
                       <>
@@ -463,6 +490,7 @@ export default function AddToListModal({
           </div>
         </motion.div>
       </div>
+      )}
     </AnimatePresence>,
     document.body
   );

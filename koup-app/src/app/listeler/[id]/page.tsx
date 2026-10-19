@@ -7,7 +7,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   ListOrdered,
   Heart,
-  Share2,
   Trash2,
   Plus,
   Play,
@@ -26,6 +25,7 @@ import {
 import { MediaItem, getProxiedImageUrl, formatContentTypeTR, supabase } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
+import { rankSearchResults } from '@/lib/searchRanking';
 
 interface ListDetail {
   id: number;
@@ -58,7 +58,17 @@ export default function ListDetailPage({
 
   const [list, setList] = useState<ListDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isLiked, setIsLiked] = useState(false);
+  const [isLiked, setIsLiked] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const raw = localStorage.getItem('koup_liked_custom_lists_v1');
+      if (!raw) return false;
+      const ids: number[] = JSON.parse(raw);
+      return Array.isArray(ids) && ids.includes(Number(unwrappedParams.id));
+    } catch {
+      return false;
+    }
+  });
   const [likesCount, setLikesCount] = useState(0);
 
   // Add Item Omnibox State (Owner only)
@@ -91,18 +101,6 @@ export default function ListDetailPage({
           setEditTitle(data.list.title || '');
           setEditDesc(data.list.description || '');
           setEditVisibility(data.list.visibility === 'private' ? 'private' : 'public');
-
-          if (user?.id && data.list.id) {
-            void supabase
-              .from('custom_list_likes')
-              .select('list_id')
-              .eq('user_id', user.id)
-              .eq('list_id', data.list.id)
-              .maybeSingle()
-              .then(({ data: lData }) => {
-                setIsLiked(Boolean(lData));
-              });
-          }
         } else {
           setList(null);
         }
@@ -116,9 +114,70 @@ export default function ListDetailPage({
     loadList();
   }, [unwrappedParams.id, user?.id, authLoading]);
 
+  // Reactive like status & exact like counter sync
+  useEffect(() => {
+    if (!list?.id) return;
+
+    try {
+      const raw = localStorage.getItem('koup_liked_custom_lists_v1');
+      if (raw) {
+        const ids: number[] = JSON.parse(raw);
+        if (Array.isArray(ids) && ids.includes(list.id)) {
+          setIsLiked(true);
+        }
+      }
+    } catch {}
+
+    let isMounted = true;
+    async function syncListLikes() {
+      try {
+        const { count, error: countErr } = await supabase
+          .from('custom_list_likes')
+          .select('*', { count: 'exact', head: true })
+          .eq('list_id', list!.id);
+
+        if (isMounted && !countErr && typeof count === 'number') {
+          setLikesCount(Math.max(count, list?.likes_count || 0));
+        }
+
+        if (user?.id) {
+          const { data: lData } = await supabase
+            .from('custom_list_likes')
+            .select('list_id')
+            .eq('user_id', user.id)
+            .eq('list_id', list!.id)
+            .maybeSingle();
+
+          if (isMounted) {
+            const userHasLiked = Boolean(lData);
+            setIsLiked(userHasLiked);
+            try {
+              const raw = localStorage.getItem('koup_liked_custom_lists_v1');
+              const ids: number[] = raw ? JSON.parse(raw) : [];
+              const next = userHasLiked
+                ? Array.from(new Set([...ids, list!.id]))
+                : ids.filter((id) => id !== list!.id);
+              localStorage.setItem('koup_liked_custom_lists_v1', JSON.stringify(next));
+            } catch {}
+          }
+        } else if (!authLoading) {
+          if (isMounted) setIsLiked(false);
+        }
+      } catch (err) {
+        console.error('Failed to sync list likes info:', err);
+      }
+    }
+
+    syncListLikes();
+    return () => {
+      isMounted = false;
+    };
+  }, [list?.id, user?.id, authLoading]);
+
   // Search dramas to add into list
   useEffect(() => {
-    if (!searchDramaQuery.trim()) {
+    const query = searchDramaQuery.trim();
+    if (!query) {
       setSearchResults([]);
       return;
     }
@@ -126,21 +185,46 @@ export default function ListDetailPage({
     const t = setTimeout(async () => {
       setIsSearchingDramas(true);
       try {
-        const { supabase } = await import('@/lib/supabase');
-        const { data } = await supabase
-          .from('media')
-          .select('id, slug, title, content_type, cover_image, release_year, episode_count')
-          .or(`title.ilike.%${searchDramaQuery}%,search_text.ilike.%${searchDramaQuery}%`)
-          .limit(10);
-        if (data) {
-          setSearchResults(data as MediaItem[]);
+        let items: MediaItem[] = [];
+
+        // 1. Try search_catalog RPC (ordered by fuzzy relevance)
+        try {
+          const { data: rpcData, error: rpcErr } = await supabase.rpc('search_catalog', {
+            p_query: query,
+            p_limit: 25,
+          });
+          if (!rpcErr && rpcData && Array.isArray(rpcData) && rpcData.length > 0) {
+            items = rpcData as MediaItem[];
+          }
+        } catch {}
+
+        // 2. Direct query fallback or enrichment
+        if (items.length < 5) {
+          const { data: directData } = await supabase
+            .from('media')
+            .select('id, slug, title, content_type, cover_image, release_year, episode_count, views_total, mdl_rating, imdb_rating, anilist_rating')
+            .or(`title.ilike.%${query}%,search_text.ilike.%${query}%,slug.ilike.%${query}%`)
+            .limit(30);
+
+          if (directData && directData.length > 0) {
+            const existingIds = new Set(items.map((m) => m.id));
+            for (const d of directData) {
+              if (!existingIds.has(d.id)) {
+                items.push(d as MediaItem);
+              }
+            }
+          }
         }
+
+        // 3. Rank with high-accuracy relevance scoring
+        const ranked = rankSearchResults(items, query);
+        setSearchResults(ranked.slice(0, 15));
       } catch (err) {
         console.error('Error searching dramas:', err);
       } finally {
         setIsSearchingDramas(false);
       }
-    }, 250);
+    }, 200);
 
     return () => clearTimeout(t);
   }, [searchDramaQuery]);
@@ -235,6 +319,16 @@ export default function ListDetailPage({
     const willLike = !isLiked;
     setIsLiked(willLike);
     setLikesCount((prev) => (willLike ? prev + 1 : Math.max(0, prev - 1)));
+
+    try {
+      const raw = localStorage.getItem('koup_liked_custom_lists_v1');
+      const ids: number[] = raw ? JSON.parse(raw) : [];
+      const next = willLike
+        ? Array.from(new Set([...ids, list.id]))
+        : ids.filter((id) => id !== list.id);
+      localStorage.setItem('koup_liked_custom_lists_v1', JSON.stringify(next));
+    } catch {}
+
     pushNotification(
       willLike ? 'Liste Beğenildi' : 'Beğeni Kaldırıldı',
       willLike ? 'Bu liste beğenilerinize eklendi.' : 'Liste beğenilerinizden kaldırıldı.',
@@ -258,49 +352,15 @@ export default function ListDetailPage({
       // Rollback on error
       setIsLiked(!willLike);
       setLikesCount((prev) => (willLike ? Math.max(0, prev - 1) : prev + 1));
-    }
-  };
-
-  const handleShare = async () => {
-    triggerSound('click');
-    const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
-    if (!shareUrl) return;
-
-    let copied = false;
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(shareUrl);
-        copied = true;
-      }
-    } catch {}
-
-    if (!copied) {
       try {
-        const textArea = document.createElement('textarea');
-        textArea.value = shareUrl;
-        textArea.style.position = 'fixed';
-        textArea.style.left = '-999999px';
-        textArea.style.top = '-999999px';
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textArea);
-        copied = true;
+        const raw = localStorage.getItem('koup_liked_custom_lists_v1');
+        const ids: number[] = raw ? JSON.parse(raw) : [];
+        const next = !willLike
+          ? Array.from(new Set([...ids, list.id]))
+          : ids.filter((id) => id !== list.id);
+        localStorage.setItem('koup_liked_custom_lists_v1', JSON.stringify(next));
       } catch {}
     }
-
-    if (navigator.share && /mobile|android|iphone|ipad/i.test(navigator.userAgent)) {
-      try {
-        await navigator.share({
-          title: list?.title || 'KoUp Liste',
-          url: shareUrl,
-        });
-        return;
-      } catch {}
-    }
-
-    pushNotification('Bağlantı Kopyalandı', 'Liste bağlantısı panoya kopyalandı.', 'success');
   };
 
   const handleAddMedia = async (mediaItem: MediaItem) => {
@@ -581,14 +641,6 @@ export default function ListDetailPage({
               <span>{likesCount} Beğeni</span>
             </button>
 
-            <button
-              onClick={handleShare}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-full glass-pill text-xs font-semibold text-white/80 hover:text-white cursor-pointer transition-all"
-            >
-              <Share2 className="w-3.5 h-3.5 text-sky-400" />
-              <span>Paylaş</span>
-            </button>
-
             {isOwner && (
               <>
                 <button
@@ -866,106 +918,139 @@ export default function ListDetailPage({
       {/* EDIT MODAL (OWNER ONLY) */}
       <AnimatePresence>
         {isEditModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto"
+          >
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsEditModalOpen(false)}
-              className="fixed inset-0 bg-black/80 backdrop-blur-md"
+              className="absolute inset-0 bg-black/80 backdrop-blur-md cursor-pointer"
             />
 
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="relative w-full max-w-lg rounded-3xl bg-[#0f0f13] border border-white/15 p-6 shadow-2xl z-10 space-y-4"
+              initial={{ opacity: 0, scale: 0.94, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 16 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="relative w-full max-w-lg rounded-3xl bg-[#0f0f13] border border-white/15 p-6 sm:p-8 shadow-2xl z-10 space-y-5"
             >
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold text-white">Listeyi Düzenle</h3>
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-sky-500/10 border border-sky-400/20 flex items-center justify-center text-sky-400">
+                    <ListOrdered className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white">Listeyi Düzenle</h3>
+                </div>
                 <button
+                  type="button"
                   onClick={() => setIsEditModalOpen(false)}
-                  className="w-8 h-8 rounded-full glass-pill flex items-center justify-center text-white/60 hover:text-white"
+                  className="w-8 h-8 rounded-full glass-pill flex items-center justify-center text-white/60 hover:text-white cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
               <form onSubmit={handleSaveEdit} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-mono text-white/60 mb-1.5">Liste Başlığı</label>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-white/80">
+                    Liste Başlığı <span className="text-rose-400">*</span>
+                  </label>
                   <input
                     type="text"
                     required
                     value={editTitle}
                     onChange={(e) => setEditTitle(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white focus:outline-none focus:border-sky-400"
+                    placeholder="Liste başlığı..."
+                    className="koup-input text-xs py-2.5 px-4 font-medium"
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-mono text-white/60 mb-1.5">Açıklama</label>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-white/80">
+                    Açıklama (İsteğe Bağlı)
+                  </label>
                   <textarea
                     rows={3}
                     value={editDesc}
                     onChange={(e) => setEditDesc(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white focus:outline-none focus:border-sky-400 resize-none"
+                    placeholder="Listenin açıklaması..."
+                    className="koup-input text-xs py-2.5 px-4 font-medium resize-none"
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-mono text-white/60 mb-2">Görünürlük</label>
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-white/80">
+                    Görünürlük Durumu
+                  </label>
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       type="button"
-                      onClick={() => setEditVisibility('public')}
-                      className={`p-3 rounded-2xl border text-left transition-all ${
+                      onClick={() => {
+                        triggerSound?.('click');
+                        setEditVisibility('public');
+                      }}
+                      className={`p-3.5 rounded-2xl border text-left cursor-pointer transition-all ${
                         editVisibility === 'public'
-                          ? 'bg-sky-500/15 border-sky-400/50 text-white'
-                          : 'bg-white/[0.02] border-white/10 text-white/60'
+                          ? 'bg-sky-500/15 border-sky-400 text-white shadow-[0_0_18px_rgba(41,151,255,0.22)]'
+                          : 'bg-white/[0.04] border-white/10 text-white/60 hover:border-white/25 hover:text-white'
                       }`}
                     >
-                      <div className="text-xs font-bold flex items-center gap-1.5 mb-0.5">
-                        <Globe className="w-3.5 h-3.5 text-sky-400" />
+                      <div className="text-xs font-bold flex items-center gap-1.5 mb-1">
+                        <Globe className={`w-3.5 h-3.5 ${editVisibility === 'public' ? 'text-sky-400' : 'text-white/50'}`} />
                         <span>Herkese Açık</span>
                       </div>
+                      <p className="text-[11px] text-white/50">
+                        Topluluk listeler sayfasında ve profilinizde herkes görebilir.
+                      </p>
                     </button>
 
                     <button
                       type="button"
-                      onClick={() => setEditVisibility('private')}
-                      className={`p-3 rounded-2xl border text-left transition-all ${
+                      onClick={() => {
+                        triggerSound?.('click');
+                        setEditVisibility('private');
+                      }}
+                      className={`p-3.5 rounded-2xl border text-left cursor-pointer transition-all ${
                         editVisibility === 'private'
-                          ? 'bg-sky-500/15 border-sky-400/50 text-white'
-                          : 'bg-white/[0.02] border-white/10 text-white/60'
+                          ? 'bg-amber-500/15 border-amber-400 text-white shadow-[0_0_18px_rgba(245,158,11,0.22)]'
+                          : 'bg-white/[0.04] border-white/10 text-white/60 hover:border-white/25 hover:text-white'
                       }`}
                     >
-                      <div className="text-xs font-bold flex items-center gap-1.5 mb-0.5">
-                        <Lock className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Gizli</span>
+                      <div className="text-xs font-bold flex items-center gap-1.5 mb-1">
+                        <Lock className={`w-3.5 h-3.5 ${editVisibility === 'private' ? 'text-amber-400' : 'text-white/50'}`} />
+                        <span>Gizli Liste</span>
                       </div>
+                      <p className="text-[11px] text-white/50">
+                        Yalnızca siz görebilir ve yönetebilirsiniz.
+                      </p>
                     </button>
                   </div>
                 </div>
 
-                <div className="pt-2 flex justify-end gap-2.5">
+                <div className="pt-2 flex justify-end gap-3">
                   <button
                     type="button"
                     onClick={() => setIsEditModalOpen(false)}
-                    className="px-4 py-2 rounded-full text-xs text-white/60"
+                    className="px-5 py-2.5 rounded-full glass-pill text-xs text-white/80 hover:text-white font-medium cursor-pointer transition-all"
                   >
                     Vazgeç
                   </button>
                   <button
                     type="submit"
-                    className="px-6 py-2 rounded-full bg-white text-black font-bold text-xs"
+                    className="px-6 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 cursor-pointer shadow-lg transition-all"
                   >
                     Kaydet
                   </button>
                 </div>
               </form>
             </motion.div>
-          </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

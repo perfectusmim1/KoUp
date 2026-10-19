@@ -41,19 +41,41 @@ function CountryFlag({
     normalizedCode = 'TH';
   } else if (raw.includes('TAIW') || raw.includes('TAYV')) {
     normalizedCode = 'TW';
+  } else if (raw.includes('POLON') || raw.includes('POLAND')) {
+    normalizedCode = 'PL';
+  } else if (raw.includes('FRANS') || raw.includes('FRANCE')) {
+    normalizedCode = 'FR';
+  } else if (raw.includes('ALMAN') || raw.includes('GERMAN')) {
+    normalizedCode = 'DE';
+  } else if (raw.includes('ISPAN') || raw.includes('İSPAN') || raw.includes('SPAIN')) {
+    normalizedCode = 'ES';
+  } else if (raw.includes('ITAL') || raw.includes('İTAL')) {
+    normalizedCode = 'IT';
+  } else if (raw.includes('HIND') || raw.includes('HİND') || raw.includes('INDIA')) {
+    normalizedCode = 'IN';
+  } else if (raw.includes('IRAN') || raw.includes('İRAN')) {
+    normalizedCode = 'IR';
+  } else if (raw.includes('RUS')) {
+    normalizedCode = 'RU';
+  } else if (raw.includes('KANAD') || raw.includes('CANAD')) {
+    normalizedCode = 'CA';
   } else if (raw.includes('ABD') || raw.includes('USA') || raw.includes('AMERICA')) {
     normalizedCode = 'US';
   } else if (raw.includes('TURK') || raw.includes('TÜRK')) {
     normalizedCode = 'TR';
-  } else if (raw.includes('UK') || raw.includes('BRIT') || raw.includes('INGIL')) {
+  } else if (raw.includes('UK') || raw.includes('BRIT') || raw.includes('INGIL') || raw.includes('İNGİL')) {
     normalizedCode = 'GB';
   } else if (raw.includes('HONG')) {
     normalizedCode = 'HK';
-  } else if (raw.includes('PHILIP') || raw.includes('FILIP')) {
+  } else if (raw.includes('PHILIP') || raw.includes('FILIP') || raw.includes('FİLİP')) {
     normalizedCode = 'PH';
   }
 
-  const src = FLAG_MAP[normalizedCode];
+  const src =
+    FLAG_MAP[normalizedCode] ||
+    (/^[A-Z]{2}$/.test(normalizedCode) && normalizedCode !== 'GL'
+      ? `https://flagcdn.com/${normalizedCode.toLowerCase()}.svg`
+      : null);
   if (!src) return null;
 
   const sizeClasses = {

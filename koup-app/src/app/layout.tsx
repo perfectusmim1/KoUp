@@ -4,6 +4,7 @@ import './globals.css';
 import { KoUpProvider } from '@/context/KoUpContext';
 import Navbar from '@/components/Navbar';
 import CookieConsentBanner from '@/components/CookieConsentBanner';
+import ScrollRestoration from '@/components/ScrollRestoration';
 import Link from 'next/link';
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -58,14 +59,21 @@ export default function RootLayout({
   return (
     <html
       lang="tr"
-      data-scroll-behavior="smooth"
       className={`dark ${plusJakartaSans.variable} ${jetbrainsMono.variable}`}
       suppressHydrationWarning
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `if(typeof window!=='undefined'&&'scrollRestoration' in history){history.scrollRestoration='manual';}`,
+          }}
+        />
+      </head>
       <body
-        className={`${plusJakartaSans.className} bg-[#080808] text-[#F4F4F6] min-h-screen flex flex-col selection:bg-white selection:text-black antialiased overflow-x-hidden w-full max-w-full`}
+        className={`${plusJakartaSans.className} bg-[#080808] text-[#F4F4F6] min-h-screen flex flex-col selection:bg-white selection:text-black antialiased w-full max-w-full`}
       >
         <KoUpProvider>
+          <ScrollRestoration />
           <Navbar />
           <main className="flex-1 w-full max-w-full overflow-x-hidden">{children}</main>
           <footer className="mt-24 border-t border-white/[0.06] bg-[#080808] py-12 px-4 sm:px-6 lg:px-14 w-full max-w-full overflow-x-hidden">

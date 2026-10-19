@@ -13,6 +13,13 @@ import requests
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from scrapers.multisite import clean_scraped_slug
+from scrapers.translator import COUNTRY_CODE_TO_NAME
+
 SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "https://aocvcotmikzlwbaezdpl.supabase.co")
 SUPABASE_KEY = os.environ.get(
     "NEXT_PUBLIC_SUPABASE_ANON_KEY",
@@ -30,7 +37,7 @@ def sync_hdfilm_media():
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT id, slug, title, native_title, cover_image, backdrop_image, release_year, overview, categories, tags, alt_sites, content_type
+        SELECT id, slug, title, native_title, cover_image, backdrop_image, release_year, overview, categories, tags, alt_sites, content_type, country, country_name
         FROM dramas
         WHERE alt_sites LIKE '%hdfilm%' OR source_url LIKE '%hdfilm%' OR id >= 31496
     """)
@@ -55,7 +62,7 @@ def sync_hdfilm_media():
 
     payload = []
     for d in to_sync:
-        did, slug, title, native_title, cover, backdrop, rel_year, overview, cats_raw, tags_raw, alts_raw, ctype = d
+        did, slug, title, native_title, cover, backdrop, rel_year, overview, cats_raw, tags_raw, alts_raw, ctype, country, country_name = d
         try:
             cats = json.loads(cats_raw or '[]')
         except:
@@ -79,15 +86,20 @@ def sync_hdfilm_media():
             year_val = 2022
 
         content_t = "film" if ctype in ("film", "movie") else "dizi"
-        clean_s = slug or f"film-{did}"
+        clean_s = clean_scraped_slug(slug) or f"film-{did}"
         search_txt = f"{title} {clean_s} {content_t} hdfilmcehennemi turkce dublaj altyazili izle 1080p"
+
+        c_code = (country or "").strip().upper()
+        if not c_code or c_code not in COUNTRY_CODE_TO_NAME:
+            c_code = "US"
+        c_name = COUNTRY_CODE_TO_NAME.get(c_code) or country_name or "ABD"
 
         payload.append({
             "id": did,
             "slug": clean_s,
             "content_type": content_t,
-            "country_code": "US",
-            "country_name": "Yabancı",
+            "country_code": c_code,
+            "country_name": c_name,
             "title": title,
             "title_tr": title,
             "title_en": native_title or title,

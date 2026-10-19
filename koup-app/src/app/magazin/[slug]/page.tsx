@@ -21,7 +21,7 @@ import {
 } from '@/lib/supabase';
 import RichCommentSection from '@/components/RichCommentSection';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
-import { cachedQuery } from '@/lib/cache';
+import { cachedQuery, invalidateCache } from '@/lib/cache';
 import { useKoUp } from '@/context/KoUpContext';
 
 function getMagCategoryColor(cat: string): string {
@@ -53,7 +53,14 @@ export default function MagazineArticlePage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = use(params);
-  const { user, openAuthModal, pushNotification, triggerSound } = useKoUp();
+  const {
+    user,
+    authLoading,
+    likedMagazinePostIds,
+    toggleMagazineLike,
+    openAuthModal,
+    triggerSound,
+  } = useKoUp();
 
   const [post, setPost] = useState<MagazinePost | null>(null);
   const [linkedMedia, setLinkedMedia] = useState<MediaItem[]>([]);
@@ -62,6 +69,15 @@ export default function MagazineArticlePage({
   const [liked, setLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLiking, setIsLiking] = useState(false);
+
+  // Derived like state with 0ms local hydration
+  const isCurrentlyLiked = Boolean(
+    post?.id && (likedMagazinePostIds.includes(post.id) || liked)
+  );
+
+  // Derived like count: mathematically guaranteed NEVER to show 0 when liked
+  const displayLikesCount = Math.max(isCurrentlyLiked ? 1 : 0, likesCount);
 
   useEffect(() => {
     async function loadArticle() {
@@ -122,16 +138,9 @@ export default function MagazineArticlePage({
         setPost(article);
         setLikesCount(article.likes_count || 0);
 
-        if (user?.id && article.id) {
-          void supabase
-            .from('magazine_likes')
-            .select('post_id')
-            .eq('user_id', user.id)
-            .eq('post_id', article.id)
-            .maybeSingle()
-            .then(({ data: lData }) => {
-              setLiked(Boolean(lData));
-            });
+        // Pre-fill like state if stored in context
+        if (likedMagazinePostIds.includes(article.id)) {
+          setLiked(true);
         }
 
         // Load linked media & people
@@ -182,6 +191,72 @@ export default function MagazineArticlePage({
 
     loadArticle();
   }, [slug]);
+
+  // Synchronize initial like state and total like count reactively from DB on mount / auth change
+  useEffect(() => {
+    if (!post?.id) return;
+
+    if (likedMagazinePostIds.includes(post.id)) {
+      setLiked(true);
+    }
+
+    let isMounted = true;
+
+    async function syncMagazineLikes() {
+      try {
+        // Fast path: Check atomic cached counter on magazine_posts row
+        const { data: dbPost } = await supabase
+          .from('magazine_posts')
+          .select('likes_count')
+          .eq('id', post!.id)
+          .maybeSingle();
+
+        let dbCount = typeof dbPost?.likes_count === 'number' ? dbPost.likes_count : 0;
+
+        if (dbCount === 0) {
+          // B-tree indexed count from magazine_likes (0.1ms via idx_magazine_likes_post_id)
+          const { count, error: countErr } = await supabase
+            .from('magazine_likes')
+            .select('*', { count: 'exact', head: true })
+            .eq('post_id', post!.id);
+
+          if (!countErr && typeof count === 'number') {
+            dbCount = count;
+          }
+        }
+
+        if (isMounted) {
+          setLikesCount((prev) => Math.max(dbCount, prev));
+        }
+
+        // Query if current authenticated user has liked this post
+        if (user?.id) {
+          const { data: likeRow } = await supabase
+            .from('magazine_likes')
+            .select('post_id')
+            .eq('user_id', user.id)
+            .eq('post_id', post!.id)
+            .maybeSingle();
+
+          if (isMounted && likeRow) {
+            setLiked(true);
+          }
+        } else if (!authLoading) {
+          if (isMounted) {
+            setLiked(false);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to sync magazine likes:', err);
+      }
+    }
+
+    syncMagazineLikes();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [post?.id, user?.id, authLoading]);
 
   if (isLoading) {
     return (
@@ -314,51 +389,42 @@ export default function MagazineArticlePage({
           </div>
 
           <button
+            type="button"
+            disabled={isLiking}
             onClick={async () => {
               if (!user) {
                 openAuthModal('Haberi beğenebilmek için lütfen giriş yapın.');
                 return;
               }
-              if (!post) return;
+              if (!post || isLiking) return;
+              setIsLiking(true);
               triggerSound('click');
 
-              const willLike = !liked;
+              const willLike = !isCurrentlyLiked;
               setLiked(willLike);
-              setLikesCount((prev) => (willLike ? prev + 1 : Math.max(0, prev - 1)));
-
-              pushNotification(
-                willLike ? 'Haber Beğenildi' : 'Beğeni Kaldırıldı',
-                willLike ? 'Bu haber beğenilerinize eklendi.' : 'Haber beğenilerinizden kaldırıldı.',
-                'info'
-              );
+              setLikesCount((prev) => (willLike ? Math.max(1, prev + 1) : Math.max(0, prev - 1)));
 
               try {
-                if (willLike) {
-                  await supabase
-                    .from('magazine_likes')
-                    .insert({ user_id: user.id, post_id: post.id });
+                const success = await toggleMagazineLike(post.id);
+                if (success !== willLike) {
+                  // Rollback if operation failed
+                  setLiked(!willLike);
+                  setLikesCount((prev) => (willLike ? Math.max(0, prev - 1) : prev + 1));
                 } else {
-                  await supabase
-                    .from('magazine_likes')
-                    .delete()
-                    .eq('user_id', user.id)
-                    .eq('post_id', post.id);
+                  invalidateCache(`magazin_post_${post.slug}`);
                 }
-              } catch (err) {
-                console.error('Failed to toggle magazine like:', err);
-                // Rollback on error
-                setLiked(!willLike);
-                setLikesCount((prev) => (willLike ? Math.max(0, prev - 1) : prev + 1));
+              } finally {
+                setIsLiking(false);
               }
             }}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold border transition-all cursor-pointer ${
-              liked
-                ? 'bg-pink-500 border-pink-300 text-white'
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold border transition-all cursor-pointer active:scale-95 ${
+              isCurrentlyLiked
+                ? 'bg-pink-500 border-pink-300 text-white shadow-[0_0_15px_rgba(236,72,153,0.35)]'
                 : 'apple-glass-pill text-white hover:bg-white/15'
-            }`}
+            } ${isLiking ? 'opacity-85 pointer-events-none' : ''}`}
           >
-            <Heart className={`w-4 h-4 ${liked ? 'fill-white' : ''}`} />
-            <span>Haberi Beğen ({likesCount})</span>
+            <Heart className={`w-4 h-4 ${isCurrentlyLiked ? 'fill-white' : ''}`} />
+            <span>Haberi Beğen ({displayLikesCount})</span>
           </button>
         </div>
       </article>

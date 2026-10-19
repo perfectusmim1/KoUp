@@ -12,6 +12,7 @@ import {
   Film,
   Users,
   CheckCircle2,
+  Check,
   Star,
   Plus,
   Eye,
@@ -27,7 +28,7 @@ import {
   ListPlus,
   X,
 } from 'lucide-react';
-import { motion, LayoutGroup } from 'motion/react';
+import { motion, LayoutGroup, AnimatePresence } from 'motion/react';
 import {
   supabase,
   MediaItem,
@@ -38,12 +39,16 @@ import {
   getCountryFlag,
   formatContentTypeTR,
   getNextEpisodeNumber,
+  getEpisodeProgress,
   cleanOverviewText,
   cleanMediaTitle,
   cleanEpisodeName,
   formatEpisodeTitle,
+  cleanScrapedSlug,
+  formatViewCount,
 } from '@/lib/supabase';
-import { cachedQuery, getMediaFromCache, getCache, registerMediaItem, setCache } from '@/lib/cache';
+import { trackMediaView } from '@/lib/viewTracker';
+import { cachedQuery, getMediaFromCache, getCache, registerMediaItem, setCache, invalidateCache, invalidateMediaCache, updateCachedMedia } from '@/lib/cache';
 import { recordTasteSignal, rankRelatedMedia } from '@/lib/tasteProfile';
 import { useKoUp } from '@/context/KoUpContext';
 import CountryFlag from '@/components/CountryFlag';
@@ -53,6 +58,7 @@ import { useDragScroll } from '@/hooks/useDragScroll';
 import CustomSelect from '@/components/CustomSelect';
 import AddToListModal from '@/components/AddToListModal';
 import AdminSeriesSync from '@/components/AdminSeriesSync';
+import { extractYouTubeId, buildModalTrailerEmbedUrl } from '@/lib/youtubeTrailer';
 
 export default function SeriesDetailPage({
   params,
@@ -65,6 +71,7 @@ export default function SeriesDetailPage({
 
   const {
     user,
+    authLoading,
     progressMap,
     followedMediaIds,
     setLibraryStatus,
@@ -75,6 +82,10 @@ export default function SeriesDetailPage({
     pushNotification,
     openAuthModal,
     isSoftBanned,
+    favPersonIds,
+    followedPersonIds,
+    togglePersonFavorite,
+    togglePersonFollow,
   } = useKoUp();
 
   // Initialize deterministically on both SSR and Client initial pass to prevent Hydration Mismatch!
@@ -88,12 +99,14 @@ export default function SeriesDetailPage({
   const [showAllEpisodes, setShowAllEpisodes] = useState(false);
   const [showAddToListModal, setShowAddToListModal] = useState(false);
   const [trailerYoutubeId, setTrailerYoutubeId] = useState<string | null>(null);
+  const [isTrailerSearching, setIsTrailerSearching] = useState(false);
   const [showTrailerModal, setShowTrailerModal] = useState(false);
   const [showRatingPicker, setShowRatingPicker] = useState(false);
   const [hoveredScore, setHoveredScore] = useState<number | null>(null);
   const ratingTriggerRef = useRef<HTMLDivElement>(null);
   const [ratingCoords, setRatingCoords] = useState<{ top: number; left: number } | null>(null);
   const relatedScrollRef = useDragScroll<HTMLDivElement>();
+  const hasAutoEnrichedRef = useRef<Set<number>>(new Set());
 
   const [showSeriesReport, setShowSeriesReport] = useState(false);
   const [seriesReportCategory, setSeriesReportCategory] = useState('Eksik Bölümler Var');
@@ -165,6 +178,10 @@ export default function SeriesDetailPage({
 
     if (cachedMedia) {
       setMedia(cachedMedia);
+      if (cachedMedia.trailer_url) {
+        const yt = extractYouTubeId(cachedMedia.trailer_url);
+        if (yt) setTrailerYoutubeId(yt);
+      }
       setIsLoading(false);
       if (cachedEpisodes.length > 0) {
         setEpisodes(cachedEpisodes);
@@ -182,12 +199,46 @@ export default function SeriesDetailPage({
         const mediaWithCastPromise = cachedQuery<{
           media: MediaItem | null;
           cast: CastMember[];
-        }>(`media_detail_${decodedSlug}`, 300_000, async () => {
+        }>(`media_detail_${decodedSlug}`, 30_000, async () => {
           let { data: mData } = await supabase
             .from('media')
             .select('*')
             .eq('slug', decodedSlug)
             .single();
+
+          if (!mData) {
+            const cleanedSlug = cleanScrapedSlug(decodedSlug);
+            if (cleanedSlug && cleanedSlug !== decodedSlug) {
+              const { data: cleanRow } = await supabase
+                .from('media')
+                .select('*')
+                .eq('slug', cleanedSlug)
+                .maybeSingle();
+              mData = cleanRow;
+
+              if (!mData) {
+                const { data: prefixRows } = await supabase
+                  .from('media')
+                  .select('*')
+                  .ilike('slug', `${cleanedSlug}%`)
+                  .limit(1);
+                if (prefixRows && prefixRows[0]) {
+                  mData = prefixRows[0];
+                }
+              }
+            }
+          }
+
+          if (!mData) {
+            const { data: akaRows } = await supabase
+              .from('media')
+              .select('*')
+              .contains('aka_titles', [decodedSlug])
+              .limit(1);
+            if (akaRows && akaRows[0]) {
+              mData = akaRows[0];
+            }
+          }
 
           if (!mData) {
             const { data: fallbackRows } = await supabase
@@ -241,36 +292,30 @@ export default function SeriesDetailPage({
         }
 
         const item = mediaWithCast.media;
+        if (typeof window !== 'undefined' && item.slug && item.slug !== decodedSlug) {
+          window.history.replaceState(null, '', `/seri/${item.slug}${window.location.search}`);
+        }
         registerMediaItem(item, true);
         recordTasteSignal(item, 'view');
         setMedia(item);
+        if (item.trailer_url) {
+          const yt = extractYouTubeId(item.trailer_url);
+          if (yt) setTrailerYoutubeId(yt);
+        }
         setCast(mediaWithCast.cast);
         setIsLoading(false);
 
-        // Non-blocking view increment
-        supabase.rpc('increment_media_view', { p_media_id: item.id }).then(() => {});
-
-        // Non-blocking auto-enrich if metadata is incomplete, has dummy overview, or wrong country
-        const needsEnrich =
-          !item.overview ||
-          item.overview.length < 50 ||
-          item.overview.includes('üzerinden eklendi') ||
-          !item.cover_image ||
-          !item.backdrop_image ||
-          !item.release_year ||
-          (item.country_code === 'US' && (item.content_type === 'dizi' || (item.alt_sites && item.alt_sites.some((s) => s.includes('diziyou') || s.includes('asyadizi')))));
-
-        if (needsEnrich) {
-          fetch(`/api/media/auto-enrich?id=${item.id}`)
-            .then((res) => res.json())
-            .then((data) => {
-              if (data?.updatedMedia && !isCancelled) {
-                setMedia((prev) => (prev ? { ...prev, ...data.updatedMedia } : prev));
-                registerMediaItem({ ...item, ...data.updatedMedia }, true);
-              }
-            })
-            .catch(() => {});
-        }
+        // Non-blocking view increment with live state update
+        trackMediaView(item.id, 'detail', 1, 1, (res) => {
+          if (typeof res.views_total === 'number') {
+            setMedia((prev) =>
+              prev && prev.id === item.id
+                ? { ...prev, views_total: res.views_total! }
+                : prev
+            );
+            updateCachedMedia({ id: item.id, slug: item.slug, views_total: res.views_total });
+          }
+        });
 
         // Handle direct ?play=1 redirect
         if (searchParams.get('play')) {
@@ -343,9 +388,23 @@ export default function SeriesDetailPage({
         const [epsList, relList] = await Promise.all([actualEpisodesPromise, relatedPromise]);
         if (isCancelled) return;
 
-        setEpisodes(epsList);
-        if (epsList.length > 0) {
-          setSelectedSeason(epsList[0].season_number || 1);
+        let finalEps = epsList || [];
+        if (item.episode_count && finalEps.length < item.episode_count) {
+          try {
+            const freshRes = await fetch(`/api/sources/${item.id}?t=${Date.now()}`, { cache: 'no-store' });
+            if (freshRes.ok) {
+              const freshPayload = await freshRes.json();
+              if (freshPayload?.episodes && freshPayload.episodes.length > finalEps.length) {
+                finalEps = freshPayload.episodes;
+                setCache(`episodes_${item.id}`, finalEps, 300_000);
+              }
+            }
+          } catch {}
+        }
+
+        setEpisodes(finalEps);
+        if (finalEps.length > 0) {
+          setSelectedSeason(finalEps[0].season_number || 1);
         }
         setRelatedMedia(relList);
       } catch (err) {
@@ -413,22 +472,25 @@ export default function SeriesDetailPage({
     const needsImdbRating = !(media.imdb_rating || (media as any).imdb_score || media.vote_average);
     const hasCorruptedImdb = !!media.imdb_id && !/^tt\d+$/.test(media.imdb_id);
 
-    // 1. Resolve official trailer & high-res TMDB poster/backdrop & live rating
+    // 1. Resolve official trailer & backdrop & live rating (never overwrite cover_image!)
+    setIsTrailerSearching(true);
+    const yrParam = media.release_year ? `&year=${media.release_year}` : '';
+    const ntParam = media.native_title ? `&nativeTitle=${encodeURIComponent(media.native_title)}` : '';
+    const ctParam = media.content_type ? `&contentType=${encodeURIComponent(media.content_type)}` : '';
     fetch(
-      `/api/media/trailer?id=${media.id}&slug=${encodeURIComponent(media.slug)}&title=${encodeURIComponent(media.title)}`
+      `/api/media/trailer?id=${media.id}&slug=${encodeURIComponent(media.slug)}&title=${encodeURIComponent(media.title)}${yrParam}${ntParam}${ctParam}`
     )
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
+        setIsTrailerSearching(false);
         if (d?.youtubeId) {
           setTrailerYoutubeId(d.youtubeId);
         }
-        if (d?.posterUrl || d?.backdropUrl || d?.imdbRating || d?.imdbId) {
+        if (d?.backdropUrl || d?.imdbRating || d?.imdbId) {
           setMedia((prev) => {
             if (!prev) return prev;
             const updated = {
               ...prev,
-              cover_image:
-                d.posterUrl && isScrapedCover ? d.posterUrl : prev.cover_image,
               backdrop_image: d.backdropUrl || prev.backdrop_image,
               imdb_id: d.imdbId && /^tt\d+$/.test(d.imdbId) ? d.imdbId : prev.imdb_id,
               imdb_rating: d.imdbRating || prev.imdb_rating,
@@ -440,8 +502,12 @@ export default function SeriesDetailPage({
       })
       .catch(() => {});
 
-    // 2. Enrich overview & ratings if needed
-    if (needsOverview || needsImages || needsMatching || needsImdbRating || hasCorruptedImdb) {
+    // 2. Enrich overview & ratings if needed (deduplicated: runs only once per media id)
+    if (
+      !hasAutoEnrichedRef.current.has(media.id) &&
+      (needsOverview || needsImages || needsMatching || needsImdbRating || hasCorruptedImdb)
+    ) {
+      hasAutoEnrichedRef.current.add(media.id);
       fetch(`/api/media/auto-enrich?id=${media.id}&slug=${encodeURIComponent(media.slug)}`)
         .then((r) => r.json())
         .then((res) => {
@@ -507,17 +573,19 @@ export default function SeriesDetailPage({
     );
   }
 
-  const userProg = user ? progressMap[media.id] : undefined;
-  const isFavorited = Boolean(user && (userProg?.is_favorite || userProg?.is_favorited));
-  const isFollowed = Boolean(user && followedMediaIds.includes(media.id));
+  const isUserActive = Boolean(user || authLoading);
+  const isFilm = media.content_type === 'film' || media.content_type === 'movie';
+  const userProg = isUserActive ? progressMap[media.id] : undefined;
+  const isFavorited = Boolean(isUserActive && (userProg?.is_favorite || userProg?.is_favorited));
+  const isFollowed = Boolean(isUserActive && followedMediaIds.includes(media.id));
   const totalEpCount = Math.max(media.episode_count || 0, episodes.length, 1);
-  const resumeEp = user ? getNextEpisodeNumber(userProg, totalEpCount) : 1;
-  const resumeSeason = (user && userProg?.last_season_num) || 1;
+  const resumeEp = isUserActive ? getNextEpisodeNumber(userProg, totalEpCount) : 1;
+  const resumeSeason = (isUserActive && userProg?.last_season_num) || 1;
   const watchedEpCount = Array.isArray(userProg?.watched_episodes)
     ? userProg.watched_episodes.length
     : 0;
   const hasResumeProgress = Boolean(
-    user &&
+    isUserActive &&
       (watchedEpCount > 0 ||
         (userProg?.last_episode_num && userProg.last_episode_num > 1) ||
         userProg?.status === 'watching')
@@ -573,16 +641,31 @@ export default function SeriesDetailPage({
   const handleAdminSyncComplete = async () => {
     if (!media) return;
     try {
-      const { data: freshEpisodes } = await supabase
-        .from('episodes')
-        .select('*, sources:episode_sources(*)')
-        .eq('drama_id', media.id)
-        .order('season_number', { ascending: true })
-        .order('episode_number', { ascending: true });
+      // 1. Invalidate local memory and persistent storage caches
+      invalidateCache(`episodes_${media.id}`);
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem(`koup_cache_v5_episodes_${media.id}`);
+          localStorage.removeItem(`koup_cache_episodes_${media.id}`);
+        } catch {}
+      }
 
-      if (freshEpisodes && freshEpisodes.length > 0) {
-        setEpisodes(freshEpisodes as unknown as EpisodeData[]);
-        setCache(`episodes_${media.id}`, freshEpisodes, 3600);
+      // 2. Fetch fresh sources bypassing all browser & edge caches
+      const res = await fetch(`/api/sources/${media.id}?t=${Date.now()}`, {
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        const payload = await res.json();
+        if (payload?.episodes && Array.isArray(payload.episodes) && payload.episodes.length > 0) {
+          setEpisodes(payload.episodes as unknown as EpisodeData[]);
+          setMedia((prev) => (prev ? { ...prev, episode_count: payload.episodes.length } : prev));
+          setCache(`episodes_${media.id}`, payload.episodes, 300_000);
+          pushNotification(
+            'Bölümler Güncellendi',
+            `${payload.episodes.length} bölüm başarıyla senkronize edildi.`,
+            'info'
+          );
+        }
       }
     } catch (e) {
       console.error('Error refreshing episodes after sync:', e);
@@ -599,7 +682,12 @@ export default function SeriesDetailPage({
     media.cover_image,
     media.poster_fallback_url || null,
     media.title,
-    'w500'
+    'w500',
+    'poster',
+    media.tmdb_id,
+    media.content_type === 'film' ? 'movie' : 'tv',
+    media.release_year,
+    media.native_title
   );
 
   return (
@@ -620,21 +708,26 @@ export default function SeriesDetailPage({
         {/* Hero Meta Info */}
         <div className="relative z-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full flex flex-col md:flex-row items-center md:items-start gap-6 sm:gap-8 lg:gap-10 text-center md:text-left">
           {/* Vertical Poster with Glass Glow - Strict 2:3 Cinema Aspect Ratio (Grand & prominent) */}
-          <div className="relative w-52 sm:w-64 md:w-72 lg:w-80 shrink-0 aspect-[2/3] rounded-2xl sm:rounded-3xl overflow-hidden shadow-[0_30px_70px_rgba(0,0,0,0.95)] border border-white/20 bg-[#121216] self-center md:self-start md:sticky md:top-28">
+          <div
+            key={posterSrc}
+            className="relative w-52 sm:w-64 md:w-72 lg:w-80 shrink-0 aspect-[2/3] rounded-2xl sm:rounded-3xl overflow-hidden shadow-[0_30px_70px_rgba(0,0,0,0.95)] border border-white/20 bg-[#121216] self-center md:self-start md:sticky md:top-28"
+          >
             {/* Ambient Blurred Fill for non-standard image aspect ratios */}
             <img
+              key={`blur-${posterSrc}`}
               src={posterSrc}
               alt=""
               aria-hidden="true"
-              className="absolute inset-0 w-full h-full object-cover scale-125 blur-lg opacity-40 brightness-75 pointer-events-none"
+              className="absolute inset-0 w-full h-full object-cover scale-125 blur-lg opacity-40 brightness-75 pointer-events-none transition-opacity duration-300"
             />
             <img
+              key={`main-${posterSrc}`}
               src={posterSrc}
               alt={media.title}
               loading="eager"
               fetchPriority="high"
               decoding="async"
-              className="relative z-10 w-full h-full object-cover object-top"
+              className="relative z-10 w-full h-full object-cover object-top transition-opacity duration-300"
             />
           </div>
 
@@ -672,11 +765,31 @@ export default function SeriesDetailPage({
                   </span>
                 )}
 
-                {media.episode_count > 0 && (
-                  <span className="px-3 py-1 rounded-full bg-white/[0.06] border border-white/10 text-xs font-mono text-white/75">
-                    {media.episode_count} Bölüm
-                  </span>
+                {isFilm ? (
+                  media.duration_minutes > 0 ? (
+                    <span className="px-3 py-1 rounded-full bg-white/[0.06] border border-white/10 text-xs font-mono text-white/75">
+                      {media.duration_minutes} Dk
+                    </span>
+                  ) : (
+                    <span className="px-3 py-1 rounded-full bg-white/[0.06] border border-white/10 text-xs font-mono text-white/75">
+                      Film
+                    </span>
+                  )
+                ) : (
+                  media.episode_count > 0 && (
+                    <span className="px-3 py-1 rounded-full bg-white/[0.06] border border-white/10 text-xs font-mono text-white/75">
+                      {media.episode_count} Bölüm
+                    </span>
+                  )
                 )}
+
+                <span
+                  className="px-3 py-1 rounded-full bg-sky-500/10 border border-sky-400/25 text-xs font-mono text-sky-300 inline-flex items-center gap-1.5"
+                  title="Toplam Görüntülenme (Seri Sayfası + Bölümler)"
+                >
+                  <Eye className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <span>{formatViewCount(media.views_total ?? media.views_count ?? 0)} Görüntülenme</span>
+                </span>
               </div>
 
               {/* Title */}
@@ -695,20 +808,35 @@ export default function SeriesDetailPage({
 
               {/* Ratings Bar */}
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 pt-0.5">
-                {media.site_rating && Number(media.site_rating) > 0 && media.site_rating_count && Number(media.site_rating_count) > 0 ? (
-                  <div className="px-3.5 py-1 rounded-full bg-sky-500/20 border border-sky-400/40 text-xs font-mono text-sky-300 font-bold inline-flex items-center gap-1.5 shadow-[0_0_14px_rgba(56,189,248,0.25)]">
-                    <Star className="w-3.5 h-3.5 fill-sky-400 text-sky-400" />
-                    <span>KoUp {Number(media.site_rating).toFixed(1)}</span>
-                    <span className="text-[11px] text-sky-300/70 font-normal">({media.site_rating_count} oy)</span>
-                  </div>
-                ) : (
-                  <div className="px-3 py-1 rounded-full bg-white/[0.05] border border-white/10 text-xs font-mono text-white/50 inline-flex items-center gap-1.5" title="Henüz kullanıcı puanı yok. İlk puanı vererek katkıda bulun!">
-                    <Star className="w-3.5 h-3.5 text-white/30" />
-                    <span>KoUp Puanı: —</span>
-                  </div>
-                )}
+                {(() => {
+                  const rawSiteRating = Number(media.site_rating || 0);
+                  const rawSiteCount = Number(media.site_rating_count || 0);
+                  const userScore = userProg?.user_score ? Number(userProg.user_score) : null;
 
-                {media.mdl_rating || media.mdl_id ? (
+                  const hasRatings = rawSiteCount > 0 || (userScore !== null && userScore > 0);
+                  const displayRating = rawSiteCount > 0 ? rawSiteRating : (userScore ?? 0);
+                  const displayCount = rawSiteCount > 0 ? rawSiteCount : (userScore !== null ? 1 : 0);
+
+                  if (hasRatings) {
+                    return (
+                      <div className="px-3.5 py-1 rounded-full bg-sky-500/20 border border-sky-400/40 text-xs font-mono text-sky-300 font-bold inline-flex items-center gap-1.5 shadow-[0_0_14px_rgba(56,189,248,0.25)]">
+                        <Star className="w-3.5 h-3.5 fill-sky-400 text-sky-400" />
+                        <span>KoUp {Number(displayRating).toFixed(1)}</span>
+                        <span className="text-[11px] text-sky-300/70 font-normal">({displayCount} oy)</span>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="px-3 py-1 rounded-full bg-white/[0.05] border border-white/10 text-xs font-mono text-white/50 inline-flex items-center gap-1.5" title="Henüz kullanıcı puanı yok. İlk puanı vererek katkıda bulun!">
+                      <Star className="w-3.5 h-3.5 text-white/30" />
+                      <span>KoUp Puanı: —</span>
+                    </div>
+                  );
+                })()}
+
+                {(media.mdl_id || media.mydramalist_url) &&
+                (!media.country_code || ['KR', 'CN', 'JP', 'TW', 'HK', 'TH', 'PH', 'VN', 'SG', 'MY', 'ID', 'IN', 'MM', 'KH', 'LA', 'MN', 'MO'].includes(media.country_code.toUpperCase())) ? (
                   <a
                     href={media.mydramalist_url || (media.mdl_id ? `https://mydramalist.com/${media.mdl_id}` : '#')}
                     target="_blank"
@@ -798,7 +926,7 @@ export default function SeriesDetailPage({
             <div className="pt-4 md:pt-4 overflow-visible">
               <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 w-full py-3 relative z-20 overflow-visible">
               {/* Primary Watch & Trailer Button Pair (Full-width row on mobile, compact on desktop) */}
-              <div className="w-full sm:w-auto flex items-center gap-2 sm:gap-2.5">
+              <div className="w-full sm:w-auto flex items-center gap-2 sm:gap-2.5 relative z-30">
                 {/* Primary Watch Button */}
                 <Link
                   href={`/seri/${media.slug}/${resumeEp}?season=${resumeSeason}`}
@@ -807,8 +935,8 @@ export default function SeriesDetailPage({
                   <Play className="w-4 h-4 fill-white shrink-0" />
                   <span className="truncate">
                     {hasResumeProgress
-                      ? `${resumeEp}. Bölümden Devam Et`
-                      : '1. Bölümü İzle'}
+                      ? (isFilm ? 'Filme Devam Et' : `${resumeEp}. Bölümden Devam Et`)
+                      : (isFilm ? 'Filmi İzle' : '1. Bölümü İzle')}
                   </span>
                 </Link>
 
@@ -821,6 +949,16 @@ export default function SeriesDetailPage({
                   <Film className="w-4 h-4 text-sky-400 shrink-0" />
                   <span className="truncate">Fragmanı İzle</span>
                 </button>
+
+                {/* Admin Sync Button for Films */}
+                {user?.role === 'admin' && isFilm && (
+                  <AdminSeriesSync
+                    dramaId={media.id}
+                    dramaTitle={media.title}
+                    dramaSlug={media.slug}
+                    onSyncComplete={handleAdminSyncComplete}
+                  />
+                )}
               </div>
 
               {/* + Kütüphaneme Ekle Dropdown (Full-width row on mobile, compact on desktop) */}
@@ -909,7 +1047,7 @@ export default function SeriesDetailPage({
                 }}
                 className={`col-span-1 sm:w-auto shrink-0 whitespace-nowrap w-full flex items-center justify-center gap-1.5 px-3.5 sm:px-4 py-2.5 rounded-full text-xs font-semibold border transition-all cursor-pointer active:scale-[0.98] transform-gpu backface-hidden ${
                   isFavorited
-                    ? 'bg-rose-500/20 border-rose-400 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.3)]'
+                    ? 'bg-rose-500/20 hover:bg-rose-500/35 border-rose-400 hover:border-rose-300 text-rose-300 hover:text-rose-200 shadow-[0_0_15px_rgba(244,63,94,0.3)] hover:shadow-[0_0_24px_rgba(244,63,94,0.55)]'
                     : 'apple-glass-pill text-white hover:bg-white/15'
                 }`}
               >
@@ -932,7 +1070,7 @@ export default function SeriesDetailPage({
                   }}
                   className={`whitespace-nowrap w-full flex items-center justify-center gap-1.5 px-3.5 sm:px-4 py-2.5 rounded-full text-xs font-semibold border transition-all cursor-pointer active:scale-[0.98] transform-gpu backface-hidden ${
                     userProg?.user_score
-                      ? 'bg-amber-400/20 border-amber-400 text-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.3)]'
+                      ? 'bg-amber-400/20 hover:bg-amber-400/35 border-amber-400 hover:border-amber-300 text-amber-300 hover:text-amber-200 shadow-[0_0_15px_rgba(251,191,36,0.3)] hover:shadow-[0_0_24px_rgba(251,191,36,0.55)]'
                       : 'apple-glass-pill text-white hover:bg-white/15'
                   }`}
                 >
@@ -988,17 +1126,22 @@ export default function SeriesDetailPage({
                                     newRating = ((curRating * curCount) + starVal) / newCount;
                                   }
 
-                                  setMedia((prev) =>
-                                    prev
-                                      ? {
-                                          ...prev,
-                                          site_rating: Number(newRating.toFixed(1)),
-                                          site_rating_count: newCount,
-                                        }
-                                      : prev
-                                  );
+                                  const updatedMedia: MediaItem = {
+                                    ...media,
+                                    site_rating: Number(newRating.toFixed(1)),
+                                    site_rating_count: newCount,
+                                  };
 
-                                  setMediaScore(media, starVal);
+                                  setMedia(updatedMedia);
+                                  registerMediaItem(updatedMedia, true);
+                                  updateCachedMedia(updatedMedia);
+                                  invalidateCache(`media_detail_${media.slug}`);
+                                  if (media.id) {
+                                    invalidateCache(`media_detail_${media.id}`);
+                                    invalidateCache(`media_${media.id}`);
+                                  }
+
+                                  setMediaScore(updatedMedia, starVal);
                                   setShowRatingPicker(false);
                                 }
                               }}
@@ -1028,17 +1171,22 @@ export default function SeriesDetailPage({
                               const newCount = Math.max(0, curCount - 1);
                               const newRating = newCount > 0 ? Math.max(0, (curRating * curCount - (oldScore || 0)) / newCount) : 0;
 
-                              setMedia((prev) =>
-                                prev
-                                  ? {
-                                      ...prev,
-                                      site_rating: Number(newRating.toFixed(1)),
-                                      site_rating_count: newCount,
-                                    }
-                                  : prev
-                              );
+                              const updatedMedia: MediaItem = {
+                                ...media,
+                                site_rating: newCount > 0 ? Number(newRating.toFixed(1)) : null as any,
+                                site_rating_count: newCount,
+                              };
 
-                              setMediaScore(media, null);
+                              setMedia(updatedMedia);
+                              registerMediaItem(updatedMedia, true);
+                              updateCachedMedia(updatedMedia);
+                              invalidateCache(`media_detail_${media.slug}`);
+                              if (media.id) {
+                                invalidateCache(`media_detail_${media.id}`);
+                                invalidateCache(`media_${media.id}`);
+                              }
+
+                              setMediaScore(updatedMedia, null);
                               setShowRatingPicker(false);
                             }
                           }}
@@ -1072,7 +1220,7 @@ export default function SeriesDetailPage({
                 }}
                 className={`col-span-1 sm:w-auto shrink-0 whitespace-nowrap w-full flex items-center justify-center gap-1.5 px-3.5 sm:px-4 py-2.5 rounded-full text-xs font-semibold border transition-all cursor-pointer active:scale-[0.98] transform-gpu backface-hidden ${
                   isFollowed
-                    ? 'bg-amber-400 text-black border-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.35)]'
+                    ? 'bg-amber-400 hover:bg-amber-300 text-black border-amber-300 hover:border-amber-200 shadow-[0_0_15px_rgba(251,191,36,0.35)] hover:shadow-[0_0_24px_rgba(251,191,36,0.6)]'
                     : 'apple-glass-pill text-white hover:bg-white/15'
                 }`}
               >
@@ -1140,40 +1288,26 @@ export default function SeriesDetailPage({
                 <Users className="w-5 h-5 text-sky-400" />
                 <span>Oyuncu Kadrosu & Karakterler ({cast.length})</span>
               </h2>
-              {cast.length > 6 ? (
-                <button
-                  type="button"
-                  onClick={() => setShowAllCast((v) => !v)}
-                  className="text-xs font-semibold text-sky-400 hover:text-sky-300 transition-colors flex items-center gap-1 cursor-pointer"
-                >
-                  <span>{showAllCast ? 'Daha Az Göster' : 'Tümünü Gör'}</span>
-                  {showAllCast ? (
-                    <ChevronUp className="w-3.5 h-3.5" />
-                  ) : (
-                    <ChevronDown className="w-3.5 h-3.5" />
-                  )}
-                </button>
-              ) : (
-                <span className="text-xs text-white/50">Profil ve filmografi için oyuncuya tıklayın</span>
-              )}
+              <span className="text-xs text-white/50">Profil ve filmografi için oyuncuya tıklayın</span>
             </div>
 
+            {/* Initial 6 Cast Members */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {(showAllCast ? cast : cast.slice(0, 6)).map((c) => {
+              {cast.slice(0, 6).map((c) => {
                 const p = c.people;
                 if (!p) return null;
                 return (
                   <Link
                     key={`${c.person_id}-${c.character_name || ''}`}
                     href={`/oyuncu/${p.slug}`}
-                    className="p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/20 transition-all flex flex-col items-center text-center group"
+                    className="p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/20 transition-all flex flex-col items-center text-center group relative cursor-pointer"
                   >
-                    <div className="w-20 h-20 rounded-full overflow-hidden border border-white/15 group-hover:border-sky-400/60 transition-all mb-3 shadow-md">
+                    <div className="w-20 h-20 rounded-full overflow-hidden border border-white/15 group-hover:border-white/30 transition-colors mb-3 shadow-md">
                       <img
                         src={getProxiedImageUrl(p.image_url, p.name, null, 'w500', 'person')}
                         alt={p.name}
                         loading="lazy"
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        className="w-full h-full object-cover"
                       />
                     </div>
                     <div className="text-xs font-bold text-white line-clamp-1 group-hover:text-sky-300 transition-colors">
@@ -1191,6 +1325,56 @@ export default function SeriesDetailPage({
                 );
               })}
             </div>
+
+            {/* Extra Cast Members with Fast Downward Animation */}
+            {cast.length > 6 && (
+              <AnimatePresence initial={false}>
+                {showAllCast && (
+                  <motion.div
+                    key="extra-cast"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                    className="overflow-hidden"
+                  >
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 pt-4">
+                      {cast.slice(6).map((c) => {
+                        const p = c.people;
+                        if (!p) return null;
+                        return (
+                          <Link
+                            key={`${c.person_id}-${c.character_name || ''}`}
+                            href={`/oyuncu/${p.slug}`}
+                            className="p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/20 transition-all flex flex-col items-center text-center group relative cursor-pointer"
+                          >
+                            <div className="w-20 h-20 rounded-full overflow-hidden border border-white/15 group-hover:border-white/30 transition-colors mb-3 shadow-md">
+                              <img
+                                src={getProxiedImageUrl(p.image_url, p.name, null, 'w500', 'person')}
+                                alt={p.name}
+                                loading="lazy"
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                            <div className="text-xs font-bold text-white line-clamp-1 group-hover:text-sky-300 transition-colors">
+                              {p.name}
+                            </div>
+                            {c.character_name && (
+                              <div className="text-[11px] text-white/50 line-clamp-1 mt-0.5">
+                                {c.character_name}
+                              </div>
+                            )}
+                            <span className="text-[9px] font-mono uppercase px-2 py-0.5 rounded bg-white/[0.06] text-white/60 mt-1.5">
+                              {c.role_type === 'lead' ? 'Başrol' : 'Kadro'}
+                            </span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            )}
 
             {cast.length > 6 && (
               <div className="flex justify-center mt-6 pt-2">
@@ -1215,11 +1399,12 @@ export default function SeriesDetailPage({
           </section>
         )}
 
-        {/* 4. FULL EPISODES GRID */}
-        <section className="p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08]">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        {/* 4. FULL EPISODES GRID (Only for series, not movies) */}
+        {!isFilm && (
+          <section className="p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08]">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div>
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3 relative z-30">
                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
                   <Film className="w-5 h-5 text-sky-400" />
                   <span>Bölüm Listesi ({seasonEpisodes.length} Bölüm)</span>
@@ -1277,21 +1462,6 @@ export default function SeriesDetailPage({
                   </div>
                 </LayoutGroup>
               )}
-
-              {seasonEpisodes.length > 4 && (
-                <button
-                  type="button"
-                  onClick={() => setShowAllEpisodes((v) => !v)}
-                  className="text-xs font-semibold text-sky-400 hover:text-sky-300 transition-colors flex items-center gap-1 cursor-pointer shrink-0"
-                >
-                  <span>{showAllEpisodes ? 'Daha Az Göster' : 'Tümünü Gör'}</span>
-                  {showAllEpisodes ? (
-                    <ChevronUp className="w-3.5 h-3.5" />
-                  ) : (
-                    <ChevronDown className="w-3.5 h-3.5" />
-                  )}
-                </button>
-              )}
             </div>
           </div>
 
@@ -1299,92 +1469,156 @@ export default function SeriesDetailPage({
             <div className="py-12 text-center text-sm text-white/45">
               Bu sezon için henüz bölüm yüklenmedi.
             </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
-                {(showAllEpisodes ? seasonEpisodes : seasonEpisodes.slice(0, 4)).map((ep) => {
-                  const isWatched = (userProg?.watched_episodes || []).includes(
-                    ep.episode_number
-                  );
-                  return (
+          ) : (() => {
+            const watchedSet = new Set(userProg?.watched_episodes || []);
+            const renderEpisodeCard = (ep: EpisodeData) => {
+              const epWatched = watchedSet.has(ep.episode_number);
+              const seasonNum = ep.season_number || selectedSeason || 1;
+              const epTitle = formatEpisodeTitle(
+                ep.episode_name,
+                seasonNum,
+                ep.episode_number
+              );
+              const epProg = getEpisodeProgress(
+                userProg,
+                media.id,
+                seasonNum,
+                ep.episode_number
+              );
+
+              return (
+                <div
+                  key={ep.id || `${seasonNum}-${ep.episode_number}`}
+                  onClick={() => {
+                    router.push(`/seri/${media.slug}/${ep.episode_number}?season=${seasonNum}`);
+                  }}
+                  aria-label={epTitle}
+                  title={`${epTitle}${epWatched ? ' (İzlendi)' : ''}`}
+                  style={{ contain: 'content' }}
+                  className={`p-3 sm:p-3.5 rounded-2xl border transition-colors duration-150 cursor-pointer flex items-center justify-between gap-3 group select-none ${
+                    epWatched
+                      ? 'bg-emerald-500/[0.05] hover:bg-emerald-500/[0.09] border-emerald-500/35 hover:border-emerald-400/65 shadow-[0_0_8px_rgba(16,185,129,0.12)] hover:shadow-[0_0_14px_rgba(16,185,129,0.22)]'
+                      : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/[0.06] hover:border-sky-400/60 hover:shadow-[0_0_12px_rgba(56,189,248,0.18)]'
+                  }`}
+                >
+                  {/* Left: Episode Number & Title/Progress */}
+                  <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
                     <div
-                      key={`${ep.season_number}-${ep.episode_number}`}
-                      className={`p-4 rounded-2xl border transition-all duration-300 flex items-center justify-between group shadow-md ${
-                        isWatched
-                          ? 'bg-emerald-500/[0.05] hover:bg-emerald-500/[0.09] border-emerald-500/35 hover:border-emerald-400/65 shadow-[0_0_14px_rgba(16,185,129,0.16)] hover:shadow-[0_0_22px_rgba(16,185,129,0.3)]'
-                          : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/[0.06] hover:border-sky-400/60 hover:shadow-[0_0_18px_rgba(56,189,248,0.22)]'
+                      className={`min-w-[38px] w-9.5 h-9.5 rounded-xl flex items-center justify-center font-mono font-bold text-xs shrink-0 border transition-colors ${
+                        epWatched
+                          ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                          : 'bg-white/10 border-white/10 text-white/90 group-hover:bg-[#2997ff] group-hover:border-sky-400 group-hover:text-white'
                       }`}
                     >
-                      <Link
-                        href={`/seri/${media.slug}/${ep.episode_number}?season=${ep.season_number || selectedSeason || 1}`}
-                        className="flex items-center gap-3 min-w-0 pr-2 flex-1 cursor-pointer"
-                      >
-                        <div
-                          className={`w-10 h-10 rounded-xl font-mono font-bold text-xs flex items-center justify-center shrink-0 border transition-colors ${
-                            isWatched
-                              ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
-                              : 'bg-white/10 border-white/10 text-white/90'
-                          }`}
-                        >
-                          {ep.episode_number}
-                        </div>
-                        <div className="min-w-0">
-                          <div
-                            className={`text-xs font-bold text-white transition-colors truncate ${
-                              isWatched ? 'group-hover:text-emerald-300' : 'group-hover:text-sky-300'
-                            }`}
-                          >
-                            {formatEpisodeTitle(
-                              ep.episode_name,
-                              ep.season_number || selectedSeason || 1,
-                              ep.episode_number
-                            )}
-                          </div>
-                          {isWatched && (
-                            <div className="text-[10px] font-mono mt-0.5">
-                              <span className="text-emerald-400 font-medium">İzlendi</span>
-                            </div>
-                          )}
-                        </div>
-                      </Link>
+                      {ep.episode_number}
+                    </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            if (!user) {
-                              openAuthModal('Bölümleri izlendi olarak işaretlemek için lütfen giriş yapın.');
-                              return;
-                            }
-                            toggleEpisodeWatched(media, ep.episode_number);
-                          }}
-                          aria-label={isWatched ? 'İzlendi işaretini kaldır' : 'İzlendi olarak işaretle'}
-                          className={`w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer border ${
-                            isWatched
-                              ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-400 hover:bg-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
-                              : 'bg-white/[0.05] border-white/10 text-white/40 hover:text-white hover:border-white/30'
-                          }`}
+                    <div className="min-w-0">
+                      <div
+                        className={`text-xs font-bold truncate transition-colors ${
+                          epWatched
+                            ? 'text-white group-hover:text-emerald-300'
+                            : 'text-white group-hover:text-sky-200'
+                        }`}
+                      >
+                        {epTitle}
+                      </div>
+                      <div className="mt-0.5 flex items-center flex-wrap gap-2 text-[10px] font-mono">
+                        <span
+                          className="inline-flex items-center gap-1 text-white/50"
+                          title="Bölüm Görüntülenme Sayısı"
                         >
-                          <CheckCircle2 className="w-4 h-4" />
-                        </button>
-                        <Link
-                          href={`/seri/${media.slug}/${ep.episode_number}?season=${ep.season_number || selectedSeason || 1}`}
-                          className={`w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer ${
-                            isWatched
-                              ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 group-hover:bg-emerald-500 group-hover:text-white group-hover:border-emerald-400 shadow-sm'
-                              : 'bg-white/10 text-white group-hover:bg-[#2997ff] group-hover:text-white'
-                          }`}
-                          aria-label={`${ep.episode_number}. Bölümü İzle`}
-                        >
-                          <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
-                        </Link>
+                          <Eye className="w-3 h-3 text-sky-400/80 shrink-0" />
+                          <span>{formatViewCount(ep.views_count || 0)}</span>
+                        </span>
+
+                        {epWatched ? (
+                          <span className="text-emerald-400 font-medium">
+                            • İzlendi
+                          </span>
+                        ) : epProg.position > 15 ? (
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-12 h-1 bg-white/20 rounded-full overflow-hidden">
+                              <div
+                                style={{ width: `${epProg.percent}%` }}
+                                className="h-full bg-[#E50914]"
+                              />
+                            </div>
+                            <span className="text-[9px] font-mono text-white/50">
+                              {epProg.remainingMinutes} dk kaldı
+                            </span>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+
+                  {/* Right: Custom High-Performance Watched Toggle Switch */}
+                  <div
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!user) {
+                        openAuthModal('Bölümleri izlendi olarak işaretlemek için lütfen giriş yapın.');
+                        return;
+                      }
+                      toggleEpisodeWatched(media, ep.episode_number);
+                    }}
+                    aria-label={
+                      epWatched
+                        ? 'İzlendi (Kaldırmak için tıkla)'
+                        : 'İzlendi olarak işaretle'
+                    }
+                    className="shrink-0 flex items-center ml-auto"
+                  >
+                    <div
+                      className={`relative w-11 h-6 rounded-full transition-colors duration-150 cursor-pointer flex items-center px-0.5 border ${
+                        epWatched
+                          ? 'bg-emerald-500 border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.5)]'
+                          : 'bg-white/10 border-white/20 hover:border-white/40'
+                      }`}
+                    >
+                      <div
+                        className={`w-5 h-5 rounded-full bg-white shadow-md flex items-center justify-center transition-transform duration-200 transform-gpu ${
+                          epWatched ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      >
+                        {epWatched ? (
+                          <Check className="w-2.5 h-2.5 text-emerald-600 stroke-[3]" />
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            };
+
+            return (
+              <>
+                {/* Initial 4 Episodes */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
+                  {seasonEpisodes.slice(0, 4).map(renderEpisodeCard)}
+                </div>
+
+                {/* Extra Episodes with Fast Downward Animation */}
+                {seasonEpisodes.length > 4 && (
+                  <AnimatePresence initial={false}>
+                    {showAllEpisodes && (
+                      <motion.div
+                        key={`extra-episodes-${selectedSeason}`}
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                        className="overflow-hidden"
+                      >
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 pt-3.5">
+                          {seasonEpisodes.slice(4).map(renderEpisodeCard)}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                )}
 
               {seasonEpisodes.length > 4 && (
                 <div className="flex justify-center mt-6 pt-2">
@@ -1407,8 +1641,10 @@ export default function SeriesDetailPage({
                 </div>
               )}
             </>
-          )}
+            );
+          })()}
         </section>
+        )}
 
         {/* 5. RELATED RECOMMENDATIONS */}
         {relatedMedia.length > 0 && (
@@ -1486,147 +1722,184 @@ export default function SeriesDetailPage({
       />
 
       {/* Official Native YouTube Cinema Trailer Modal */}
-      {showTrailerModal && (
-        <div
-          className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center p-3 sm:p-6 md:p-8 animate-in fade-in duration-200"
-          onClick={() => setShowTrailerModal(false)}
-        >
-          {/* Top Bar with Title and Close Button */}
-          <div
-            className="w-full max-w-5xl flex items-center justify-between pb-3 text-white"
-            onClick={(e) => e.stopPropagation()}
+      <AnimatePresence>
+        {showTrailerModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center p-3 sm:p-6 md:p-8 pointer-events-auto"
+            onClick={() => setShowTrailerModal(false)}
           >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <span className="px-2 py-0.5 rounded bg-[#E50914] text-white font-black text-[10px] tracking-wider uppercase shrink-0">
-                FRAGMAN
-              </span>
-              <h3 className="text-sm sm:text-base font-bold truncate text-white/90">
-                {cleanMediaTitle(media.title)}
-              </h3>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowTrailerModal(false)}
-              aria-label="Fragmanı Kapat"
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-all cursor-pointer border border-white/15 hover:scale-105 active:scale-95"
+            {/* Top Bar with Title and Close Button */}
+            <div
+              className="w-full max-w-5xl flex items-center justify-between pb-3 text-white"
+              onClick={(e) => e.stopPropagation()}
             >
-              <X className="w-4 h-4" />
-              <span>Kapat (Esc)</span>
-            </button>
-          </div>
-
-          {/* 16:9 Official YouTube Player Viewport */}
-          <div
-            className="relative w-full max-w-5xl aspect-video bg-black rounded-2xl sm:rounded-3xl border border-white/15 overflow-hidden shadow-[0_25px_70px_rgba(0,0,0,0.95)]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {trailerYoutubeId ? (
-              <iframe
-                src={`https://www.youtube-nocookie.com/embed/${trailerYoutubeId}?autoplay=1&rel=0&playsinline=1`}
-                title={`${cleanMediaTitle(media.title)} Fragman`}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                allowFullScreen
-                className="w-full h-full border-0"
-              />
-            ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-white/70">
-                <div className="w-10 h-10 rounded-full border-4 border-white/20 border-t-[#E50914] animate-spin" />
-                <span className="text-xs font-medium">Fragman aranıyor...</span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Series Issue Report Floating Modal */}
-      {showSeriesReport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="relative w-full max-w-md bg-[#0e0e14] border border-white/15 rounded-3xl p-6 shadow-2xl space-y-4">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-white/10">
-              <div className="flex items-center gap-2 text-amber-400">
-                <AlertTriangle className="w-5 h-5" />
-                <h3 className="font-bold text-white text-base">Seri Sorunu Bildir</h3>
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="px-2 py-0.5 rounded bg-[#E50914] text-white font-black text-[10px] tracking-wider uppercase shrink-0">
+                  FRAGMAN
+                </span>
+                <h3 className="text-sm sm:text-base font-bold truncate text-white/90">
+                  {cleanMediaTitle(media.title)}
+                </h3>
               </div>
               <button
                 type="button"
-                onClick={() => setShowSeriesReport(false)}
-                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 text-white/60 hover:text-white flex items-center justify-center transition-all cursor-pointer"
+                onClick={() => setShowTrailerModal(false)}
+                aria-label="Fragmanı Kapat"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/25 text-white font-bold text-xs transition-all cursor-pointer border border-white/15 hover:border-white/40 hover:shadow-[0_0_14px_rgba(255,255,255,0.15)]"
               >
                 <X className="w-4 h-4" />
+                <span>Kapat (Esc)</span>
               </button>
             </div>
 
-            <p className="text-xs text-white/60">
-              <span className="font-semibold text-white/90">{media.title}</span> hakkında fark ettiğiniz eksik veya hatalı bir bilgiyi iletin. Moderasyon ekibimiz en kısa sürede inceleyecektir.
-            </p>
-
-            <form onSubmit={submitSeriesIssue} className="space-y-4">
-              {/* Category Chips */}
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-mono uppercase text-white/40 tracking-wider">
-                  Bildirim Nedeni
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    'Eksik Bölümler Var',
-                    'Eşleşme Yanlış',
-                    'Oyuncu Bilgisi Eksik',
-                    'Afiş Görseli Bozuk',
-                    'Takvim Günü Yanlış',
-                    'Diğer',
-                  ].map((cat) => (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => setSeriesReportCategory(cat)}
-                      className={`p-2.5 rounded-xl text-xs text-left transition-all cursor-pointer border ${
-                        seriesReportCategory === cat
-                          ? 'bg-amber-400/20 border-amber-400/50 text-amber-200 font-semibold shadow-sm'
-                          : 'bg-white/[0.03] border-white/[0.08] text-white/70 hover:bg-white/[0.06] hover:text-white'
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Optional details textarea */}
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-mono uppercase text-white/40 tracking-wider">
-                  Açıklama / Detay (İsteğe Bağlı)
-                </label>
-                <textarea
-                  rows={3}
-                  value={seriesReportNote}
-                  onChange={(e) => setSeriesReportNote(e.target.value)}
-                  placeholder="Detaylı açıklama veya not ekleyin..."
-                  className="w-full bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 rounded-2xl p-3 text-xs text-white placeholder-white/35 focus:outline-none focus:border-amber-400/60 focus:ring-2 focus:ring-amber-400/20 focus:shadow-[0_0_16px_rgba(251,191,36,0.25)] resize-none transition-all font-medium"
+            {/* 16:9 Official YouTube Player Viewport */}
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="relative w-full max-w-5xl aspect-video bg-black rounded-2xl sm:rounded-3xl border border-white/15 overflow-hidden shadow-[0_25px_70px_rgba(0,0,0,0.95)]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {trailerYoutubeId ? (
+                <iframe
+                  src={buildModalTrailerEmbedUrl(trailerYoutubeId)}
+                  title={`${cleanMediaTitle(media.title)} Fragman`}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                  className="w-full h-full border-0"
                 />
-              </div>
+              ) : isTrailerSearching ? (
+                <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-white/70">
+                  <div className="w-10 h-10 rounded-full border-4 border-white/20 border-t-[#E50914] animate-spin" />
+                  <span className="text-xs font-medium">Fragman aranıyor...</span>
+                </div>
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-white/60 p-6 text-center">
+                  <Film className="w-12 h-12 text-white/25 mb-1" />
+                  <p className="text-sm font-semibold text-white/80">Bu içerik için henüz resmi fragman bulunamadı.</p>
+                  <p className="text-xs text-white/40 max-w-sm">Fragman verisi sağlayıcılar tarafından eklendiğinde otomatik olarak burada gösterilecektir.</p>
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-2">
+      {/* Series Issue Report Floating Modal */}
+      <AnimatePresence>
+        {showSeriesReport && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto"
+          >
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowSeriesReport(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-md cursor-pointer"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 16 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="relative w-full max-w-md bg-[#0e0e14] border border-white/15 rounded-3xl p-6 shadow-2xl space-y-4 z-10"
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                <div className="flex items-center gap-2 text-amber-400">
+                  <AlertTriangle className="w-5 h-5" />
+                  <h3 className="font-bold text-white text-base">Seri Sorunu Bildir</h3>
+                </div>
                 <button
                   type="button"
                   onClick={() => setShowSeriesReport(false)}
-                  className="px-4 py-2 rounded-full bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs font-medium cursor-pointer transition-colors"
+                  className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 text-white/60 hover:text-white flex items-center justify-center transition-all cursor-pointer"
                 >
-                  Vazgeç
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingReport}
-                  className="px-5 py-2 rounded-full bg-amber-400 text-black font-bold text-xs hover:bg-amber-300 disabled:opacity-50 transition-all cursor-pointer"
-                >
-                  {isSubmittingReport ? 'İletiliyor...' : 'Bildirimi Gönder'}
+                  <X className="w-4 h-4" />
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+
+              <p className="text-xs text-white/60">
+                <span className="font-semibold text-white/90">{media.title}</span> hakkında fark ettiğiniz eksik veya hatalı bir bilgiyi iletin. Moderasyon ekibimiz en kısa sürede inceleyecektir.
+              </p>
+
+              <form onSubmit={submitSeriesIssue} className="space-y-4">
+                {/* Category Chips */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-mono uppercase text-white/40 tracking-wider">
+                    Bildirim Nedeni
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      'Eksik Bölümler Var',
+                      'Eşleşme Yanlış',
+                      'Oyuncu Bilgisi Eksik',
+                      'Afiş Görseli Bozuk',
+                      'Takvim Günü Yanlış',
+                      'Diğer',
+                    ].map((cat) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setSeriesReportCategory(cat)}
+                        className={`p-2.5 rounded-xl text-xs text-left transition-all cursor-pointer border ${
+                          seriesReportCategory === cat
+                            ? 'bg-amber-400/20 border-amber-400/50 text-amber-200 font-semibold shadow-sm'
+                            : 'bg-white/[0.03] border-white/[0.08] text-white/70 hover:bg-white/[0.06] hover:text-white'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Optional details textarea */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-mono uppercase text-white/40 tracking-wider">
+                    Açıklama / Detay (İsteğe Bağlı)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={seriesReportNote}
+                    onChange={(e) => setSeriesReportNote(e.target.value)}
+                    placeholder="Detaylı açıklama veya not ekleyin..."
+                    className="koup-input text-xs py-2.5 px-3.5 resize-none font-medium"
+                  />
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowSeriesReport(false)}
+                    className="px-4 py-2 rounded-full glass-pill text-white/70 hover:text-white text-xs font-medium cursor-pointer transition-colors"
+                  >
+                    Vazgeç
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingReport}
+                    className="px-5 py-2 rounded-full bg-amber-400 text-black font-bold text-xs hover:bg-amber-300 disabled:opacity-50 transition-all cursor-pointer"
+                  >
+                    {isSubmittingReport ? 'İletiliyor...' : 'Bildirimi Gönder'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

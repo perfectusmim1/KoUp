@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import path from 'node:path';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // 60 seconds timeout
@@ -324,7 +324,7 @@ export async function GET(req: NextRequest) {
 
     let appliedCount = 0;
     if (patches.length > 0) {
-      const { data: count, error: rpcErr } = await supabase.rpc('patch_media_metadata_batch', {
+      const { data: count, error: rpcErr } = await supabaseAdmin.rpc('patch_media_metadata_batch', {
         p_items: patches,
       });
       if (rpcErr) {

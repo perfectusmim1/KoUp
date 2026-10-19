@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import path from 'node:path';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { supabase } from '@/lib/supabase';
 import { verifyAdminAuth } from '@/lib/adminAuth';
@@ -37,7 +37,7 @@ const SCRAPER_METAS: Record<string, ScraperMeta> = {
     domain: 'https://animecix.net',
     logoText: 'AnimeciX',
     badgeColor: 'from-purple-500 to-indigo-600',
-    protocol: 'Tau-Video & Sibnet Doğrudan MP4 / HLS',
+    protocol: 'Tau-Video & Mail.ru Doğrudan MP4 / HLS',
     description: 'Yüksek kaliteli alternatif anime kaynaklarını ve fansub çevirilerini arşivler.',
     targetCategory: 'Anime Arşivi',
   },
@@ -361,70 +361,141 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Tarama motoru betiği bulunamadı' }, { status: 500 });
     }
 
-    const args = [scriptPath, '--provider', scraperId, '--limit', '10'];
+    const args = ['-u', scriptPath, '--provider', scraperId, '--limit', '10'];
     if (targetSeries && targetSeries.trim().length > 0) {
       args.push('--target', targetSeries.trim());
     }
 
-    // Execute live scanner python runner
-    let stdout = '';
-    let stderr = '';
-    try {
-      const execResult = await execFileAsync('python', args, {
-        cwd: path.resolve(process.cwd(), '..'),
-        timeout: 45000,
-        env: {
-          ...process.env,
-          PYTHONIOENCODING: 'utf-8',
-        },
-      });
-      stdout = execResult.stdout || '';
-      stderr = execResult.stderr || '';
-    } catch (procErr: any) {
-      stdout = procErr.stdout || '';
-      stderr = procErr.stderr || '';
-      if (!stdout && stderr) {
-        throw new Error(stderr.slice(0, 300));
-      }
-    }
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        const logs: string[] = [];
+        const liveItems: any[] = [];
+        let resultPayload: any = null;
+        let stdoutBuf = '';
+        let closed = false;
 
-    const rawLines = stdout.split(/\r?\n/).filter((l) => l.trim().length > 0);
-    const logs: string[] = [];
-    let resultPayload: any = null;
+        const sendEvent = (obj: any) => {
+          if (closed) return;
+          try {
+            controller.enqueue(encoder.encode(JSON.stringify(obj) + '\n'));
+          } catch (_) {}
+        };
 
-    for (const line of rawLines) {
-      if (line.startsWith('__RESULT__ ')) {
-        try {
-          resultPayload = JSON.parse(line.replace('__RESULT__ ', '').trim());
-        } catch (_) {}
-      } else if (line.startsWith('[')) {
-        logs.push(line);
-      }
-    }
+        const processLine = (rawLine: string) => {
+          const line = rawLine.trim();
+          if (!line) return;
+          if (line.startsWith('__RESULT__ ')) {
+            try {
+              resultPayload = JSON.parse(line.replace('__RESULT__ ', '').trim());
+            } catch (_) {}
+          } else if (line.startsWith('__ITEM__ ')) {
+            try {
+              const item = JSON.parse(line.replace('__ITEM__ ', '').trim());
+              liveItems.push(item);
+              sendEvent({ type: 'item', item });
+            } catch (_) {}
+          } else if (line.startsWith('[')) {
+            logs.push(line);
+            sendEvent({ type: 'log', line });
+          }
+        };
 
-    const syncedDelta = resultPayload?.syncedDelta ?? 0;
-    const newTotal = resultPayload?.newTotal ?? 50000;
-    const newlySyncedItems = resultPayload?.items ?? [];
-    const timestamp = resultPayload?.timestamp || new Date().toISOString();
+        const child = spawn('python', args, {
+          cwd: path.resolve(process.cwd(), '..'),
+          env: {
+            ...process.env,
+            PYTHONIOENCODING: 'utf-8',
+            PYTHONUNBUFFERED: '1',
+          },
+        });
 
-    // Update scraper_configs in Supabase
-    await supabase
-      .from('scraper_configs')
-      .update({
-        last_run_at: timestamp,
-        last_status: 'healthy',
-        items_synced: newTotal,
-      })
-      .eq('id', scraperId);
+        const killTimer = setTimeout(() => {
+          try {
+            child.kill('SIGTERM');
+          } catch (_) {}
+        }, 90000);
 
-    return NextResponse.json({
-      ok: true,
-      scraperId,
-      syncedDelta,
-      newTotal,
-      logs,
-      newlySyncedItems,
-      timestamp,
+        child.stdout.on('data', (chunk: Buffer) => {
+          stdoutBuf += chunk.toString('utf-8');
+          const parts = stdoutBuf.split(/\r?\n/);
+          stdoutBuf = parts.pop() || '';
+          for (const part of parts) {
+            processLine(part);
+          }
+        });
+
+        child.stderr.on('data', (chunk: Buffer) => {
+          const errText = chunk.toString('utf-8').trim();
+          if (errText && !errText.includes('Warning')) {
+            const nowStr = new Date().toTimeString().split(' ')[0];
+            const errLine = `[${nowStr}] [UYARI] ${errText.split(/\r?\n/)[0].slice(0, 160)}`;
+            logs.push(errLine);
+            sendEvent({ type: 'log', line: errLine });
+          }
+        });
+
+        child.on('close', async () => {
+          clearTimeout(killTimer);
+          if (stdoutBuf.trim()) {
+            processLine(stdoutBuf);
+            stdoutBuf = '';
+          }
+
+          const syncedDelta = resultPayload?.syncedDelta ?? liveItems.length;
+          const newTotal = resultPayload?.newTotal ?? 50000;
+          const newlySyncedItems = resultPayload?.items ?? liveItems;
+          const timestamp = resultPayload?.timestamp || new Date().toISOString();
+
+          try {
+            await supabase
+              .from('scraper_configs')
+              .update({
+                last_run_at: timestamp,
+                last_status: 'healthy',
+                items_synced: newTotal,
+              })
+              .eq('id', scraperId);
+          } catch (_) {}
+
+          sendEvent({
+            type: 'result',
+            ok: true,
+            scraperId,
+            name: meta.name,
+            syncedDelta,
+            newTotal,
+            logs,
+            newlySyncedItems,
+            timestamp,
+          });
+
+          closed = true;
+          try {
+            controller.close();
+          } catch (_) {}
+        });
+
+        child.on('error', (err) => {
+          clearTimeout(killTimer);
+          sendEvent({
+            type: 'error',
+            error: err.message || 'Scraper alt işlemi başlatılamadı',
+          });
+          closed = true;
+          try {
+            controller.close();
+          } catch (_) {}
+        });
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'application/x-ndjson; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+      },
     });
   } catch (err: any) {
     console.error('Scraper trigger error:', err);

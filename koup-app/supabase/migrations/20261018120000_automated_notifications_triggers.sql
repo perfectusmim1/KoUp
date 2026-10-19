@@ -161,6 +161,7 @@ EXECUTE FUNCTION public.handle_new_episode_notification();
 
 
 -- 4. Followed actor in new project notification trigger function
+-- Strictly for FOLLOWERS (user_follows), NOT mere favorites (person_favorites)
 CREATE OR REPLACE FUNCTION public.handle_actor_new_media_notification()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -188,37 +189,45 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  -- Notify all users following this person in user_follows or person_favorites
+  -- Notify ONLY users following this person in user_follows (target_type = 'person')
+  -- person_favorites is strictly for liking/favoriting, NOT for new series alerts
   FOR v_follower IN
-    SELECT DISTINCT u.user_id
-    FROM (
-      SELECT user_id FROM public.user_follows WHERE target_type = 'person' AND target_id = NEW.person_id
-      UNION
-      SELECT user_id FROM public.person_favorites WHERE person_id = NEW.person_id
-    ) u
-    JOIN public.profiles p ON p.id = u.user_id
-    WHERE (p.notification_settings->>'notify_followed_actor' IS NULL 
+    SELECT DISTINCT uf.user_id
+    FROM public.user_follows uf
+    JOIN public.profiles p ON p.id = uf.user_id
+    WHERE uf.target_type = 'person'
+      AND uf.target_id = NEW.person_id
+      AND (p.notification_settings->>'notify_followed_actor' IS NULL 
            OR (p.notification_settings->>'notify_followed_actor')::boolean = true)
   LOOP
-    INSERT INTO public.user_notifications (
-      user_id,
-      type,
-      title,
-      body,
-      link_url,
-      image_url,
-      is_read,
-      created_at
-    ) VALUES (
-      v_follower.user_id,
-      'actor_update',
-      v_person.name || ' • Yeni Proje!',
-      v_person.name || ', yeni yapım "' || v_media.title || '" kadrosuna katıldı.',
-      '/seri/' || v_media.slug,
-      COALESCE(v_person.image_url, v_media.cover_image),
-      false,
-      now()
-    );
+    -- Avoid duplicate notification if already sent recently for this media
+    IF NOT EXISTS (
+      SELECT 1 FROM public.user_notifications
+      WHERE user_id = v_follower.user_id
+        AND type = 'actor_update'
+        AND link_url = '/seri/' || v_media.slug
+        AND created_at > now() - INTERVAL '1 hour'
+    ) THEN
+      INSERT INTO public.user_notifications (
+        user_id,
+        type,
+        title,
+        body,
+        link_url,
+        image_url,
+        is_read,
+        created_at
+      ) VALUES (
+        v_follower.user_id,
+        'actor_update',
+        v_person.name || ' • Yeni Proje!',
+        v_person.name || ', yeni yapım "' || v_media.title || '" kadrosuna katıldı.',
+        '/seri/' || v_media.slug,
+        COALESCE(v_person.image_url, v_media.cover_image),
+        false,
+        now()
+      );
+    END IF;
   END LOOP;
 
   RETURN NEW;

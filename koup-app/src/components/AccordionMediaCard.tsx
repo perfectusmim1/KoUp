@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, memo, useCallback, useId } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Play, Heart, Bell, Star, Info, Volume2, VolumeX } from 'lucide-react';
+import { Play, Heart, Bell, Star, Info, Volume2, VolumeX, Eye } from 'lucide-react';
 import {
   MediaItem,
   getProxiedImageUrl,
@@ -11,11 +11,13 @@ import {
   getNextEpisodeNumber,
   cleanOverviewText,
   cleanMediaTitle,
+  formatViewCount,
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
 import CountryFlag from '@/components/CountryFlag';
 import { registerMediaItem, cachedQuery } from '@/lib/cache';
 import { recordTasteSignal } from '@/lib/tasteProfile';
+import { buildCleanTrailerEmbedUrl, watchYouTubeIframe, postYouTubeCommand } from '@/lib/youtubeTrailer';
 
 interface AccordionMediaCardProps {
   item: MediaItem;
@@ -34,33 +36,30 @@ let activeCardId: number | string | null = null;
 let activeCardCloseFn: (() => void) | null = null;
 let hoverIntentTimer: NodeJS.Timeout | null = null;
 
-// Shared single IntersectionObserver across all cards to pre-decode & pre-mount w780 backdrops
-// while the card is sitting still in the viewport — before the user ever hovers!
-const viewportWarmupCallbacks = new WeakMap<Element, () => void>();
-let sharedViewportObserver: IntersectionObserver | null = null;
+// High-performance shared IntersectionObserver for predictive windowing & preloading:
+// 350px vertical buffer (loads row ahead of scroll), 550px horizontal buffer (loads ~3 cards ahead)
+// Cards outside this window stay as 0-cost empty shells, freeing GPU texture memory!
+const cardWindowCallbacks = new WeakMap<Element, (inWindow: boolean) => void>();
+let sharedCardWindowObserver: IntersectionObserver | null = null;
 
-function getSharedViewportObserver(): IntersectionObserver | null {
+function getSharedCardWindowObserver(): IntersectionObserver | null {
   if (typeof window === 'undefined' || typeof IntersectionObserver === 'undefined') {
     return null;
   }
-  if (!sharedViewportObserver) {
-    sharedViewportObserver = new IntersectionObserver(
+  if (!sharedCardWindowObserver) {
+    sharedCardWindowObserver = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (entry.isIntersecting) {
-            const cb = viewportWarmupCallbacks.get(entry.target);
-            if (cb) {
-              viewportWarmupCallbacks.delete(entry.target);
-              sharedViewportObserver?.unobserve(entry.target);
-              cb();
-            }
+          const cb = cardWindowCallbacks.get(entry.target);
+          if (cb) {
+            cb(entry.isIntersecting);
           }
         }
       },
-      { rootMargin: '120px 240px' }
+      { rootMargin: '350px 550px' }
     );
   }
-  return sharedViewportObserver;
+  return sharedCardWindowObserver;
 }
 
 export function broadcastAccordionHover(
@@ -213,6 +212,7 @@ function AccordionMediaCardComponent({
   const router = useRouter();
   const {
     user,
+    authLoading,
     progressMap,
     toggleMediaFavorite,
     toggleMediaFollow,
@@ -245,6 +245,8 @@ function AccordionMediaCardComponent({
   );
   const [showTrailerVideo, setShowTrailerVideo] = useState(false);
   const [isTrailerReady, setIsTrailerReady] = useState(false);
+  // Priority cards start in-window immediately for 0ms initial paint
+  const [isInWindow, setIsInWindow] = useState(() => priority);
 
   const cardRef = useRef<HTMLDivElement>(null);
   const trailerIframeRef = useRef<HTMLIFrameElement>(null);
@@ -255,14 +257,21 @@ function AccordionMediaCardComponent({
   // Unique per-card-instance ID so the same MediaItem rendered in "Sana Özel" AND "K-Drama" rows never collides!
   const cardKey = useId();
 
-  const userProg = user ? progressMap[item.id] : undefined;
-  const isFavorited = Boolean(user && (userProg?.is_favorite || userProg?.is_favorited));
-  const isFollowed = Boolean(user && followedMediaIds.includes(item.id));
+  const isUserActive = Boolean(user || authLoading);
+  const userProg = isUserActive ? progressMap[item.id] : undefined;
+  const isFavorited = Boolean(isUserActive && (userProg?.is_favorite || userProg?.is_favorited));
+  const isFollowed = Boolean(isUserActive && followedMediaIds.includes(item.id));
   const displayTitle = cleanMediaTitle(item.title);
 
   // Always retain authentic scraped cover if present, never overwrite with TMDB fuzzy matches
   const effectiveCover = hasRealCover ? item.cover_image : (upgradedPoster || item.cover_image);
   const effectiveBackdrop = upgradedBackdrop || item.backdrop_image;
+
+  const mediaType: 'tv' | 'movie' = item.content_type === 'film' ? 'movie' : 'tv';
+  const effectiveEpCount =
+    item.content_type === 'film'
+      ? 0
+      : Math.max(Number(item.episode_count || 0), Number(item.episodes_available || 0));
 
   // Request w500 for 2:3 vertical poster and w780 for 16:9 card backdrop (24x smaller GPU texture than 4K original!)
   const posterSrc = getProxiedImageUrl(
@@ -271,7 +280,8 @@ function AccordionMediaCardComponent({
     item.title,
     'w500',
     'poster',
-    item.tmdb_id
+    item.tmdb_id,
+    mediaType
   );
   const hasDistinctBackdrop = Boolean(
     effectiveBackdrop &&
@@ -279,7 +289,7 @@ function AccordionMediaCardComponent({
       effectiveBackdrop !== effectiveCover
   );
   const backdropSrc = hasDistinctBackdrop
-    ? getProxiedImageUrl(effectiveBackdrop, effectiveCover, item.title, 'w780', 'banner', item.tmdb_id)
+    ? getProxiedImageUrl(effectiveBackdrop, effectiveCover, item.title, 'w780', 'banner', item.tmdb_id, mediaType)
     : posterSrc;
 
   const countryCode = item.country_code || item.country;
@@ -306,7 +316,7 @@ function AccordionMediaCardComponent({
         isKoUp: false,
       };
     }
-    const imdbVal = upgradedRating ?? item.imdb_rating ?? item.imdb_score ?? item.vote_average;
+    const imdbVal = upgradedRating ?? item.imdb_rating ?? (item as any).imdb_score ?? (item as any).vote_average;
     if (imdbVal != null && !isNaN(Number(imdbVal)) && Number(imdbVal) > 0) {
       return {
         score: Number(imdbVal).toFixed(1),
@@ -378,7 +388,7 @@ function AccordionMediaCardComponent({
       if (entry.youtubeId) {
         setTrailerYoutubeId(entry.youtubeId);
       }
-      if (entry.rating && !item.imdb_rating && !item.site_rating) {
+      if (entry.rating) {
         setUpgradedRating(entry.rating);
       }
       clientTrailerCache.set(item.id, entry);
@@ -386,47 +396,72 @@ function AccordionMediaCardComponent({
     } catch {
       return null;
     }
-  }, [item.id, item.slug, item.title, hasRealCover, item.backdrop_image, item.imdb_rating, item.site_rating]);
+  }, [item.id, item.slug, item.title, hasRealCover, item.backdrop_image]);
 
-  // Pre-decode & pre-mount the 16:9 backdrop silently when the card enters the viewport
+  // 1. Predictive window observer: mounts cards 550px horizontally ahead and 350px vertically ahead.
+  // When scrolled away by >550px, unmounts heavy children to keep DOM & GPU textures tiny!
   useEffect(() => {
+    if (priority) {
+      setIsInWindow(true);
+      return;
+    }
     const el = cardRef.current;
-    const obs = getSharedViewportObserver();
-    if (!el || !obs) return;
+    if (!el) return;
+    const obs = getSharedCardWindowObserver();
+    if (!obs) {
+      setIsInWindow(true);
+      return;
+    }
 
-    const hasRealCover = Boolean(
-      item.cover_image &&
-      item.cover_image.trim() !== '' &&
-      item.cover_image !== '/logo-dark.png' &&
-      !item.cover_image.includes('logo-dark')
-    );
-
-    let idleTimer: NodeJS.Timeout | null = null;
-    viewportWarmupCallbacks.set(el, () => {
-      idleTimer = setTimeout(() => {
-        if (!fluidWidth && hasDistinctBackdrop && !mountBackdrop) {
-          preloadImage(backdropSrc, () => {
-            setMountBackdrop(true);
-          });
-        }
-        if (!hasRealCover || !item.backdrop_image) {
-          fetchTrailerAndUpgradeImages();
-        }
-      }, 180);
+    cardWindowCallbacks.set(el, (inWindow: boolean) => {
+      setIsInWindow(inWindow);
     });
     obs.observe(el);
 
     return () => {
-      viewportWarmupCallbacks.delete(el);
+      cardWindowCallbacks.delete(el);
       obs.unobserve(el);
-      if (idleTimer) clearTimeout(idleTimer);
+    };
+  }, [priority]);
+
+  // 2. Pre-decode & pre-mount the 16:9 backdrop & missing rating once card enters window
+  useEffect(() => {
+    if (!isInWindow) return;
+
+    const hasRating = Boolean(
+      (item.site_rating_count && item.site_rating_count >= 50 && item.site_rating) ||
+      (item.imdb_rating && Number(item.imdb_rating) > 0) ||
+      (item.mdl_rating && Number(item.mdl_rating) > 0) ||
+      (item.anilist_rating && Number(item.anilist_rating) > 0)
+    );
+
+    const idleTimer = setTimeout(() => {
+      if (!fluidWidth && hasDistinctBackdrop && !mountBackdrop) {
+        preloadImage(backdropSrc, () => {
+          setMountBackdrop(true);
+        });
+      }
+      if (!hasRealCover || !item.backdrop_image || !hasRating) {
+        fetchTrailerAndUpgradeImages();
+      }
+    }, 150);
+
+    return () => {
+      clearTimeout(idleTimer);
     };
   }, [
+    isInWindow,
     fluidWidth,
     hasDistinctBackdrop,
     mountBackdrop,
     backdropSrc,
-    effectiveCover,
+    hasRealCover,
+    item.backdrop_image,
+    item.site_rating,
+    item.site_rating_count,
+    item.imdb_rating,
+    item.mdl_rating,
+    item.anilist_rating,
     fetchTrailerAndUpgradeImages,
   ]);
 
@@ -454,6 +489,11 @@ function AccordionMediaCardComponent({
       preloadImage(backdropSrc, () => {
         setMountBackdrop(true);
       });
+    }
+
+    // Trigger instant rating upgrade if missing
+    if (!upgradedRating && !ratingInfo) {
+      fetchTrailerAndUpgradeImages();
     }
 
     if (fluidWidth) {
@@ -489,16 +529,23 @@ function AccordionMediaCardComponent({
       }
     }, 420);
 
-    // Start trailer playback 620ms after hover (once card expansion animation is 100% finished)
+    // Start trailer playback immediately in the background on hover (hidden & strictly muted behind poster)
     if (!fluidWidth && autoCardTrailerEnabled) {
       if (trailerTimerRef.current) clearTimeout(trailerTimerRef.current);
-      trailerTimerRef.current = setTimeout(async () => {
-        const res = await fetchTrailerAndUpgradeImages();
-        if (res?.youtubeId && activeCardId === cardKey) {
-          setIsTrailerReady(false);
-          setShowTrailerVideo(true);
-        }
-      }, 620);
+      const cached = clientTrailerCache.get(item.id);
+      if (cached?.youtubeId) {
+        setIsTrailerReady(false);
+        setShowTrailerVideo(true);
+      } else {
+        // Fast 90ms intent check so rapid swiping doesn't trigger unneeded fetches
+        trailerTimerRef.current = setTimeout(async () => {
+          const res = await fetchTrailerAndUpgradeImages();
+          if (res?.youtubeId && activeCardId === cardKey) {
+            setIsTrailerReady(false);
+            setShowTrailerVideo(true);
+          }
+        }, 90);
+      }
     }
   }, [
     cardKey,
@@ -513,6 +560,11 @@ function AccordionMediaCardComponent({
     fetchTrailerAndUpgradeImages,
   ]);
 
+  const isTrailerMutedRef = useRef(isTrailerMuted);
+  useEffect(() => {
+    isTrailerMutedRef.current = isTrailerMuted;
+  }, [isTrailerMuted]);
+
   const handleMouseLeave = useCallback(() => {
     if (prefetchTimerRef.current) {
       clearTimeout(prefetchTimerRef.current);
@@ -522,6 +574,8 @@ function AccordionMediaCardComponent({
       clearTimeout(trailerTimerRef.current);
       trailerTimerRef.current = null;
     }
+    // Mute immediately and reset video state
+    postYouTubeCommand(trailerIframeRef.current, 'mute');
     setShowTrailerVideo(false);
     setIsTrailerReady(false);
     if (fluidWidth) {
@@ -544,63 +598,54 @@ function AccordionMediaCardComponent({
   // Synchronize YouTube iframe volume & mute state whenever global isTrailerMuted changes
   useEffect(() => {
     if (showTrailerVideo && isTrailerReady && trailerIframeRef.current?.contentWindow) {
-      const win = trailerIframeRef.current.contentWindow;
-      try {
-        win.postMessage(
-          JSON.stringify({
-            event: 'command',
-            func: isTrailerMuted ? 'mute' : 'unMute',
-            args: [],
-          }),
-          '*'
-        );
-        if (!isTrailerMuted) {
-          win.postMessage(
-            JSON.stringify({
-              event: 'command',
-              func: 'setVolume',
-              args: [85],
-            }),
-            '*'
-          );
-        }
-      } catch {}
+      if (isTrailerMuted) {
+        postYouTubeCommand(trailerIframeRef.current, 'mute');
+      } else {
+        postYouTubeCommand(trailerIframeRef.current, 'unMute');
+        postYouTubeCommand(trailerIframeRef.current, 'setVolume', [85]);
+      }
     }
   }, [isTrailerMuted, showTrailerVideo, isTrailerReady]);
 
-  // Seamless auto-loop and active-playback bezel suppression via postMessage telemetry
-  useEffect(() => {
-    if (!showTrailerVideo) return;
-    const handleLoop = (e: MessageEvent) => {
-      try {
-        const d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-        const isPlayingEvent =
-          (d?.event === 'onStateChange' && d?.info === 1) ||
-          (d?.event === 'infoDelivery' && d?.info?.playerState === 1);
+  // Clean reveal: trailer starts immediately in the background strictly muted.
+  // The moment the play button overlay disappears, it becomes visible;
+  // if sound is unmuted, audio kicks in right at that moment!
+  const trailerWatchCleanupRef = useRef<(() => void) | null>(null);
+  const handleTrailerIframeLoad = useCallback((e: React.SyntheticEvent<HTMLIFrameElement>) => {
+    trailerWatchCleanupRef.current?.();
+    const iframe = e.currentTarget;
+    // Strictly mute immediately on load so no audio leaks while hidden
+    postYouTubeCommand(iframe, 'mute');
 
-        if (isPlayingEvent) {
-          // Video frames are actively rendering. Delay 400ms so any startup bezel animation dissolves off-screen
-          setTimeout(() => {
-            setIsTrailerReady(true);
-          }, 400);
-
-          if (!isTrailerMuted) {
-            const win = trailerIframeRef.current?.contentWindow;
-            win?.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*');
-            win?.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [85] }), '*');
+    trailerWatchCleanupRef.current = watchYouTubeIframe(iframe, {
+      onVisibleChange: (visible) => {
+        setIsTrailerReady(visible);
+        if (visible) {
+          if (!isTrailerMutedRef.current) {
+            postYouTubeCommand(iframe, 'unMute');
+            postYouTubeCommand(iframe, 'setVolume', [85]);
+          } else {
+            postYouTubeCommand(iframe, 'mute');
           }
+        } else {
+          postYouTubeCommand(iframe, 'mute');
         }
+      },
+    });
+  }, []);
 
-        if (d?.event === 'onStateChange' && d?.info === 0) {
-          const win = trailerIframeRef.current?.contentWindow;
-          win?.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [0, true] }), '*');
-          win?.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
-        }
-      } catch {}
+  useEffect(() => {
+    if (showTrailerVideo) return;
+    trailerWatchCleanupRef.current?.();
+    trailerWatchCleanupRef.current = null;
+  }, [showTrailerVideo]);
+
+  useEffect(() => {
+    return () => {
+      trailerWatchCleanupRef.current?.();
+      trailerWatchCleanupRef.current = null;
     };
-    window.addEventListener('message', handleLoop);
-    return () => window.removeEventListener('message', handleLoop);
-  }, [showTrailerVideo, isTrailerMuted]);
+  }, []);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -615,6 +660,7 @@ function AccordionMediaCardComponent({
   );
 
   const isAccordionExpanded = !fluidWidth && isHovered;
+  const isTrailerActive = isAccordionExpanded && showTrailerVideo && isTrailerReady;
 
   return (
     <div
@@ -648,44 +694,46 @@ function AccordionMediaCardComponent({
             : 'w-[165px] sm:w-[185px] md:w-[200px] h-[250px] sm:h-[280px] md:h-[300px] shrink-0 z-10 border-white/10 hover:border-white/25 shadow-md'
       }`}
     >
-      {/* Background Instant Navigation Link */}
-      <Link
-        href={`/seri/${item.slug}`}
-        prefetch={false}
-        draggable={false}
-        onDragStart={(e) => e.preventDefault()}
-        className="absolute inset-0 z-0 select-none"
-        aria-label={displayTitle}
-        tabIndex={-1}
-      />
+      {isInWindow ? (
+        <>
+          {/* Background Instant Navigation Link */}
+          <Link
+            href={`/seri/${item.slug}`}
+            prefetch={false}
+            draggable={false}
+            onDragStart={(e) => e.preventDefault()}
+            className="absolute inset-0 z-0 select-none"
+            aria-label={displayTitle}
+            tabIndex={-1}
+          />
 
-      {/* Rank Numeral Overlay if part of a Ranked Row */}
-      {rank !== undefined && (
-        <div
-          className={`absolute -left-1.5 bottom-1.5 z-20 pointer-events-none transition-opacity duration-200 ${
-            isAccordionExpanded ? 'opacity-15' : 'opacity-100'
-          }`}
-        >
-          <span className="text-6xl sm:text-7xl font-black text-stroke-numeral leading-none">
-            {rank}
-          </span>
-        </div>
-      )}
+          {/* Rank Numeral Overlay if part of a Ranked Row */}
+          {rank !== undefined && (
+            <div
+              className={`absolute -left-1.5 bottom-1.5 z-20 pointer-events-none transition-opacity duration-200 ${
+                isAccordionExpanded ? 'opacity-15' : 'opacity-100'
+              }`}
+            >
+              <span className="text-6xl sm:text-7xl font-black text-stroke-numeral leading-none">
+                {rank}
+              </span>
+            </div>
+          )}
 
-      {/* LAYER 1: Base Poster Image (Rock-solid single DOM node: zero flicker, zero fast refresh) */}
-      <img
-        src={posterSrc}
-        alt={item.title}
-        draggable={false}
-        loading={priority ? 'eager' : 'lazy'}
-        fetchPriority={priority ? 'high' : 'auto'}
-        decoding="async"
-        className={`absolute inset-0 w-full h-full object-cover object-center pointer-events-none select-none transition-opacity duration-250 ${
-          isAccordionExpanded && (hasDistinctBackdrop || isTrailerReady)
-            ? 'opacity-0'
-            : 'opacity-100'
-        }`}
-      />
+          {/* LAYER 1: Base Poster Image (Rock-solid single DOM node: zero flicker, eagerly loaded within 550px predictive window) */}
+          <img
+            src={posterSrc}
+            alt={item.title}
+            draggable={false}
+            loading="eager"
+            fetchPriority={priority ? 'high' : 'auto'}
+            decoding="async"
+            className={`absolute inset-0 w-full h-full object-cover object-center pointer-events-none select-none transition-opacity duration-250 ${
+              isAccordionExpanded && (hasDistinctBackdrop || isTrailerReady)
+                ? 'opacity-0'
+                : 'opacity-100'
+            }`}
+          />
 
       {/* LAYER 2: 16:9 Widescreen Backdrop Image (Mounted once, GPU opacity crossfade only) */}
       {!fluidWidth && mountBackdrop && hasDistinctBackdrop && (
@@ -710,15 +758,10 @@ function AccordionMediaCardComponent({
         >
           <iframe
             ref={trailerIframeRef}
-            src={`https://www.youtube-nocookie.com/embed/${trailerYoutubeId}?autoplay=1&mute=1&controls=0&disablekb=1&fs=0&modestbranding=1&rel=0&showinfo=0&iv_load_policy=3&playsinline=1&enablejsapi=1&cc_load_policy=1&cc_lang_pref=tr&hl=tr`}
+            src={buildCleanTrailerEmbedUrl(trailerYoutubeId)}
             title={`${displayTitle} Fragman`}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            onLoad={() => {
-              // Safety fallback: if YouTube postMessage is blocked (e.g. adblocker), reveal cleanly after 1500ms
-              setTimeout(() => {
-                setIsTrailerReady(true);
-              }, 1500);
-            }}
+            onLoad={handleTrailerIframeLoad}
             className="absolute top-1/2 left-1/2 w-[140%] h-[140%] -translate-x-1/2 -translate-y-1/2 border-0 pointer-events-none select-none"
           />
           {/* Transparent interaction shield to ensure YouTube never receives accidental taps/pauses */}
@@ -728,9 +771,11 @@ function AccordionMediaCardComponent({
 
       {/* Unified GPU-Friendly Vignette Gradient */}
       <div
-        className={`absolute inset-0 pointer-events-none transition-opacity duration-250 ${
+        className={`absolute inset-0 pointer-events-none transition-all duration-500 ${
           isAccordionExpanded
-            ? 'bg-gradient-to-t from-[#08080a] via-[#08080a]/60 to-black/20'
+            ? isTrailerActive
+              ? 'bg-gradient-to-t from-[#08080a]/90 via-[#08080a]/25 to-transparent'
+              : 'bg-gradient-to-t from-[#08080a] via-[#08080a]/60 to-black/20'
             : 'bg-gradient-to-t from-black via-black/40 to-transparent'
         }`}
       />
@@ -796,22 +841,34 @@ function AccordionMediaCardComponent({
 
       {/* Bottom Content Area */}
       <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-3.5 z-20 flex flex-col justify-end text-left pointer-events-none">
-        {(item.release_year || item.episode_count > 0) && (
+        {(item.release_year || effectiveEpCount > 0) && (
           <div className="flex items-center gap-1.5 text-[10px] font-medium text-white/65 mb-0.5">
             {item.release_year && (
               <span className="font-mono text-white/75">{item.release_year}</span>
             )}
-            {item.release_year && item.episode_count > 0 && (
+            {item.release_year && effectiveEpCount > 0 && (
               <span className="text-white/40">•</span>
             )}
-            {item.episode_count > 0 && (
-              <span className="font-mono text-white/75">{item.episode_count} Bölüm</span>
+            {effectiveEpCount > 0 && (
+              <span className="font-mono text-white/75">{effectiveEpCount} Bölüm</span>
             )}
             {isAccordionExpanded && item.status_broadcast && (
               <>
                 <span className="text-white/40">•</span>
                 <span className="text-emerald-300 font-semibold">
                   {item.status_broadcast}
+                </span>
+              </>
+            )}
+            {isAccordionExpanded && (
+              <>
+                <span className="text-white/40">•</span>
+                <span
+                  className="inline-flex items-center gap-1 font-mono text-sky-300/90"
+                  title="Toplam Görüntülenme"
+                >
+                  <Eye className="w-3 h-3 text-sky-400 shrink-0" />
+                  <span>{formatViewCount(item.views_total ?? item.views_count ?? 0)}</span>
                 </span>
               </>
             )}
@@ -825,8 +882,10 @@ function AccordionMediaCardComponent({
         {/* Expanded Widescreen Details: Pre-mounted CSS transition (zero DOM mount jitter) */}
         {!fluidWidth && (
           <div
-            className={`overflow-hidden transition-opacity duration-200 ${
-              isAccordionExpanded ? 'max-h-[72px] opacity-100 mt-1.5' : 'max-h-0 opacity-0 mt-0'
+            className={`overflow-hidden transition-all duration-500 ease-out ${
+              isAccordionExpanded && !isTrailerActive
+                ? 'max-h-[76px] opacity-100 translate-y-0 mt-1.5'
+                : 'max-h-0 opacity-0 translate-y-3 mt-0 pointer-events-none'
             }`}
           >
             {genres.length > 0 && (
@@ -869,6 +928,8 @@ function AccordionMediaCardComponent({
                     (userProg?.last_episode_num && userProg.last_episode_num > 1))
               );
 
+              const isFilm = item.content_type === 'film' || item.content_type === 'movie';
+
               return (
                 <Link
                   href={`/seri/${item.slug}/${nextEpNum}?season=${nextSeasonNum}`}
@@ -882,7 +943,15 @@ function AccordionMediaCardComponent({
                 >
                   <Play className="w-3 h-3 fill-black shrink-0" />
                   <span>
-                    {hasProgress
+                    {isFilm
+                      ? hasProgress
+                        ? isAccordionExpanded
+                          ? 'Filme Devam Et'
+                          : 'Devam Et'
+                        : isAccordionExpanded
+                        ? 'Filmi İzle'
+                        : 'İzle'
+                      : hasProgress
                       ? isAccordionExpanded
                         ? `${nextEpNum}. Bölümden Devam`
                         : `${nextEpNum}. Bölüm`
@@ -941,6 +1010,8 @@ function AccordionMediaCardComponent({
           </div>
         </div>
       </div>
+        </>
+      ) : null}
     </div>
   );
 }

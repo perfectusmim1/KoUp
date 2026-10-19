@@ -418,7 +418,7 @@ export function reconcileProgressMaps(
           ...local,
           episode_positions: mergedEpisodePositions,
           user_id: activeUserId,
-          media: local.media || db.media,
+          media: db.media || local.media,
           updated_at: local.updated_at || new Date().toISOString(),
         };
         mergedMap[id] = reconciled;
@@ -429,6 +429,24 @@ export function reconcileProgressMaps(
           episode_positions: mergedEpisodePositions,
           media: db.media || local.media,
         };
+      }
+    }
+
+    const current = mergedMap[id];
+    if (current) {
+      const isFilm =
+        current.media?.content_type === 'film' || current.media?.content_type === 'movie';
+      const pos = current.resume_position_sec || 0;
+      const dur = current.resume_duration_sec || 3600;
+      if (
+        isFilm &&
+        current.status === 'completed' &&
+        pos > 15 &&
+        dur > 0 &&
+        pos / dur < 0.85
+      ) {
+        current.status = 'watching';
+        current.watched_episodes = [];
       }
     }
   });

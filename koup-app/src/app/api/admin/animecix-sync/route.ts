@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
+import { cleanFansubName, cleanSourceName } from '@/lib/cleanFansub';
 
 const KEY_RAW = Buffer.from('i4C7R2fXGocdYgFLzCbDlsJjukf8G58b', 'utf-8');
 
@@ -82,7 +83,9 @@ export async function GET(req: NextRequest) {
        direct_url LIKE '%videa.hu%' OR
        direct_url LIKE '%videa.com%' OR
        direct_url = 'https://vidmoly.biz/embed-5px2t9ix314s.html' OR
-       direct_url = 'https://video.sibnet.ru/shell.php?videoid=3772297' OR
+       provider = 'sibnet' OR
+       LOWER(source_name) LIKE '%sibnet%' OR
+       direct_url LIKE '%sibnet.ru%' OR
        direct_url LIKE '%playerdkorea.xyz/player/index.php?data=c0a5a65e55124eae3388586316a25f57%'`
     ).run();
 
@@ -180,6 +183,8 @@ export async function GET(req: NextRequest) {
         const urlLow = url.toLowerCase();
         // Skip dead/broken platforms
         if (
+          urlLow.includes('sibnet.ru') ||
+          urlLow.includes('sibnet') ||
           urlLow.includes('sendvid') ||
           urlLow.includes('drive.google.com') ||
           urlLow.includes('docs.google.com') ||
@@ -210,8 +215,8 @@ export async function GET(req: NextRequest) {
           }
         }
 
-        const sourceName = v.name || (provider === 'tau-video' ? 'Tau-Video' : 'Kaynak');
-        const fansub = v.extra ? v.extra.trim() : null;
+        const sourceName = cleanSourceName(v.name || (provider === 'tau-video' ? 'Tau-Video' : 'Kaynak'));
+        const fansub = cleanFansubName(v.extra);
         const embedId = `animecix_${v.id || Math.random().toString(36).substring(7)}`;
 
         try {

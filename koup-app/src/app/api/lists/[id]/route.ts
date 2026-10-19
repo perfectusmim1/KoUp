@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +30,7 @@ export async function GET(
 
     if (!data && userId) {
       const isNum = /^[0-9]+$/.test(id);
-      let q = supabase
+      let q = (supabaseAdmin || supabase)
         .from('custom_lists')
         .select(`
           *,
@@ -45,7 +45,7 @@ export async function GET(
         const mediaIds = Array.isArray(directList.media_ids) ? directList.media_ids : [];
         let items: any[] = [];
         if (mediaIds.length > 0) {
-          const { data: mediaRows } = await supabase
+          const { data: mediaRows } = await (supabaseAdmin || supabase)
             .from('media')
             .select('id, slug, title, content_type, cover_image, backdrop_image, release_year, episode_count, country_code, country_name, site_rating, overview, categories')
             .in('id', mediaIds);
@@ -98,7 +98,7 @@ export async function PATCH(
     const { action, media_id, title, description, visibility, user_id } = body;
 
     const isNum = /^[0-9]+$/.test(id);
-    let query = supabase.from('custom_lists').select('*');
+    let query = (supabaseAdmin || supabase).from('custom_lists').select('*');
     if (isNum) query = query.eq('id', Number(id));
     else query = query.eq('slug', id);
 
@@ -150,7 +150,7 @@ export async function PATCH(
 
     const targetUserId = user_id || existingList.user_id;
 
-    const { data: updatedList, error: updateErr } = await supabase.rpc('update_custom_list', {
+    const { data: updatedList, error: updateErr } = await (supabaseAdmin || supabase).rpc('update_custom_list', {
       p_list_id: existingList.id,
       p_user_id: targetUserId,
       p_title: updates.title ?? null,
@@ -161,7 +161,7 @@ export async function PATCH(
 
     if (updateErr) {
       console.warn('RPC update_custom_list error, attempting table update fallback:', updateErr);
-      const { data: tableData, error: tableErr } = await supabase
+      const { data: tableData, error: tableErr } = await (supabaseAdmin || supabase)
         .from('custom_lists')
         .update(updates)
         .eq('id', existingList.id)
@@ -201,27 +201,61 @@ export async function DELETE(
       );
     }
 
-    const { data: deleted, error: delErr } = await supabase.rpc('delete_custom_list', {
+    // Call RPC delete
+    const { data: deleted, error: delErr } = await (supabaseAdmin || supabase).rpc('delete_custom_list', {
       list_identifier: id,
       p_user_id: userId,
     });
 
     if (delErr) {
       console.error('delete_custom_list RPC error:', delErr);
-      return NextResponse.json(
-        { success: false, error: delErr.message },
-        { status: 500 }
-      );
     }
 
-    if (!deleted) {
-      return NextResponse.json(
-        { success: false, error: 'Liste bulunamadı veya silinemedi.' },
-        { status: 404 }
-      );
+    if (deleted) {
+      return NextResponse.json({ success: true, message: 'Liste silindi' });
     }
 
-    return NextResponse.json({ success: true, message: 'Liste silindi' });
+    // Resilient fallback with strict owner check
+    const isNum = /^[0-9]+$/.test(id);
+    let checkQuery = (supabaseAdmin || supabase).from('custom_lists').select('id, user_id');
+    if (isNum) checkQuery = checkQuery.eq('id', Number(id));
+    else checkQuery = checkQuery.eq('slug', id);
+
+    const { data: listRow } = await checkQuery.maybeSingle();
+    if (listRow) {
+      let isAuthorized = listRow.user_id === userId;
+      if (!isAuthorized) {
+        const { data: profile } = await (supabaseAdmin || supabase)
+          .from('profiles')
+          .select('role')
+          .eq('id', userId)
+          .maybeSingle();
+        if (profile?.role === 'admin') {
+          isAuthorized = true;
+        }
+      }
+
+      if (!isAuthorized) {
+        return NextResponse.json(
+          { success: false, error: 'Bu listeyi silme yetkiniz yok.' },
+          { status: 403 }
+        );
+      }
+
+      const { error: directDelErr } = await (supabaseAdmin || supabase)
+        .from('custom_lists')
+        .delete()
+        .eq('id', listRow.id);
+
+      if (!directDelErr) {
+        return NextResponse.json({ success: true, message: 'Liste silindi' });
+      }
+    }
+
+    return NextResponse.json(
+      { success: false, error: 'Liste bulunamadı veya silinemedi.' },
+      { status: 404 }
+    );
   } catch (err: any) {
     return NextResponse.json(
       { success: false, error: err?.message || 'Silme işlemi başarısız' },
@@ -229,3 +263,4 @@ export async function DELETE(
     );
   }
 }
+

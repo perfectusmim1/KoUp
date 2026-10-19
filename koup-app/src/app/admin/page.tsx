@@ -50,6 +50,7 @@ import { invalidateCache } from '@/lib/cache';
 import CountryFlag from '@/components/CountryFlag';
 import CustomSelect, { SelectOption } from '@/components/CustomSelect';
 import { useKoUp } from '@/context/KoUpContext';
+import { rankSearchResults } from '@/lib/searchRanking';
 
 type AdminTab =
   | 'overview'
@@ -523,6 +524,14 @@ export default function AdminDashboardPage() {
   const [sourceUrl, setSourceUrl] = useState('');
   const [sourceQuality, setSourceQuality] = useState('1080p Native');
 
+  // Bulk Intro Skip State
+  const [bulkIntroModalOpen, setBulkIntroModalOpen] = useState(false);
+  const [bulkIntroTargetSeason, setBulkIntroTargetSeason] = useState<string>('all');
+  const [bulkIntroStart, setBulkIntroStart] = useState<string>('');
+  const [bulkIntroEnd, setBulkIntroEnd] = useState<string>('');
+  const [bulkIntroClear, setBulkIntroClear] = useState<boolean>(false);
+  const [bulkIntroSaving, setBulkIntroSaving] = useState<boolean>(false);
+
   // Comments Tab State (Server-Side Paginated)
   const [commentsList, setCommentsList] = useState<AdminCommentRow[]>([]);
   const [commentSearchInput, setCommentSearchInput] = useState('');
@@ -597,7 +606,19 @@ export default function AdminDashboardPage() {
           supabase.from('media').select('*').eq('is_featured', true).order('featured_order', { ascending: true }).limit(16),
         ]);
 
-        setScrapers((sRes.data as ScraperConfigRow[]) || []);
+        const ACTIVE_SCRAPER_IDS = new Set([
+          'ddizi',
+          'animecix',
+          'dizibox',
+          'dizikorea',
+          'hdfilm',
+          'asyawatch',
+          'dizilla',
+        ]);
+        const filteredScrapers = ((sRes.data as ScraperConfigRow[]) || []).filter((bot) =>
+          ACTIVE_SCRAPER_IDS.has(bot.id)
+        );
+        setScrapers(filteredScrapers);
         setReports((rRes.data as IssueReportRow[]) || []);
         setFeaturedMedia((fRes.data as MediaItem[]) || []);
         setStats({
@@ -669,34 +690,54 @@ export default function AdminDashboardPage() {
         const PAGE_SIZE = 50;
         const from = (seriesPage - 1) * PAGE_SIZE;
         const to = from + PAGE_SIZE - 1;
+        const searchQuery = debouncedSeriesSearch.trim();
 
-        let q = supabase
-          .from('media')
-          .select('*', { count: 'exact' })
-          .order('id', { ascending: false })
-          .range(from, to);
+        if (searchQuery) {
+          let q = supabase
+            .from('media')
+            .select('*', { count: 'exact' })
+            .or(
+              `title.ilike.%${searchQuery}%,slug.ilike.%${searchQuery}%,native_title.ilike.%${searchQuery}%`
+            );
 
-        if (debouncedSeriesSearch) {
-          q = q.or(
-            `title.ilike.%${debouncedSeriesSearch}%,slug.ilike.%${debouncedSeriesSearch}%,native_title.ilike.%${debouncedSeriesSearch}%`
-          );
-        }
+          if (seriesTypeFilter !== 'ALL') {
+            q = q.eq('content_type', seriesTypeFilter);
+          }
+          if (seriesCountryFilter !== 'ALL') {
+            q = q.eq('country_code', seriesCountryFilter);
+          }
 
-        if (seriesTypeFilter !== 'ALL') {
-          q = q.eq('content_type', seriesTypeFilter);
-        }
+          // Fetch matching results and rank by accuracy/relevance
+          const { data, count, error } = await q.limit(100);
+          if (error) throw error;
 
-        if (seriesCountryFilter !== 'ALL') {
-          q = q.eq('country_code', seriesCountryFilter);
-        }
+          const ranked = rankSearchResults((data as MediaItem[]) || [], searchQuery);
+          setSeriesList(ranked.slice(from, to + 1));
+          if (typeof count === 'number') {
+            setSeriesTotalCount(count);
+          }
+        } else {
+          let q = supabase
+            .from('media')
+            .select('*', { count: 'exact' })
+            .order('id', { ascending: false })
+            .range(from, to);
 
-        const { data, count, error } = await q;
-        if (error) throw error;
+          if (seriesTypeFilter !== 'ALL') {
+            q = q.eq('content_type', seriesTypeFilter);
+          }
+          if (seriesCountryFilter !== 'ALL') {
+            q = q.eq('country_code', seriesCountryFilter);
+          }
 
-        setSeriesList((data as MediaItem[]) || []);
-        if (typeof count === 'number') {
-          setSeriesTotalCount(count);
-          setStats((prev) => ({ ...prev, totalMedia: count }));
+          const { data, count, error } = await q;
+          if (error) throw error;
+
+          setSeriesList((data as MediaItem[]) || []);
+          if (typeof count === 'number') {
+            setSeriesTotalCount(count);
+            setStats((prev) => ({ ...prev, totalMedia: count }));
+          }
         }
       } catch (err: any) {
         pushNotification('Seriler Yüklenemedi', err.message || 'Veritabanı hatası.', 'info');
@@ -732,14 +773,14 @@ export default function AdminDashboardPage() {
     async function searchEpMedia() {
       setEpMediaSearchLoading(true);
       try {
-        const term = debouncedEpMediaSearch;
+        const term = debouncedEpMediaSearch.trim();
         const { data } = await supabase
           .from('media')
           .select('*')
           .or(`title.ilike.%${term}%,slug.ilike.%${term}%,native_title.ilike.%${term}%`)
-          .order('id', { ascending: false })
-          .limit(25);
-        setEpMediaSearchResults((data as MediaItem[]) || []);
+          .limit(40);
+        const ranked = rankSearchResults((data as MediaItem[]) || [], term);
+        setEpMediaSearchResults(ranked.slice(0, 25));
       } finally {
         setEpMediaSearchLoading(false);
       }
@@ -951,7 +992,16 @@ export default function AdminDashboardPage() {
 
     // If detail data isn't loaded yet, fetch base details in background
     if (!scraperDetailData || scraperDetailData.scraper?.id !== scraperId) {
-      fetch(`/api/admin/scraper?scraperId=${scraperId}`)
+      supabase.auth
+        .getSession()
+        .then(({ data: s }) => {
+          const token = s?.session?.access_token;
+          return fetch(`/api/admin/scraper?scraperId=${scraperId}`, {
+            headers: {
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+          });
+        })
         .then((r) => r.json())
         .then((d) => {
           if (d.scraper) setScraperDetailData(d);
@@ -985,8 +1035,112 @@ export default function AdminDashboardPage() {
         },
         body: JSON.stringify({ scraperId, targetSeries }),
       });
-      const data = await resp.json();
-      if (resp.ok) {
+
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        setLiveTerminalLogs((prev) => [
+          ...prev,
+          `[${nowTime}] [HATA] Sunucu yanıtı: ${errData?.error || 'Bilinmeyen hata'}`,
+        ]);
+        pushNotification('Scraper Uyarısı', errData?.error || 'Tarama yanıt vermedi.', 'info');
+        return;
+      }
+
+      const contentType = resp.headers.get('content-type') || '';
+      if (contentType.includes('application/x-ndjson') && resp.body) {
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let finalResult: any = null;
+
+        const handleMessage = (lineStr: string) => {
+          const trimmed = lineStr.trim();
+          if (!trimmed) return;
+          try {
+            const msg = JSON.parse(trimmed);
+            if (msg.type === 'log' && msg.line) {
+              setLiveTerminalLogs((prev) => [...prev, msg.line]);
+            } else if (msg.type === 'item' && msg.item) {
+              setScraperDetailData((prev: any) => {
+                const existing = prev?.recentItems || [];
+                const deduped = [
+                  msg.item,
+                  ...existing.filter((x: any) => x.id !== msg.item.id),
+                ].slice(0, 20);
+                return {
+                  ...(prev || {}),
+                  recentItems: deduped,
+                };
+              });
+            } else if (msg.type === 'result') {
+              finalResult = msg;
+            } else if (msg.type === 'error') {
+              setLiveTerminalLogs((prev) => [
+                ...prev,
+                `[${nowTime}] [HATA] ${msg.error || 'Tarama hatası'}`,
+              ]);
+            }
+          } catch (_) {}
+        };
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split(/\r?\n/);
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            handleMessage(line);
+          }
+        }
+        if (buffer.trim()) {
+          handleMessage(buffer);
+        }
+
+        if (finalResult && finalResult.ok) {
+          setScrapers((prev) =>
+            prev.map((s) =>
+              s.id === scraperId
+                ? {
+                    ...s,
+                    items_synced: finalResult.newTotal,
+                    last_run_at: finalResult.timestamp,
+                    last_status: 'healthy',
+                  }
+                : s
+            )
+          );
+
+          setScraperDetailData((prev: any) => {
+            const existing = prev?.recentItems || [];
+            const incoming = Array.isArray(finalResult.newlySyncedItems)
+              ? finalResult.newlySyncedItems
+              : [];
+            const merged = [...incoming];
+            for (const ex of existing) {
+              if (!merged.some((m: any) => m.id === ex.id)) {
+                merged.push(ex);
+              }
+            }
+            return {
+              ...(prev || {}),
+              recentItems: merged.slice(0, 20),
+              scraper: {
+                ...(prev?.scraper || {}),
+                items_synced: finalResult.newTotal,
+                last_run_at: finalResult.timestamp,
+              },
+            };
+          });
+
+          pushNotification(
+            'Tarama Başarıyla Tamamlandı',
+            `${name}: +${finalResult.syncedDelta} yeni/güncel kayıt işlendi. Toplam: ${finalResult.newTotal.toLocaleString('tr-TR')}`,
+            'success'
+          );
+        }
+      } else {
+        const data = await resp.json();
         setScrapers((prev) =>
           prev.map((s) =>
             s.id === scraperId
@@ -1024,12 +1178,6 @@ export default function AdminDashboardPage() {
           `${name}: +${data.syncedDelta} yeni/güncel kayıt işlendi. Toplam: ${data.newTotal.toLocaleString('tr-TR')}`,
           'success'
         );
-      } else {
-        setLiveTerminalLogs((prev) => [
-          ...prev,
-          `[${nowTime}] [HATA] Sunucu yanıtı: ${data?.error || 'Bilinmeyen hata'}`,
-        ]);
-        pushNotification('Scraper Uyarısı', data?.error || 'Tarama yanıt vermedi.', 'info');
       }
     } catch (err: any) {
       setLiveTerminalLogs((prev) => [
@@ -1066,23 +1214,44 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // Broadcast Action
+  // Broadcast Action (System Announcements)
   const handleSendBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!broadcastTitle.trim() || !broadcastBody.trim()) return;
     setBroadcastSending(true);
     try {
+      const bTitle = broadcastTitle.trim();
+      const bBody = broadcastBody.trim();
+
+      // 1. Record broadcast event in database
       const { error } = await supabase.from('broadcast_events').insert({
         target_type: 'global',
-        title: broadcastTitle.trim(),
-        message: broadcastBody.trim(),
+        title: bTitle,
+        message: bBody,
         link_url: '/',
       });
       if (error) throw error;
-      pushNotification(broadcastTitle.trim(), broadcastBody.trim(), 'episode');
+
+      // 2. Distribute official system notification to all user inboxes
+      const { data: allProfiles } = await supabase.from('profiles').select('id');
+      if (allProfiles && allProfiles.length > 0) {
+        const notifRows = allProfiles.map((p) => ({
+          user_id: p.id,
+          type: 'system',
+          title: bTitle,
+          body: bBody,
+          link_url: '/',
+          is_read: false,
+        }));
+        // Chunk into 100 rows per batch
+        for (let i = 0; i < notifRows.length; i += 100) {
+          await supabase.from('user_notifications').insert(notifRows.slice(i, i + 100));
+        }
+      }
+
       setBroadcastTitle('');
       setBroadcastBody('');
-      pushNotification('Duyuru Yayınlandı', 'Tüm aktif kullanıcılara canlı sesli bildirim gönderildi.', 'success');
+      pushNotification('Duyuru Yayınlandı', 'Tüm aktif kullanıcılara sistem duyurusu iletildi.', 'success');
     } catch (err: any) {
       pushNotification('Duyuru Hatası', err.message || 'Bildirim iletilemedi.', 'info');
     } finally {
@@ -1337,12 +1506,14 @@ export default function AdminDashboardPage() {
     const t = setTimeout(async () => {
       setIsSearchingVitrin(true);
       try {
+        const query = vitrinSearch.trim();
         const { data } = await supabase
           .from('media')
           .select('*')
-          .ilike('title', `%${vitrinSearch.trim()}%`)
-          .limit(8);
-        setVitrinSearchResults((data as MediaItem[]) || []);
+          .or(`title.ilike.%${query}%,slug.ilike.%${query}%`)
+          .limit(30);
+        const ranked = rankSearchResults((data as MediaItem[]) || [], query);
+        setVitrinSearchResults(ranked.slice(0, 8));
       } catch {
         setVitrinSearchResults([]);
       } finally {
@@ -1579,6 +1750,98 @@ export default function AdminDashboardPage() {
       pushNotification('Bölüm Silindi', `${ep.season_number}. Sezon ${ep.episode_number}. Bölüm kaldırıldı.`, 'info');
     } catch (err: any) {
       pushNotification('Bölüm Silinemedi', err.message || 'Veritabanı hatası.', 'info');
+    }
+  };
+
+  const handleBulkSaveIntro = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedMediaForEp) return;
+    setBulkIntroSaving(true);
+    try {
+      const parseTimeInput = (val: string): number | null => {
+        const trimmed = val.trim();
+        if (!trimmed) return null;
+        if (trimmed.includes(':')) {
+          const parts = trimmed.split(':');
+          const m = Number(parts[0]) || 0;
+          const s = Number(parts[1]) || 0;
+          return m * 60 + s;
+        }
+        const n = Number(trimmed);
+        return Number.isNaN(n) ? null : n;
+      };
+
+      const startSec = bulkIntroClear ? null : parseTimeInput(bulkIntroStart);
+      const endSec = bulkIntroClear ? null : parseTimeInput(bulkIntroEnd);
+
+      if (!bulkIntroClear) {
+        if (startSec == null || endSec == null) {
+          pushNotification('Eksik Bilgi', 'Lütfen geçerli bir başlangıç ve bitiş süresi girin (örn: 90 sn veya 01:30).', 'info');
+          setBulkIntroSaving(false);
+          return;
+        }
+        if (endSec <= startSec) {
+          pushNotification('Geçersiz Süre', 'İntro bitiş süresi başlangıç süresinden büyük olmalıdır.', 'info');
+          setBulkIntroSaving(false);
+          return;
+        }
+      }
+
+      const targetEps = episodesList.filter(
+        (ep) => bulkIntroTargetSeason === 'all' || ep.season_number === Number(bulkIntroTargetSeason)
+      );
+
+      if (targetEps.length === 0) {
+        pushNotification('Bölüm Bulunamadı', 'Seçilen kapsamda işlem yapılacak bölüm bulunamadı.', 'info');
+        setBulkIntroSaving(false);
+        return;
+      }
+
+      const rows = targetEps.map((ep) => ({
+        media_id: selectedMediaForEp.id,
+        season_number: ep.season_number,
+        episode_number: ep.episode_number,
+        episode_name: ep.episode_name || `${ep.episode_number}. Bölüm`,
+        episode_type: ep.episode_type || 'bolum',
+        status: ep.status || 'published',
+        intro_start_sec: startSec,
+        intro_end_sec: endSec,
+        video_sources: ep.video_sources || [],
+      }));
+
+      for (let i = 0; i < rows.length; i += 50) {
+        const chunk = rows.slice(i, i + 50);
+        const { error } = await supabase.from('episodes').upsert(chunk, {
+          onConflict: 'media_id,season_number,episode_number',
+        });
+        if (error) throw error;
+      }
+
+      setEpisodesList((prev) =>
+        prev.map((ep) => {
+          if (bulkIntroTargetSeason === 'all' || ep.season_number === Number(bulkIntroTargetSeason)) {
+            return { ...ep, intro_start_sec: startSec, intro_end_sec: endSec };
+          }
+          return ep;
+        })
+      );
+
+      try {
+        invalidateCache(`episodes_${selectedMediaForEp.id}`);
+        invalidateCache('media_');
+      } catch {}
+
+      setBulkIntroModalOpen(false);
+      pushNotification(
+        'Toplu İntro Kaydedildi',
+        `${targetEps.length} bölüme intro atlama ayarı uygulandı (${bulkIntroTargetSeason === 'all' ? 'Tüm Seri' : `${bulkIntroTargetSeason}. Sezon`}).`,
+        'success'
+      );
+    } catch (err: any) {
+      console.error('Bulk intro save error:', err);
+      pushNotification('Kayıt Başarısız', err.message || 'Toplu intro güncellenemedi.', 'info');
+    } finally {
+      setBulkIntroSaving(false);
     }
   };
 
@@ -2784,21 +3047,37 @@ export default function AdminDashboardPage() {
               </div>
 
               {selectedMediaForEp && (
-                <button
-                  onClick={() => {
-                    setEditingEp({
-                      media_id: selectedMediaForEp.id,
-                      season_number: 1,
-                      episode_number: (episodesList.length || 0) + 1,
-                      status: 'published',
-                    });
-                    setEpModalOpen(true);
-                  }}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all cursor-pointer shadow-lg shrink-0"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Yeni Bölüm Ekle</span>
-                </button>
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <button
+                    onClick={() => {
+                      setBulkIntroModalOpen(true);
+                      setBulkIntroTargetSeason('all');
+                      setBulkIntroStart('');
+                      setBulkIntroEnd('');
+                      setBulkIntroClear(false);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-amber-400/15 border border-amber-400/30 text-amber-300 text-xs font-bold hover:bg-amber-400/25 transition-all cursor-pointer shadow-lg shrink-0"
+                  >
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    <span>Toplu İntro Ekle</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setEditingEp({
+                        media_id: selectedMediaForEp.id,
+                        season_number: 1,
+                        episode_number: (episodesList.length || 0) + 1,
+                        status: 'published',
+                      });
+                      setEpModalOpen(true);
+                    }}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all cursor-pointer shadow-lg shrink-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Yeni Bölüm Ekle</span>
+                  </button>
+                </div>
               )}
             </div>
 
@@ -2855,14 +3134,14 @@ export default function AdminDashboardPage() {
                           onClick={() => {
                             setSelectedMediaForEp(m);
                           }}
-                          className="p-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 hover:border-sky-400/50 text-left flex items-center gap-3 transition-all cursor-pointer group hover:scale-[1.01] hover:shadow-[0_4px_20px_rgba(41,151,255,0.15)]"
+                          className="p-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 hover:border-sky-400/50 text-left flex items-center gap-3 transition-all cursor-pointer group hover:shadow-[0_4px_20px_rgba(41,151,255,0.15)]"
                         >
                           <div className="w-12 h-16 rounded-xl overflow-hidden bg-black/60 border border-white/10 shrink-0 relative">
                             {m.cover_image ? (
                               <img
                                 src={getProxiedImageUrl(m.cover_image, m.title)}
                                 alt={m.title}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                className="w-full h-full object-cover"
                               />
                             ) : (
                               <Film className="w-5 h-5 text-white/30 m-auto mt-5" />
@@ -3850,25 +4129,25 @@ export default function AdminDashboardPage() {
 
           <form onSubmit={handleSendBroadcast} className="space-y-4">
             <div>
-              <label className="block text-xs text-white/60 mb-1">Duyuru Başlığı</label>
+              <label className="block text-xs text-white/60 mb-1.5 font-medium">Duyuru Başlığı</label>
               <input
                 type="text"
                 required
                 value={broadcastTitle}
                 onChange={(e) => setBroadcastTitle(e.target.value)}
-                placeholder="Örn: Reply 1988 Özel Bölüm Eklendi!"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-white/10 text-xs text-white focus:outline-none focus:border-white/30"
+                placeholder="Örn: Planlı Sunucu Bakımı & Yeni Güncelleme"
+                className="w-full px-4 py-2.5 rounded-2xl bg-black/60 border border-white/12 text-xs text-white placeholder-white/40 focus:outline-none focus:border-sky-400/60 focus:ring-1 focus:ring-sky-400/30 transition-all font-medium"
               />
             </div>
             <div>
-              <label className="block text-xs text-white/60 mb-1">Duyuru Mesajı</label>
+              <label className="block text-xs text-white/60 mb-1.5 font-medium">Duyuru Mesajı</label>
               <textarea
                 rows={4}
                 required
                 value={broadcastBody}
                 onChange={(e) => setBroadcastBody(e.target.value)}
-                placeholder="1080p kesintisiz akışla hemen izleyebilirsiniz..."
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-white/10 text-xs text-white focus:outline-none focus:border-white/30"
+                placeholder="Sitemiz yarın 13:00–14:00 saatleri arasında performans optimizasyonu çalışmasına alınacaktır..."
+                className="w-full p-3.5 rounded-2xl bg-black/60 border border-white/12 text-xs text-white placeholder-white/40 focus:outline-none focus:border-sky-400/60 focus:ring-1 focus:ring-sky-400/30 transition-all font-medium resize-none"
               />
             </div>
             <button
@@ -4058,6 +4337,182 @@ export default function AdminDashboardPage() {
                     className="px-6 py-2 rounded-xl bg-white text-black text-xs font-bold hover:bg-white/90 cursor-pointer shadow-lg transition-all"
                   >
                     Kaydet
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ================= MODAL: TOPLU İNTRO AYARLA ================= */}
+      <AnimatePresence>
+        {bulkIntroModalOpen && selectedMediaForEp && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !bulkIntroSaving && setBulkIntroModalOpen(false)}
+              className="fixed inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-md rounded-3xl bg-[#131317] border border-amber-400/25 p-6 shadow-2xl z-10 max-h-[90vh] overflow-y-auto my-auto"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center text-amber-400">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Toplu İntro Süresi Ayarla</h3>
+                    <p className="text-[11px] text-white/50 truncate max-w-[260px]">{selectedMediaForEp.title}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => !bulkIntroSaving && setBulkIntroModalOpen(false)}
+                  className="p-1 rounded-full bg-white/10 text-white/70 hover:text-white cursor-pointer transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleBulkSaveIntro} className="space-y-4">
+                {/* Target Scope Selection */}
+                <div>
+                  <label className="block text-[11px] font-medium text-white/70 mb-1.5">
+                    Uygulanacak Kapsam
+                  </label>
+                  <CustomSelect
+                    value={bulkIntroTargetSeason}
+                    onChange={(val) => setBulkIntroTargetSeason(val)}
+                    options={[
+                      {
+                        value: 'all',
+                        label: `Tüm Sezonlar & Bölümler (${episodesList.length} Bölüm)`,
+                      },
+                      ...Array.from(new Set(episodesList.map((e) => e.season_number || 1)))
+                        .sort((a, b) => a - b)
+                        .map((s) => ({
+                          value: String(s),
+                          label: `${s}. Sezon (${episodesList.filter((e) => (e.season_number || 1) === s).length} Bölüm)`,
+                        })),
+                    ]}
+                    variant="dark"
+                    size="sm"
+                    className="w-full"
+                    triggerClassName="w-full !rounded-xl justify-between bg-black/60 border-white/15 py-2 text-xs"
+                    menuClassName="w-full"
+                  />
+                  <p className="text-[10px] text-white/40 mt-1">
+                    Seçilen kapsama giren tüm bölümlerin intro süreleri tek seferde senkronize edilir.
+                  </p>
+                </div>
+
+                {/* Option to clear */}
+                <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-semibold text-white">İntroları Kaldır / Temizle</div>
+                    <div className="text-[10px] text-white/45">Seçilen kapsamdaki bölümlerin intro atlama sürelerini sıfırlar.</div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={bulkIntroClear}
+                    onChange={(e) => setBulkIntroClear(e.target.checked)}
+                    className="w-4 h-4 rounded accent-amber-400 cursor-pointer"
+                  />
+                </div>
+
+                {/* Inputs if not clearing */}
+                {!bulkIntroClear && (
+                  <div className="space-y-3 p-3.5 rounded-2xl bg-black/40 border border-white/10">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-medium text-amber-300 mb-1">
+                          İntro Başlangıç
+                        </label>
+                        <input
+                          type="text"
+                          required={!bulkIntroClear}
+                          placeholder="Örn: 90 veya 01:30"
+                          value={bulkIntroStart}
+                          onChange={(e) => setBulkIntroStart(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/15 text-xs text-white focus:outline-none focus:border-amber-400/50"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-amber-300 mb-1">
+                          İntro Bitiş / Atla
+                        </label>
+                        <input
+                          type="text"
+                          required={!bulkIntroClear}
+                          placeholder="Örn: 180 veya 03:00"
+                          value={bulkIntroEnd}
+                          onChange={(e) => setBulkIntroEnd(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/15 text-xs text-white focus:outline-none focus:border-amber-400/50"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Preview Badge */}
+                    {(() => {
+                      const parseT = (val: string) => {
+                        const t = val.trim();
+                        if (!t) return null;
+                        if (t.includes(':')) {
+                          const p = t.split(':');
+                          return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0);
+                        }
+                        const n = Number(t);
+                        return Number.isNaN(n) ? null : n;
+                      };
+                      const s = parseT(bulkIntroStart);
+                      const en = parseT(bulkIntroEnd);
+                      if (s != null && en != null && en > s) {
+                        return (
+                          <div className="flex items-center gap-2 pt-1 text-[11px] font-mono text-emerald-400">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>
+                              {en - s} saniye atlar ({Math.floor(s / 60)}:{String(s % 60).padStart(2, '0')} → {Math.floor(en / 60)}:{String(en % 60).padStart(2, '0')})
+                            </span>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/10">
+                  <button
+                    type="button"
+                    disabled={bulkIntroSaving}
+                    onClick={() => setBulkIntroModalOpen(false)}
+                    className="px-4 py-2 text-xs text-white/70 hover:text-white cursor-pointer transition-colors"
+                  >
+                    Vazgeç
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={bulkIntroSaving}
+                    className="px-5 py-2 rounded-xl bg-amber-400 text-black text-xs font-bold hover:bg-amber-300 transition-all cursor-pointer shadow-md flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    {bulkIntroSaving ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Kaydediliyor...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>{bulkIntroClear ? 'İntroları Sıfırla' : 'Toplu Uygula'}</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </form>

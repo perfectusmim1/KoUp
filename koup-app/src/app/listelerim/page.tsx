@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useKoUp } from '@/context/KoUpContext';
 import { supabase, getProxiedImageUrl } from '@/lib/supabase';
+import Pagination from '@/components/Pagination';
 
 interface UserCustomList {
   id: number;
@@ -41,6 +42,8 @@ export default function MyListsPage() {
   const [lists, setLists] = useState<UserCustomList[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 12;
 
   // Create Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -200,14 +203,20 @@ export default function MyListsPage() {
   };
 
   // Filtered lists
-  const filteredLists = lists.filter((l) => {
-    if (!searchQuery.trim()) return true;
+  const filteredLists = useMemo(() => {
+    if (!searchQuery.trim()) return lists;
     const q = searchQuery.toLowerCase();
-    return (
+    return lists.filter((l) =>
       l.title.toLowerCase().includes(q) ||
       (l.description && l.description.toLowerCase().includes(q))
     );
-  });
+  }, [lists, searchQuery]);
+
+  // Paginated slice
+  const paginatedLists = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredLists.slice(start, start + PAGE_SIZE);
+  }, [filteredLists, currentPage]);
 
   // If user is not logged in
   if (!user) {
@@ -247,10 +256,6 @@ export default function MyListsPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-white/[0.08]">
         <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-400/20 text-sky-400 text-xs font-mono font-semibold">
-            <FolderHeart className="w-3.5 h-3.5" />
-            <span>Kişisel Koleksiyon Yönetimi</span>
-          </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
             Özel Listelerim
           </h1>
@@ -288,15 +293,30 @@ export default function MyListsPage() {
           Toplam <strong className="text-white font-bold">{lists.length}</strong> özel koleksiyon
         </div>
 
-        <div className="relative min-w-[240px]">
-          <Search className="w-3.5 h-3.5 text-white/40 absolute left-3 top-1/2 -translate-y-1/2" />
+        <div className="flex items-center gap-2 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/50 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 w-full sm:w-64 lg:w-72 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.25)]">
+          <Search className="w-4 h-4 text-white/60 shrink-0" />
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
             placeholder="Listelerimde ara..."
-            className="w-full pl-8 pr-3 py-1.5 rounded-full bg-black/60 border border-white/15 text-xs text-white placeholder-white/40 focus:outline-none focus:border-sky-400"
+            className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full font-medium"
           />
+          {searchQuery ? (
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                setCurrentPage(1);
+              }}
+              className="text-white/50 hover:text-white transition-colors cursor-pointer shrink-0"
+              aria-label="Aramayı temizle"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -338,7 +358,7 @@ export default function MyListsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredLists.map((l) => {
+          {paginatedLists.map((l) => {
             const itemCount = l.media_ids.length;
             const isPublic = l.visibility === 'public';
 
@@ -389,7 +409,7 @@ export default function MyListsPage() {
                             <img
                               src={getProxiedImageUrl(poster, l.title)}
                               alt=""
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              className="w-full h-full object-cover"
                             />
                           </div>
                         ))}
@@ -476,22 +496,40 @@ export default function MyListsPage() {
         </div>
       )}
 
+      {/* PAGINATION DECK (Apple TV+ Cinema Glass Design) */}
+      {!isLoading && filteredLists.length > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalCount={filteredLists.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setCurrentPage}
+          itemLabel="özel listeden"
+          scrollToOffset={240}
+        />
+      )}
+
       {/* CREATE NEW LIST MODAL */}
       <AnimatePresence>
         {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto"
+          >
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsModalOpen(false)}
-              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+              className="absolute inset-0 bg-black/80 backdrop-blur-md cursor-pointer"
             />
 
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              initial={{ opacity: 0, scale: 0.94, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              exit={{ opacity: 0, scale: 0.94, y: 16 }}
               transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
               className="relative w-full max-w-lg rounded-3xl bg-[#0f0f13] border border-white/15 p-6 sm:p-8 shadow-2xl z-10 space-y-5"
             >
@@ -504,6 +542,7 @@ export default function MyListsPage() {
                   <h3 className="text-lg font-bold text-white">Yeni Liste Oluştur</h3>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setIsModalOpen(false)}
                   className="w-8 h-8 rounded-full glass-pill flex items-center justify-center text-white/60 hover:text-white cursor-pointer"
                 >
@@ -523,7 +562,7 @@ export default function MyListsPage() {
                     value={modalTitle}
                     onChange={(e) => setModalTitle(e.target.value)}
                     placeholder="Örn: En İyi Wuxia & Tarihi Seçkim"
-                    className="w-full px-4 py-2.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white focus:outline-none focus:border-sky-400"
+                    className="koup-input text-xs py-2.5 px-4 font-medium"
                   />
                 </div>
 
@@ -536,7 +575,7 @@ export default function MyListsPage() {
                     value={modalDesc}
                     onChange={(e) => setModalDesc(e.target.value)}
                     placeholder="Listenizin teması, seçtiğiniz yapımlar hakkında kısa bir not..."
-                    className="w-full px-4 py-2.5 rounded-xl bg-black/60 border border-white/15 text-xs text-white focus:outline-none focus:border-sky-400"
+                    className="koup-input text-xs py-2.5 px-4 font-medium resize-none"
                   />
                 </div>
 
@@ -548,36 +587,42 @@ export default function MyListsPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       type="button"
-                      onClick={() => setModalVisibility('public')}
+                      onClick={() => {
+                        triggerSound('click');
+                        setModalVisibility('public');
+                      }}
                       className={`p-3.5 rounded-2xl border text-left cursor-pointer transition-all ${
                         modalVisibility === 'public'
-                          ? 'bg-sky-500/10 border-sky-400 text-white'
-                          : 'bg-white/[0.03] border-white/10 text-white/60 hover:border-white/20'
+                          ? 'bg-sky-500/15 border-sky-400 text-white shadow-[0_0_18px_rgba(41,151,255,0.22)]'
+                          : 'bg-white/[0.04] border-white/10 text-white/60 hover:border-white/25 hover:text-white'
                       }`}
                     >
                       <div className="flex items-center gap-1.5 text-xs font-bold text-white">
-                        <Globe className="w-3.5 h-3.5 text-sky-400" />
+                        <Globe className={`w-3.5 h-3.5 ${modalVisibility === 'public' ? 'text-sky-400' : 'text-white/50'}`} />
                         <span>Herkese Açık</span>
                       </div>
-                      <p className="text-[10px] text-white/50 mt-1">
+                      <p className="text-[11px] text-white/50 mt-1">
                         Topluluk listeler sayfasında ve profilinizde görünür.
                       </p>
                     </button>
 
                     <button
                       type="button"
-                      onClick={() => setModalVisibility('private')}
+                      onClick={() => {
+                        triggerSound('click');
+                        setModalVisibility('private');
+                      }}
                       className={`p-3.5 rounded-2xl border text-left cursor-pointer transition-all ${
                         modalVisibility === 'private'
-                          ? 'bg-amber-500/10 border-amber-400 text-white'
-                          : 'bg-white/[0.03] border-white/10 text-white/60 hover:border-white/20'
+                          ? 'bg-amber-500/15 border-amber-400 text-white shadow-[0_0_18px_rgba(245,158,11,0.22)]'
+                          : 'bg-white/[0.04] border-white/10 text-white/60 hover:border-white/25 hover:text-white'
                       }`}
                     >
                       <div className="flex items-center gap-1.5 text-xs font-bold text-white">
-                        <Lock className="w-3.5 h-3.5 text-amber-400" />
+                        <Lock className={`w-3.5 h-3.5 ${modalVisibility === 'private' ? 'text-amber-400' : 'text-white/50'}`} />
                         <span>Gizli Liste</span>
                       </div>
-                      <p className="text-[10px] text-white/50 mt-1">
+                      <p className="text-[11px] text-white/50 mt-1">
                         Yalnızca siz görebilir ve yönetebilirsiniz.
                       </p>
                     </button>
@@ -594,7 +639,7 @@ export default function MyListsPage() {
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}
-                    className="px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/15 text-xs text-white font-medium cursor-pointer transition-all"
+                    className="px-5 py-2.5 rounded-full glass-pill text-xs text-white/80 hover:text-white font-medium cursor-pointer transition-all"
                   >
                     İptal
                   </button>
@@ -608,7 +653,7 @@ export default function MyListsPage() {
                 </div>
               </form>
             </motion.div>
-          </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

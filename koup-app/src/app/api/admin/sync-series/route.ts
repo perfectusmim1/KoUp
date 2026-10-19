@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'node:path';
 import fs from 'node:fs';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
 import { verifyAdminAuth } from '@/lib/adminAuth';
-
-const execFileAsync = promisify(execFile);
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
 // Helper to find Python executable across Windows environments
 function getPythonPath(): string {
@@ -55,69 +53,160 @@ export async function POST(req: NextRequest) {
     }
 
     const pythonBin = getPythonPath();
-    const args = [scriptPath, '--drama-id', String(dramaId), '--provider', provider];
+    const args = ['-u', scriptPath, '--drama-id', String(dramaId), '--provider', provider];
 
     if (manualUrl && typeof manualUrl === 'string' && manualUrl.trim().length > 0) {
       args.push('--manual-url', manualUrl.trim());
     }
 
-    // 3. Execute target sync subprocess with 60s timeout
-    let stdout = '';
-    let stderr = '';
-    try {
-      const execResult = await execFileAsync(pythonBin, args, {
-        cwd: path.resolve(process.cwd(), '..'),
-        timeout: 60000,
-        env: {
-          ...process.env,
-          PYTHONIOENCODING: 'utf-8',
-        },
-      });
-      stdout = execResult.stdout || '';
-      stderr = execResult.stderr || '';
-    } catch (procErr: any) {
-      stdout = procErr.stdout || '';
-      stderr = procErr.stderr || '';
-      if (!stdout && stderr) {
-        throw new Error(stderr.slice(0, 400));
-      }
-    }
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        const logs: string[] = [];
+        let resultPayload: any = null;
+        let stdoutBuf = '';
+        let closed = false;
 
-    // 4. Parse stdout logs and __RESULT__ payload
-    const rawLines = stdout.split(/\r?\n/).filter((l) => l.trim().length > 0);
-    const logs: string[] = [];
-    let resultPayload: any = null;
+        const sendEvent = (obj: any) => {
+          if (closed) return;
+          try {
+            controller.enqueue(encoder.encode(JSON.stringify(obj) + '\n'));
+          } catch (_) {}
+        };
 
-    for (const line of rawLines) {
-      if (line.startsWith('__RESULT__ ')) {
-        try {
-          resultPayload = JSON.parse(line.replace('__RESULT__ ', '').trim());
-        } catch (_) {}
-      } else if (line.startsWith('[')) {
-        logs.push(line);
-      }
-    }
+        const processLine = (rawLine: string) => {
+          const line = rawLine.trim();
+          if (!line) return;
+          if (line.startsWith('__RESULT__ ')) {
+            try {
+              resultPayload = JSON.parse(line.replace('__RESULT__ ', '').trim());
+            } catch (_) {}
+          } else if (line.startsWith('[')) {
+            logs.push(line);
+            sendEvent({ type: 'log', line });
+          }
+        };
 
-    if (!resultPayload) {
-      resultPayload = {
-        ok: true,
-        dramaId,
-        provider,
-        episodesAdded: 0,
-        sourcesAdded: 0,
-        timestamp: new Date().toISOString(),
-      };
-    }
+        const child = spawn(pythonBin, args, {
+          cwd: path.resolve(process.cwd(), '..'),
+          env: {
+            ...process.env,
+            PYTHONIOENCODING: 'utf-8',
+            PYTHONUNBUFFERED: '1',
+          },
+        });
 
-    return NextResponse.json({
-      ok: true,
-      dramaId,
-      dramaTitle: resultPayload.dramaTitle || '',
-      provider: resultPayload.provider || provider,
-      episodesAdded: resultPayload.episodesAdded ?? 0,
-      sourcesAdded: resultPayload.sourcesAdded ?? 0,
-      logs,
-      timestamp: resultPayload.timestamp || new Date().toISOString(),
+        const killTimer = setTimeout(() => {
+          try {
+            child.kill('SIGTERM');
+          } catch (_) {}
+        }, 120000);
+
+        child.stdout.on('data', (chunk: Buffer) => {
+          stdoutBuf += chunk.toString('utf-8');
+          const parts = stdoutBuf.split(/\r?\n/);
+          stdoutBuf = parts.pop() || '';
+          for (const part of parts) {
+            processLine(part);
+          }
+        });
+
+        child.stderr.on('data', (chunk: Buffer) => {
+          const errText = chunk.toString('utf-8').trim();
+          if (errText && !errText.includes('Warning')) {
+            const nowStr = new Date().toTimeString().split(' ')[0];
+            const errLine = `[${nowStr}] [UYARI] ${errText.split(/\r?\n/)[0].slice(0, 160)}`;
+            logs.push(errLine);
+            sendEvent({ type: 'log', line: errLine });
+          }
+        });
+
+        child.on('close', async () => {
+          clearTimeout(killTimer);
+          if (stdoutBuf.trim()) {
+            processLine(stdoutBuf);
+            stdoutBuf = '';
+          }
+
+          // Double Fail-safe: Ensure newly generated bundle is uploaded to Cloudflare R2 bucket
+          try {
+            const bundlePath = path.resolve(process.cwd(), '..', 'r2_bundles', 'sources', `${dramaId}.json`);
+            if (fs.existsSync(bundlePath)) {
+              const accessKeyId = process.env.CF_R2_ACCESS_KEY_ID;
+              const secretAccessKey = process.env.CF_R2_SECRET_ACCESS_KEY;
+              const endpoint = process.env.CF_R2_ENDPOINT;
+              const bucket = process.env.CF_R2_BUCKET || 'koup-archive';
+              if (accessKeyId && secretAccessKey && endpoint) {
+                const s3 = new S3Client({
+                  region: 'auto',
+                  endpoint,
+                  credentials: { accessKeyId, secretAccessKey },
+                });
+                const fileBuf = fs.readFileSync(bundlePath);
+                await s3.send(
+                  new PutObjectCommand({
+                    Bucket: bucket,
+                    Key: `sources/${dramaId}.json`,
+                    Body: fileBuf,
+                    ContentType: 'application/json',
+                    CacheControl: 'public, max-age=60',
+                  })
+                );
+              }
+            }
+          } catch (r2Err) {
+            console.error('[SYNC_R2_UPLOAD_ERROR]', r2Err);
+          }
+
+          if (!resultPayload) {
+            resultPayload = {
+              ok: true,
+              dramaId,
+              provider,
+              episodesAdded: 0,
+              sourcesAdded: 0,
+              timestamp: new Date().toISOString(),
+            };
+          }
+
+          sendEvent({
+            type: 'result',
+            ok: true,
+            dramaId,
+            dramaTitle: resultPayload.dramaTitle || '',
+            provider: resultPayload.provider || provider,
+            episodesAdded: resultPayload.episodesAdded ?? 0,
+            sourcesAdded: resultPayload.sourcesAdded ?? 0,
+            logs,
+            timestamp: resultPayload.timestamp || new Date().toISOString(),
+          });
+
+          closed = true;
+          try {
+            controller.close();
+          } catch (_) {}
+        });
+
+        child.on('error', (err) => {
+          clearTimeout(killTimer);
+          sendEvent({
+            type: 'error',
+            error: err.message || 'Senkronizasyon alt işlemi başlatılamadı',
+          });
+          closed = true;
+          try {
+            controller.close();
+          } catch (_) {}
+        });
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'application/x-ndjson; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+      },
     });
   } catch (err: any) {
     console.error('Single series sync error:', err);

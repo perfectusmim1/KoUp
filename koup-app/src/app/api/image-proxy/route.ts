@@ -269,7 +269,18 @@ function transliterateTrToAscii(str: string): string {
     .replace(/[ğĞ]/g, 'g')
     .replace(/[üÜ]/g, 'u')
     .replace(/[öÖ]/g, 'o')
-    .replace(/[çÇ]/g, 'c');
+    .replace(/[çÇ]/g, 'c')
+    .replace(/²/g, '2')
+    .replace(/³/g, '3');
+}
+
+function normalizeTitleForMatch(str?: string | null): string {
+  if (!str) return '';
+  return transliterateTrToAscii(str)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function extractSlugFromUrl(urlStr?: string | null): string | null {
@@ -290,20 +301,82 @@ function extractSlugFromUrl(urlStr?: string | null): string | null {
   }
 }
 
-async function fetchTmdbPosterById(tmdbId: number | string): Promise<string | null> {
+function isTitleMatch(expectedTitle?: string | null, candidateTitle?: string | null): boolean {
+  if (!expectedTitle) return true;
+  if (!candidateTitle) return false;
+
+  const cleanExp = normalizeTitleForMatch(expectedTitle);
+  const cleanCand = normalizeTitleForMatch(candidateTitle);
+
+  if (!cleanExp) return true;
+  if (!cleanCand) return false;
+
+  if (cleanCand === cleanExp) return true;
+
+  const expWords = cleanExp.split(/\s+/).filter(Boolean);
+  const candWords = cleanCand.split(/\s+/).filter(Boolean);
+
+  if (expWords.length === 0 || candWords.length === 0) return false;
+
+  // For short titles (1 word or <= 5 chars), require exact normalized match
+  if (cleanExp.length <= 5 || expWords.length === 1) {
+    return cleanCand === cleanExp;
+  }
+
+  // Exact phrase containment with minimal word count difference
+  const candSpaced = ` ${cleanCand} `;
+  const expSpaced = ` ${cleanExp} `;
+  if (candSpaced.includes(expSpaced) || expSpaced.includes(candSpaced)) {
+    if (Math.abs(candWords.length - expWords.length) <= 2) {
+      return true;
+    }
+  }
+
+  // Word overlap match for multi-word titles
+  if (expWords.length >= 2 && candWords.length >= 2) {
+    const common = expWords.filter((w) => candWords.includes(w));
+    if (
+      common.length >= Math.ceil(expWords.length * 0.8) &&
+      Math.abs(expWords.length - candWords.length) <= 1
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function fetchTmdbPosterById(
+  tmdbId: number | string,
+  mediaType?: 'tv' | 'movie' | null,
+  titleHint?: string | null
+): Promise<string | null> {
   const idStr = String(tmdbId).trim();
   if (!idStr || idStr === '0' || idStr === 'null') return null;
-  const cacheKey = `tmdb_id_${idStr}`;
+  const cacheKey = `tmdb_id_${idStr}_${mediaType || 'any'}`;
   if (titlePosterCache.has(cacheKey)) {
     return titlePosterCache.get(cacheKey) || null;
   }
 
-  for (const ep of ['movie', 'tv']) {
+  // Check the appropriate endpoint first (tv for series/anime, movie for films)
+  const endpoints: Array<'tv' | 'movie'> =
+    mediaType === 'movie' ? ['movie', 'tv'] : ['tv', 'movie'];
+
+  for (const ep of endpoints) {
     try {
       const url = `https://api.themoviedb.org/3/${ep}/${idStr}?api_key=${TMDB_API_KEY}&language=tr-TR`;
       const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
       if (res.ok) {
         const d = await res.json();
+        // Strict safety: NEVER serve adult/18+ content under any circumstances
+        if (d.adult === true) continue;
+
+        // Verify title match if title hint is provided to prevent cross-type ID collisions
+        const resultTitle = d.title || d.name || d.original_title || d.original_name;
+        if (titleHint && !isTitleMatch(titleHint, resultTitle)) {
+          continue;
+        }
+
         if (d.poster_path) {
           const posterUrl = `https://image.tmdb.org/t/p/w500${d.poster_path}`;
           titlePosterCache.set(cacheKey, posterUrl);
@@ -315,16 +388,25 @@ async function fetchTmdbPosterById(tmdbId: number | string): Promise<string | nu
   return null;
 }
 
-async function fetchTmdbPosterForTitle(rawTitle: string, urlHint?: string | null): Promise<string | null> {
+async function fetchTmdbPosterForTitle(
+  rawTitle: string,
+  urlHint?: string | null,
+  mediaType?: 'tv' | 'movie' | null,
+  year?: string | number | null,
+  nativeTitle?: string | null
+): Promise<string | null> {
   const cleanTitle = (rawTitle || '')
     .replace(/\(\d{4}\)/g, '')
     .replace(/\b(izle|turkce|altyazili|dizi|film|hd|full|\d+\.\s*sezon|\d+\.\s*bolum)\b/gi, '')
+    .replace(/²/g, '2')
+    .replace(/³/g, '3')
     .replace(/\s+/g, ' ')
     .trim();
 
   const slugHint = extractSlugFromUrl(urlHint);
+  const numYear = year ? parseInt(String(year), 10) : null;
 
-  const cacheKey = `${cleanTitle.toLowerCase()}__${(slugHint || '').toLowerCase()}`;
+  const cacheKey = `${cleanTitle.toLowerCase()}__${(slugHint || '').toLowerCase()}__${mediaType || ''}__${numYear || ''}__${(nativeTitle || '').toLowerCase()}`;
   if (titlePosterCache.has(cacheKey)) {
     return titlePosterCache.get(cacheKey) || null;
   }
@@ -332,7 +414,10 @@ async function fetchTmdbPosterForTitle(rawTitle: string, urlHint?: string | null
   const queries: string[] = [];
   function addQuery(q?: string | null) {
     if (!q) return;
-    const trimmed = q.trim();
+    const trimmed = q
+      .replace(/²/g, '2')
+      .replace(/³/g, '3')
+      .trim();
     if (trimmed.length >= 2 && !queries.includes(trimmed)) {
       queries.push(trimmed);
     }
@@ -342,6 +427,10 @@ async function fetchTmdbPosterForTitle(rawTitle: string, urlHint?: string | null
     }
   }
 
+  // High priority: search nativeTitle first if provided
+  if (nativeTitle && nativeTitle.trim()) {
+    addQuery(nativeTitle.trim());
+  }
   if (slugHint) addQuery(slugHint);
   if (cleanTitle) {
     addQuery(cleanTitle);
@@ -353,59 +442,82 @@ async function fetchTmdbPosterForTitle(rawTitle: string, urlHint?: string | null
     }
   }
 
+  const endpoints: Array<'movie' | 'tv'> =
+    mediaType === 'movie' ? ['movie', 'tv'] : mediaType === 'tv' ? ['tv', 'movie'] : ['movie', 'tv'];
+
   for (const q of queries) {
-    // 1. Try search/multi with Turkish language
-    // 2. Try search/multi without language constraint (matches international / English titles)
-    for (const langParam of ['&language=tr-TR', '']) {
-      try {
-        const url = `https://api.themoviedb.org/3/search/multi?query=${encodeURIComponent(
-          q
-        )}&api_key=${TMDB_API_KEY}${langParam}`;
-        const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
-        if (res.ok) {
-          const d = await res.json();
-          const results = (d.results || []) as any[];
-          const hit = results.find((r: any) => r.poster_path || r.profile_path);
-          if (hit?.poster_path) {
-            const posterUrl = `https://image.tmdb.org/t/p/w500${hit.poster_path}`;
-            titlePosterCache.set(cacheKey, posterUrl);
-            return posterUrl;
+    for (const ep of endpoints) {
+      for (const langParam of ['&language=tr-TR', '']) {
+        try {
+          const yearParam =
+            numYear && numYear > 1900
+              ? ep === 'movie'
+                ? `&primary_release_year=${numYear}`
+                : `&first_air_date_year=${numYear}`
+              : '';
+          const url = `https://api.themoviedb.org/3/search/${ep}?query=${encodeURIComponent(
+            q
+          )}&api_key=${TMDB_API_KEY}&include_adult=false${langParam}${yearParam}`;
+          const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
+          if (res.ok) {
+            const d = await res.json();
+            const results = ((d.results || []) as any[]).filter((r) => !r.adult);
+            const hit = results.find((r: any) => {
+              if (!r.poster_path) return false;
+              // Validate release year if known
+              const relDate = r.release_date || r.first_air_date || '';
+              if (relDate && numYear && numYear > 1900) {
+                const cYear = parseInt(relDate.slice(0, 4), 10);
+                if (!isNaN(cYear) && Math.abs(cYear - numYear) > 1) {
+                  return false;
+                }
+              }
+              const title = r.title || r.name;
+              const origTitle = r.original_title || r.original_name;
+              return (
+                isTitleMatch(cleanTitle, title) ||
+                isTitleMatch(cleanTitle, origTitle) ||
+                (nativeTitle ? isTitleMatch(nativeTitle, title) || isTitleMatch(nativeTitle, origTitle) : false)
+              );
+            });
+            if (hit?.poster_path) {
+              const posterUrl = `https://image.tmdb.org/t/p/w500${hit.poster_path}`;
+              titlePosterCache.set(cacheKey, posterUrl);
+              return posterUrl;
+            }
           }
-          if (hit?.profile_path) {
-            const profileUrl = `https://image.tmdb.org/t/p/w500${hit.profile_path}`;
-            personPosterCache.set(cacheKey, profileUrl);
-            return profileUrl;
+        } catch {}
+      }
+    }
+  }
+
+  // AniList Fallback for anime or TV
+  if (mediaType !== 'movie') {
+    for (const q of queries.slice(0, 3)) {
+      try {
+        const gql = `
+          query ($search: String) {
+            Media(search: $search, type: ANIME) {
+              coverImage { extraLarge large }
+            }
+          }
+        `;
+        const alResp = await fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ query: gql, variables: { search: q } }),
+          signal: AbortSignal.timeout(3000),
+        });
+        if (alResp.ok) {
+          const alJson = await alResp.json();
+          const img = alJson.data?.Media?.coverImage?.extraLarge || alJson.data?.Media?.coverImage?.large;
+          if (img) {
+            titlePosterCache.set(cacheKey, img);
+            return img;
           }
         }
       } catch {}
     }
-  }
-
-  // AniList Fallback
-  for (const q of queries.slice(0, 3)) {
-    try {
-      const gql = `
-        query ($search: String) {
-          Media(search: $search, type: ANIME) {
-            coverImage { extraLarge large }
-          }
-        }
-      `;
-      const alResp = await fetch('https://graphql.anilist.co', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ query: gql, variables: { search: q } }),
-        signal: AbortSignal.timeout(3000),
-      });
-      if (alResp.ok) {
-        const alJson = await alResp.json();
-        const img = alJson.data?.Media?.coverImage?.extraLarge || alJson.data?.Media?.coverImage?.large;
-        if (img) {
-          titlePosterCache.set(cacheKey, img);
-          return img;
-        }
-      }
-    } catch {}
   }
 
   return null;
@@ -449,18 +561,12 @@ export async function GET(req: NextRequest) {
     const fallbackUrl = searchParams.get('fallback');
     const titleParam = searchParams.get('title');
     const tmdbIdParam = searchParams.get('tmdbId');
+    const mediaTypeParam = searchParams.get('mediaType') as 'tv' | 'movie' | null;
     const typeParam = searchParams.get('type'); // 'person' | 'character' | 'media' | null
+    const yearParam = searchParams.get('year') || searchParams.get('release_year');
+    const nativeTitleParam = searchParams.get('nativeTitle') || searchParams.get('native_title');
 
     const isPerson = typeParam === 'person' || typeParam === 'character';
-
-    // 0. High-priority direct TMDB ID lookup if provided
-    if (tmdbIdParam) {
-      const tmdbPoster = await fetchTmdbPosterById(tmdbIdParam);
-      if (tmdbPoster) {
-        const streamed = await fetchAndStreamImage(tmdbPoster);
-        if (streamed) return streamed;
-      }
-    }
 
     const urlsToTry: string[] = [];
 
@@ -468,7 +574,7 @@ export async function GET(req: NextRequest) {
       // If it's already an official CDN URL, stream directly
       if (targetUrl.includes('image.tmdb.org') || targetUrl.includes('s4.anilist.co')) {
         urlsToTry.push(targetUrl);
-      } else if (!targetUrl.includes('hdfilmcehennemi.nl')) {
+      } else if (!targetUrl.toLowerCase().includes('hdfilmcehennemi')) {
         // hdfilmcehennemi blocks Node.js runtime with Cloudflare 403, handled via slug fallback below
         const uncroppedMaster = targetUrl
           .replace(/-\d{2,4}x\d{2,4}(?=\.(?:jpe?g|png|webp|avif)(?:\?.*)?$)/i, '')
@@ -484,7 +590,7 @@ export async function GET(req: NextRequest) {
       fallbackUrl &&
       !urlsToTry.includes(fallbackUrl) &&
       (fallbackUrl.startsWith('http://') || fallbackUrl.startsWith('https://')) &&
-      !fallbackUrl.includes('hdfilmcehennemi.nl')
+      !fallbackUrl.toLowerCase().includes('hdfilmcehennemi')
     ) {
       urlsToTry.push(fallbackUrl);
     }
@@ -534,10 +640,23 @@ export async function GET(req: NextRequest) {
           headers['Content-Security-Policy'] = "default-src 'none'; sandbox";
         }
 
+        return new NextResponse(buf, {
+          status: 200,
+          headers,
+        });
       } catch {}
     }
 
-    // 2. Person / Actor branch
+    // 2. High-priority TMDB ID lookup if direct URL was missing or unreachable
+    if (tmdbIdParam) {
+      const tmdbPoster = await fetchTmdbPosterById(tmdbIdParam, mediaTypeParam, titleParam);
+      if (tmdbPoster) {
+        const streamed = await fetchAndStreamImage(tmdbPoster);
+        if (streamed) return streamed;
+      }
+    }
+
+    // 3. Person / Actor branch
     if (isPerson && titleParam) {
       const personPhotoUrl = await fetchTmdbPersonForTitle(titleParam);
       if (personPhotoUrl) {
@@ -556,7 +675,13 @@ export async function GET(req: NextRequest) {
 
     // 3. Media / Title branch (with automatic Person fallback)
     if (titleParam || targetUrl) {
-      const posterUrl = await fetchTmdbPosterForTitle(titleParam || '', targetUrl || fallbackUrl);
+      const posterUrl = await fetchTmdbPosterForTitle(
+        titleParam || '',
+        targetUrl || fallbackUrl,
+        mediaTypeParam,
+        yearParam,
+        nativeTitleParam
+      );
       if (posterUrl) {
         const streamed = await fetchAndStreamImage(posterUrl);
         if (streamed) return streamed;

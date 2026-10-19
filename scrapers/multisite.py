@@ -10,6 +10,11 @@ import time
 import sqlite3
 import unicodedata
 
+try:
+    from clean_fansub import clean_fansub_name, clean_source_name
+except ImportError:
+    from scrapers.clean_fansub import clean_fansub_name, clean_source_name
+
 def _retry(fn, *a, **k):
     import random
     for i in range(60):
@@ -30,8 +35,52 @@ def norm_title(s):
     s = re.sub(r'\(.*?\)|\[.*?\]', '', s)
     return re.sub(r'[^a-z0-9]', '', s)
 
+def clean_scraped_slug(raw_slug: str) -> str:
+    """Canonical slug cleaner helper that strips SEO/scraper suffixes:
+    -izle, -hdf, -hdfc, -hf, -hd-film-izle, -film-izle, -filmi-izle,
+    -dizi-izle, -dizi, -bolum, -sezon, and repeated -hdf-\\d+ tails
+    while preserving legitimate numbers in titles.
+    """
+    if not raw_slug:
+        return ""
+    slug = str(raw_slug).strip().lower()
+    # Strip URL protocol/domain if full URL was passed
+    slug = re.sub(r"^https?://[^/]+/", "", slug)
+    slug = slug.strip("/")
+    if "/" in slug:
+        slug = slug.split("/")[-1]
+    # Remove HTML extensions or query parameters
+    slug = re.sub(r"\.[a-zA-Z0-9]+$", "", slug)
+    slug = re.sub(r"[?#].*$", "", slug)
+    # Convert underscores/spaces to hyphens
+    slug = re.sub(r"[\s_]+", "-", slug)
+    # Remove characters that aren't lowercase alphanumeric or hyphens
+    slug = re.sub(r"[^a-z0-9\-]", "", slug)
+    slug = re.sub(r"-+", "-", slug).strip("-")
+
+    # Patterns to strip from the tail iteratively
+    strip_patterns = [
+        r"-(?:hd-film-izle|filmi-izle|film-izle|dizi-izle)$",
+        r"-(?:hdfc|hdf|hf)-\d+$",
+        r"-hdf-\d+$",
+        r"-(?:hdfc|hdf|hf)$",
+        r"-(?:izle|dizi|bolum|sezon)$",
+        r"-(?:full-hd|1080p|720p|tek-parca)$",
+    ]
+
+    prev = None
+    while prev != slug:
+        prev = slug
+        for pat in strip_patterns:
+            slug = re.sub(pat, "", slug)
+        slug = re.sub(r"-+", "-", slug).strip("-")
+
+    if not slug and prev:
+        return prev
+    return slug
+
 def slug_core(slug):
-    s = (slug or '').lower()
+    s = clean_scraped_slug(slug)
     s = re.sub(r'-(izle|dq\d*)$', '', s)
     s = re.sub(r'-\d{4}-(kore|cin|japon|tayland|tayvan|asya)$', '', s)
     return re.sub(r'[^a-z0-9]', '', s)
@@ -48,6 +97,119 @@ def parse_season_number(text, default=1):
                 if 1 <= val <= 30:
                     return val
     return default
+
+def clean_episode_title(name: str, season: int = 1, number: int = 1) -> str:
+    """
+    Standardizes polluted episode names:
+    - Strips dates: '07 Eki', '15 Mart 2021', '1 Ocak', etc.
+    - Strips scraper noise: 'izle', 'dizi izle', 'film izle', '1080p', 'full hd', 'tek parça', etc.
+    - Strips redundant '1. Sezon 2. Bölüm' or 'Bölüm 2' prefixes if followed by a real episode title.
+    - Returns clean title or standard 'Bölüm X' / 'S. Sezon E. Bölüm'.
+    """
+    if not name:
+        return f"Bölüm {number}" if season == 1 else f"{season}. Sezon {number}. Bölüm"
+    s = str(name).strip()
+
+    # Normalize mojibake
+    if any(c in s for c in ('Ã', 'Ä', 'Å', '')):
+        try:
+            s = s.encode('latin-1').decode('utf-8')
+        except Exception:
+            pass
+
+    # Remove Turkish/English dates
+    s = re.sub(r'\s*\d{1,2}\s+(?:Ocak|Şubat|Mart|Nisan|Mayıs|Haziran|Temmuz|Ağustos|Eylül|Ekim|Kasım|Aralık|Oca|Şub|Mar|Nis|May|Haz|Tem|Ağu|Eyl|Eki|Kas|Ara|Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b(?:\s+\d{4})?', '', s, flags=re.I)
+    s = re.sub(r'\s*\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b', '', s)
+    s = re.sub(r'\s*\b\d{1,2}[-/.]\d{1,2}[-/.]\d{4}\b', '', s)
+
+    # Remove scraper noise
+    s = re.sub(r'\s*(?:izle|dizi\s*izle|film\s*izle|tek\s*par[çc]a|full\s*hd|1080p|720p|hd|t[üu]rk[çc]e\s*dublaj(?:l[ıi])?|t[üu]rk[çc]e\s*altyaz[ıi]l[ıi]).*$', '', s, flags=re.I)
+
+    # Strip quotes
+    s = s.strip("\"'“”«»` ")
+
+    # Strip redundant leading season/episode prefix, e.g. "1. Sezon 2. Bölüm", "S1:B2", "2. Bölüm"
+    sub_title = re.sub(r'^(?:\d+\s*\.?\s*Sezon\s*)?(?:\d+\s*\.?\s*B[öo]l[üu]m\s*[-:•]?\s*)', '', s, flags=re.I).strip()
+    sub_title = re.sub(r'^(?:Season\s*\d+\s*)?(?:Episode\s*\d+\s*[-:•]?\s*)', '', sub_title, flags=re.I).strip()
+    sub_title = re.sub(r'^S\d+[:\s]*B\d+\s*[-:•]?\s*', '', sub_title, flags=re.I).strip()
+    sub_title = re.sub(r'^[-:•|~–—\s]+|[-:•|~–—\s]+$', '', sub_title).strip()
+
+    # Handle parentheses like (Tremor)
+    m_paren = re.match(r'^\(([^)]+)\)$', sub_title)
+    if m_paren:
+        sub_title = m_paren.group(1).strip()
+
+    # If there is a meaningful episode subtitle
+    if sub_title and not re.match(r'^(?:b[öo]l[üu]m|episode|part)\s*\d*$', sub_title, re.I) and sub_title != str(number):
+        if re.search(r'\b\d+\.?\s*b[öo]l[üu]m\b', sub_title, re.I):
+            return f"Bölüm {number}" if season == 1 else f"{season}. Sezon {number}. Bölüm"
+        return sub_title
+
+    return f"Bölüm {number}" if season == 1 else f"{season}. Sezon {number}. Bölüm"
+
+def parse_season_and_episode(url: str = "", text: str = "") -> tuple:
+    """
+    Robustly parses (season_number, episode_number) from a URL and/or anchor text.
+    Handles:
+    - Standard patterns: /sezon-2/bolum-3, 2-sezon-3-bolum, S02E03, 2. Sezon 3. Bölüm
+    - Range / batch patterns: 11-22. Bölüm, 1-6-bolum (returns starting episode 11 or 1, not jumping to 22 or 6!)
+    - Trailing episode patterns: -bolum-5, /bolum-5.html
+    - Rejects false matches from title digits like Apartment 404 or years (2024).
+    """
+    u = (url or '').lower().strip()
+    t = (text or '').lower().strip()
+    combined = f"{u} {t}"
+
+    season = 1
+    episode = 1
+
+    # 1. Detect Season
+    s_m = re.search(r'(?:^|[^\d])(\d{1,2})\s*\.?\s*sezon\b', combined) or \
+          re.search(r'/sezon-(\d{1,2})/', u) or \
+          re.search(r'[-_/]s(\d{1,2})[-_/e]', u) or \
+          re.search(r'\bseason\s*(\d{1,2})\b', combined) or \
+          re.search(r'-(\d{1,2})-sezon-', u)
+    if s_m:
+        try:
+            parsed_s = int(s_m.group(1))
+            if 1 <= parsed_s <= 50:
+                season = parsed_s
+        except Exception:
+            pass
+
+    # 2. Detect Range / Batch Releases: e.g. "11-22-bolum", "11-22. Bölüm", "1-6. Bölümler"
+    range_m = re.search(r'(?:^|[^\d])(\d{1,3})\s*[-–]\s*(\d{1,3})\s*(?:\.|\s*[-_])?\s*b[öo]l[üu]m', combined) or \
+              re.search(r'[-_/](\d{1,3})[-_](\d{1,3})[-_]bolum', u)
+    if range_m:
+        start_ep = int(range_m.group(1))
+        end_ep = int(range_m.group(2))
+        if 1 <= start_ep < end_ep and (end_ep - start_ep) <= 40:
+            return season, start_ep
+
+    # 3. Detect Explicit Episode from URL or Text
+    e_m = re.search(r'(?:^|[^\d])(\d{1,4})\s*\.\s*b[öo]l[üu]m', t) or \
+          re.search(r'/bolum-(\d{1,4})(?:[^\d]|$)', u) or \
+          re.search(r'-(\d{1,4})-bolum(?:[^\d]|$)', u) or \
+          re.search(r'[-_/]bolum[-_/](\d{1,4})(?:[^\d]|$)', u) or \
+          re.search(r'[-_/]e(\d{1,4})(?:[^\d]|$)', u) or \
+          re.search(r'\bepisode\s*(\d{1,4})\b', combined)
+
+    if e_m:
+        try:
+            parsed_e = int(e_m.group(1))
+            if 1 <= parsed_e <= 2500:
+                episode = parsed_e
+        except Exception:
+            pass
+    else:
+        fallback_m = re.search(r'bolum.*?(\d{1,3})(?:\.html|\b|$)', u)
+        if fallback_m:
+            try:
+                episode = int(fallback_m.group(1))
+            except Exception:
+                pass
+
+    return season, episode
 
 def build_drama_index(cur, content_types=('dizi', 'film', 'program', 'anime')):
     """ Bellek ici indeks: {norm_title: [(id, year, mdl, al, content_type)]}, {mdl: id}, {al: id}, {slugcore: [(id, year, content_type)]}."""
@@ -126,15 +288,23 @@ def find_in_index(idx, title, year=None, slug=None, content_type=None, mdl_url=N
     return None
 
 def match_or_create_episode(cur, drama_id, season, number, name, url):
+    season = max(1, int(season or 1))
+    number = max(1, int(number or 1))
+    clean_name = clean_episode_title(name, season, number)
+
     def _op():
-        cur.execute("SELECT id FROM episodes WHERE drama_id=? AND season_number=? AND episode_number=?",
+        cur.execute("SELECT id, episode_name FROM episodes WHERE drama_id=? AND season_number=? AND episode_number=?",
                     (drama_id, season, number))
         r = cur.fetchone()
         if r:
+            old_name = r[1] or ""
+            # Auto-heal existing messy episode names in archive
+            if any(bad in old_name.lower() for bad in ("izle", "eki", "kas", "oca", "şub", "mar", "nis", "may", "haz", "tem", "ağu", "eyl", "1080p", "full hd")):
+                cur.execute("UPDATE episodes SET episode_name=? WHERE id=?", (clean_name, r[0]))
             return r[0], False
         try:
             cur.execute("""INSERT INTO episodes (drama_id, season_number, episode_number, episode_name, episode_url, sources_scraped)
-                VALUES (?, ?, ?, ?, ?, 1)""", (drama_id, season, number, name, url))
+                VALUES (?, ?, ?, ?, ?, 1)""", (drama_id, season, number, clean_name, url))
             return cur.lastrowid, True
         except sqlite3.IntegrityError:
             # Ayni URL baska drama/numarada kayitli (toplu bolum vb.): mevcut satiri kullan.
@@ -148,6 +318,17 @@ def match_or_create_episode(cur, drama_id, season, number, name, url):
 def add_source(cur, episode_id, source_name, direct_url, provider, site, fansub=None, embed_id=None):
     """Ayni URL varsa site ekle; ayni provider farkli isimse numaralandir (VK, VK2)."""
     if not direct_url:
+        return False
+    fansub = clean_fansub_name(fansub)
+    source_name = clean_source_name(source_name)
+    u_low = direct_url.lower()
+    p_low = (provider or '').lower()
+    n_low = (source_name or '').lower()
+    if (
+        p_low in ('sibnet', 'sendvid', 'dead', 'googledrive')
+        or 'sibnet' in n_low
+        or any(dead in u_low for dead in ('sibnet.ru', 'sendvid', 'drive.google.com', 'docs.google.com', 'short.icu', 'short.ink', 'vudeo.', 'dood'))
+    ):
         return False
     def _op():
         cur.execute("SELECT id, site FROM episode_sources WHERE episode_id=? AND direct_url=?",
@@ -229,11 +410,12 @@ def mark_done(cur, site, url):
 
 def unique_slug(cur, base):
     """Copismeyen slug uret: baz, baz-2, baz-3..."""
-    slug = base
+    slug = clean_scraped_slug(base) or "yapim"
+    cand = slug
     n = 2
     while True:
-        cur.execute("SELECT id FROM dramas WHERE slug=?", (slug,))
+        cur.execute("SELECT id FROM dramas WHERE slug=?", (cand,))
         if not cur.fetchone():
-            return slug
-        slug = f"{base}-{n}"
+            return cand
+        cand = f"{slug}-{n}"
         n += 1

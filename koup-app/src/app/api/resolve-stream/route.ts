@@ -6,6 +6,33 @@ const CACHE_HEADERS = {
   'Cache-Control': 'no-store, no-cache, must-revalidate',
 };
 
+// In-memory cache for resolved stream URLs (prevents upstream rate limits & 429 errors)
+interface ResolvedCacheEntry {
+  data: any;
+  expiresAt: number;
+}
+const streamResolutionCache = new Map<string, ResolvedCacheEntry>();
+
+function getCachedStream(key: string): any | null {
+  const item = streamResolutionCache.get(key);
+  if (!item) return null;
+  if (Date.now() > item.expiresAt) {
+    streamResolutionCache.delete(key);
+    return null;
+  }
+  return item.data;
+}
+
+function setCachedStream(key: string, data: any, ttlMs: number = 2 * 60 * 60 * 1000): void {
+  if (streamResolutionCache.size > 2500) {
+    const now = Date.now();
+    for (const [k, v] of streamResolutionCache.entries()) {
+      if (now > v.expiresAt) streamResolutionCache.delete(k);
+    }
+  }
+  streamResolutionCache.set(key, { data, expiresAt: Date.now() + ttlMs });
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const url = searchParams.get('url') || '';
@@ -13,6 +40,12 @@ export async function GET(req: NextRequest) {
 
   if (!url) {
     return NextResponse.json({ error: 'Missing url' }, { status: 400 });
+  }
+
+  // Check in-memory cache first to avoid hammering hosts (especially VOE / OK.RU rate limits)
+  const cachedStream = getCachedStream(url);
+  if (cachedStream) {
+    return NextResponse.json(cachedStream, { headers: CACHE_HEADERS });
   }
 
   // Validate URL protocol
@@ -27,6 +60,8 @@ export async function GET(req: NextRequest) {
 
   const lowerUrl = url.toLowerCase();
   const deadDomains = [
+    'sibnet.ru',
+    'video.sibnet.ru',
     'diziasya',
     'short.icu',
     'short.ink',
@@ -50,7 +85,7 @@ export async function GET(req: NextRequest) {
     'drive.google.com',
     'docs.google.com',
   ];
-  if (deadDomains.some((d) => lowerUrl.includes(d))) {
+  if (provider === 'sibnet' || deadDomains.some((d) => lowerUrl.includes(d))) {
     return NextResponse.json(
       { error: 'Kaynak artık kullanılabilir değil veya engellendi', isDead: true },
       { status: 410 }
@@ -182,12 +217,20 @@ export async function GET(req: NextRequest) {
               const rawSubs = JSON.parse(subMatch[0]);
               subtitles = rawSubs
                 .filter((s: any) => s.file)
-                .map((s: any) => ({
-                  label: s.label || 'Türkçe',
-                  lang: s.lang || 'tr',
-                  url: `/api/stream-proxy?url=${encodeURIComponent(s.file)}&ref=${encodeURIComponent(origin + '/')}`,
-                  default: !!s.default,
-                }));
+                .map((s: any) => {
+                  const rawFile = String(s.file);
+                  const fullSubUrl = rawFile.startsWith('http')
+                    ? rawFile
+                    : rawFile.startsWith('//')
+                    ? `https:${rawFile}`
+                    : `${origin}${rawFile.startsWith('/') ? '' : '/'}${rawFile}`;
+                  return {
+                    label: s.label || 'Türkçe',
+                    lang: s.lang || 'tr',
+                    url: `/api/stream-proxy?url=${encodeURIComponent(fullSubUrl)}&ref=${encodeURIComponent(origin + '/')}`,
+                    default: !!s.default,
+                  };
+                });
             } catch {}
           }
 
@@ -401,6 +444,23 @@ export async function GET(req: NextRequest) {
             const { execFile } = await import('child_process');
             html = await new Promise<string>((resolve, reject) => {
               execFile(
+                'python',
+                [
+                  '-c',
+                  `import sys; from curl_cffi import requests; sys.stdout.reconfigure(encoding='utf-8'); r = requests.get(${JSON.stringify(url)}, headers={'Referer': 'https://www.hdfilmcehennemi.nl/'}, impersonate='chrome', timeout=8); print(r.text if r.status_code == 200 else '')`,
+                ],
+                { maxBuffer: 10 * 1024 * 1024, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } },
+                (err, stdout) => (err ? reject(err) : resolve(stdout))
+              );
+            });
+          } catch {}
+        }
+
+        if (!html || html.includes('Just a moment...') || html.includes('Turnstile')) {
+          try {
+            const { execFile } = await import('child_process');
+            html = await new Promise<string>((resolve, reject) => {
+              execFile(
                 'curl.exe',
                 [
                   '-s',
@@ -419,34 +479,100 @@ export async function GET(req: NextRequest) {
         }
 
         if (html) {
-          // 1. Extract WebVTT subtitles
+          // 1. Extract WebVTT subtitles (deduplicated & normalized)
           const tracksMatch = html.match(/tracks:\s*(\[[^\]]+\])/);
           let subtitles: Array<{ label: string; lang: string; url: string; default?: boolean }> = [];
           if (tracksMatch?.[1]) {
             try {
               const unescaped = tracksMatch[1].replaceAll('\\/', '/');
               const rawTracks = JSON.parse(unescaped);
-              subtitles = rawTracks
-                .filter((t: any) => t.file && (t.kind === 'captions' || t.kind === 'subtitles'))
-                .map((t: any) => {
-                  let cleanLabel = t.label || 'Altyazı';
-                  const lower = cleanLabel.toLowerCase();
-                  let lang = 'tr';
-                  if (lower.includes('tur') || lower.includes('forced') || lower.includes('türk')) {
-                    cleanLabel = 'Türkçe';
-                    lang = 'tr';
-                  } else if (lower.includes('eng') || lower.includes('ing')) {
-                    cleanLabel = 'İngilizce';
-                    lang = 'en';
-                  }
-                  const proxiedSub = `/api/stream-proxy?url=${encodeURIComponent(t.file)}&ref=${encodeURIComponent('https://hdfilmcehennemi.mobi/')}`;
-                  return {
+              const embedOrigin = url.includes('/rplayer/')
+                ? 'https://www.hdfilmcehennemi.nl'
+                : new URL(url).origin;
+              const subRef = url.includes('/rplayer/')
+                ? 'https://www.hdfilmcehennemi.nl/'
+                : 'https://hdfilmcehennemi.mobi/';
+
+              const validTracks = rawTracks.filter(
+                (t: any) => t?.file && (t.kind === 'captions' || t.kind === 'subtitles' || !t.kind)
+              );
+
+              // Check if a full non-forced Turkish track exists so we can skip redundant "Forced" track
+              const hasFullTurkish = validTracks.some((t: any) => {
+                const lbl = String(t.label || '').toLocaleLowerCase('tr-TR');
+                const lng = String(t.language || t.lang || '').toLowerCase();
+                const fn = String(t.file || '').toLowerCase();
+                const isForced = lbl.includes('forced') || lng.includes('forced') || fn.includes('forced');
+                const isTr =
+                  lng === 'tr' ||
+                  lbl.includes('türk') ||
+                  lbl.includes('turk') ||
+                  fn.includes('_turkish') ||
+                  fn.includes('subtitles02tur');
+                return isTr && !isForced;
+              });
+
+              const byLabel = new Map<string, { label: string; lang: string; url: string; default?: boolean }>();
+
+              for (const t of validTracks) {
+                const rawLabel = String(t.label || 'Altyazı').trim();
+                const lower = rawLabel.toLocaleLowerCase('tr-TR').replace(/i\u0307/g, 'i');
+                const rawLang = String(t.language || t.lang || '').toLowerCase();
+                const rawFile = String(t.file || '');
+                const isForced =
+                  lower.includes('forced') ||
+                  rawLang.includes('forced') ||
+                  rawFile.toLowerCase().includes('forced');
+
+                if (isForced && hasFullTurkish) {
+                  continue;
+                }
+
+                let cleanLabel = rawLabel.replace(/\s*altyaz[ıi]$/i, '').trim() || 'Altyazı';
+                let lang = rawLang || 'tr';
+
+                if (
+                  rawLang === 'tr' ||
+                  lower.includes('tur') ||
+                  lower.includes('türk') ||
+                  lower.includes('forced')
+                ) {
+                  cleanLabel = 'Türkçe';
+                  lang = 'tr';
+                } else if (rawLang === 'en' || lower.includes('eng') || lower.includes('ing')) {
+                  cleanLabel = 'İngilizce';
+                  lang = 'en';
+                } else if (rawLang === 'fr' || lower.includes('fre') || lower.includes('frans')) {
+                  cleanLabel = 'Fransızca';
+                  lang = 'fr';
+                } else if (rawLang === 'es' || lower.includes('spa') || lower.includes('ispan')) {
+                  cleanLabel = 'İspanyolca';
+                  lang = 'es';
+                } else if (rawLang === 'pt' || lower.includes('por') || lower.includes('portek')) {
+                  cleanLabel = 'Portekizce';
+                  lang = 'pt';
+                } else if (rawLang === 'de' || lower.includes('ger') || lower.includes('alman')) {
+                  cleanLabel = 'Almanca';
+                  lang = 'de';
+                }
+
+                const fullFileUrl = rawFile.startsWith('http')
+                  ? rawFile
+                  : `${embedOrigin}${rawFile.startsWith('/') ? '' : '/'}${rawFile}`;
+                const proxiedSub = `/api/stream-proxy?url=${encodeURIComponent(fullFileUrl)}&ref=${encodeURIComponent(subRef)}`;
+
+                // Keep the non-forced / latest full track per language label
+                if (!byLabel.has(cleanLabel) || !isForced) {
+                  byLabel.set(cleanLabel, {
                     label: cleanLabel,
                     lang,
                     url: proxiedSub,
-                    default: !!t.default,
-                  };
-                });
+                    default: lang === 'tr' ? true : !!t.default,
+                  });
+                }
+              }
+
+              subtitles = Array.from(byLabel.values());
             } catch {}
           }
 
@@ -702,42 +828,104 @@ export async function GET(req: NextRequest) {
   const commonUA =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
-  // 4a. Sibnet (video.sibnet.ru/shell.php?videoid=...) -> Direct MP4
-  if (provider === 'sibnet' || lowerUrl.includes('sibnet.ru')) {
+  // 4a. Uqload (uqload.com / uqload.io / uqload.co / uqload.vc) -> Direct HLS (.m3u8) or 410 Dead Detection
+  if (provider === 'uqload' || lowerUrl.includes('uqload.')) {
     try {
       const resp = await fetch(url, {
         headers: {
           'User-Agent': commonUA,
-          Referer: 'https://video.sibnet.ru/',
+          Referer: 'https://uqload.vc/',
         },
+        redirect: 'follow',
         signal: AbortSignal.timeout(5000),
       });
-      if (resp.ok) {
-        const html = await resp.text();
-        const srcMatch =
-          html.match(/player\.src\(\s*\[\s*\{\s*src\s*:\s*["']([^"']+\.mp4[^"']*)["']/i) ||
-          html.match(/src\s*:\s*["'](\/v\/[^"']+\.mp4[^"']*)["']/i);
-        if (srcMatch?.[1]) {
-          const absMp4 = new URL(srcMatch[1], 'https://video.sibnet.ru').toString();
-          const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(absMp4)}&ref=${encodeURIComponent('https://video.sibnet.ru/')}`;
-          return NextResponse.json(
-            {
-              mode: 'native_mp4',
-              streamUrl: proxiedUrl,
-              qualities: [{ label: '1080p', url: proxiedUrl }],
-              fallbackIframe: url,
-            },
-            { headers: CACHE_HEADERS }
-          );
-        }
+      if (!resp.ok && (resp.status === 404 || resp.status === 410)) {
+        return NextResponse.json(
+          { error: 'Uqload videosu bulunamadı (404)', isDead: true },
+          { status: 410 }
+        );
       }
-      return NextResponse.json(
-        { error: 'Sibnet videosu yayından kaldırılmış veya engellenmiş (403/404)', isDead: true },
-        { status: 410 }
+      const html = await resp.text();
+      if (
+        html.length < 1500 ||
+        html.includes('File is no longer available') ||
+        html.includes('File was deleted') ||
+        html.includes('File was locked') ||
+        html.includes('Video not found')
+      ) {
+        return NextResponse.json(
+          { error: 'Uqload videosu silinmiş veya süresi dolmuş', isDead: true },
+          { status: 410 }
+        );
+      }
+
+      // Unpack Dean Edwards packed JS if present
+      let searchTarget = html;
+      const packMatch = html.match(
+        /eval\(function\(p,a,c,k,e,d\)\{[\s\S]*?\}\('([\s\S]*?)',(\d+),(\d+),'([\s\S]*?)'\.split\('\|'\)/
       );
+      if (packMatch) {
+        let p = packMatch[1];
+        const a = parseInt(packMatch[2], 10);
+        let c = parseInt(packMatch[3], 10);
+        const k = packMatch[4].split('|');
+        const chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        const toBase = (num: number, base: number) => {
+          if (num === 0) return '0';
+          let res = '';
+          let n = num;
+          while (n > 0) {
+            res = chars[n % base] + res;
+            n = Math.floor(n / base);
+          }
+          return res;
+        };
+        while (c--) {
+          if (k[c]) {
+            const token = toBase(c, a);
+            p = p.replace(new RegExp(`\\b${token}\\b`, 'g'), k[c]);
+          }
+        }
+        searchTarget += '\n' + p;
+      }
+
+      const finalOrigin = (() => {
+        try {
+          const u = new URL(resp.url || url);
+          return `${u.protocol}//${u.host}/`;
+        } catch {
+          return 'https://uqload.vc/';
+        }
+      })();
+
+      const m3u8Match = searchTarget.match(/https?:\/\/[^\s"'<>]+?\.m3u8[^\s"'<>]*/i);
+      if (m3u8Match?.[0]) {
+        const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(m3u8Match[0])}&ref=${encodeURIComponent(finalOrigin)}`;
+        const result = {
+          mode: 'native_hls',
+          streamUrl: proxiedUrl,
+          qualities: [{ label: '1080p', url: proxiedUrl }],
+          fallbackIframe: resp.url || url,
+        };
+        setCachedStream(url, result);
+        return NextResponse.json(result, { headers: CACHE_HEADERS });
+      }
+
+      const mp4Match = searchTarget.match(/https?:\/\/[^\s"'<>]+?\.mp4[^\s"'<>]*/i);
+      if (mp4Match?.[0]) {
+        const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(mp4Match[0])}&ref=${encodeURIComponent(finalOrigin)}`;
+        const result = {
+          mode: 'native_mp4',
+          streamUrl: proxiedUrl,
+          qualities: [{ label: '1080p', url: proxiedUrl }],
+          fallbackIframe: resp.url || url,
+        };
+        setCachedStream(url, result);
+        return NextResponse.json(result, { headers: CACHE_HEADERS });
+      }
     } catch {
       return NextResponse.json(
-        { error: 'Sibnet videosuna erişilemedi', isDead: true },
+        { error: 'Uqload sunucusuna erişilemedi', isDead: true },
         { status: 410 }
       );
     }
@@ -833,15 +1021,14 @@ export async function GET(req: NextRequest) {
             const meta = JSON.parse(metaStr);
             const hlsUrl = meta?.ondemandHls || meta?.hlsManifestUrl;
             if (hlsUrl && typeof hlsUrl === 'string') {
-              return NextResponse.json(
-                {
-                  mode: 'native_hls',
-                  streamUrl: hlsUrl,
-                  qualities: [{ label: '1080p', url: hlsUrl }],
-                  fallbackIframe: url,
-                },
-                { headers: CACHE_HEADERS }
-              );
+              const result = {
+                mode: 'native_hls',
+                streamUrl: hlsUrl,
+                qualities: [{ label: '1080p', url: hlsUrl }],
+                fallbackIframe: url,
+              };
+              setCachedStream(url, result);
+              return NextResponse.json(result, { headers: CACHE_HEADERS });
             }
             if (Array.isArray(meta?.videos) && meta.videos.length > 0) {
               const rank: Record<string, number> = {
@@ -872,15 +1059,14 @@ export async function GET(req: NextRequest) {
                   label: labelMap[v.name] || v.name || 'HD',
                   url: `/api/stream-proxy?url=${encodeURIComponent(v.url)}&ref=${encodeURIComponent('https://ok.ru/')}`,
                 }));
-                return NextResponse.json(
-                  {
-                    mode: 'native_mp4',
-                    streamUrl: qualities[0].url,
-                    qualities,
-                    fallbackIframe: url,
-                  },
-                  { headers: CACHE_HEADERS }
-                );
+                const result = {
+                  mode: 'native_mp4',
+                  streamUrl: qualities[0].url,
+                  qualities,
+                  fallbackIframe: url,
+                };
+                setCachedStream(url, result);
+                return NextResponse.json(result, { headers: CACHE_HEADERS });
               }
             }
           }
@@ -891,13 +1077,47 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 4d. Mail.ru (my.mail.ru/video/embed/...) -> Direct MP4 qualities
-  if (provider.includes('mail.ru') || lowerUrl.includes('my.mail.ru')) {
+  // 4d. Mail.ru (my.mail.ru/video/embed/... & videoapi.my.mail.ru/videos/embed/...) -> Direct MP4 qualities
+  if (provider.includes('mail') || lowerUrl.includes('mail.ru')) {
     try {
-      const match = url.match(/embed\/([^/?#]+)/) || url.match(/video\/([^/?#]+)/);
-      const videoKey = match?.[1];
-      if (videoKey) {
-        const metaResp = await fetch(`https://my.mail.ru/+/video/meta/${videoKey}`, {
+      const normalizedMailUrl = url.startsWith('//') ? `https:${url}` : url;
+      let metaApiUrl: string | null = null;
+
+      // Case 1: Numeric ID e.g. https://my.mail.ru/video/embed/7395625562758185666
+      const numMatch = normalizedMailUrl.match(/\/video\/embed\/(\d{10,})/);
+      if (numMatch?.[1]) {
+        metaApiUrl = `https://my.mail.ru/+/video/meta/${numMatch[1]}`;
+      } else {
+        // Case 2: Path-based e.g. /videos/embed/gmail.com/user/_myvideo/123.html or /user/video/embed/_myvideo/123
+        const embedResp = await fetch(normalizedMailUrl, {
+          headers: {
+            'User-Agent': commonUA,
+            Referer: 'https://my.mail.ru/',
+          },
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!embedResp.ok && (embedResp.status === 404 || embedResp.status === 410)) {
+          return NextResponse.json(
+            { error: 'Mail.ru videosu silinmiş (404)', isDead: true },
+            { status: 410 }
+          );
+        }
+        if (embedResp.ok) {
+          const embedHtml = await embedResp.text();
+          const metaMatch = embedHtml.match(/metadataUrl"\s*:\s*"([^"]+)"/);
+          if (metaMatch?.[1]) {
+            const rawMeta = metaMatch[1];
+            metaApiUrl = rawMeta.startsWith('//')
+              ? `https:${rawMeta}`
+              : rawMeta.startsWith('/')
+              ? `https://my.mail.ru${rawMeta}`
+              : rawMeta;
+          }
+        }
+      }
+
+      if (metaApiUrl) {
+        const metaResp = await fetch(metaApiUrl, {
           headers: {
             'User-Agent': commonUA,
             Referer: 'https://my.mail.ru/',
@@ -905,29 +1125,46 @@ export async function GET(req: NextRequest) {
           },
           signal: AbortSignal.timeout(5000),
         });
+        if (!metaResp.ok && (metaResp.status === 404 || metaResp.status === 410)) {
+          return NextResponse.json(
+            { error: 'Mail.ru video metadatası bulunamadı (404)', isDead: true },
+            { status: 410 }
+          );
+        }
         if (metaResp.ok) {
           const metaJson = await metaResp.json();
           const videos = metaJson?.videos;
           if (Array.isArray(videos) && videos.length > 0) {
-            const sorted = [...videos].sort((a: any, b: any) => {
-              const qa = parseInt(a.key || '0', 10);
-              const qb = parseInt(b.key || '0', 10);
-              return qb - qa;
-            });
-            const qualities = sorted.map((v: any) => ({
-              label: `${v.key || 'HD'}p`,
-              url: `/api/stream-proxy?url=${encodeURIComponent(v.url)}&ref=${encodeURIComponent('https://my.mail.ru/')}`,
-            }));
-            return NextResponse.json(
-              {
+            const sorted = [...videos]
+              .filter((v: any) => v?.url)
+              .sort((a: any, b: any) => {
+                const qa = parseInt(String(a.key || '0').replace(/\D/g, ''), 10) || 0;
+                const qb = parseInt(String(b.key || '0').replace(/\D/g, ''), 10) || 0;
+                return qb - qa;
+              });
+            if (sorted.length > 0) {
+              const qualities = sorted.map((v: any) => {
+                const fullMp4Url = v.url.startsWith('//') ? `https:${v.url}` : v.url;
+                const cleanKey = String(v.key || 'HD').replace(/p$/i, '') + 'p';
+                return {
+                  label: cleanKey,
+                  url: `/api/stream-proxy?url=${encodeURIComponent(fullMp4Url)}&ref=${encodeURIComponent('https://my.mail.ru/')}`,
+                };
+              });
+              const result = {
                 mode: 'native_mp4',
                 streamUrl: qualities[0].url,
                 qualities,
-                fallbackIframe: url,
-              },
-              { headers: CACHE_HEADERS }
-            );
+                fallbackIframe: normalizedMailUrl,
+              };
+              setCachedStream(url, result);
+              return NextResponse.json(result, { headers: CACHE_HEADERS });
+            }
           }
+          return NextResponse.json(
+            { error: 'Mail.ru videosu yayından kaldırılmış', isDead: true },
+            { status: 410 }
+          );
         }
       }
     } catch {
@@ -992,13 +1229,286 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 4g. Sendvid / Yourupload / Mp4upload / Voe / Filemoon / Streamwish / Vidguard / Vidspeed generic stream extraction
+  // 4g. VOE (voe.sx / derricknationtop.com etc.) -> Direct HLS / MP4 with mirror fallbacks & anti-rate-limit
+  if (
+    provider === 'voe' ||
+    lowerUrl.includes('voe.sx') ||
+    lowerUrl.includes('voe.') ||
+    lowerUrl.includes('derricknationtop') ||
+    lowerUrl.includes('tomeventtheymost') ||
+    lowerUrl.includes('audaciousdefendercountryman')
+  ) {
+    try {
+      const voeCodeMatch = url.match(/(?:\/e\/|\/)([a-zA-Z0-9]{8,})/);
+      const voeCode = voeCodeMatch?.[1];
+
+      // Prepare candidate URLs (original URL first, then mirrors to bypass Cloudflare/429 rate limits)
+      const candidateUrls: string[] = [url];
+      if (voeCode) {
+        const mirrors = [
+          `https://derricknationtop.com/e/${voeCode}`,
+          `https://tomeventtheymost.com/e/${voeCode}`,
+          `https://audaciousdefendercountryman.com/e/${voeCode}`,
+        ];
+        for (const m of mirrors) {
+          if (!candidateUrls.includes(m)) candidateUrls.push(m);
+        }
+      }
+
+      const voeHeaders: Record<string, string> = {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+        Accept:
+          'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Sec-Ch-Ua': '"Not A(Brand";v="8", "Chromium";v="132", "Google Chrome";v="132"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'cross-site',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+      };
+
+      let resolvedHls: string | null = null;
+      let resolvedMp4: string | null = null;
+      let targetOrigin = 'https://voe.sx/';
+      let isExplicitlyDeleted = false;
+
+      for (const candUrl of candidateUrls) {
+        try {
+          const resp = await fetch(candUrl, {
+            headers: voeHeaders,
+            redirect: 'follow',
+            signal: AbortSignal.timeout(5000),
+          });
+
+          if (resp.status === 404 || resp.status === 410) {
+            isExplicitlyDeleted = true;
+            continue; // try next mirror or confirm dead
+          }
+
+          // If rate-limited (429) on this domain, immediately switch to next mirror
+          if (resp.status === 429) {
+            continue;
+          }
+
+          let pageHtml = await resp.text();
+
+          // Handle VOE landing redirect script (e.g. window.location.href = 'https://derricknationtop.com/e/...')
+          const redirMatch = pageHtml.match(/window\.location\.href\s*=\s*['"](https?:\/\/[^'"]+)['"]/);
+          if (redirMatch?.[1]) {
+            const nextUrl = redirMatch[1];
+            try {
+              const uObj = new URL(nextUrl);
+              targetOrigin = `${uObj.protocol}//${uObj.host}/`;
+            } catch {}
+
+            const redirResp = await fetch(nextUrl, {
+              headers: { ...voeHeaders, Referer: resp.url || candUrl },
+              signal: AbortSignal.timeout(5000),
+            });
+            if (redirResp.status === 404 || redirResp.status === 410) {
+              isExplicitlyDeleted = true;
+              continue;
+            }
+            if (redirResp.status === 429) continue;
+            pageHtml = await redirResp.text();
+          }
+
+          if (
+            pageHtml.includes('File Not Found') ||
+            pageHtml.includes('File was deleted') ||
+            pageHtml.includes('Copyright Infringement') ||
+            pageHtml.includes('Video not found')
+          ) {
+            isExplicitlyDeleted = true;
+            continue;
+          }
+
+          // Look for obfuscated JSON string array e.g. <script type="application/json">["DROH#&nJjm..."]</script>
+          const jsonScriptMatch =
+            pageHtml.match(/<script[^>]*type=["']application\/json["'][^>]*>\s*(\["[^"]+"\])\s*<\/script>/i) ||
+            pageHtml.match(/\[\s*["'][A-Za-z0-9#&~@%?*!^$+/=_-]{100,}["']\s*\]/);
+
+          if (jsonScriptMatch) {
+            const rawArrStr = jsonScriptMatch[1] || jsonScriptMatch[0];
+            const arr = JSON.parse(rawArrStr);
+            const raw = arr[0];
+
+            // Step 1: ROT13
+            let rot13 = '';
+            for (let i = 0; i < raw.length; i++) {
+              let c = raw.charCodeAt(i);
+              if (c >= 65 && c <= 90) c = ((c - 65 + 13) % 26) + 65;
+              else if (c >= 97 && c <= 122) c = ((c - 97 + 13) % 26) + 97;
+              rot13 += String.fromCharCode(c);
+            }
+
+            // Step 2: Remove known delimiters
+            const delims = ['@$', '^^', '~@', '%?', '*~', '!!', '#&', '@|'];
+            let cleaned = rot13;
+            for (const d of delims) {
+              cleaned = cleaned.split(d).join('');
+            }
+
+            // Step 3: Base64 decode to binary string (using standard global atob)
+            const b1 = atob(cleaned);
+
+            // Step 4: Shift character codes by -3
+            let shifted = '';
+            for (let i = 0; i < b1.length; i++) {
+              shifted += String.fromCharCode(b1.charCodeAt(i) - 3);
+            }
+
+            // Step 5: Reverse & Base64 decode
+            const reversed = shifted.split('').reverse().join('');
+            const finalJsonStr = atob(reversed);
+            const data = JSON.parse(finalJsonStr);
+
+            if (data?.source && typeof data.source === 'string') {
+              resolvedHls = data.source;
+            }
+            if (data?.direct_access_url && typeof data.direct_access_url === 'string') {
+              resolvedMp4 = data.direct_access_url;
+            }
+
+            if (resolvedHls || resolvedMp4) {
+              break; // Success!
+            }
+          }
+        } catch {
+          // Try next mirror
+          continue;
+        }
+      }
+
+      if (resolvedHls) {
+        const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(resolvedHls)}&ref=${encodeURIComponent(targetOrigin)}`;
+        const result = {
+          mode: 'native_hls',
+          streamUrl: proxiedUrl,
+          qualities: [{ label: '1080p', url: proxiedUrl }],
+          fallbackIframe: url,
+        };
+        // Cache result for 3 hours (HLS token is valid for 4 hours)
+        setCachedStream(url, result, 3 * 3600 * 1000);
+        return NextResponse.json(result, { headers: CACHE_HEADERS });
+      }
+
+      if (resolvedMp4) {
+        const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(resolvedMp4)}&ref=${encodeURIComponent(targetOrigin)}`;
+        const result = {
+          mode: 'native_mp4',
+          streamUrl: proxiedUrl,
+          qualities: [{ label: '1080p', url: proxiedUrl }],
+          fallbackIframe: url,
+        };
+        setCachedStream(url, result, 3 * 3600 * 1000);
+        return NextResponse.json(result, { headers: CACHE_HEADERS });
+      }
+
+      if (isExplicitlyDeleted) {
+        return NextResponse.json(
+          { error: 'VOE videosu telif sebebiyle silinmiş veya bulunamadı (404)', isDead: true },
+          { status: 410 }
+        );
+      }
+    } catch {
+      return NextResponse.json(
+        { error: 'VOE sunucusuna erişilemedi veya video silinmiş', isDead: true },
+        { status: 410 }
+      );
+    }
+  }
+
+  // 4h. VK (vk.com/video_ext.php?... or vk.com/video...) -> Direct HLS / MP4
+  if (provider === 'vk' || lowerUrl.includes('vk.com/video')) {
+    try {
+      const resp = await fetch(url, {
+        headers: {
+          'User-Agent': commonUA,
+          Referer: 'https://vk.com/',
+        },
+        signal: AbortSignal.timeout(6000),
+      });
+
+      if (!resp.ok && (resp.status === 404 || resp.status === 410)) {
+        return NextResponse.json(
+          { error: 'VK videosu silinmiş (404)', isDead: true },
+          { status: 410 }
+        );
+      }
+
+      if (resp.ok) {
+        const html = await resp.text();
+        const unescaped = html.replace(/\\\//g, '/');
+
+        // Check for deletion or private video
+        if (
+          html.includes('This video has been removed') ||
+          html.includes('Video not found') ||
+          html.includes('Видеозапись удалена') ||
+          html.includes('Видео недоступно')
+        ) {
+          return NextResponse.json(
+            { error: 'VK videosu kaldırılmış veya gizli', isDead: true },
+            { status: 410 }
+          );
+        }
+
+        // Direct HLS
+        const hlsMatch = unescaped.match(/"hls"\s*:\s*"([^"]+)"/);
+        if (hlsMatch?.[1]) {
+          const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(hlsMatch[1])}&ref=${encodeURIComponent('https://vk.com/')}`;
+          const result = {
+            mode: 'native_hls',
+            streamUrl: proxiedUrl,
+            qualities: [{ label: '1080p', url: proxiedUrl }],
+            fallbackIframe: url,
+          };
+          setCachedStream(url, result);
+          return NextResponse.json(result, { headers: CACHE_HEADERS });
+        }
+
+        // Direct MP4 qualities
+        const qualities: Array<{ label: string; url: string }> = [];
+        for (const q of [1080, 720, 480, 360, 240]) {
+          const m = unescaped.match(new RegExp(`"url${q}"\\s*:\\s*"([^"]+)"`));
+          if (m?.[1]) {
+            qualities.push({
+              label: `${q}p`,
+              url: `/api/stream-proxy?url=${encodeURIComponent(m[1])}&ref=${encodeURIComponent('https://vk.com/')}`,
+            });
+          }
+        }
+
+        if (qualities.length > 0) {
+          const result = {
+            mode: 'native_mp4',
+            streamUrl: qualities[0].url,
+            qualities,
+            fallbackIframe: url,
+          };
+          setCachedStream(url, result);
+          return NextResponse.json(result, { headers: CACHE_HEADERS });
+        }
+      }
+    } catch {
+      return NextResponse.json(
+        { error: 'VK sunucusuna erişilemedi', isDead: true },
+        { status: 410 }
+      );
+    }
+  }
+
+  // 4i. Sendvid / Yourupload / Mp4upload / Filemoon / Streamwish / Vidguard / Vidspeed generic stream extraction
   if (
     [
       'sendvid',
       'yourupload',
       'mp4upload',
-      'voe',
       'filemoon',
       'streamwish',
       'strw',

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
       .replace(/^-+|-+$/g, '') || 'liste';
     const slug = `${baseSlug}-${Date.now().toString(36)}`;
 
-    const { data, error } = await supabase.rpc('create_custom_list', {
+    const { data, error } = await (supabaseAdmin || supabase).rpc('create_custom_list', {
       p_user_id: user_id,
       p_title: cleanTitle,
       p_description: description?.trim() || null,
@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       console.warn('Failed to create custom list via RPC, trying direct insert:', error);
-      const { data: insertData, error: insertErr } = await supabase
+      const { data: insertData, error: insertErr } = await (supabaseAdmin || supabase)
         .from('custom_lists')
         .insert({
           user_id,

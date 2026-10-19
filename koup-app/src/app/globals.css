@@ -76,9 +76,8 @@ html {
   background-color: #080808;
   color: #e5e2e1;
   font-family: var(--font-sans), "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
-  scroll-behavior: smooth;
-  overflow-x: hidden;
-  overflow-y: auto;
+  scroll-behavior: auto;
+  overflow-x: clip;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -90,8 +89,7 @@ body {
   background-color: #080808;
   color: #e5e2e1;
   font-family: var(--font-sans), "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
-  overflow-x: hidden;
-  overflow-y: visible;
+  overflow-x: clip;
   position: relative;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
@@ -182,39 +180,176 @@ img.rounded-full,
   box-shadow: 0 20px 45px rgba(0, 0, 0, 0.75);
 }
 
+/* Universal Interactive Glass Pill with Crisp Snappy Highlight */
 .glass-pill {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(28px);
   -webkit-backdrop-filter: blur(28px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    color 120ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button.glass-pill:hover,
+  a.glass-pill:hover,
+  .glass-pill:hover {
+    background: rgba(255, 255, 255, 0.18);
+    border-color: rgba(255, 255, 255, 0.35);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.20), 0 2px 8px rgba(0, 0, 0, 0.25);
+    color: #ffffff;
+  }
+
+  .apple-glass-pill:hover {
+    background: rgba(255, 255, 255, 0.18);
+    border-color: rgba(255, 255, 255, 0.35);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.20), 0 2px 8px rgba(0, 0, 0, 0.25);
+    color: #ffffff;
+  }
+
+  /* Active / Clicked Button Hover & Focus Enhancements (Takipte, Favorilerimde, Puanım, vb.) */
+  button[class*="bg-amber-"]:hover,
+  a[class*="bg-amber-"]:hover {
+    filter: brightness(1.12) saturate(1.05);
+    box-shadow: 0 0 20px rgba(251, 191, 36, 0.5) !important;
+  }
+  button[class*="bg-rose-"]:hover,
+  a[class*="bg-rose-"]:hover,
+  button[class*="bg-pink-"]:hover,
+  a[class*="bg-pink-"]:hover {
+    filter: brightness(1.14) saturate(1.05);
+    box-shadow: 0 0 20px rgba(244, 63, 94, 0.5) !important;
+  }
+  button[class*="bg-sky-"]:hover,
+  a[class*="bg-sky-"]:hover,
+  button[class*="bg-blue-"]:hover,
+  a[class*="bg-blue-"]:hover {
+    filter: brightness(1.14) saturate(1.05);
+    box-shadow: 0 0 20px rgba(56, 189, 248, 0.5) !important;
+  }
+  button[class*="bg-emerald-"]:hover,
+  a[class*="bg-emerald-"]:hover,
+  button[class*="bg-green-"]:hover,
+  a[class*="bg-green-"]:hover {
+    filter: brightness(1.14) saturate(1.05);
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.5) !important;
+  }
+}
+
+/* Touch Device Optimization: Immediate clean response, no sticky hover or laggy focus */
+@media (hover: none) and (pointer: coarse) {
+  button,
+  a,
+  input,
+  [role="button"] {
+    -webkit-tap-highlight-color: transparent !important;
+    touch-action: manipulation;
+  }
+
+  /* Prevent persistent focus rings and sticky highlights on touch tap */
+  .glass-pill:focus,
+  .glass-pill:focus-visible,
+  button.glass-pill:focus,
+  button.glass-pill:focus-visible {
+    border-color: rgba(255, 255, 255, 0.13) !important;
+    box-shadow: none !important;
+    background: rgba(255, 255, 255, 0.08) !important;
+    outline: none !important;
+  }
+
+  .glass-pill:active,
+  button.glass-pill:active {
+    background: rgba(255, 255, 255, 0.20) !important;
+    border-color: rgba(255, 255, 255, 0.35) !important;
+    transition: none !important;
+  }
+}
+
+button.glass-pill:focus-visible,
+a.glass-pill:focus-visible,
+.glass-pill:focus-visible {
+  outline: none;
+  background: rgba(255, 255, 255, 0.24);
+  border-color: rgba(41, 151, 255, 0.7);
+  box-shadow: 0 0 0 2px rgba(41, 151, 255, 0.35), 0 0 20px rgba(41, 151, 255, 0.3);
+  color: #ffffff;
 }
 
 .glass-pill-dark {
-  background: rgba(14, 14, 16, 0.72);
+  background: rgba(14, 14, 16, 0.76);
   backdrop-filter: blur(32px);
   -webkit-backdrop-filter: blur(32px);
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .apple-glass-pill {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.13);
   transition:
-    transform 260ms var(--spring-apple),
-    background-color 220ms ease,
-    border-color 220ms ease,
-    box-shadow 260ms var(--spring-apple);
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    color 120ms ease;
 }
 
-.apple-glass-pill:hover {
-  background: rgba(255, 255, 255, 0.13);
-  border-color: rgba(255, 255, 255, 0.24);
+.apple-glass-pill:focus-visible {
+  outline: none;
+  background: rgba(255, 255, 255, 0.26);
+  border-color: rgba(41, 151, 255, 0.7);
+  box-shadow: 0 0 0 2px rgba(41, 151, 255, 0.35), 0 0 20px rgba(41, 151, 255, 0.3);
+  color: #ffffff;
 }
 
 .apple-glass-pill:active {
-  transform: scale(0.96);
+  background: rgba(255, 255, 255, 0.26);
+}
+
+/* Solid White Apple Button Balanced Hover & Focus */
+button.bg-white,
+a.bg-white,
+button[class~="bg-white"],
+a[class~="bg-white"] {
+  background-color: #ffffff;
+  color: #000000;
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease,
+    filter 120ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button.bg-white:hover,
+  a.bg-white:hover,
+  button[class~="bg-white"]:hover,
+  a[class~="bg-white"]:hover {
+    background-color: #e8e8ed !important;
+    color: #000000 !important;
+    box-shadow: 0 0 16px rgba(255, 255, 255, 0.28), 0 4px 14px rgba(0, 0, 0, 0.3) !important;
+  }
+}
+
+button.bg-white:active,
+a.bg-white:active,
+button[class~="bg-white"]:active,
+a[class~="bg-white"]:active {
+  background-color: #d8d8de !important;
+}
+
+button.bg-white:focus-visible,
+a.bg-white:focus-visible,
+button[class~="bg-white"]:focus-visible,
+a[class~="bg-white"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #080808, 0 0 0 4px rgba(255, 255, 255, 0.9), 0 0 16px rgba(255, 255, 255, 0.4) !important;
 }
 
 /* Unified KoUp Apple Glass Input System */
@@ -501,6 +636,38 @@ textarea.koup-input {
   margin: 1.5rem 0;
 }
 
+/* Comment Rich Content & Heading Styles */
+.comment-rich-editor h2,
+.comment-content h2,
+.comment-h2 {
+  font-size: 1.18rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-top: 0.45rem;
+  margin-bottom: 0.25rem;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.comment-rich-editor h2:first-child,
+.comment-content h2:first-child {
+  margin-top: 0;
+}
+
+.comment-rich-editor h3,
+.comment-content h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #ffffff;
+  margin-top: 0.35rem;
+  margin-bottom: 0.2rem;
+  line-height: 1.35;
+}
+
+.comment-rich-editor:focus {
+  outline: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -705,5 +872,23 @@ input[type="range"].netflix-volume-slider:focus-visible {
 .animate-netflix-seek-right {
   animation: netflixSeekSlideRight calc(650ms * (1 - var(--animation-reduced))) cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* Ambient Lighting Wave Motion (Sinematik Işıklandırma Akıcı Dalgalı Yayılım) */
+@keyframes ambientWave {
+  0%, 100% {
+    transform: scale(1.12) translate3d(0, 0, 0);
+    opacity: 0.82;
+  }
+  50% {
+    transform: scale(1.20) translate3d(0, 4px, 0);
+    opacity: 0.98;
+  }
+}
+
+.animate-ambient-wave {
+  animation: ambientWave 7.5s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
 
 

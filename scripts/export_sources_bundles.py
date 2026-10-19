@@ -12,6 +12,9 @@ import json
 import sqlite3
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from scrapers.clean_fansub import clean_fansub_name, clean_source_name
+
 DB_PATH = Path(os.environ.get("ARCHIVE_DB_PATH", "webdrama_archive.db"))
 OUT_DIR = Path("r2_bundles/sources")
 
@@ -28,11 +31,20 @@ def classify_stream_type(provider: str, direct_url: str) -> str:
         or "master.txt" in u
     ):
         return "hls"
-    if u.endswith(".mp4") or ".mp4?" in u:
+    if u.endswith(".mp4") or ".mp4?" in u or p in ("mail.ru", "mail") or "my.mail.ru" in u:
         return "mp4"
+    if (
+        p in ("uqload", "voe", "vk", "ok.ru", "odnoklassniki")
+        or "uqload." in u
+        or "voe.sx" in u
+        or "voe." in u
+        or "vk.com" in u
+        or "ok.ru" in u
+    ):
+        return "hls"
     if p == "tau-video" or "tau-video.xyz" in u:
         return "tau"
-    if p in ("ok.ru", "odnoklassniki", "vk", "dailymotion"):
+    if p in ("dailymotion",):
         return "postmessage_iframe"
     return "locked_iframe"
 
@@ -65,17 +77,15 @@ def get_provider_priority(provider: str, direct_url: str, content_type: str) -> 
 
     if p in ("vidmoly", "filemoon", "yourupload"):
         return 3
-    if p == "sibnet" or "sibnet.ru" in u:
+    if p in ("mail.ru", "mail", "vk", "dailymotion", "mega") or "mail.ru" in u:
         return 4
-    if p in ("sendvid", "uqload", "mp4upload", "doodstream", "voe", "vudeo"):
+    if p in ("mp4upload", "voe"):
         return 5
-    if p in ("vk", "mail.ru", "mail", "dailymotion", "mega"):
-        return 6
-    if "gdrive" in p or "google" in p or "drive.google.com" in u:
-        return 7
+    if p == "uqload" or "uqload" in u:
+        return 8
     if p in ("ok.ru", "odnoklassniki") or "ok.ru" in u or "odnoklassniki" in u:
         return 90
-    return 8
+    return 7
 
 def export_all():
     if not DB_PATH.exists():
@@ -96,6 +106,8 @@ def export_all():
         WHERE s.direct_url IS NOT NULL 
           AND s.direct_url != '' 
           AND s.direct_url != 'dead'
+          AND s.provider != 'sibnet'
+          AND s.direct_url NOT LIKE '%sibnet.ru%'
     """).fetchall()
 
     print(f"Found {len(dramas):,} dramas with verified sources.")
@@ -108,9 +120,12 @@ def export_all():
           AND direct_url != 'dead'
           AND direct_url != ''
           AND provider != 'dead'
+          AND provider != 'sibnet'
           AND provider != 'sendvid'
+          AND provider NOT LIKE '%sibnet%'
           AND provider NOT LIKE '%gdrive%'
           AND provider NOT LIKE '%google%'
+          AND direct_url NOT LIKE '%sibnet.ru%'
           AND direct_url NOT LIKE '%sendvid%'
           AND direct_url NOT LIKE '%drive.google.com%'
           AND direct_url NOT LIKE '%docs.google.com%'
@@ -164,13 +179,13 @@ def export_all():
                 stype = classify_stream_type(provider, direct_url)
                 prio = get_provider_priority(provider, direct_url, content_type)
 
-                clean_name = s_name or provider or "Kaynak"
+                clean_name = clean_source_name(s_name or provider or "Kaynak")
                 is_native = (
                     stype in ("hls", "tau", "mp4")
                     or p_low in ("diziyou-hls", "hdfilm-hls", "asyawatch")
                     or "pichive" in u_low
                 )
-                clean_fansub = fansub or None
+                clean_fansub = clean_fansub_name(fansub)
 
                 if p_low == "asyawatch" or (site or "").lower() == "asyawatch" or "pichive" in u_low:
                     clean_name = "Orijinal"
@@ -182,9 +197,6 @@ def export_all():
                     clean_name = "Orijinal"
                 elif "dizikorea" in clean_name.lower() or "diziyou" in clean_name.lower():
                     clean_name = "Orijinal"
-
-                if clean_fansub and clean_fansub.lower() in ("asyawatch", "dizilla", "webdrama", "koup", "varsayılan"):
-                    clean_fansub = None
 
                 is_hq = is_native or p_low in ("asyawatch", "dizilla") or "pichive" in u_low or "dplayer" in u_low
                 processed.append({

@@ -80,6 +80,37 @@ function isScheduleKdrama(item: CalendarScheduleItem): boolean {
   );
 }
 
+function cleanScheduleCategory(category?: string | null): string {
+  if (!category) return 'Dizi';
+  const trimmed = category.trim();
+  if (trimmed.startsWith('{') || trimmed.includes('_id')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      const name = parsed.display_name || parsed.name;
+      if (name) {
+        if (/anim/i.test(name)) return 'Anime';
+        if (/action|aksiyon/i.test(name)) return 'Aksiyon';
+        if (/drama|dram/i.test(name)) return 'Dram';
+        if (/comedy|komedi/i.test(name)) return 'Komedi';
+        return name;
+      }
+    } catch {}
+    if (/anim/i.test(trimmed)) return 'Anime';
+    if (/action|aksiyon/i.test(trimmed)) return 'Aksiyon';
+    if (/drama|dram/i.test(trimmed)) return 'Dram';
+    return 'Dizi';
+  }
+  return trimmed;
+}
+
+function getScheduleDayLabel(item: CalendarScheduleItem): string {
+  if (item.date_label && !item.date_label.includes('{')) {
+    return item.date_label;
+  }
+  const day = DAYS.find((d) => d.id === item.day_of_week);
+  return day ? day.name : 'Pazartesi';
+}
+
 export default function CalendarPage() {
   const { followedMediaIds, toggleMediaFollow, triggerSound, pushNotification } =
     useKoUp();
@@ -297,13 +328,16 @@ export default function CalendarPage() {
                 ? followedMediaIds.includes(item.media_id)
                 : false;
 
+              const cleanCat = cleanScheduleCategory(item.category);
+              const dayLabel = getScheduleDayLabel(item);
+
               const categoryBadge = isScheduleAnime(item)
                 ? { label: 'ANİME', color: 'bg-[#1b1035] text-purple-200 border-purple-400/60 shadow-md font-bold' }
-                : (item.media?.country_code === 'KR' || item.category?.toLowerCase().includes('kore'))
+                : (item.media?.country_code === 'KR' || cleanCat.toLowerCase().includes('kore'))
                 ? { label: 'K-DRAMA', color: 'bg-[#0c1d33] text-sky-200 border-sky-400/60 shadow-md font-bold' }
-                : (item.media?.country_code === 'CN' || item.category?.toLowerCase().includes('çin'))
+                : (item.media?.country_code === 'CN' || cleanCat.toLowerCase().includes('çin'))
                 ? { label: 'C-DRAMA', color: 'bg-[#2a1708] text-amber-200 border-amber-400/60 shadow-md font-bold' }
-                : { label: item.category || 'DİZİ', color: 'bg-[#0f1d2e] text-blue-200 border-blue-400/60 shadow-md font-bold' };
+                : { label: cleanCat || 'DİZİ', color: 'bg-[#0f1d2e] text-blue-200 border-blue-400/60 shadow-md font-bold' };
 
               return (
                 <div
@@ -330,24 +364,21 @@ export default function CalendarPage() {
                       {categoryBadge.label}
                     </span>
 
-                    {/* Episode Badge - Opaque High Contrast */}
-                    {item.episode_label && (
-                      <span className="absolute bottom-2.5 left-2.5 right-2.5 text-[11px] font-mono font-bold px-2 py-1 rounded-xl bg-black/90 backdrop-blur-md text-white border border-white/25 truncate text-center shadow-md">
-                        {item.episode_label}
-                      </span>
-                    )}
+                    {/* Day Badge - Replaced Episode Count as Requested */}
+                    <span className="absolute bottom-2.5 left-2.5 right-2.5 text-[11px] font-mono font-bold px-2 py-1 rounded-xl bg-black/90 backdrop-blur-md text-white border border-white/25 truncate text-center shadow-md flex items-center justify-center gap-1.5">
+                      <Calendar className="w-3 h-3 text-sky-400 shrink-0" />
+                      <span>{dayLabel}</span>
+                    </span>
                   </Link>
 
                   {/* Metadata Card Footer */}
                   <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
                     <div>
                       <div className="flex items-center justify-between text-[10px] font-mono text-white/50 mb-1">
-                        <span className="truncate">{item.category || 'Dizi'}</span>
-                        {item.date_label && (
-                          <span className="truncate ml-1 text-white/70">
-                            {item.date_label}
-                          </span>
-                        )}
+                        <span className="truncate max-w-[60%]">{cleanCat}</span>
+                        <span className="truncate ml-1 text-white/70">
+                          {dayLabel}
+                        </span>
                       </div>
 
                       <Link

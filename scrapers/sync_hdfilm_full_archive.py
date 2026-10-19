@@ -22,6 +22,66 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
+from scrapers.multisite import clean_scraped_slug
+from scrapers.translator import resolve_tmdb_metadata, COUNTRY_CODE_TO_NAME
+
+TURKISH_COUNTRY_NAME_TO_CODE = {
+    "türkiye": "TR", "turkiye": "TR",
+    "abd": "US", "amerika": "US", "amerika birleşik devletleri": "US", "united states": "US",
+    "güney kore": "KR", "guney kore": "KR", "kore": "KR",
+    "japonya": "JP",
+    "çin": "CN", "cin": "CN",
+    "birleşik krallık": "GB", "ingiltere": "GB",
+    "fransa": "FR",
+    "almanya": "DE",
+    "ispanya": "ES",
+    "italya": "IT",
+    "polonya": "PL",
+    "hindistan": "IN",
+    "kanada": "CA",
+    "avustralya": "AU",
+    "rusya": "RU",
+    "brezilya": "BR",
+    "meksika": "MX",
+    "hollanda": "NL",
+    "isveç": "SE", "isvec": "SE",
+    "norveç": "NO", "norvec": "NO",
+    "danimarka": "DK",
+    "finlandiya": "FI",
+    "belçika": "BE", "belcika": "BE",
+    "isviçre": "CH", "isvicre": "CH",
+    "avusturya": "AT",
+    "irlanda": "IE",
+    "yeni zelanda": "NZ",
+    "tayland": "TH",
+    "tayvan": "TW",
+    "endonezya": "ID",
+    "malezya": "MY",
+    "filipinler": "PH",
+    "iran": "IR", "israil": "IL", "mısır": "EG", "misir": "EG",
+    "arjantin": "AR",
+    "kolombiya": "CO",
+    "güney afrika": "ZA",
+}
+
+def extract_country_from_html(html: str) -> tuple:
+    if not html:
+        return None, None
+    soup = BeautifulSoup(html, 'html.parser')
+    for a in soup.find_all('a', href=True):
+        if '/ulke/' in a['href']:
+            c_text = a.get_text(strip=True).lower()
+            if c_text in TURKISH_COUNTRY_NAME_TO_CODE:
+                code = TURKISH_COUNTRY_NAME_TO_CODE[c_text]
+                return code, COUNTRY_CODE_TO_NAME.get(code, "ABD")
+    m = re.search(r'ülke(?:si)?\s*[:：]\s*([^\r\n<]+)', html, re.I)
+    if m:
+        c_text = m.group(1).strip().lower()
+        for k, code in TURKISH_COUNTRY_NAME_TO_CODE.items():
+            if k in c_text:
+                return code, COUNTRY_CODE_TO_NAME.get(code, "ABD")
+    return None, None
+
 sys.stdout.reconfigure(encoding='utf-8', line_buffering=True)
 
 DB_PATH = os.path.join(_ROOT, 'webdrama_archive.db')
@@ -125,9 +185,10 @@ def resolve_streams_fast(session, page_url, html=None):
     except Exception:
         return []
 
-def match_or_create_drama(conn, title, slug, content_type, cover, year, overview, page_url):
+def match_or_create_drama(conn, title, slug, content_type, cover, year, overview, page_url, html=None):
     c = conn.cursor()
-    c.execute("SELECT id FROM dramas WHERE slug = ? OR source_url = ?", (slug, page_url))
+    clean_s = clean_scraped_slug(slug) or "yapim"
+    c.execute("SELECT id FROM dramas WHERE slug = ? OR slug = ? OR source_url = ?", (clean_s, slug, page_url))
     row = c.fetchone()
     if row:
         return row[0]
@@ -137,20 +198,35 @@ def match_or_create_drama(conn, title, slug, content_type, cover, year, overview
     if row_t:
         return row_t[0]
 
-    c_slug = slug
+    c_code, c_name = extract_country_from_html(html)
+    yr_int = int(year) if year and str(year).isdigit() else None
+    if not c_code:
+        try:
+            tmdb_meta = resolve_tmdb_metadata(title, year=yr_int, content_type=content_type)
+            if tmdb_meta:
+                c_code = tmdb_meta.get("country_code")
+                c_name = tmdb_meta.get("country_name")
+        except Exception:
+            pass
+
+    if not c_code or c_code not in COUNTRY_CODE_TO_NAME:
+        c_code = "US"
+        c_name = "ABD"
+
+    c_slug = clean_s
     suffix = 1
     while True:
         c.execute("SELECT id FROM dramas WHERE slug = ?", (c_slug,))
         if not c.fetchone():
             break
-        c_slug = f"{slug}-{suffix}"
+        c_slug = f"{clean_s}-{suffix}"
         suffix += 1
 
     try:
         c.execute("""
-            INSERT INTO dramas (title, slug, content_type, country, release_year, status_broadcast, cover_image, overview, source_url)
-            VALUES (?, ?, ?, 'US', ?, ?, ?, ?, ?)
-        """, (title, c_slug, content_type, str(year or datetime.now().year),
+            INSERT INTO dramas (title, slug, content_type, country, country_name, release_year, status_broadcast, cover_image, overview, source_url)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (title, c_slug, content_type, c_code, c_name, str(year or datetime.now().year),
               'completed' if content_type == 'film' else 'ongoing',
               cover or '/logo-dark.png', overview or f"{title} HDFilmcehennemi üzerinden eklendi.", page_url))
         return c.lastrowid
@@ -199,8 +275,15 @@ def save_sources(conn, episode_id, streams):
     return added
 
 def process_single_movie(session, conn, item_url, meta):
-    slug = item_url.rstrip('/').split('/')[-1]
-    streams = resolve_streams_fast(session, item_url)
+    slug = clean_scraped_slug(item_url.rstrip('/').split('/')[-1])
+    html = None
+    try:
+        r = session.get(item_url, headers={'Referer': 'https://www.hdfilmcehennemi.nl/'}, timeout=8)
+        if r.status_code == 200:
+            html = r.text
+    except Exception:
+        pass
+    streams = resolve_streams_fast(session, item_url, html=html)
     if not streams:
         return 0
 
@@ -208,7 +291,7 @@ def process_single_movie(session, conn, item_url, meta):
     for retry in range(10):
         try:
             with conn:
-                did = match_or_create_drama(conn, meta['title'], slug, 'film', meta['cover'], meta['year'], meta['overview'], item_url)
+                did = match_or_create_drama(conn, meta['title'], slug, 'film', meta['cover'], meta['year'], meta['overview'], item_url, html=html)
                 ep_id = match_or_create_episode(conn, did, 1, 1, "Film", item_url)
                 added = save_sources(conn, ep_id, streams)
             break
@@ -217,7 +300,7 @@ def process_single_movie(session, conn, item_url, meta):
     return added
 
 def process_single_series(session, conn, series_url, meta, pool=None):
-    slug = series_url.rstrip('/').split('/')[-1]
+    slug = clean_scraped_slug(series_url.rstrip('/').split('/')[-1])
 
     try:
         r = session.get(series_url, headers=HEADERS, timeout=8)
@@ -265,7 +348,7 @@ def process_single_series(session, conn, series_url, meta, pool=None):
     for retry in range(10):
         try:
             with conn:
-                did = match_or_create_drama(conn, meta['title'], slug, 'dizi', meta['cover'], meta['year'], meta['overview'], series_url)
+                did = match_or_create_drama(conn, meta['title'], slug, 'dizi', meta['cover'], meta['year'], meta['overview'], series_url, html=r.text)
                 for s_num, e_num, ep_url, streams in resolved_episodes:
                     ep_id = match_or_create_episode(conn, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_url)
                     added = save_sources(conn, ep_id, streams)

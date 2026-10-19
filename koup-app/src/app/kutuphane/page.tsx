@@ -28,6 +28,7 @@ import { useKoUp } from '@/context/KoUpContext';
 import { supabase, MediaItem, cleanMediaTitle } from '@/lib/supabase';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 import CustomSelect, { SelectOption } from '@/components/CustomSelect';
+import Pagination from '@/components/Pagination';
 
 const CARD_STATUS_OPTIONS: SelectOption[] = [
   {
@@ -74,6 +75,8 @@ export default function KutuphanePage() {
   const [activeStatus, setActiveStatus] = useState<LibraryStatus>('ALL');
   const [activeType, setActiveType] = useState<ContentTypeFilter>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 36;
   const [libraryMedia, setLibraryMedia] = useState<MediaItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -176,6 +179,12 @@ export default function KutuphanePage() {
     });
   }, [libraryMedia, activeStatus, activeType, searchQuery, progressMap]);
 
+  // Paginated slice for current page
+  const paginatedMedia = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredMedia.slice(start, start + PAGE_SIZE);
+  }, [filteredMedia, currentPage]);
+
   // If user is not logged in
   if (!user) {
     return (
@@ -214,10 +223,6 @@ export default function KutuphanePage() {
       {/* Page Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-white/[0.08]">
         <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-400/20 text-sky-400 text-xs font-mono font-semibold">
-            <Library className="w-3.5 h-3.5" />
-            <span>Koleksiyon & Takip Yönetimi</span>
-          </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
             Kütüphanem
           </h1>
@@ -255,6 +260,7 @@ export default function KutuphanePage() {
               onClick={() => {
                 triggerSound('click');
                 setActiveStatus(item.id);
+                setCurrentPage(1);
               }}
               className={`p-4 rounded-3xl border transition-all cursor-pointer text-left ${
                 isSelected
@@ -293,6 +299,7 @@ export default function KutuphanePage() {
                 onClick={() => {
                   triggerSound('click');
                   setActiveStatus(st.id);
+                  setCurrentPage(1);
                 }}
                 className={`relative px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors duration-200 cursor-pointer shrink-0 ${
                   active
@@ -330,6 +337,7 @@ export default function KutuphanePage() {
                   onClick={() => {
                     triggerSound('click');
                     setActiveType(tp.id);
+                    setCurrentPage(1);
                   }}
                   className={`relative px-3 py-1 rounded-full text-[11px] font-semibold transition-colors duration-200 cursor-pointer ${
                     active
@@ -356,13 +364,19 @@ export default function KutuphanePage() {
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="Kütüphanede ara..."
               className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full font-medium"
             />
             {searchQuery && (
               <button
-                onClick={() => setSearchQuery('')}
+                onClick={() => {
+                  setSearchQuery('');
+                  setCurrentPage(1);
+                }}
                 className="text-white/40 hover:text-white transition-colors cursor-pointer"
                 aria-label="Aramayı temizle"
               >
@@ -409,7 +423,7 @@ export default function KutuphanePage() {
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
-          {filteredMedia.map((m) => {
+          {paginatedMedia.map((m) => {
             const prog = progressMap[m.id];
             const currentStatus = prog?.status || 'watching';
             const watchedCount = prog?.watched_episodes?.length || 0;
@@ -485,6 +499,18 @@ export default function KutuphanePage() {
             );
           })}
         </div>
+      )}
+
+      {/* PAGINATION DECK (Apple TV+ Cinema Glass Design) */}
+      {!isLoading && filteredMedia.length > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalCount={filteredMedia.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setCurrentPage}
+          itemLabel="yapımdan"
+          scrollToOffset={300}
+        />
       )}
     </div>
   );

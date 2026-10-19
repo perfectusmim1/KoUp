@@ -12,6 +12,22 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
+const serviceRoleKey =
+  typeof window === 'undefined'
+    ? process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvY3Zjb3RtaWt6bHdiYWV6ZHBsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MjEzOTY1MSwiZXhwIjoyMTA3NzE1NjUxfQ.K78fnOdpdiZiZHxT_Yy80cTWsdFCHP2uDLMrpfL1Ceg'
+    : undefined;
+
+export const supabaseAdmin =
+  typeof window === 'undefined' && serviceRoleKey
+    ? createClient(supabaseUrl, serviceRoleKey, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      })
+    : supabase;
+
 export interface MediaItem {
   id: number;
   slug: string;
@@ -84,6 +100,12 @@ export interface PersonItem {
   tmdb_id?: number | null;
   bio_tr?: string | null;
   birth_date?: string | null;
+  death_date?: string | null;
+  gender?: string | null;
+  place_of_birth?: string | null;
+  also_known_as?: string[] | null;
+  blood_type?: string | null;
+  height?: string | null;
   favorites_count: number;
   followers_count: number;
   comments_count: number;
@@ -127,6 +149,8 @@ export interface EpisodeData {
   react_fire?: number;
   react_cry?: number;
   react_shock?: number;
+  react_angry?: number;
+  views_count?: number;
   intro_start_sec?: number | null;
   intro_end_sec?: number | null;
   sources: EpisodeSource[];
@@ -170,6 +194,8 @@ export interface UserProfile {
   warning_count?: number;
   is_private: boolean;
   hide_watch_history: boolean;
+  hide_library?: boolean;
+  hide_comments?: boolean;
   notification_settings: {
     sound_enabled: boolean;
     sound_tone: 'apple_glass' | 'soft_chime' | 'minimal_pop';
@@ -330,21 +356,39 @@ export function getEpisodeProgressStats(
 ) {
   const watched = Array.isArray(prog?.watched_episodes) ? prog.watched_episodes : [];
   const watchedCount = watched.length;
-  const totalEpisodes = media?.episode_count || prog?.media?.episode_count || 0;
+  const isFilm =
+    media?.content_type === 'film' ||
+    media?.content_type === 'movie' ||
+    prog?.media?.content_type === 'film' ||
+    prog?.media?.content_type === 'movie';
+  const totalEpisodes = isFilm ? 1 : (media?.episode_count || prog?.media?.episode_count || 0);
   const season = prog?.last_season_num || 1;
-  const nextEpisode = getNextEpisodeNumber(prog, totalEpisodes);
-  const isCompleted =
-    prog?.status === 'completed' || (totalEpisodes > 0 && watchedCount >= totalEpisodes);
+  const nextEpisode = isFilm ? 1 : getNextEpisodeNumber(prog, totalEpisodes);
+
+  const resumePos = prog?.resume_position_sec || 0;
+  const resumeDur =
+    prog?.resume_duration_sec ||
+    ((media?.duration_minutes || prog?.media?.duration_minutes || 0) * 60) ||
+    3600;
+  const hasMidMovieProgress = isFilm && resumePos > 15 && resumeDur > 0 && resumePos / resumeDur < 0.85;
+
+  const isCompleted = hasMidMovieProgress
+    ? false
+    : prog?.status === 'completed' || (totalEpisodes > 0 && watchedCount >= totalEpisodes);
 
   let progressPercent = 0;
   if (isCompleted) {
     progressPercent = 100;
+  } else if (isFilm && resumeDur > 0 && resumePos > 0) {
+    progressPercent = Math.min(99, Math.max(5, Math.round((resumePos / resumeDur) * 100)));
   } else if (totalEpisodes > 0 && watchedCount > 0) {
     progressPercent = Math.min(100, Math.max(5, Math.round((watchedCount / totalEpisodes) * 100)));
   } else if (watchedCount > 0) {
     progressPercent = Math.min(95, Math.max(8, watchedCount * 8));
   } else if (nextEpisode > 1 && totalEpisodes > 0) {
     progressPercent = Math.min(95, Math.max(5, Math.round(((nextEpisode - 1) / totalEpisodes) * 100)));
+  } else if (resumeDur > 0 && resumePos > 10) {
+    progressPercent = Math.min(95, Math.max(6, Math.round((resumePos / resumeDur) * 100)));
   } else if (prog) {
     progressPercent = 6;
   }
@@ -357,9 +401,24 @@ export function getEpisodeProgressStats(
     progressPercent,
     isCompleted,
     isAllWatched: isCompleted,
+    isFilm,
+    resumePos,
+    resumeDur,
   };
 }
 
+
+export function cleanScrapedSlug(rawSlug?: string | null): string {
+  if (!rawSlug) return '';
+  let s = decodeURIComponent(rawSlug).trim().toLowerCase();
+  s = s
+    .replace(/(?:-(?:hd-film-izle|filmi-izle|film-izle|dizi-izle|izle|full-hd|full|hdfc|hdf|hf|\d+))+$/gi, '')
+    .replace(/^(?:hd-film-|hd-|film-|\d+-)+/gi, '')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-|-$/g, '')
+    .trim();
+  return s;
+}
 
 function isLikelyUrl(val?: string | null): boolean {
   if (!val) return false;
@@ -378,21 +437,27 @@ export function getProxiedImageUrl(
   titleHint?: string | null,
   tmdbSize: 'w92' | 'w154' | 'w185' | 'w342' | 'w500' | 'w780' | 'w1280' | 'original' = 'w500',
   type?: 'media' | 'person' | 'character' | 'banner' | 'poster',
-  tmdbId?: number | string | null
+  tmdbId?: number | string | null,
+  mediaType?: 'tv' | 'movie' | null,
+  year?: number | string | null,
+  nativeTitle?: string | null
 ): string {
   const isFallbackUrl = isLikelyUrl(fallbackOrTitle);
   const resolvedTitle = titleHint || (!isFallbackUrl ? fallbackOrTitle : null);
   const typeQuery = type ? `&type=${type}` : '';
+  const mtQuery = mediaType ? `&mediaType=${mediaType}` : '';
+  const yrQuery = year ? `&year=${encodeURIComponent(String(year))}` : '';
+  const ntQuery = nativeTitle ? `&nativeTitle=${encodeURIComponent(nativeTitle.trim())}` : '';
 
   if (!url || !url.trim() || url === '/logo-dark.png') {
     if (isFallbackUrl && fallbackOrTitle) {
-      return getProxiedImageUrl(fallbackOrTitle, null, resolvedTitle, tmdbSize, type, tmdbId);
+      return getProxiedImageUrl(fallbackOrTitle, null, resolvedTitle, tmdbSize, type, tmdbId, mediaType, year, nativeTitle);
     }
     if (tmdbId) {
-      return `/api/image-proxy?tmdbId=${encodeURIComponent(String(tmdbId))}${typeQuery}`;
+      return `/api/image-proxy?tmdbId=${encodeURIComponent(String(tmdbId))}${typeQuery}${mtQuery}${yrQuery}${ntQuery}`;
     }
     if (resolvedTitle && resolvedTitle.trim()) {
-      return `/api/image-proxy?title=${encodeURIComponent(resolvedTitle.trim())}${typeQuery}`;
+      return `/api/image-proxy?title=${encodeURIComponent(resolvedTitle.trim())}${typeQuery}${mtQuery}${yrQuery}${ntQuery}`;
     }
     return type === 'person' ? '/logo-dark.png' : '/logo-dark.png';
   }
@@ -439,6 +504,15 @@ export function getProxiedImageUrl(
   if (tmdbId) {
     params.set('tmdbId', String(tmdbId));
   }
+  if (mediaType) {
+    params.set('mediaType', mediaType);
+  }
+  if (year) {
+    params.set('year', String(year));
+  }
+  if (nativeTitle && nativeTitle.trim()) {
+    params.set('nativeTitle', nativeTitle.trim());
+  }
   return `/api/image-proxy?${params.toString()}`;
 }
 
@@ -450,25 +524,57 @@ export const COUNTRY_LABELS: Record<string, string> = {
   TW: 'TAYVAN',
   HK: 'HONG KONG',
   PH: 'FİLİPİNLER',
+  ID: 'ENDONEZYA',
+  MY: 'MALEZYA',
+  SG: 'SİNGAPUR',
+  VN: 'VİETNAM',
+  IN: 'HİNDİSTAN',
+  PK: 'PAKİSTAN',
+  IR: 'İRAN',
   US: 'ABD',
   GB: 'İNGİLTERE',
   TR: 'TÜRKİYE',
+  PL: 'POLONYA',
+  FR: 'FRANSA',
+  DE: 'ALMANYA',
+  ES: 'İSPANYA',
+  IT: 'İTALYA',
+  RU: 'RUSYA',
+  CA: 'KANADA',
+  AU: 'AVUSTRALYA',
+  BR: 'BREZİLYA',
+  MX: 'MEKSİKA',
+  AR: 'ARJANTİN',
+  BE: 'BELÇİKA',
+  NL: 'HOLLANDA',
+  SE: 'İSVEÇ',
+  NO: 'NORVEÇ',
+  DK: 'DANİMARKA',
+  FI: 'FİNLANDİYA',
+  AT: 'AVUSTURYA',
+  CH: 'İSVİÇRE',
+  IE: 'İRLANDA',
+  PT: 'PORTEKİZ',
+  GR: 'YUNANİSTAN',
+  CZ: 'ÇEKYA',
+  HU: 'MACARİSTAN',
+  RO: 'ROMANYA',
+  UA: 'UKRAYNA',
+  ZA: 'GÜNEY AFRİKA',
+  EG: 'MISIR',
+  NZ: 'YENİ ZELANDA',
+  CO: 'KOLOMBİYA',
+  CL: 'ŞİLİ',
   GL: 'GLOBAL',
 };
 
-export const COUNTRY_FLAG_EMOJIS: Record<string, string> = {
-  KR: 'KR',
-  CN: 'CN',
-  JP: 'JP',
-  TH: 'TH',
-  TW: 'TW',
-  HK: 'HK',
-  PH: 'PH',
-  US: 'US',
-  GB: 'GB',
-  TR: 'TR',
-  GL: 'GL',
-};
+export const COUNTRY_FLAG_EMOJIS: Record<string, string> = Object.keys(COUNTRY_LABELS).reduce(
+  (acc, code) => {
+    acc[code] = code;
+    return acc;
+  },
+  {} as Record<string, string>
+);
 
 export function getCountryFlag(countryCodeOrName?: string | null): string {
   if (!countryCodeOrName) return 'GL';
@@ -479,12 +585,31 @@ export function getCountryFlag(countryCodeOrName?: string | null): string {
   if (c.includes('JAP')) return 'JP';
   if (c.includes('THAI') || c.includes('TAYL')) return 'TH';
   if (c.includes('TAIW') || c.includes('TAYV')) return 'TW';
+  if (c.includes('POLON') || c.includes('POLAND')) return 'PL';
+  if (c.includes('FRANS') || c.includes('FRANCE')) return 'FR';
+  if (c.includes('ALMAN') || c.includes('GERMAN')) return 'DE';
+  if (c.includes('ISPAN') || c.includes('İSPAN') || c.includes('SPAIN')) return 'ES';
+  if (c.includes('ITAL') || c.includes('İTAL')) return 'IT';
+  if (c.includes('HIND') || c.includes('HİND') || c.includes('INDIA')) return 'IN';
+  if (c.includes('IRAN') || c.includes('İRAN')) return 'IR';
+  if (c.includes('RUS')) return 'RU';
+  if (c.includes('KANAD') || c.includes('CANAD')) return 'CA';
+  if (c.includes('BREZ') || c.includes('BRAZ')) return 'BR';
+  if (c.includes('AVUSTRAL') || c.includes('AUSTRAL')) return 'AU';
+  if (c.includes('MEKS') || c.includes('MEX')) return 'MX';
+  if (c.includes('ARJAN') || c.includes('ARGEN')) return 'AR';
+  if (c.includes('BELÇ') || c.includes('BELC') || c.includes('BELG')) return 'BE';
+  if (c.includes('HOLLAND') || c.includes('NETHER')) return 'NL';
+  if (c.includes('İSVEÇ') || c.includes('ISVEC') || c.includes('SWED')) return 'SE';
+  if (c.includes('NORV')) return 'NO';
+  if (c.includes('DANİM') || c.includes('DANIM') || c.includes('DENM')) return 'DK';
   if (c.includes('ABD') || c.includes('USA') || c.includes('AMERICA') || c.includes('UNITED STATES')) return 'US';
   if (c.includes('TURK') || c.includes('TÜRK')) return 'TR';
-  if (c.includes('UK') || c.includes('BRIT') || c.includes('INGIL')) return 'GB';
-  if (c.includes('PHILIP') || c.includes('FILIP')) return 'PH';
+  if (c.includes('UK') || c.includes('BRIT') || c.includes('INGIL') || c.includes('İNGİL') || c.includes('BİRLEŞİK KRALLIK')) return 'GB';
+  if (c.includes('PHILIP') || c.includes('FILIP') || c.includes('FİLİP')) return 'PH';
   if (c.includes('HONG')) return 'HK';
-  return 'GL';
+  if (c.includes('ENDON') || c.includes('INDON')) return 'ID';
+  return /^[A-Z]{2}$/.test(c) ? c : 'GL';
 }
 
 export const COUNTRY_FLAGS: Record<string, string> = COUNTRY_FLAG_EMOJIS;
@@ -738,4 +863,19 @@ export function formatEpisodeTitle(
 
   return isGeneric ? `${episodeNum}. Bölüm` : subtitle;
 }
+
+/**
+ * Formats view counts compactly (e.g. 0 -> "0", 420 -> "420", 1250 -> "1.2K", 3000 -> "3K", 1200000 -> "1.2M")
+ */
+export function formatViewCount(count?: number | null): string {
+  const n = Math.max(0, Math.floor(Number(count) || 0));
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) {
+    const k = n / 1000;
+    return `${k >= 10 ? Math.round(k) : Number(k.toFixed(1))}K`;
+  }
+  const m = n / 1_000_000;
+  return `${m >= 10 ? Math.round(m) : Number(m.toFixed(1))}M`;
+}
+
 

@@ -33,6 +33,9 @@ import {
   Sliders,
   Compass,
   Play,
+  Library,
+  MessageSquare,
+  ShieldAlert,
 } from 'lucide-react';
 import { useKoUp } from '@/context/KoUpContext';
 import { supabase } from '@/lib/supabase';
@@ -74,6 +77,8 @@ export default function SettingsPage() {
   const [editBannerUrl, setEditBannerUrl] = useState('');
   const [editIsPrivate, setEditIsPrivate] = useState(false);
   const [editHideWatchHistory, setEditHideWatchHistory] = useState(false);
+  const [editHideLibrary, setEditHideLibrary] = useState(false);
+  const [editHideComments, setEditHideComments] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsStatus, setSettingsStatus] = useState<string | null>(null);
 
@@ -102,6 +107,8 @@ export default function SettingsPage() {
       setEditBannerUrl(user.banner_url || '');
       setEditIsPrivate(Boolean(user.is_private));
       setEditHideWatchHistory(Boolean(user.hide_watch_history));
+      setEditHideLibrary(Boolean(user.hide_library));
+      setEditHideComments(Boolean(user.hide_comments));
     }
   }, [user]);
 
@@ -152,9 +159,35 @@ export default function SettingsPage() {
     }
   };
 
+  const isDirty = Boolean(
+    user && (
+      editDisplayName !== (user.display_name || '') ||
+      editBio !== (user.bio || '') ||
+      editAvatarUrl !== (user.avatar_url || '') ||
+      editBannerUrl !== (user.banner_url || '') ||
+      editIsPrivate !== Boolean(user.is_private) ||
+      editHideWatchHistory !== Boolean(user.hide_watch_history) ||
+      editHideLibrary !== Boolean(user.hide_library) ||
+      editHideComments !== Boolean(user.hide_comments)
+    )
+  );
+
+  const handleRevertChanges = () => {
+    if (!user) return;
+    triggerSound('click');
+    setEditDisplayName(user.display_name || '');
+    setEditBio(user.bio || '');
+    setEditAvatarUrl(user.avatar_url || '');
+    setEditBannerUrl(user.banner_url || '');
+    setEditIsPrivate(Boolean(user.is_private));
+    setEditHideWatchHistory(Boolean(user.hide_watch_history));
+    setEditHideLibrary(Boolean(user.hide_library));
+    setEditHideComments(Boolean(user.hide_comments));
+  };
+
   // Save Settings Handler
-  const handleSaveSettings = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveSettings = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!user) return;
     setIsSavingSettings(true);
     setSettingsStatus(null);
@@ -168,6 +201,8 @@ export default function SettingsPage() {
         banner_url: editBannerUrl.trim() || null,
         is_private: editIsPrivate,
         hide_watch_history: editHideWatchHistory,
+        hide_library: editHideLibrary,
+        hide_comments: editHideComments,
       });
 
       triggerSound('success');
@@ -522,31 +557,68 @@ export default function SettingsPage() {
             {/* Banner (Thumbnail) URL */}
             <div className="space-y-2">
               <label className="text-xs font-semibold text-white/80 flex items-center justify-between">
-                <span>Kapak Görseli / Banner (Thumbnail) URL</span>
-                <span className="text-[10px] font-mono text-white/40">Sinematik Atmosfer</span>
+                <span>Arka Plan Atmosfer Görseli (Thumbnail) URL</span>
+                <span className="text-[10px] font-mono text-white/40">Kare / Dikey / Yatay Uyumlu</span>
               </label>
               <input
                 type="url"
                 value={editBannerUrl}
                 onChange={(e) => setEditBannerUrl(e.target.value)}
-                placeholder="https://... (Geniş yatay kapak görseli linki)"
+                placeholder="https://... (Kare veya istediğiniz boyutta görsel linki)"
                 className="w-full px-4 py-2.5 rounded-full bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-all font-medium"
               />
               <p className="text-[11px] text-white/45">
-                Profil sayfanızın en arkasında sinematik, hafif blurlu ve atmosferik bir ışık kaynağı olarak yayılır.
+                Görsel zorla genişletilip pikselleştirilmeden doğal boyutunda merkeze yerleşir; kenarlarından tüm arka plana yumuşak ışık halesi yayılır.
               </p>
               {editBannerUrl.trim() && (
-                <div className="relative h-28 rounded-2xl overflow-hidden border border-white/15 bg-black/40 mt-2">
+                <div className="relative h-52 sm:h-60 rounded-3xl overflow-hidden border border-white/15 bg-[#09090b] mt-3 flex flex-col justify-end p-5 select-none">
+                  {/* Layer 1: Ambient Colored Glow */}
+                  <img
+                    src={getProxiedImageUrl(editBannerUrl.trim(), 'banner-preview', null, 'original', 'banner')}
+                    alt=""
+                    aria-hidden="true"
+                    className="absolute inset-0 w-full h-full object-cover object-center blur-[50px] scale-125 opacity-70 saturate-150 transform-gpu pointer-events-none"
+                  />
+                  {/* Layer 2: Full-Bleed Sharp Cover Artwork */}
                   <img
                     src={getProxiedImageUrl(editBannerUrl.trim(), 'banner-preview', null, 'original', 'banner')}
                     alt="Kapak Önizleme"
-                    className="w-full h-full object-cover"
+                    className="absolute inset-0 w-full h-full object-cover object-center opacity-65 transform-gpu pointer-events-none"
                     onError={(e) => {
                       (e.target as HTMLElement).style.display = 'none';
                     }}
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-3">
-                    <span className="text-[10px] font-mono text-white/80 bg-black/60 px-2.5 py-0.5 rounded-full border border-white/10">
+                  {/* Vignette Gradients */}
+                  <div className="absolute inset-0 bg-gradient-to-b from-[#09090b]/30 via-[#09090b]/60 to-[#09090b] pointer-events-none" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-[#09090b]/80 via-transparent to-[#09090b]/80 pointer-events-none" />
+
+                  {/* Mini Profile Header Mockup in Preview */}
+                  <div className="relative z-10 flex items-end justify-between gap-3">
+                    <div className="flex items-start gap-3.5 min-w-0">
+                      <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl overflow-hidden border border-white/25 bg-[#141418] shadow-xl shrink-0 flex items-center justify-center">
+                        {(editAvatarUrl.trim() || user.avatar_url) ? (
+                          <img
+                            src={getProxiedImageUrl(editAvatarUrl.trim() || user.avatar_url, user.display_name || user.username, null, 'w185', 'person')}
+                            alt=""
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <User className="w-6 h-6 text-white/70" />
+                        )}
+                      </div>
+                      <div className="min-w-0 pt-0.5 space-y-1">
+                        <div className="text-sm sm:text-base font-extrabold text-white truncate leading-none drop-shadow">
+                          {editDisplayName.trim() || user.display_name || user.username}
+                        </div>
+                        <div>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono bg-black/45 backdrop-blur-md text-white/75 border border-white/15">
+                            @{user.username}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <span className="text-[10px] font-mono text-white/85 bg-black/55 backdrop-blur-md px-3 py-1 rounded-full border border-white/15 shrink-0">
                       Canlı Kapak Önizlemesi
                     </span>
                   </div>
@@ -732,53 +804,169 @@ export default function SettingsPage() {
         </div>
 
         {/* SECTION 3: PRIVACY & VISIBILITY */}
-        <div className="rounded-3xl bg-[#0f0f11] p-6 sm:p-8 border border-white/[0.08] space-y-4 shadow-xl">
+        <div className="rounded-3xl bg-[#0f0f11] p-6 sm:p-8 border border-white/[0.08] space-y-6 shadow-xl">
           <div>
             <h2 className="text-base font-bold text-white flex items-center gap-2">
               <Lock className="w-4 h-4 text-sky-400" />
               <span>Gizlilik & Görünürlük Tercihleri</span>
             </h2>
             <p className="text-xs text-white/50 mt-0.5">
-              Profilinizin diğer kullanıcılara nasıl görüneceğini kontrol edin.
+              Profilinizin ve içeriklerinizin diğer kullanıcılara nasıl görüneceğini kontrol edin. Her gizlilik ayarı bağımsız olarak yönetilebilir.
             </p>
           </div>
 
-          <div className="space-y-3">
-            <label className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.03] border border-white/10 cursor-pointer hover:border-white/20 transition-all">
-              <div>
-                <div className="text-sm font-bold text-white flex items-center gap-2">
-                  <Lock className="w-4 h-4 text-sky-400" />
-                  <span>Gizli Profil Modu (Private Account)</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* 1. Gizli Profil Modu */}
+            <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all flex flex-col justify-between gap-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-bold text-white flex items-center gap-2">
+                    <ShieldAlert className="w-4 h-4 text-sky-400" />
+                    <span>Gizli Profil Modu</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerSound('click');
+                      setEditIsPrivate(!editIsPrivate);
+                    }}
+                    role="switch"
+                    aria-checked={editIsPrivate}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      editIsPrivate ? 'bg-sky-500' : 'bg-white/20'
+                    }`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                        editIsPrivate ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
                 </div>
-                <div className="text-xs text-white/55 mt-0.5">
-                  Açıldığında profil sayfanızdaki kütüphane ve listeleri yalnızca siz görebilirsiniz.
-                </div>
+                <p className="text-xs text-white/55 leading-relaxed">
+                  Hesabınızı tamamen gizler. Kütüphane, izleme geçmişi ve listelerinizi diğer ziyaretçiler göremez.
+                </p>
               </div>
-              <input
-                type="checkbox"
-                checked={editIsPrivate}
-                onChange={(e) => setEditIsPrivate(e.target.checked)}
-                className="w-5 h-5 accent-sky-400 cursor-pointer"
-              />
-            </label>
+              <div className="pt-2.5 border-t border-white/5 flex items-center gap-1.5 text-[11px] font-mono text-white/40">
+                <span className={`w-1.5 h-1.5 rounded-full ${editIsPrivate ? 'bg-emerald-400' : 'bg-white/30'}`} />
+                <span>{editIsPrivate ? 'Gizli Hesap Aktif' : 'Profil Herkese Açık'}</span>
+              </div>
+            </div>
 
-            <label className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.03] border border-white/10 cursor-pointer hover:border-white/20 transition-all">
-              <div>
-                <div className="text-sm font-bold text-white flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-sky-400" />
-                  <span>İzleme Geçmişimi & Kütüphanemi Gizle</span>
+            {/* 2. İzleme Geçmişini Gizle */}
+            <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all flex flex-col justify-between gap-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-bold text-white flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-sky-400" />
+                    <span>İzleme Geçmişini Gizle</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerSound('click');
+                      setEditHideWatchHistory(!editHideWatchHistory);
+                    }}
+                    role="switch"
+                    aria-checked={editHideWatchHistory}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      editHideWatchHistory ? 'bg-sky-500' : 'bg-white/20'
+                    }`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                        editHideWatchHistory ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
                 </div>
-                <div className="text-xs text-white/55 mt-0.5">
-                  Profiliniz açık kalsın ama izlediğiniz diziler diğer ziyaretçilere görünmesin.
-                </div>
+                <p className="text-xs text-white/55 leading-relaxed">
+                  Profiliniz açık olsa bile, izlemekte olduğunuz diziler ve bölümler profilinizdeki izleme geçmişi sekmesinde ziyaretçilere gizlenir.
+                </p>
               </div>
-              <input
-                type="checkbox"
-                checked={editHideWatchHistory}
-                onChange={(e) => setEditHideWatchHistory(e.target.checked)}
-                className="w-5 h-5 accent-sky-400 cursor-pointer"
-              />
-            </label>
+              <div className="pt-2.5 border-t border-white/5 flex items-center gap-1.5 text-[11px] font-mono text-white/40">
+                <span className={`w-1.5 h-1.5 rounded-full ${editHideWatchHistory ? 'bg-amber-400' : 'bg-white/30'}`} />
+                <span>{editHideWatchHistory ? 'İzleme Geçmişi Gizli' : 'İzleme Geçmişi Görünür'}</span>
+              </div>
+            </div>
+
+            {/* 3. Kütüphanemi Gizle */}
+            <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all flex flex-col justify-between gap-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-bold text-white flex items-center gap-2">
+                    <Library className="w-4 h-4 text-sky-400" />
+                    <span>Kütüphanemi Gizle</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerSound('click');
+                      setEditHideLibrary(!editHideLibrary);
+                    }}
+                    role="switch"
+                    aria-checked={editHideLibrary}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      editHideLibrary ? 'bg-sky-500' : 'bg-white/20'
+                    }`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                        editHideLibrary ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+                <p className="text-xs text-white/55 leading-relaxed">
+                  İzlediğiniz, planladığınız veya puanladığınız tüm yapımları profilinizdeki kütüphane sekmesinde diğer kullanıcılara gizler.
+                </p>
+              </div>
+              <div className="pt-2.5 border-t border-white/5 flex items-center gap-1.5 text-[11px] font-mono text-white/40">
+                <span className={`w-1.5 h-1.5 rounded-full ${editHideLibrary ? 'bg-amber-400' : 'bg-white/30'}`} />
+                <span>{editHideLibrary ? 'Kütüphane Gizli' : 'Kütüphane Görünür'}</span>
+              </div>
+            </div>
+
+            {/* 4. Yorumlarımı Gizle */}
+            <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all flex flex-col justify-between gap-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-bold text-white flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-sky-400" />
+                    <span>Yorumlarımı Gizle</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerSound('click');
+                      setEditHideComments(!editHideComments);
+                    }}
+                    role="switch"
+                    aria-checked={editHideComments}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      editHideComments ? 'bg-sky-500' : 'bg-white/20'
+                    }`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                        editHideComments ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+                <p className="text-xs text-white/55 leading-relaxed">
+                  Dizilere, bölümlere ve oyunculara yazdığınız tüm yorumların profil sayfanızdaki yorumlar sekmesinde ziyaretçiler tarafından görülmesini engeller.
+                </p>
+              </div>
+              <div className="pt-2.5 border-t border-white/5 flex items-center gap-1.5 text-[11px] font-mono text-white/40">
+                <span className={`w-1.5 h-1.5 rounded-full ${editHideComments ? 'bg-amber-400' : 'bg-white/30'}`} />
+                <span>{editHideComments ? 'Yorumlar Gizli' : 'Yorumlar Görünür'}</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1055,39 +1243,6 @@ export default function SettingsPage() {
           )}
         </div>
 
-        {/* FEEDBACK & SUBMIT BUTTON */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
-          {settingsStatus ? (
-            <div className="p-3.5 rounded-2xl bg-sky-500/10 border border-sky-400/30 text-xs text-sky-300 font-mono flex items-center gap-2">
-              <Check className="w-4 h-4 text-sky-400" />
-              <span>{settingsStatus}</span>
-            </div>
-          ) : (
-            <span className="text-xs text-white/40">
-              Değişikliklerin profilinizde geçerli olması için kaydetmeyi unutmayın.
-            </span>
-          )}
-
-          <div className="flex items-center gap-3 w-full sm:w-auto">
-            <button
-              type="submit"
-              disabled={isSavingSettings}
-              className="w-full sm:w-auto px-8 py-3 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 transition-all cursor-pointer shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {isSavingSettings ? (
-                <>
-                  <div className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                  <span>Kaydediliyor...</span>
-                </>
-              ) : (
-                <>
-                  <Check className="w-4 h-4" />
-                  <span>Ayarları Kaydet</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
       </form>
 
       {/* SECTION: AKTİF CİHAZLAR & OTURUM GÜVENLİĞİ */}
@@ -1252,6 +1407,66 @@ export default function SettingsPage() {
           <span>Çıkış Yap</span>
         </button>
       </div>
+
+      {/* FLOATING SAVE ACTION BAR (Apple Cinema Glass Dock) */}
+      <AnimatePresence>
+        {(isDirty || isSavingSettings || settingsStatus) && (
+          <motion.div
+            initial={{ opacity: 0, y: 40, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 40, scale: 0.95 }}
+            transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[92vw] sm:max-w-xl w-auto pointer-events-auto"
+          >
+            <div className="flex items-center gap-3 sm:gap-4 px-4 sm:px-6 py-3 rounded-full bg-[#121216]/95 backdrop-blur-2xl border border-white/20 shadow-[0_16px_50px_rgba(0,0,0,0.85)]">
+              {settingsStatus ? (
+                <div className="flex items-center gap-2 text-xs font-mono text-emerald-400">
+                  <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="font-semibold">{settingsStatus}</span>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 text-xs text-white/70 font-medium">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                    <span className="hidden sm:inline">Değişiklikler kaydedilmedi</span>
+                    <span className="sm:hidden">Kaydedilmedi</span>
+                  </div>
+
+                  <div className="h-4 w-px bg-white/15" />
+
+                  <button
+                    type="button"
+                    onClick={handleRevertChanges}
+                    disabled={isSavingSettings}
+                    className="px-3.5 py-1.5 rounded-full text-xs font-semibold text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    Vazgeç
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSaveSettings()}
+                    disabled={isSavingSettings}
+                    className="px-5 py-2 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 transition-all cursor-pointer shadow-lg disabled:opacity-50 flex items-center gap-2 shrink-0"
+                  >
+                    {isSavingSettings ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                        <span>Kaydediliyor...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>Ayarları Kaydet</span>
+                      </>
+                    )}
+                  </button>
+                </>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

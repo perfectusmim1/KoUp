@@ -21,6 +21,9 @@ import {
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
 import CustomSelect from '@/components/CustomSelect';
+import Pagination from '@/components/Pagination';
+// KoUp Actors Pagination
+
 
 const PERSON_TABS = [
   { id: 'all', label: 'Tüm Yıldızlar & Karakterler', icon: Sparkles },
@@ -42,7 +45,8 @@ export default function ActorsLeaderboardPage() {
   const [filterType, setFilterType] = useState<'all' | 'actor' | 'character' | 'seiyuu'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'favs' | 'dramas'>('favs');
-  const [page, setPage] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const PAGE_SIZE = 48;
 
@@ -52,8 +56,8 @@ export default function ActorsLeaderboardPage() {
       try {
         let query = supabase
           .from('people')
-          .select('*')
-          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+          .select('*', { count: 'exact' })
+          .range((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE - 1);
 
         if (filterType !== 'all') {
           query = query.eq('person_type', filterType);
@@ -69,8 +73,11 @@ export default function ActorsLeaderboardPage() {
           query = query.order('drama_count', { ascending: false });
         }
 
-        const { data: resData } = await query;
+        const { data: resData, count: resCount } = await query;
         setPeople((resData as PersonItem[]) || []);
+        if (typeof resCount === 'number') {
+          setTotalCount(resCount);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -78,7 +85,7 @@ export default function ActorsLeaderboardPage() {
 
     const timer = setTimeout(fetchPeople, 140);
     return () => clearTimeout(timer);
-  }, [filterType, searchQuery, sortBy, page]);
+  }, [filterType, searchQuery, sortBy, currentPage]);
 
   return (
     <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 space-y-8">
@@ -106,7 +113,7 @@ export default function ActorsLeaderboardPage() {
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
-                setPage(0);
+                setCurrentPage(1);
               }}
               placeholder="Oyuncu veya anime karakteri ara..."
               className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-56 sm:w-64 font-medium"
@@ -115,7 +122,7 @@ export default function ActorsLeaderboardPage() {
               <button
                 onClick={() => {
                   setSearchQuery('');
-                  setPage(0);
+                  setCurrentPage(1);
                 }}
                 className="text-white/40 hover:text-white transition-colors cursor-pointer"
                 aria-label="Aramayı temizle"
@@ -127,7 +134,10 @@ export default function ActorsLeaderboardPage() {
 
           <CustomSelect
             value={sortBy}
-            onChange={(val) => setSortBy(val as 'favs' | 'dramas')}
+            onChange={(val) => {
+              setSortBy(val as 'favs' | 'dramas');
+              setCurrentPage(1);
+            }}
             variant="pill"
             options={[
               { value: 'favs', label: 'En Çok Favorilenenler' },
@@ -148,7 +158,7 @@ export default function ActorsLeaderboardPage() {
               onClick={() => {
                 triggerSound('click');
                 setFilterType(tab.id);
-                setPage(0);
+                setCurrentPage(1);
               }}
               className={`relative flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition-colors duration-200 cursor-pointer ${
                 active ? 'text-black' : 'glass-pill text-white/75 hover:text-white'
@@ -177,7 +187,7 @@ export default function ActorsLeaderboardPage() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
           {people.map((person, idx) => {
-            const rank = page * PAGE_SIZE + idx + 1;
+            const rank = (currentPage - 1) * PAGE_SIZE + idx + 1;
             const isFav = favPersonIds.includes(person.id);
             const isFol = followedPersonIds.includes(person.id);
             const displayFavs = person.favorites_count || 0;
@@ -248,9 +258,10 @@ export default function ActorsLeaderboardPage() {
                       );
                       await togglePersonFavorite(person.id, person.name);
                     }}
+                    title={isFav ? 'Favorilerimde' : 'Favorilere Ekle (Beğen)'}
                     className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-full text-xs font-mono font-bold border transition-all cursor-pointer ${
                       isFav
-                        ? 'bg-rose-500 border-rose-400 text-white'
+                        ? 'bg-rose-500 border-rose-400 text-white shadow-[0_0_12px_rgba(244,63,94,0.35)]'
                         : 'bg-white/[0.05] border-white/10 text-white/85 hover:bg-white/10'
                     }`}
                   >
@@ -260,14 +271,15 @@ export default function ActorsLeaderboardPage() {
 
                   <button
                     onClick={() => togglePersonFollow(person.id, person.name)}
-                    aria-label="Takip Et (Yeni dizi/haber bildirimi)"
+                    aria-label={isFol ? 'Takibi Bırak' : 'Takip Et (Yeni Seri Bildirimi)'}
+                    title={isFol ? 'Takip Ediliyor (Yeni seriler bildirilecek)' : 'Takip Et (Yeni serilerinde bildirim al)'}
                     className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
                       isFol
-                        ? 'bg-white text-black border-white'
+                        ? 'bg-sky-400 text-slate-950 border-sky-300 shadow-[0_0_12px_rgba(56,189,248,0.35)]'
                         : 'bg-white/[0.05] border-white/10 text-white/65 hover:text-white'
                     }`}
                   >
-                    <Bell className="w-3.5 h-3.5" />
+                    <Bell className={`w-3.5 h-3.5 ${isFol ? 'fill-slate-950' : ''}`} />
                   </button>
                 </div>
               </div>
@@ -276,24 +288,17 @@ export default function ActorsLeaderboardPage() {
         </div>
       )}
 
-      {/* PAGINATION */}
-      <div className="flex items-center justify-center gap-3 pt-6">
-        <button
-          disabled={page === 0}
-          onClick={() => setPage((p) => Math.max(0, p - 1))}
-          className="px-5 py-2.5 rounded-full glass-pill text-xs font-semibold text-white disabled:opacity-35 cursor-pointer"
-        >
-          ← Önceki Sayfa
-        </button>
-        <span className="text-xs font-mono text-white/60">Sayfa {page + 1}</span>
-        <button
-          disabled={people.length < PAGE_SIZE}
-          onClick={() => setPage((p) => p + 1)}
-          className="px-5 py-2.5 rounded-full bg-white text-black text-xs font-bold disabled:opacity-35 cursor-pointer"
-        >
-          Sonraki Sayfa →
-        </button>
-      </div>
+      {/* PAGINATION DECK (Apple TV+ Cinema Glass Design) */}
+      {!isLoading && (
+        <Pagination
+          currentPage={currentPage}
+          totalCount={totalCount}
+          pageSize={PAGE_SIZE}
+          onPageChange={setCurrentPage}
+          itemLabel="oyuncu ve anime karakterinden"
+          scrollToOffset={180}
+        />
+      )}
     </div>
   );
 }

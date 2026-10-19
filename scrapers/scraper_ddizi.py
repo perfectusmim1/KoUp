@@ -34,7 +34,10 @@ from multisite import (
     safe_commit,
     mark_done,
     load_done_urls,
-    unique_slug
+    unique_slug,
+    parse_season_and_episode,
+    clean_episode_title,
+    clean_scraped_slug,
 )
 
 BASE = 'https://www.ddizi.tel'
@@ -148,20 +151,20 @@ def clean_ddizi_title(raw_title: str) -> str:
     return title_case_tr(t)
 
 def slugify(text: str) -> str:
-    """Türkçe karakterleri güvenli ASCII slug'a dönüştürür."""
-    # Mojibake koruması
+    """Türkçe karakterleri güvenli ASCII slug'a dönüştürür ve SEO eklerini temizler."""
     clean_t = text or ""
     for bad, good in MOJIBAKE_MAP:
         clean_t = clean_t.replace(bad, good)
     tr_map = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
     s = clean_t.translate(tr_map).lower()
     s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
-    return s or "dizi"
+    cleaned = clean_scraped_slug(s)
+    return cleaned or "dizi"
 
 TMDB_API_KEY = "4c092d2cfd6d9c0e3aa3dab12c7d4756"
 
 def fetch_tmdb_metadata(title: str):
-    """TMDB API üzerinden 4K poster, 16:9 backdrop ve gerçek çıkış yılını çeker."""
+    """TMDB API üzerinden 4K poster, 16:9 backdrop ve gerçek çıkış yılını çeker (Sadece TR yapımları)."""
     import urllib.parse, urllib.request
     try:
         clean_q = urllib.parse.quote(title)
@@ -170,22 +173,24 @@ def fetch_tmdb_metadata(title: str):
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             results = data.get("results", [])
-            if results:
-                top = results[0]
-                name = top.get("name") or top.get("original_name")
-                poster = top.get("poster_path")
-                backdrop = top.get("backdrop_path")
-                date = top.get("first_air_date")
-                year = date[:4] if date and len(date) >= 4 else None
-                overview = top.get("overview")
-                return {
-                    "matched": True,
-                    "title": name,
-                    "year": year,
-                    "poster": f"https://image.tmdb.org/t/p/original{poster}" if poster else None,
-                    "backdrop": f"https://image.tmdb.org/t/p/original{backdrop}" if backdrop else None,
-                    "overview": overview
-                }
+            for top in results:
+                origin_countries = [c.upper() for c in (top.get("origin_country") or [])]
+                orig_lang = (top.get("original_language") or "").lower()
+                if "TR" in origin_countries or orig_lang == "tr":
+                    name = top.get("name") or top.get("original_name")
+                    poster = top.get("poster_path")
+                    backdrop = top.get("backdrop_path")
+                    date = top.get("first_air_date")
+                    year = date[:4] if date and len(date) >= 4 else None
+                    overview = top.get("overview")
+                    return {
+                        "matched": True,
+                        "title": name,
+                        "year": year,
+                        "poster": f"https://image.tmdb.org/t/p/original{poster}" if poster else None,
+                        "backdrop": f"https://image.tmdb.org/t/p/original{backdrop}" if backdrop else None,
+                        "overview": overview
+                    }
     except Exception:
         pass
     return {"matched": False}
@@ -354,16 +359,12 @@ def parse_drama_page(html, url, default_title=""):
             seen_urls.add(full_ep)
 
             # Sezon ve Bölüm Numarası Ayıklama
-            m_s = re.search(r'(\d+)\s*\.\s*sezon', txt, re.I) or re.search(r'sezon-(\d+)', h, re.I)
-            season = int(m_s.group(1)) if m_s else 1
-
-            m_e = re.search(r'(\d+)\s*\.\s*b[öo]l[üu]m', txt, re.I) or re.search(r'-(\d+)-bolum', h, re.I)
-            ep_num = int(m_e.group(1)) if m_e else 1
+            season, ep_num = parse_season_and_episode(full_ep, txt)
 
             episodes.append({
                 'season': season,
                 'number': ep_num,
-                'name': txt or f"{ep_num}. Bölüm",
+                'name': clean_episode_title(txt, season, ep_num),
                 'url': full_ep
             })
 
@@ -552,11 +553,12 @@ async def run(limit=None, mode="all", episodes_limit=None, target_url=None, forc
                             did = r0[0]
                             n_matched += 1
                         else:
-                            did = find_in_index(idx, title, None, slug)
+                            clean_s = clean_scraped_slug(slug)
+                            did = find_in_index(idx, title, None, clean_s)
                             if did:
                                 n_matched += 1
                             else:
-                                safe_s = unique_slug(cur, slug)
+                                safe_s = unique_slug(cur, clean_s)
                                 tmdb = fetch_tmdb_metadata(title)
                                 ins_title = tmdb.get("title") or title
                                 ins_cover = tmdb.get("poster") or cover

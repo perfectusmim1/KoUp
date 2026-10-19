@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseAdmin, cleanScrapedSlug } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,12 +35,70 @@ function isScrapedLowResImage(url?: string | null): boolean {
   return true;
 }
 
+function normalizeTitleForMatch(str?: string | null): string {
+  if (!str) return '';
+  return str
+    .replace(/[ıİ]/g, 'i')
+    .replace(/[şŞ]/g, 's')
+    .replace(/[ğĞ]/g, 'g')
+    .replace(/[üÜ]/g, 'u')
+    .replace(/[öÖ]/g, 'o')
+    .replace(/[çÇ]/g, 'c')
+    .replace(/²/g, '2')
+    .replace(/³/g, '3')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isTitleMatch(expectedTitle?: string | null, candidateTitle?: string | null): boolean {
+  if (!expectedTitle || !candidateTitle) return false;
+  const cleanExp = normalizeTitleForMatch(expectedTitle);
+  const cleanCand = normalizeTitleForMatch(candidateTitle);
+  if (!cleanExp || !cleanCand) return false;
+  if (cleanCand === cleanExp) return true;
+
+  const expWords = cleanExp.split(/\s+/).filter(Boolean);
+  const candWords = cleanCand.split(/\s+/).filter(Boolean);
+  if (expWords.length === 0 || candWords.length === 0) return false;
+
+  // Short title (<=5 chars or single word): require exact normalized match
+  if (cleanExp.length <= 5 || expWords.length === 1) {
+    return cleanCand === cleanExp;
+  }
+
+  // Phrase match with minimal length difference
+  const candSpaced = ` ${cleanCand} `;
+  const expSpaced = ` ${cleanExp} `;
+  if (candSpaced.includes(expSpaced) || expSpaced.includes(candSpaced)) {
+    if (Math.abs(candWords.length - expWords.length) <= 2) {
+      return true;
+    }
+  }
+
+  // Word overlap
+  if (expWords.length >= 2 && candWords.length >= 2) {
+    const common = expWords.filter((w) => candWords.includes(w));
+    if (
+      common.length >= Math.ceil(expWords.length * 0.8) &&
+      Math.abs(expWords.length - candWords.length) <= 1
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 async function fetchTmdbTrailerAndImages(
   tmdbId: number | null,
   imdbId: string | null,
   titles: string[],
   contentType: string,
-  countryCode?: string | null
+  countryCode?: string | null,
+  releaseYear?: number | null,
+  nativeTitle?: string | null
 ): Promise<{
   youtubeId: string | null;
   posterUrl: string | null;
@@ -77,42 +135,82 @@ async function fetchTmdbTrailerAndImages(
   }
 
   // 2. Search TMDB by candidate titles if still not resolved or if we need poster/backdrop paths
-  if (!activeTmdbId || !posterPath) {
+  if (!activeTmdbId || !backdropPath) {
     const endpoints: Array<'tv' | 'movie'> =
       contentType === 'film' ? ['movie', 'tv'] : ['tv', 'movie'];
 
-    for (const rawTitle of titles) {
+    const searchCandidates: string[] = [];
+    if (nativeTitle && nativeTitle.trim() && !searchCandidates.includes(nativeTitle.trim())) {
+      searchCandidates.push(nativeTitle.trim());
+    }
+    for (const t of titles) {
+      if (t && t.trim() && !searchCandidates.includes(t.trim())) {
+        searchCandidates.push(t.trim());
+      }
+    }
+
+    for (const rawTitle of searchCandidates) {
       const cleanTitle = (rawTitle || '')
         .replace(/\(\d{4}\)/g, '')
         .replace(/\b(izle|turkce|altyazili|dizi|film|hd|full)\b/gi, '')
+        .replace(/²/g, '2')
+        .replace(/³/g, '3')
         .trim();
       if (!cleanTitle || cleanTitle.length < 2) continue;
 
       for (const ep of endpoints) {
         try {
+          const yearParam =
+            releaseYear && releaseYear > 1900
+              ? ep === 'movie'
+                ? `&primary_release_year=${releaseYear}`
+                : `&first_air_date_year=${releaseYear}`
+              : '';
           const sUrl = `https://api.themoviedb.org/3/search/${ep}?query=${encodeURIComponent(
             cleanTitle
-          )}&language=tr-TR&api_key=${TMDB_API_KEY}`;
+          )}&language=tr-TR&api_key=${TMDB_API_KEY}${yearParam}`;
           const r = await fetch(sUrl, { signal: AbortSignal.timeout(4500) });
           if (r.ok) {
             const d = await r.json();
             const results: any[] = d.results || [];
             if (results.length > 0) {
-              // Prefer country match if countryCode is known
-              const cc = (countryCode || '').toUpperCase();
-              const matched =
-                (cc
-                  ? results.find(
-                      (item) =>
-                        Array.isArray(item.origin_country) &&
-                        item.origin_country.includes(cc) &&
-                        (item.poster_path || item.backdrop_path)
-                    )
-                  : null) ||
-                results.find((item) => item.poster_path || item.backdrop_path) ||
-                results[0];
+              // Filter strictly by title matching and year matching - NEVER blindly take results[0]!
+              const validCandidates = results.filter((item) => {
+                // Year validation: if releaseYear is known, candidate must be within +-1 year
+                const dateStr = item.release_date || item.first_air_date || '';
+                if (dateStr && releaseYear && releaseYear > 1900) {
+                  const itemY = parseInt(dateStr.slice(0, 4), 10);
+                  if (!isNaN(itemY) && Math.abs(itemY - releaseYear) > 1) {
+                    return false;
+                  }
+                }
+                const cTitle = item.title || item.name;
+                const cOrigTitle = item.original_title || item.original_name;
+                const matchesAnyTitle = searchCandidates.some(
+                  (st) => isTitleMatch(st, cTitle) || isTitleMatch(st, cOrigTitle)
+                );
+                return matchesAnyTitle;
+              });
 
-              if (matched) {
+              if (validCandidates.length > 0) {
+                // Score candidates: exact title equality > country match > backdrop present
+                const cc = (countryCode || '').toUpperCase();
+                validCandidates.sort((a, b) => {
+                  const aTitleNorm = normalizeTitleForMatch(a.title || a.name || '');
+                  const bTitleNorm = normalizeTitleForMatch(b.title || b.name || '');
+                  const cleanNorm = normalizeTitleForMatch(cleanTitle);
+                  const aExact = aTitleNorm === cleanNorm ? 1 : 0;
+                  const bExact = bTitleNorm === cleanNorm ? 1 : 0;
+                  if (aExact !== bExact) return bExact - aExact;
+
+                  const aCountry = Array.isArray(a.origin_country) && a.origin_country.includes(cc) ? 1 : 0;
+                  const bCountry = Array.isArray(b.origin_country) && b.origin_country.includes(cc) ? 1 : 0;
+                  if (aCountry !== bCountry) return bCountry - aCountry;
+
+                  return (b.backdrop_path ? 1 : 0) - (a.backdrop_path ? 1 : 0);
+                });
+
+                const matched = validCandidates[0];
                 if (!activeTmdbId) {
                   activeTmdbId = matched.id;
                   mediaType = ep;
@@ -128,7 +226,7 @@ async function fetchTmdbTrailerAndImages(
           }
         } catch {}
       }
-      if (activeTmdbId && posterPath) break;
+      if (activeTmdbId && backdropPath) break;
     }
   }
 
@@ -299,6 +397,9 @@ export async function GET(req: NextRequest) {
     const idParam = searchParams.get('id');
     const slugParam = searchParams.get('slug');
     const titleParam = searchParams.get('title');
+    const yearParam = searchParams.get('year') || searchParams.get('release_year');
+    const nativeTitleParam = searchParams.get('nativeTitle') || searchParams.get('native_title');
+    const contentTypeParam = searchParams.get('contentType') || searchParams.get('content_type');
 
     const cacheKey = idParam || slugParam || titleParam || '';
     if (!cacheKey) {
@@ -317,16 +418,36 @@ export async function GET(req: NextRequest) {
     } else if (slugParam) {
       const { data } = await supabase.from('media').select('*').eq('slug', slugParam).single();
       media = data;
+      if (!media) {
+        const cleaned = cleanScrapedSlug(slugParam);
+        if (cleaned && cleaned !== slugParam) {
+          const { data: fallbackData } = await supabase.from('media').select('*').eq('slug', cleaned).single();
+          media = fallbackData;
+        }
+        if (!media) {
+          const { data: urlData } = await supabase
+            .from('media')
+            .select('*')
+            .ilike('source_url', `%/${slugParam}%`)
+            .limit(1)
+            .maybeSingle();
+          media = urlData;
+        }
+      }
     }
 
     if (!media && !titleParam) {
       return NextResponse.json({ youtubeId: null, trailerUrl: null, source: 'none' });
     }
 
+    const releaseYear = media?.release_year || (yearParam ? parseInt(yearParam, 10) : null);
+    const nativeTitle = media?.native_title || nativeTitleParam || null;
+    const contentType = media?.content_type || contentTypeParam || 'dizi';
+
     // 1. Check if trailer_url is already stored in DB
     const existingYtId = extractYouTubeId(media?.trailer_url);
     const needsBetterImages =
-      media && (isScrapedLowResImage(media.cover_image) || !media.backdrop_image);
+      media && (!media.backdrop_image || isScrapedLowResImage(media.backdrop_image));
 
     if (existingYtId && !needsBetterImages) {
       const res: TrailerResult = {
@@ -353,7 +474,7 @@ export async function GET(req: NextRequest) {
     let backdropUrl: string | null = null;
 
     // 2. If Anime, try AniList first
-    if (media?.content_type === 'anime' || media?.anilist_id) {
+    if (contentType === 'anime' || media?.anilist_id) {
       const al = await fetchAniListTrailer(media?.anilist_id || null, titles);
       if (al.youtubeId && !youtubeId) {
         youtubeId = al.youtubeId;
@@ -363,13 +484,15 @@ export async function GET(req: NextRequest) {
       if (al.backdropUrl) backdropUrl = al.backdropUrl;
     }
 
-    // 3. Try TMDB (for both trailer AND official 2:3 vertical poster + 16:9 backdrop!)
+    // 3. Try TMDB (for trailer & backdrop resolution with strict candidate matching)
     const tmdb = await fetchTmdbTrailerAndImages(
       media?.tmdb_id || null,
       media?.imdb_id || null,
       titles,
-      media?.content_type || 'dizi',
-      media?.country_code || media?.country
+      contentType,
+      media?.country_code || media?.country,
+      releaseYear,
+      nativeTitle
     );
 
     if (tmdb.youtubeId && !youtubeId) {
@@ -384,7 +507,7 @@ export async function GET(req: NextRequest) {
       const ytFallback = await searchYouTubeTrailerFallback(
         titles[0],
         media?.country_code || media?.country,
-        media?.content_type
+        contentType
       );
       if (ytFallback) {
         youtubeId = ytFallback;
@@ -392,14 +515,11 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 5. Persist upgraded poster/backdrop, tmdb_id, imdb_id & imdb_rating to Supabase
-    if (media?.id && (posterUrl || backdropUrl || tmdb.resolvedTmdbId || tmdb.resolvedImdbId || tmdb.voteAverage)) {
+    // 5. Persist upgraded backdrop, tmdb_id, imdb_id & imdb_rating to Supabase (NEVER overwrite cover_image here!)
+    if (media?.id && (backdropUrl || tmdb.resolvedTmdbId || tmdb.resolvedImdbId || tmdb.voteAverage)) {
       const patch: any = { p_media_id: media.id };
       let shouldPatch = false;
-      if (posterUrl && isScrapedLowResImage(media.cover_image)) {
-        patch.p_cover_image = posterUrl;
-        shouldPatch = true;
-      }
+      // Do NOT overwrite cover_image from trailer route!
       if (backdropUrl && (!media.backdrop_image || isScrapedLowResImage(media.backdrop_image))) {
         patch.p_backdrop_image = backdropUrl;
         shouldPatch = true;
@@ -417,7 +537,7 @@ export async function GET(req: NextRequest) {
         shouldPatch = true;
       }
       if (shouldPatch) {
-        supabase.rpc('patch_media_metadata', patch).then(() => {});
+        supabaseAdmin.rpc('patch_media_metadata', patch).then(() => {});
       }
     }
 
@@ -425,7 +545,7 @@ export async function GET(req: NextRequest) {
       youtubeId,
       trailerUrl: youtubeId ? `https://www.youtube.com/watch?v=${youtubeId}` : null,
       source,
-      posterUrl: posterUrl || media?.cover_image || null,
+      posterUrl: media?.cover_image || null,
       backdropUrl: backdropUrl || media?.backdrop_image || null,
       imdbId: tmdb.resolvedImdbId || (media?.imdb_id && /^tt\d+$/.test(media.imdb_id) ? media.imdb_id : null),
       imdbRating: tmdb.voteAverage || media?.imdb_rating || null,

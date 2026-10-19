@@ -22,11 +22,13 @@ import { motion } from 'motion/react';
 import { supabase, MediaItem, getCountryFlag } from '@/lib/supabase';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 import CountryFlag from '@/components/CountryFlag';
+import Pagination from '@/components/Pagination';
 import { useKoUp } from '@/context/KoUpContext';
 import CustomSelect from '@/components/CustomSelect';
 import { cachedQuery, getCache, registerMediaItems } from '@/lib/cache';
 import { normalizeSearchQuery } from '@/lib/search';
 import { useDragScroll } from '@/hooks/useDragScroll';
+import { rankSearchResults } from '@/lib/searchRanking';
 
 const ITEMS_PER_PAGE = 36;
 
@@ -175,7 +177,8 @@ function DiscoverContent() {
               });
 
               if (rpcRes.data && Array.isArray(rpcRes.data) && rpcRes.data.length > 0) {
-                return rpcRes.data as MediaItem[];
+                const results = rpcRes.data as MediaItem[];
+                return raw.length >= 2 ? rankSearchResults(results, raw) : results;
               }
             } catch (rpcErr) {
               console.warn('search_media RPC notice:', rpcErr);
@@ -195,6 +198,13 @@ function DiscoverContent() {
             }
             if (normalized.length >= 2 || raw.length >= 2) {
               query = query.or(`title.ilike.%${raw}%,slug.ilike.%${normalized || raw}%,search_text.ilike.%${normalized || raw}%`);
+            }
+
+            if (raw.length >= 2) {
+              // When searching text, relevance comes first
+              const { data: resData } = await query.limit(100);
+              const ranked = rankSearchResults((resData as MediaItem[]) || [], raw);
+              return ranked.slice(offset, offset + ITEMS_PER_PAGE);
             }
 
             if (sortBy === 'latest') {
@@ -502,100 +512,15 @@ function DiscoverContent() {
       )}
 
       {/* PAGINATION DECK (Apple TV+ Cinema Glass Design) */}
-      {isMounted && !isLoading && totalPages > 1 && (
-        <div className="pt-8 pb-12 flex flex-col sm:flex-row items-center justify-between gap-5 border-t border-white/[0.08]">
-          <div className="text-xs font-mono text-white/50">
-            Toplam <span className="text-white font-bold">{totalCount.toLocaleString('tr-TR')}</span> yapımdan{' '}
-            <span className="text-sky-400 font-bold">
-              {(currentPage - 1) * ITEMS_PER_PAGE + 1} -{' '}
-              {Math.min(currentPage * ITEMS_PER_PAGE, totalCount)}
-            </span>{' '}
-            arası gösteriliyor (Sayfa {currentPage} / {totalPages})
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            {/* First Page */}
-            {currentPage > 2 && (
-              <button
-                onClick={() => goToPage(1)}
-                aria-label="İlk Sayfa"
-                className="w-9 h-9 rounded-xl bg-white/[0.04] border border-white/10 hover:border-white/25 text-white/70 hover:text-white flex items-center justify-center transition-all cursor-pointer hidden md:flex"
-              >
-                <ChevronsLeft className="w-4 h-4" />
-              </button>
-            )}
-
-            {/* Previous Page */}
-            <button
-              onClick={() => goToPage(currentPage - 1)}
-              disabled={currentPage <= 1}
-              className={`px-3.5 h-9 rounded-xl border flex items-center gap-1.5 text-xs font-semibold transition-all ${
-                currentPage <= 1
-                  ? 'bg-white/[0.02] border-white/5 text-white/20 cursor-not-allowed'
-                  : 'bg-white/[0.04] border-white/10 hover:border-white/25 text-white/80 hover:text-white cursor-pointer'
-              }`}
-            >
-              <ChevronLeft className="w-4 h-4" />
-              <span className="hidden sm:inline">Önceki</span>
-            </button>
-
-            {/* Numbered Page Buttons */}
-            <div className="flex items-center gap-1">
-              {getPageNumbers().map((p, idx) => {
-                if (p === '...') {
-                  return (
-                    <span
-                      key={`ellipsis-${idx}`}
-                      className="w-8 h-9 flex items-center justify-center text-xs text-white/40 font-mono"
-                    >
-                      …
-                    </span>
-                  );
-                }
-                const pageNum = Number(p);
-                const isActive = pageNum === currentPage;
-                return (
-                  <button
-                    key={pageNum}
-                    onClick={() => goToPage(pageNum)}
-                    className={`w-9 h-9 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                      isActive
-                        ? 'bg-[#2997ff] text-white glow-blue scale-105'
-                        : 'bg-white/[0.04] border border-white/10 hover:border-white/25 text-white/70 hover:text-white hover:bg-white/[0.08]'
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Next Page */}
-            <button
-              onClick={() => goToPage(currentPage + 1)}
-              disabled={currentPage >= totalPages}
-              className={`px-3.5 h-9 rounded-xl border flex items-center gap-1.5 text-xs font-semibold transition-all ${
-                currentPage >= totalPages
-                  ? 'bg-white/[0.02] border-white/5 text-white/20 cursor-not-allowed'
-                  : 'bg-white/[0.04] border-white/10 hover:border-white/25 text-white/80 hover:text-white cursor-pointer'
-              }`}
-            >
-              <span className="hidden sm:inline">Sonraki</span>
-              <ChevronRight className="w-4 h-4" />
-            </button>
-
-            {/* Last Page */}
-            {currentPage < totalPages - 1 && (
-              <button
-                onClick={() => goToPage(totalPages)}
-                aria-label="Son Sayfa"
-                className="w-9 h-9 rounded-xl bg-white/[0.04] border border-white/10 hover:border-white/25 text-white/70 hover:text-white flex items-center justify-center transition-all cursor-pointer hidden md:flex"
-              >
-                <ChevronsRight className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        </div>
+      {isMounted && !isLoading && (
+        <Pagination
+          currentPage={currentPage}
+          totalCount={totalCount}
+          pageSize={ITEMS_PER_PAGE}
+          onPageChange={goToPage}
+          itemLabel="yapımdan"
+          scrollToOffset={180}
+        />
       )}
     </div>
   );

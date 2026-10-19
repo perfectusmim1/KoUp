@@ -15,6 +15,7 @@ import {
   ChevronRight,
   ArrowRight,
   AlertTriangle,
+  Megaphone,
 } from 'lucide-react';
 import { useKoUp, ToastNotification } from '@/context/KoUpContext';
 import { getProxiedImageUrl } from '@/lib/supabase';
@@ -66,20 +67,21 @@ function NotificationThumbnail({ notification, meta }: NotificationThumbnailProp
     );
   }
 
+  // Visual Fallback without image
   if (imageError || !rawImg) {
     return (
       <div
-        className={`w-12 h-12 rounded-2xl border flex items-center justify-center shrink-0 mt-0.5 transition-transform group-hover:scale-105 ${meta.iconBg} ${meta.glow}`}
+        className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl border flex items-center justify-center shrink-0 mt-0.5 ${meta.iconBg} ${meta.glow}`}
       >
-        <IconComp className="w-6 h-6" />
+        <IconComp className="w-5 h-5 sm:w-6 sm:h-6" />
       </div>
     );
   }
 
-  // Episode Notification: Sleek 2:3 Vertical Cinema Poster Thumbnail with TV Badge
+  // Episode Notification: Vertical 2:3 Cinema Poster Thumbnail (Fixed size, Strictly no zoom, No TV badge)
   if (notification.type === 'episode') {
     return (
-      <div className="relative w-12 sm:w-14 aspect-[2/3] rounded-xl overflow-hidden border border-white/20 bg-[#121216] shrink-0 shadow-lg group-hover:scale-105 group-hover:border-amber-400/50 transition-all">
+      <div className="relative w-12 sm:w-14 aspect-[2/3] rounded-xl overflow-hidden border border-white/15 bg-[#121216] shrink-0 shadow-md">
         <img
           src={rawImg}
           alt=""
@@ -88,17 +90,14 @@ function NotificationThumbnail({ notification, meta }: NotificationThumbnailProp
           onError={() => setImageError(true)}
           className="w-full h-full object-cover"
         />
-        <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-amber-400 text-black shadow-md border-2 border-[#0f0f12]">
-          <Tv className="w-2.5 h-2.5" />
-        </div>
       </div>
     );
   }
 
-  // Actor Notification: Sleek Circular Actor Portrait with UserCheck Badge
-  if (notification.type === 'actor') {
+  // Actor & Reply Notifications: Circular Avatar (Fixed size, Strictly no zoom, No badge)
+  if (notification.type === 'actor' || notification.type === 'reply') {
     return (
-      <div className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden border border-white/20 bg-[#121216] shrink-0 shadow-lg group-hover:scale-105 group-hover:border-emerald-400/50 transition-all">
+      <div className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden border border-white/15 bg-[#121216] shrink-0 shadow-md">
         <img
           src={rawImg}
           alt=""
@@ -107,38 +106,21 @@ function NotificationThumbnail({ notification, meta }: NotificationThumbnailProp
           onError={() => setImageError(true)}
           className="w-full h-full object-cover"
         />
-        <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-emerald-500 text-black shadow-md border-2 border-[#0f0f12]">
-          <UserCheck className="w-2.5 h-2.5" />
-        </div>
       </div>
     );
   }
 
-  // Comment Reply Notification: Sleek Circular Replier Avatar with MessageSquare Badge
-  if (notification.type === 'reply') {
-    return (
-      <div className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden border border-white/20 bg-[#121216] shrink-0 shadow-lg group-hover:scale-105 group-hover:border-sky-400/50 transition-all">
-        <img
-          src={rawImg}
-          alt=""
-          loading="lazy"
-          decoding="async"
-          onError={() => setImageError(true)}
-          className="w-full h-full object-cover"
-        />
-        <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-sky-400 text-black shadow-md border-2 border-[#0f0f12]">
-          <MessageSquare className="w-2.5 h-2.5" />
-        </div>
-      </div>
-    );
-  }
-
-  // Default Fallback
+  // Generic Media Thumbnail (Fixed square, No zoom, No badge)
   return (
-    <div
-      className={`w-12 h-12 rounded-2xl border flex items-center justify-center shrink-0 mt-0.5 transition-transform group-hover:scale-105 ${meta.iconBg} ${meta.glow}`}
-    >
-      <IconComp className="w-6 h-6" />
+    <div className="relative w-12 sm:w-14 aspect-square rounded-2xl overflow-hidden border border-white/15 bg-[#121216] shrink-0 shadow-md">
+      <img
+        src={rawImg}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        onError={() => setImageError(true)}
+        className="w-full h-full object-cover"
+      />
     </div>
   );
 }
@@ -164,7 +146,6 @@ export default function NotificationsPage() {
     user,
     setIsAuthModalOpen,
     notifications,
-    unreadCount,
     markNotificationRead,
     markNotificationUnread,
     markAllNotificationsRead,
@@ -176,14 +157,43 @@ export default function NotificationsPage() {
   const [selectedFilter, setSelectedFilter] = useState<CategoryFilter>('all');
   const [unreadOnly, setUnreadOnly] = useState<boolean>(false);
 
-  // Filtered and deduplicated notifications
-  const filteredNotifications = useMemo(() => {
-    const seen = new Set<string>();
-    return notifications.filter((n) => {
-      if (!n || !n.id) return false;
-      if (seen.has(n.id)) return false;
-      seen.add(n.id);
+  // Fully deduplicated notifications list (prioritizing DB record over temporary optimistic ID)
+  const uniqueNotifications = useMemo(() => {
+    const seenIds = new Set<string>();
+    const seenFingerprints = new Set<string>();
+    const result: ToastNotification[] = [];
 
+    const sorted = [...notifications].sort((a, b) => {
+      const aIsDb = !a.id.startsWith('notif-');
+      const bIsDb = !b.id.startsWith('notif-');
+      if (aIsDb && !bIsDb) return -1;
+      if (!aIsDb && bIsDb) return 1;
+      return 0;
+    });
+
+    for (const n of sorted) {
+      if (!n || !n.id) continue;
+      if (seenIds.has(n.id)) continue;
+      const title = (n.title || '').trim();
+      const body = (n.body || '').trim();
+      const fp = `${title}::${body}`;
+      if (fp.length > 2 && seenFingerprints.has(fp)) continue;
+
+      seenIds.add(n.id);
+      if (fp.length > 2) seenFingerprints.add(fp);
+      result.push(n);
+    }
+    return result;
+  }, [notifications]);
+
+  // Effective unread count derived from deduplicated list
+  const unreadCount = useMemo(() => {
+    return uniqueNotifications.filter((n) => !n.isRead).length;
+  }, [uniqueNotifications]);
+
+  // Filtered notifications
+  const filteredNotifications = useMemo(() => {
+    return uniqueNotifications.filter((n) => {
       // Category filter
       if (selectedFilter !== 'all') {
         if (selectedFilter === 'system') {
@@ -198,19 +208,20 @@ export default function NotificationsPage() {
       }
       return true;
     });
-  }, [notifications, selectedFilter, unreadOnly]);
+  }, [uniqueNotifications, selectedFilter, unreadOnly]);
 
-  // Counts per category (deduplicated)
+  // Counts per category
   const counts = useMemo(() => {
-    const unique = Array.from(new Map(notifications.map((n) => [n.id, n])).values());
     return {
-      all: unique.length,
-      episode: unique.filter((n) => n.type === 'episode').length,
-      actor: unique.filter((n) => n.type === 'actor').length,
-      reply: unique.filter((n) => n.type === 'reply').length,
-      system: unique.filter((n) => n.type === 'system' || n.type === 'info' || n.type === 'success').length,
+      all: uniqueNotifications.length,
+      episode: uniqueNotifications.filter((n) => n.type === 'episode').length,
+      actor: uniqueNotifications.filter((n) => n.type === 'actor').length,
+      reply: uniqueNotifications.filter((n) => n.type === 'reply').length,
+      system: uniqueNotifications.filter(
+        (n) => n.type === 'system' || n.type === 'info' || n.type === 'success'
+      ).length,
     };
-  }, [notifications]);
+  }, [uniqueNotifications]);
 
   const getCategoryMeta = (type: ToastNotification['type']) => {
     switch (type) {
@@ -243,11 +254,11 @@ export default function NotificationsPage() {
       case 'success':
       default:
         return {
-          label: 'Sistem & Moderasyon',
-          badgeColor: 'text-rose-400 bg-rose-500/10 border-rose-500/20',
-          iconBg: 'bg-rose-500/15 border-rose-500/30 text-rose-400',
-          glow: 'shadow-[0_0_20px_rgba(244,63,94,0.15)]',
-          Icon: AlertTriangle,
+          label: 'Sistem Duyurusu',
+          badgeColor: 'text-indigo-300 bg-indigo-500/10 border-indigo-500/25',
+          iconBg: 'bg-indigo-500/15 border-indigo-500/30 text-indigo-400',
+          glow: 'shadow-[0_0_20px_rgba(99,102,241,0.18)]',
+          Icon: Megaphone,
         };
     }
   };
@@ -461,18 +472,18 @@ export default function NotificationsPage() {
               onClick={() => setSelectedFilter('system')}
               className={`px-4 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-2 ${
                 selectedFilter === 'system'
-                  ? 'bg-rose-500 text-white glow-rose'
+                  ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/25'
                   : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
               }`}
             >
-              <AlertTriangle className="w-3.5 h-3.5" />
-              <span>Sistem & Moderasyon</span>
+              <Megaphone className="w-3.5 h-3.5" />
+              <span>Duyurular</span>
               {counts.system > 0 && (
                 <span
                   className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
                     selectedFilter === 'system'
                       ? 'bg-white/20 text-white'
-                      : 'bg-rose-500/20 text-rose-300'
+                      : 'bg-indigo-500/20 text-indigo-300'
                   }`}
                 >
                   {counts.system}
@@ -530,17 +541,16 @@ export default function NotificationsPage() {
           ) : (
             filteredNotifications.map((n) => {
               const meta = getCategoryMeta(n.type);
-              const IconComp = meta.Icon;
               const isUnread = !n.isRead;
               const link = n.linkUrl || (n as any).link_url;
 
               return (
                 <div
                   key={n.id}
-                  className={`group relative rounded-3xl border transition-all duration-300 p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer ${
+                  className={`group relative rounded-3xl border transition-all duration-300 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer ${
                     isUnread
-                      ? 'bg-white/[0.07] hover:bg-white/[0.10] border-white/20 shadow-[0_8px_30px_rgba(0,0,0,0.6)]'
-                      : 'bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.05] opacity-75 hover:opacity-100'
+                      ? 'bg-[#121217]/90 hover:bg-[#16161e]/95 border-white/20 shadow-[0_16px_40px_rgba(0,0,0,0.7),0_0_24px_rgba(255,255,255,0.03)] backdrop-blur-2xl'
+                      : 'bg-[#0c0c0f]/75 hover:bg-[#111116]/85 border-white/[0.08] hover:border-white/15 opacity-85 hover:opacity-100 backdrop-blur-xl'
                   }`}
                   onClick={() => {
                     if (isUnread) markNotificationRead(n.id);
@@ -564,7 +574,7 @@ export default function NotificationsPage() {
 
                         {/* Unread Accent Pill */}
                         {isUnread && (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-[10px] font-bold text-rose-300">
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-[10px] font-bold text-rose-300">
                             <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,1)] animate-ping" />
                             YENİ
                           </span>

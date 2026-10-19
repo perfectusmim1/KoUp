@@ -131,10 +131,51 @@ function sanitizeHtml(html: string): string {
   clean = clean.replace(/\son\w+\s*=\s*(["'][^"']*["']|[^\s>]+)/gi, '');
   clean = clean.replace(/(?:href|src)\s*=\s*["']?\s*(?:javascript|data):[^"'>\s]*/gi, '');
 
+  // Convert font color tags to spans
+  clean = clean.replace(/<font\s+color=["']?([^"'>]+)["']?>([\s\S]*?)<\/font>/gi, '<span style="color:$1;">$2</span>');
+
+  // Convert legacy BBCode tags in case older comments or pasted text contain them
+  clean = clean.replace(
+    /\[color=(#[0-9a-fA-F]{3,8}|[a-zA-Z]+|rgba?\([0-9,\s.]+\))\]([\s\S]*?)\[\/color\]/gi,
+    '<span style="color:$1;">$2</span>'
+  );
+  clean = clean.replace(/\[b\]([\s\S]*?)\[\/b\]/gi, '<strong>$1</strong>');
+  clean = clean.replace(/\[i\]([\s\S]*?)\[\/i\]/gi, '<em>$1</em>');
+  clean = clean.replace(/\[h2\]([\s\S]*?)\[\/h2\]/gi, '<h2>$1</h2>');
+
   clean = clean.replace(/<\/?([a-zA-Z0-9]+)([^>]*)>/gi, (match, tag, attrs) => {
     const lowerTag = tag.toLowerCase();
-    const safeTags = ['div', 'span', 'strong', 'em', 'b', 'i', 'br', 'p'];
+    const safeTags = [
+      'div',
+      'span',
+      'strong',
+      'em',
+      'b',
+      'i',
+      'br',
+      'p',
+      'h1',
+      'h2',
+      'h3',
+      'h4',
+      'blockquote',
+      'ul',
+      'ol',
+      'li',
+      'font',
+    ];
     if (!safeTags.includes(lowerTag)) return '';
+
+    if (lowerTag === 'font') {
+      const colorMatch = attrs.match(/color\s*=\s*["']([^"']*)["']/i);
+      if (colorMatch) {
+        const cVal = colorMatch[1].trim();
+        if (/^(#[0-9a-fA-F]{3,8}|[a-zA-Z]+|rgba?\([0-9,\s.]+\))$/.test(cVal)) {
+          return match.startsWith('</') ? '</span>' : `<span style="color:${cVal};">`;
+        }
+      }
+      return match.startsWith('</') ? '</span>' : '<span>';
+    }
 
     if (match.startsWith('</')) return `</${lowerTag}>`;
     if (lowerTag === 'br') return '<br/>';
@@ -149,11 +190,20 @@ function sanitizeHtml(html: string): string {
         .filter((rule: string) => {
           const [prop, val] = rule.split(':').map((s) => s.trim().toLowerCase());
           if (!prop || !val) return false;
-          if (prop === 'color' && /^([#0-9a-fA-F]{3,8}|[a-zA-Z]+)$/.test(val)) return true;
+          if (
+            prop === 'color' &&
+            /^(#[0-9a-fA-F]{3,8}|[a-zA-Z]+|rgba?\([0-9,\s.]+\))$/.test(val)
+          )
+            return true;
           if (prop === 'font-weight' && /^(bold|normal|[1-9]00)$/.test(val)) return true;
           if (prop === 'font-style' && /^(italic|normal)$/.test(val)) return true;
-          if (prop === 'font-size' && /^([0-9.]+rem|[0-9]+px)$/.test(val)) return true;
+          if (
+            prop === 'font-size' &&
+            /^([0-9.]+rem|[0-9]+px|large|x-large|inherit)$/.test(val)
+          )
+            return true;
           if (prop === 'line-height' && /^([0-9.]+|normal)$/.test(val)) return true;
+          if (prop === 'display' && /^(inline-block|block|inline)$/.test(val)) return true;
           return false;
         });
       if (safeStyles.length > 0) {
@@ -185,6 +235,7 @@ function parseCommentTextToHtml(
 
   escaped = escaped.replace(/\[b\]([\s\S]*?)\[\/b\]/g, '<strong>$1</strong>');
   escaped = escaped.replace(/\[i\]([\s\S]*?)\[\/i\]/g, '<em>$1</em>');
+  escaped = escaped.replace(/\[h2\]([\s\S]*?)\[\/h2\]/g, '<h2>$1</h2>');
   escaped = escaped.replace(/\n/g, '<br/>');
 
   return `<div style="color:${baseColor};font-weight:${
@@ -256,8 +307,6 @@ export default function RichCommentSection({
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
 
   // Form State
-  const [title, setTitle] = useState('');
-  const [bodyText, setBodyText] = useState('');
   const [selectedColor, setSelectedColor] = useState('#FFFFFF');
   const [isBold, setIsBold] = useState(false);
   const [isItalic, setIsItalic] = useState(false);
@@ -334,7 +383,10 @@ export default function RichCommentSection({
   const [cooldownSec, setCooldownSec] = useState<number>(0);
   const lastCommentTextRef = useRef<string>('');
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const [hasText, setHasText] = useState(false);
+  const [charCount, setCharCount] = useState(0);
+  const savedSelectionRef = useRef<Range | null>(null);
 
   // Rate-limiting cooldown countdown
   useEffect(() => {
@@ -519,68 +571,296 @@ export default function RichCommentSection({
     }
   }, [isLoadingComments, comments]);
 
-  const handleColorSelect = (hex: string) => {
-    const el = textareaRef.current;
-    if (!el) {
-      setSelectedColor(hex);
-      return;
+  const saveSelection = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      const editor = editorRef.current;
+      if (
+        editor &&
+        (editor === range.commonAncestorContainer || editor.contains(range.commonAncestorContainer))
+      ) {
+        savedSelectionRef.current = range.cloneRange();
+        return;
+      }
+    }
+  }, []);
+
+  const restoreSelection = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const sel = window.getSelection();
+    if (!sel) return;
+
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    // If there is already an active non-collapsed selection inside the editor, keep it
+    if (sel.rangeCount > 0 && !sel.isCollapsed) {
+      const activeRange = sel.getRangeAt(0);
+      if (
+        editor === activeRange.commonAncestorContainer ||
+        editor.contains(activeRange.commonAncestorContainer)
+      ) {
+        return;
+      }
     }
 
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
+    if (savedSelectionRef.current) {
+      try {
+        sel.removeAllRanges();
+        sel.addRange(savedSelectionRef.current);
+      } catch {}
+    }
+  }, []);
 
-    if (start !== end) {
-      const before = bodyText.substring(0, start);
-      const selected = bodyText.substring(start, end);
-      const after = bodyText.substring(end);
-      const wrapped = `[color=${hex}]${selected}[/color]`;
-      setBodyText(before + wrapped + after);
-      setTimeout(() => {
-        el.focus();
-        el.setSelectionRange(start, start + wrapped.length);
-      }, 10);
+  const updateActiveFormats = useCallback(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    try {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) {
+        let node: Node | null = sel.anchorNode;
+        let inH2 = false;
+        let inExplicitBold = false;
+        let inExplicitItalic = false;
+
+        while (node && node !== editorRef.current) {
+          const tag = node.nodeName;
+          if (tag === 'H2') {
+            inH2 = true;
+          } else if (tag === 'B' || tag === 'STRONG') {
+            inExplicitBold = true;
+          } else if (tag === 'I' || tag === 'EM') {
+            inExplicitItalic = true;
+          } else if (node instanceof HTMLElement) {
+            const fw = node.style?.fontWeight;
+            if (fw === 'bold' || fw === '700' || fw === '800' || fw === '900') {
+              inExplicitBold = true;
+            }
+            if (node.style?.fontStyle === 'italic') {
+              inExplicitItalic = true;
+            }
+          }
+          node = node.parentNode;
+        }
+
+        setIsHeading(inH2);
+        // Only use queryCommandState('bold') when NOT inside H2 (since browsers report H2 as bold!)
+        setIsBold(inH2 ? inExplicitBold : (inExplicitBold || document.queryCommandState('bold')));
+        setIsItalic(inExplicitItalic || document.queryCommandState('italic'));
+      }
+    } catch {}
+  }, []);
+
+  const handleEditorInput = useCallback(() => {
+    if (!editorRef.current) return;
+    const text = editorRef.current.innerText || '';
+    const clean = text.replace(/[\u200B\r\n\t ]/g, '');
+    setHasText(clean.length > 0);
+    setCharCount(text.trim().length);
+    saveSelection();
+    updateActiveFormats();
+  }, [saveSelection, updateActiveFormats]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) {
+        let node: Node | null = sel.anchorNode;
+        let inH2 = false;
+        let h2Node: HTMLElement | null = null;
+        while (node && node !== editorRef.current) {
+          if (node.nodeName === 'H2') {
+            inH2 = true;
+            h2Node = node as HTMLElement;
+            break;
+          }
+          node = node.parentNode;
+        }
+
+        if (inH2 && h2Node) {
+          e.preventDefault();
+          const newDiv = document.createElement('div');
+          newDiv.innerHTML = '<br>';
+          if (h2Node.nextSibling) {
+            h2Node.parentNode?.insertBefore(newDiv, h2Node.nextSibling);
+          } else {
+            h2Node.parentNode?.appendChild(newDiv);
+          }
+          const newRange = document.createRange();
+          newRange.setStart(newDiv, 0);
+          newRange.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(newRange);
+          setIsHeading(false);
+          saveSelection();
+          handleEditorInput();
+          return;
+        }
+      }
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text/plain');
+    document.execCommand('insertText', false, text);
+    handleEditorInput();
+  };
+
+  const handleColorSelect = (hex: string) => {
+    setSelectedColor(hex);
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    if (typeof document !== 'undefined' && document.activeElement !== editor) {
+      editor.focus();
+    }
+    restoreSelection();
+
+    const sel = window.getSelection();
+    const hasSelection = Boolean(
+      sel &&
+        sel.rangeCount > 0 &&
+        !sel.isCollapsed &&
+        (editor === sel.getRangeAt(0).commonAncestorContainer ||
+          editor.contains(sel.getRangeAt(0).commonAncestorContainer))
+    );
+
+    if (hasSelection && sel) {
+      const range = sel.getRangeAt(0);
+      try {
+        // Direct DOM Range wrapping: guarantees exact selection is colored without touching other text
+        const span = document.createElement('span');
+        span.style.color = hex;
+
+        const fragment = range.extractContents();
+        // Remove nested colors inside the extracted slice so the chosen color cleanly takes precedence
+        if (fragment.querySelectorAll) {
+          fragment.querySelectorAll('[style*="color"]').forEach((el) => {
+            (el as HTMLElement).style.color = '';
+          });
+        }
+
+        span.appendChild(fragment);
+        range.insertNode(span);
+
+        // Keep selection around the newly colored text
+        const newRange = document.createRange();
+        newRange.selectNodeContents(span);
+        sel.removeAllRanges();
+        sel.addRange(newRange);
+        savedSelectionRef.current = newRange.cloneRange();
+      } catch {
+        // Fallback to execCommand if range manipulation fails
+        document.execCommand('styleWithCSS', false, 'true');
+        document.execCommand('foreColor', false, hex);
+      }
+
+      handleEditorInput();
+      updateActiveFormats();
       pushNotification('Metin Rengi Uygulandı', 'Seçili metin renklendirildi.', 'info');
     } else {
-      setSelectedColor(hex);
+      // No text selected: set foreColor for subsequent typing at cursor
+      editor.focus();
+      document.execCommand('styleWithCSS', false, 'true');
+      document.execCommand('foreColor', false, hex);
     }
   };
 
   const handleBoldToggle = () => {
-    const el = textareaRef.current;
-    if (el && el.selectionStart !== el.selectionEnd) {
-      const start = el.selectionStart;
-      const end = el.selectionEnd;
-      const before = bodyText.substring(0, start);
-      const selected = bodyText.substring(start, end);
-      const after = bodyText.substring(end);
-      const wrapped = `[b]${selected}[/b]`;
-      setBodyText(before + wrapped + after);
-      setTimeout(() => {
-        el.focus();
-        el.setSelectionRange(start, start + wrapped.length);
-      }, 10);
-    } else {
-      setIsBold((v) => !v);
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (typeof document !== 'undefined' && document.activeElement !== editor) {
+      editor.focus();
     }
+    restoreSelection();
+
+    const nextBold = !isBold;
+    try {
+      document.execCommand('bold', false);
+    } catch {}
+    setIsBold(nextBold);
+    saveSelection();
+    const text = editor.innerText || '';
+    const clean = text.replace(/[\u200B\r\n\t ]/g, '');
+    setHasText(clean.length > 0);
+    setCharCount(text.trim().length);
   };
 
   const handleItalicToggle = () => {
-    const el = textareaRef.current;
-    if (el && el.selectionStart !== el.selectionEnd) {
-      const start = el.selectionStart;
-      const end = el.selectionEnd;
-      const before = bodyText.substring(0, start);
-      const selected = bodyText.substring(start, end);
-      const after = bodyText.substring(end);
-      const wrapped = `[i]${selected}[/i]`;
-      setBodyText(before + wrapped + after);
-      setTimeout(() => {
-        el.focus();
-        el.setSelectionRange(start, start + wrapped.length);
-      }, 10);
-    } else {
-      setIsItalic((v) => !v);
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (typeof document !== 'undefined' && document.activeElement !== editor) {
+      editor.focus();
     }
+    restoreSelection();
+
+    const nextItalic = !isItalic;
+    try {
+      document.execCommand('italic', false);
+    } catch {}
+    setIsItalic(nextItalic);
+    saveSelection();
+    const text = editor.innerText || '';
+    const clean = text.replace(/[\u200B\r\n\t ]/g, '');
+    setHasText(clean.length > 0);
+    setCharCount(text.trim().length);
+  };
+
+  const handleHeadingToggle = () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (typeof document !== 'undefined' && document.activeElement !== editor) {
+      editor.focus();
+    }
+    restoreSelection();
+
+    const sel = window.getSelection();
+    let inH2 = isHeading;
+    let h2Node: HTMLElement | null = null;
+    if (sel && sel.rangeCount > 0) {
+      let node: Node | null = sel.anchorNode;
+      while (node && node !== editor) {
+        if (node.nodeName === 'H2') {
+          inH2 = true;
+          h2Node = node as HTMLElement;
+          break;
+        }
+        node = node.parentNode;
+      }
+    }
+
+    if (inH2) {
+      try {
+        document.execCommand('formatBlock', false, '<div>');
+      } catch {
+        if (h2Node) {
+          const div = document.createElement('div');
+          div.innerHTML = h2Node.innerHTML;
+          h2Node.parentNode?.replaceChild(div, h2Node);
+        }
+      }
+      setIsHeading(false);
+    } else {
+      try {
+        document.execCommand('formatBlock', false, '<h2>');
+      } catch {
+        if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+          const range = sel.getRangeAt(0);
+          const h2 = document.createElement('h2');
+          h2.appendChild(range.extractContents());
+          range.insertNode(h2);
+        }
+      }
+      setIsHeading(true);
+    }
+
+    saveSelection();
+    const text = editor.innerText || '';
+    const clean = text.replace(/[\u200B\r\n\t ]/g, '');
+    setHasText(clean.length > 0);
+    setCharCount(text.trim().length);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -608,10 +888,11 @@ export default function RichCommentSection({
       return;
     }
 
-    if (!bodyText.trim() && !selectedGif && !selectedSticker) return;
+    const rawText = (editorRef.current?.innerText || '').replace(/\u200B/g, '').trim();
+    if (!rawText && !selectedGif && !selectedSticker) return;
 
-    if (bodyText.trim()) {
-      const limitErr = checkCommentRateLimit(bodyText);
+    if (rawText) {
+      const limitErr = checkCommentRateLimit(rawText);
       if (limitErr) {
         pushNotification('İşlem Sınırlandırıldı', limitErr, 'info');
         return;
@@ -641,13 +922,11 @@ export default function RichCommentSection({
       }
     }
 
-    const formattedHtml = parseCommentTextToHtml(
-      bodyText,
-      selectedColor,
-      isBold,
-      isItalic,
-      isHeading
-    );
+    const rawHtml = editorRef.current?.innerHTML || '';
+    let formattedHtml = sanitizeHtml(rawHtml);
+    if (selectedColor && selectedColor !== '#FFFFFF' && !formattedHtml.includes('style="color:')) {
+      formattedHtml = `<div style="color:${selectedColor};line-height:1.6;">${formattedHtml}</div>`;
+    }
 
     // Validate real Supabase session
     const { data: sessionData } = await supabase.auth.getSession();
@@ -677,10 +956,11 @@ export default function RichCommentSection({
         parent_id: replyTo?.id || null,
         author_username: user.display_name || user.username || 'KoUp Üyesi',
         author_avatar: user.avatar_url || null,
-        title: title.trim() || null,
+        title: null,
         content_html: formattedHtml,
         content_json: {
-          raw: bodyText,
+          raw: rawText,
+          html: formattedHtml,
           color: selectedColor,
           isBold,
           isItalic,
@@ -718,11 +998,18 @@ export default function RichCommentSection({
       invalidateCache('comments');
 
       // Start anti-abuse 30s cooldown and update rate limit history
-      recordCommentPost(bodyText || 'medya');
+      recordCommentPost(rawText || 'medya');
 
       // Reset form fields
-      setTitle('');
-      setBodyText('');
+      if (editorRef.current) {
+        editorRef.current.innerHTML = '';
+      }
+      setHasText(false);
+      setCharCount(0);
+      setSelectedColor('#FFFFFF');
+      setIsBold(false);
+      setIsItalic(false);
+      setIsHeading(false);
       setHasSpoiler(false);
       setTimestampInput('');
       setImageUrlInput('');
@@ -1258,13 +1545,13 @@ export default function RichCommentSection({
                 decoding="async"
                 className={`${
                   isReply ? 'w-8 h-8' : 'w-10 h-10'
-                } rounded-full object-cover border border-white/15 group-hover:border-sky-400 group-hover:scale-105 transition-all shadow-md`}
+                } rounded-full object-cover border border-white/15 group-hover:border-sky-400 transition-all shadow-md`}
               />
             ) : (
               <div
                 className={`${
                   isReply ? 'w-8 h-8' : 'w-10 h-10'
-                } rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-white/75 group-hover:border-sky-400 group-hover:scale-105 transition-all shadow-md`}
+                } rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-white/75 group-hover:border-sky-400 transition-all shadow-md`}
               >
                 <User className={isReply ? 'w-4 h-4' : 'w-5 h-5'} />
               </div>
@@ -1303,7 +1590,7 @@ export default function RichCommentSection({
                 <button
                   type="button"
                   onClick={() => handleSeekScene(c.timestamp_sec!)}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-500/20 hover:bg-sky-500/35 text-sky-300 border border-sky-400/35 font-mono text-[10px] cursor-pointer transition-all hover:scale-105 active:scale-95"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-500/20 hover:bg-sky-500/35 text-sky-300 border border-sky-400/35 font-mono text-[10px] cursor-pointer transition-all hover:border-sky-400/60"
                   aria-label="Tıklayarak doğrudan bu sahneye atla"
                 >
                   <Clock className="w-2.5 h-2.5 text-sky-400" />
@@ -1357,7 +1644,7 @@ export default function RichCommentSection({
                 ) : (
                   <>
                     <div
-                      className="text-sm text-white/90 leading-relaxed font-normal break-words"
+                      className="text-sm text-white/90 leading-relaxed font-normal break-words comment-content"
                       dangerouslySetInnerHTML={{
                         __html: sanitizeHtml(c.content_html).replace(
                           /^(\s*<p[^>]*>\s*)?(?:<span[^>]*>)?(@[a-zA-Z0-9_\.\-]+)(?:<\/span>)?(?::|\s|&nbsp;|<br\s*\/?>)*/i,
@@ -1507,13 +1794,13 @@ export default function RichCommentSection({
 
                 {/* Right: Textarea container, spoiler checkbox, Send button */}
                 <div className="flex-1 space-y-2.5">
-                  <div className="bg-[#121216] border border-white/10 rounded-2xl p-3 focus-within:border-sky-500/50 focus-within:ring-1 focus-within:ring-sky-500/30 transition-all">
+                  <div className="bg-[#0b0b0e]/90 backdrop-blur-xl border border-white/12 hover:border-white/25 rounded-2xl p-3.5 focus-within:border-sky-400/60 focus-within:ring-2 focus-within:ring-sky-400/20 focus-within:shadow-[0_0_16px_rgba(56,189,248,0.20)] transition-all">
                     <textarea
                       rows={2}
                       value={inlineReplyText}
                       onChange={(e) => setInlineReplyText(e.target.value)}
                       placeholder={`@${authorUsername} kullanıcısına yanıt yaz...`}
-                      className="w-full bg-transparent text-white text-sm focus:outline-none resize-none placeholder-white/30"
+                      className="w-full bg-transparent text-white text-sm focus:outline-none resize-none placeholder-white/35 leading-relaxed"
                       autoFocus
                     />
                   </div>
@@ -1538,7 +1825,7 @@ export default function RichCommentSection({
                       className={`inline-flex items-center gap-2 px-5 py-2 rounded-2xl text-xs font-bold transition-all shadow-md cursor-pointer ${
                         isSubmittingInline || !inlineReplyText.trim()
                           ? 'bg-white/10 text-white/40 cursor-not-allowed'
-                          : 'bg-[#2997ff] hover:bg-sky-400 text-white glow-blue active:scale-95'
+                          : 'bg-[#2997ff] hover:bg-sky-400 text-white glow-blue'
                       }`}
                     >
                       <Send className="w-3.5 h-3.5" />
@@ -1603,7 +1890,7 @@ export default function RichCommentSection({
           <button
             type="button"
             onClick={() => openAuthModal('İşlem yapabilmek için lütfen giriş yapın.')}
-            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white font-bold text-xs shadow-[0_0_20px_rgba(41,151,255,0.4)] transition-all cursor-pointer active:scale-95"
+            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white font-bold text-xs shadow-[0_0_20px_rgba(41,151,255,0.4)] transition-all cursor-pointer"
           >
             <User className="w-3.5 h-3.5" />
             <span>Giriş Yap / Ücretsiz Kayıt Ol</span>
@@ -1638,47 +1925,49 @@ export default function RichCommentSection({
             </div>
           )}
 
-          {/* Title Input */}
-          <input
-            type="text"
-            value={title}
-            maxLength={120}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Yorum Başlığı (Opsiyonel — örn: 4. Bölümün Son Sahnesi Efsaneydi!)"
-            className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 text-sm font-semibold text-white placeholder-white/35 focus:outline-none focus:border-white/35"
-          />
-
           {/* Formatting Toolbar */}
           <div className="flex flex-wrap items-center gap-1.5 py-1.5 px-2 rounded-xl bg-black/40 border border-white/[0.07] max-w-full overflow-x-auto no-scrollbar">
             <button
               type="button"
-              onClick={() => setIsHeading((v) => !v)}
-              className={`p-1.5 rounded-lg text-xs cursor-pointer ${
-                isHeading ? 'bg-white text-black' : 'text-white/70 hover:bg-white/10'
+              onMouseDown={(e) => {
+                e.preventDefault();
+                handleHeadingToggle();
+              }}
+              className={`p-1.5 rounded-lg text-xs cursor-pointer transition-colors duration-120 ease-out ${
+                isHeading ? 'bg-white hover:bg-[#e8e8ed] text-black font-bold shadow-sm' : 'text-white/70 hover:text-white hover:bg-white/10'
               }`}
-              aria-label="Büyük Başlık Stili"
+              aria-label="Başlık Yap (H2)"
+              title="Başlık Yap (H2)"
             >
               <Heading2 className="w-4 h-4" />
             </button>
 
             <button
               type="button"
-              onClick={handleBoldToggle}
-              className={`p-1.5 rounded-lg text-xs cursor-pointer ${
-                isBold ? 'bg-white text-black' : 'text-white/70 hover:bg-white/10'
+              onMouseDown={(e) => {
+                e.preventDefault();
+                handleBoldToggle();
+              }}
+              className={`p-1.5 rounded-lg text-xs cursor-pointer transition-colors duration-120 ease-out ${
+                isBold ? 'bg-white hover:bg-[#e8e8ed] text-black font-bold shadow-sm' : 'text-white/70 hover:text-white hover:bg-white/10'
               }`}
-              aria-label="Kalın Yazı (Seçili metne veya tümüne)"
+              aria-label="Kalın Yazı (B)"
+              title="Kalın Yazı (B)"
             >
               <Bold className="w-4 h-4" />
             </button>
 
             <button
               type="button"
-              onClick={handleItalicToggle}
-              className={`p-1.5 rounded-lg text-xs cursor-pointer ${
-                isItalic ? 'bg-white text-black' : 'text-white/70 hover:bg-white/10'
+              onMouseDown={(e) => {
+                e.preventDefault();
+                handleItalicToggle();
+              }}
+              className={`p-1.5 rounded-lg text-xs cursor-pointer transition-colors duration-120 ease-out ${
+                isItalic ? 'bg-white hover:bg-[#e8e8ed] text-black font-bold shadow-sm' : 'text-white/70 hover:text-white hover:bg-white/10'
               }`}
-              aria-label="İtalik Yazı (Seçili metne veya tümüne)"
+              aria-label="İtalik Yazı (I)"
+              title="İtalik Yazı (I)"
             >
               <Italic className="w-4 h-4" />
             </button>
@@ -1691,8 +1980,12 @@ export default function RichCommentSection({
                 <button
                   key={c.hex}
                   type="button"
-                  onClick={() => handleColorSelect(c.hex)}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleColorSelect(c.hex);
+                  }}
                   aria-label={`Renk: ${c.name}`}
+                  title={`Renk: ${c.name}`}
                   style={{ backgroundColor: c.hex }}
                   className={`w-4 h-4 rounded-full cursor-pointer transition-transform ${
                     selectedColor === c.hex
@@ -1708,26 +2001,30 @@ export default function RichCommentSection({
             {/* Spoiler Mask Toggle */}
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => setHasSpoiler((v) => !v)}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs cursor-pointer ${
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors duration-120 ease-out cursor-pointer select-none ${
                 hasSpoiler
-                  ? 'bg-rose-500/25 text-rose-300 border border-rose-400/40'
-                  : 'text-white/70 hover:bg-white/10'
+                  ? 'bg-rose-500/25 hover:bg-rose-500/35 text-rose-300 border-rose-400/40 hover:border-rose-300'
+                  : 'bg-transparent border-transparent text-white/70 hover:text-white hover:bg-white/10'
               }`}
             >
-              <EyeOff className="w-3.5 h-3.5" />
+              <EyeOff className="w-3.5 h-3.5 shrink-0" />
               <span>Spoiler</span>
             </button>
 
             {/* GIF Picker Toggle */}
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 setShowGifPicker((v) => !v);
                 setShowStickerPicker(false);
               }}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs cursor-pointer ${
-                showGifPicker ? 'bg-white text-black font-bold' : 'text-white/70 hover:bg-white/10'
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors duration-120 ease-out cursor-pointer select-none ${
+                showGifPicker
+                  ? 'bg-white hover:bg-[#e8e8ed] text-black border-white'
+                  : 'bg-transparent border-transparent text-white/70 hover:text-white hover:bg-white/10'
               }`}
             >
               <span>GIF</span>
@@ -1736,53 +2033,59 @@ export default function RichCommentSection({
             {/* Sticker Picker Toggle */}
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 setShowStickerPicker((v) => !v);
                 setShowGifPicker(false);
               }}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs cursor-pointer ${
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors duration-120 ease-out cursor-pointer select-none ${
                 showStickerPicker
-                  ? 'bg-white text-black font-bold'
-                  : 'text-white/70 hover:bg-white/10'
+                  ? 'bg-white hover:bg-[#e8e8ed] text-black border-white'
+                  : 'bg-transparent border-transparent text-white/70 hover:text-white hover:bg-white/10'
               }`}
             >
-              <Smile className="w-3.5 h-3.5" />
+              <Smile className="w-3.5 h-3.5 shrink-0" />
               <span>Etiket</span>
             </button>
 
             {/* External Image URL Toggle */}
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => setShowImageInput((v) => !v)}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs cursor-pointer ${
-                showImageInput ? 'bg-white text-black font-bold' : 'text-white/70 hover:bg-white/10'
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors duration-120 ease-out cursor-pointer select-none ${
+                showImageInput
+                  ? 'bg-white hover:bg-[#e8e8ed] text-black border-white'
+                  : 'bg-transparent border-transparent text-white/70 hover:text-white hover:bg-white/10'
               }`}
             >
-              <ImageIcon className="w-3.5 h-3.5" />
+              <ImageIcon className="w-3.5 h-3.5 shrink-0" />
               <span>Görsel URL</span>
             </button>
 
-            {/* Timestamp Input */}
+            {/* Timestamp / Scene Duration Pill Input */}
             <div
-              className="flex items-center gap-1.5 ml-auto bg-white/[0.06] hover:bg-white/10 px-2.5 py-1 rounded-lg border border-white/15 transition-all"
+              title="Sahne Dakikası (Örn: 14:20)"
+              className="flex items-center gap-1.5 ml-auto px-3 py-1.5 rounded-full bg-[#121217] hover:bg-[#181820] border border-white/15 hover:border-white/25 focus-within:border-sky-400/60 focus-within:ring-2 focus-within:ring-sky-400/20 focus-within:shadow-[0_0_12px_rgba(56,189,248,0.25)] transition-all cursor-text group"
             >
-              <Clock className="w-3 h-3 text-sky-400" />
+              <Clock className="w-3.5 h-3.5 text-sky-400 shrink-0 group-focus-within:scale-110 transition-transform" />
               <input
                 type="text"
                 value={timestampInput}
                 onChange={(e) => setTimestampInput(e.target.value)}
                 placeholder="14:20"
-                className="w-12 bg-transparent text-[11px] font-mono text-white placeholder-white/40 focus:outline-none"
+                maxLength={8}
+                className="w-12 bg-transparent text-xs font-mono font-medium text-white placeholder-white/35 focus:outline-none text-center"
               />
             </div>
           </div>
 
           {/* GIF Picker Drawer with Dynamic Search */}
           {showGifPicker && (
-            <div className="space-y-2.5 p-3 rounded-2xl bg-black/85 border border-white/10 backdrop-blur-xl shadow-2xl">
+            <div className="space-y-3 p-3.5 rounded-2xl bg-[#0b0b0f]/95 border border-white/12 backdrop-blur-xl shadow-2xl">
               {/* Search Bar + Quick Category Pills */}
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)]">
+              <div className="flex flex-col gap-2.5">
+                <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full bg-[#121217] border border-white/12 hover:border-white/25 focus-within:border-sky-400/60 focus-within:ring-2 focus-within:ring-sky-400/20 transition-colors duration-120 shadow-xs">
                   <Search className="w-4 h-4 text-white/60 shrink-0" />
                   <input
                     type="text"
@@ -1795,9 +2098,9 @@ export default function RichCommentSection({
                     <button
                       type="button"
                       onClick={() => setGifSearchQuery('')}
-                      className="text-white/50 hover:text-white p-0.5 shrink-0 cursor-pointer"
+                      className="w-5 h-5 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors duration-120"
                     >
-                      <X className="w-3.5 h-3.5" />
+                      <X className="w-3 h-3 stroke-[2.5]" />
                     </button>
                   )}
                 </div>
@@ -1812,10 +2115,10 @@ export default function RichCommentSection({
                         key={chip}
                         type="button"
                         onClick={() => setGifSearchQuery(query)}
-                        className={`px-2.5 py-1 rounded-full whitespace-nowrap transition-all cursor-pointer ${
+                        className={`px-3 py-1.5 rounded-full font-semibold border whitespace-nowrap transition-colors duration-120 ease-out cursor-pointer select-none ${
                           isActive
-                            ? 'bg-sky-500 text-white font-bold shadow-md'
-                            : 'bg-white/[0.06] hover:bg-white/15 text-white/70'
+                            ? 'bg-[#2997ff] hover:bg-sky-400 border-sky-400/60 hover:border-sky-300 text-white shadow-[0_0_12px_rgba(41,151,255,0.35)]'
+                            : 'bg-white/[0.06] hover:bg-white/[0.14] border-white/10 hover:border-white/25 text-white/75 hover:text-white'
                         }`}
                       >
                         {chip}
@@ -1841,7 +2144,7 @@ export default function RichCommentSection({
                         setSelectedGif(g.url);
                         setShowGifPicker(false);
                       }}
-                      className="relative rounded-lg overflow-hidden border border-white/10 hover:border-sky-400 hover:scale-[1.02] active:scale-95 transition-all cursor-pointer group bg-black/40 aspect-[4/3]"
+                      className="relative rounded-xl overflow-hidden border border-white/10 hover:border-white/35 transition-colors duration-120 cursor-pointer group bg-black/40 aspect-[4/3]"
                     >
                       <img
                         src={g.previewUrl || g.url}
@@ -1849,7 +2152,7 @@ export default function RichCommentSection({
                         loading="lazy"
                         className="w-full h-full object-cover"
                       />
-                      <span className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent text-[10px] text-white px-1.5 py-0.5 truncate opacity-0 group-hover:opacity-100 transition-opacity">
+                      <span className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent text-[10px] text-white px-1.5 py-0.5 truncate opacity-0 group-hover:opacity-100 transition-opacity duration-120">
                         {g.title}
                       </span>
                     </button>
@@ -1863,7 +2166,7 @@ export default function RichCommentSection({
                         setSelectedGif(g.url);
                         setShowGifPicker(false);
                       }}
-                      className="relative rounded-lg overflow-hidden border border-white/10 hover:border-sky-400 hover:scale-[1.02] active:scale-95 transition-all cursor-pointer group bg-black/40 aspect-[4/3]"
+                      className="relative rounded-xl overflow-hidden border border-white/10 hover:border-white/35 transition-colors duration-120 cursor-pointer group bg-black/40 aspect-[4/3]"
                     >
                       <img src={g.url} alt={g.label} className="w-full h-full object-cover" />
                       <span className="absolute bottom-0 inset-x-0 bg-black/70 text-[10px] text-white py-0.5 truncate px-1">
@@ -1878,7 +2181,7 @@ export default function RichCommentSection({
 
           {/* Sticker Picker Drawer */}
           {showStickerPicker && (
-            <div className="flex flex-wrap gap-2 p-2.5 rounded-xl bg-black/60 border border-white/10">
+            <div className="flex flex-wrap gap-2 p-3 rounded-2xl bg-[#0b0b0f]/95 border border-white/12">
               {KDRAMA_ANIME_STICKERS.map((st) => (
                 <button
                   key={st.id}
@@ -1887,7 +2190,7 @@ export default function RichCommentSection({
                     setSelectedSticker(`${st.badge} · ${st.label}`);
                     setShowStickerPicker(false);
                   }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs text-white cursor-pointer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/[0.06] hover:bg-white/[0.14] border border-white/10 hover:border-white/25 text-xs font-medium text-white/85 hover:text-white transition-colors duration-120 ease-out cursor-pointer"
                 >
                   <span className="text-[10px] font-mono font-bold text-amber-300">
                     {st.badge}
@@ -1909,46 +2212,74 @@ export default function RichCommentSection({
             />
           )}
 
-          {/* Main Textarea */}
-          <textarea
-            ref={textareaRef}
-            rows={3}
-            maxLength={2000}
-            value={bodyText}
-            onChange={(e) => setBodyText(e.target.value)}
-            style={{
-              color: selectedColor,
-              fontWeight: isBold || isHeading ? 700 : 400,
-              fontStyle: isItalic ? 'italic' : 'normal',
-            }}
-            placeholder="Düşüncelerini, teorilerini veya sahne analizini yaz... (İpucu: Bir kelimeyi fareyle seçip yukarıdaki renk paletine basarak renklendirebilirsin!)"
-            className="w-full px-4 py-3 rounded-xl bg-black/50 border border-white/10 text-sm placeholder-white/35 focus:outline-none focus:border-white/35"
-          />
+          {/* Main Rich ContentEditable Editor */}
+          <div className="relative min-h-[110px] w-full rounded-2xl bg-[#0b0b0e]/90 backdrop-blur-xl border border-white/12 hover:border-white/25 focus-within:border-sky-400/60 focus-within:ring-2 focus-within:ring-sky-400/20 focus-within:shadow-[0_0_20px_rgba(56,189,248,0.20)] transition-all">
+            {!hasText && (
+              <div
+                onClick={() => editorRef.current?.focus()}
+                className="absolute top-3.5 left-4 right-4 text-sm text-white/35 pointer-events-none select-none font-normal"
+              >
+                Düşüncelerini, teorilerini veya sahne analizini yaz... (İpucu: Yazıyı seçip yukarıdaki butonlarla başlık yapabilir veya renklendirebilirsin!)
+              </div>
+            )}
+            <div
+              ref={editorRef}
+              contentEditable
+              role="textbox"
+              aria-multiline="true"
+              aria-label="Yorum İçeriği"
+              onInput={handleEditorInput}
+              onKeyUp={() => {
+                saveSelection();
+                updateActiveFormats();
+              }}
+              onMouseUp={() => {
+                saveSelection();
+                updateActiveFormats();
+              }}
+              onSelect={() => {
+                saveSelection();
+                updateActiveFormats();
+              }}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              style={{
+                color: '#FFFFFF',
+              }}
+              className="comment-rich-editor w-full min-h-[110px] max-h-[360px] overflow-y-auto px-4 py-3.5 text-sm text-white/95 leading-relaxed font-normal focus:outline-none whitespace-pre-wrap break-words"
+            />
+          </div>
 
           {/* Selected Attachments Preview */}
           {(selectedGif || selectedSticker) && (
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 pt-1">
               {selectedGif && (
-                <div className="relative">
-                  <img src={selectedGif} alt="GIF" className="h-20 rounded-xl border border-white/15" />
+                <div className="relative inline-block">
+                  <img
+                    src={selectedGif}
+                    alt="GIF"
+                    className="h-24 rounded-2xl border border-white/15 object-cover block shadow-md"
+                  />
                   <button
                     type="button"
                     onClick={() => setSelectedGif(null)}
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black text-white text-xs cursor-pointer flex items-center justify-center border border-white/30"
+                    aria-label="GIF'i Kaldır"
+                    className="absolute -top-2 -right-2 w-6 h-6 p-0 rounded-full bg-[#121216] hover:bg-rose-500 text-white/90 hover:text-white border border-white/25 hover:border-rose-400 shadow-lg flex items-center justify-center transition-colors duration-120 cursor-pointer"
                   >
-                    ×
+                    <X className="w-3.5 h-3.5 stroke-[2.5] shrink-0" />
                   </button>
                 </div>
               )}
               {selectedSticker && (
-                <div className="px-3 py-1.5 rounded-full bg-amber-400/20 border border-amber-400/40 text-xs text-amber-200 flex items-center gap-2">
+                <div className="pl-3.5 pr-2 py-1.5 rounded-full bg-amber-400/20 border border-amber-400/40 text-xs font-medium text-amber-200 flex items-center gap-2">
                   <span>{selectedSticker}</span>
                   <button
                     type="button"
                     onClick={() => setSelectedSticker(null)}
-                    className="text-xs text-white/60 hover:text-white cursor-pointer"
+                    aria-label="Etiketi Kaldır"
+                    className="w-5 h-5 p-0 rounded-full bg-black/40 hover:bg-rose-500 text-white/80 hover:text-white flex items-center justify-center transition-colors duration-120 cursor-pointer"
                   >
-                    ×
+                    <X className="w-3 h-3 stroke-[2.5] shrink-0" />
                   </button>
                 </div>
               )}
@@ -1958,15 +2289,15 @@ export default function RichCommentSection({
           {/* Send Button with Cooldown & Spinner */}
           <div className="flex items-center justify-between pt-1">
             <span className="text-[11px] text-white/40">
-              {user.display_name || user.username} olarak paylaşıyorsun
+              {user.display_name || user.username} olarak paylaşıyorsun {charCount > 0 ? `· ${charCount}/1200` : ''}
             </span>
             <button
               type="submit"
-              disabled={isSubmitting || cooldownSec > 0 || (!bodyText.trim() && !selectedGif && !selectedSticker)}
+              disabled={isSubmitting || cooldownSec > 0 || (!hasText && !selectedGif && !selectedSticker)}
               className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition-all ${
-                isSubmitting || cooldownSec > 0 || (!bodyText.trim() && !selectedGif && !selectedSticker)
+                isSubmitting || cooldownSec > 0 || (!hasText && !selectedGif && !selectedSticker)
                   ? 'bg-white/20 text-white/50 cursor-not-allowed'
-                  : 'bg-[#2997ff] hover:bg-sky-400 text-white hover:scale-105 active:scale-95 shadow-[0_0_15px_rgba(41,151,255,0.35)] cursor-pointer'
+                  : 'bg-[#2997ff] hover:bg-sky-400 text-white shadow-[0_0_20px_rgba(41,151,255,0.45)] hover:shadow-[0_0_28px_rgba(41,151,255,0.7)] cursor-pointer'
               }`}
             >
               <Send className="w-3.5 h-3.5" />

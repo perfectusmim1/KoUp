@@ -48,12 +48,51 @@ export async function GET(req: Request) {
       return enabledSites.has(s.source_site);
     });
 
+    const DAY_MAP: Record<number, string> = {
+      1: 'Pazartesi',
+      2: 'Salı',
+      3: 'Çarşamba',
+      4: 'Perşembe',
+      5: 'Cuma',
+      6: 'Cumartesi',
+      7: 'Pazar',
+    };
+
+    function cleanCategory(cat?: string | null): string {
+      if (!cat) return 'Dizi';
+      const trimmed = cat.trim();
+      if (trimmed.startsWith('{') || trimmed.includes('_id')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          const name = parsed.display_name || parsed.name;
+          if (name) {
+            if (/anim/i.test(name)) return 'Anime';
+            if (/action|aksiyon/i.test(name)) return 'Aksiyon';
+            if (/drama|dram/i.test(name)) return 'Dram';
+            if (/comedy|komedi/i.test(name)) return 'Komedi';
+            return name;
+          }
+        } catch {}
+        if (/anim/i.test(trimmed)) return 'Anime';
+        if (/action|aksiyon/i.test(trimmed)) return 'Aksiyon';
+        if (/drama|dram/i.test(trimmed)) return 'Dram';
+        return 'Dizi';
+      }
+      return trimmed;
+    }
+
+    const sanitized = filtered.map((s) => ({
+      ...s,
+      category: cleanCategory(s.category),
+      date_label: s.date_label && !s.date_label.includes('{') ? s.date_label : (DAY_MAP[s.day_of_week] || 'Pazartesi'),
+    }));
+
     return NextResponse.json(
       {
         success: true,
-        count: filtered.length,
+        count: sanitized.length,
         enabledScrapers: Array.from(enabledSites),
-        schedules: filtered,
+        schedules: sanitized,
       },
       {
         headers: {

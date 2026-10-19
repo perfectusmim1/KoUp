@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import path from 'node:path';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { supabase, cleanOverviewText } from '@/lib/supabase';
+import { supabase, supabaseAdmin, cleanOverviewText, cleanScrapedSlug } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -108,24 +108,62 @@ async function translateToTurkish(text: string): Promise<string> {
   return text;
 }
 
+function normalizeTitleForMatch(str?: string | null): string {
+  if (!str) return '';
+  return str
+    .replace(/[ıİ]/g, 'i')
+    .replace(/[şŞ]/g, 's')
+    .replace(/[ğĞ]/g, 'g')
+    .replace(/[üÜ]/g, 'u')
+    .replace(/[öÖ]/g, 'o')
+    .replace(/[çÇ]/g, 'c')
+    .replace(/²/g, '2')
+    .replace(/³/g, '3')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function scoreTmdbCandidate(queryTitle: string, candidate: any, targetYear?: number, targetCountry?: string): number {
   let score = 0;
-  const tName = (candidate.name || candidate.title || '').toLowerCase();
-  const oName = (candidate.original_name || candidate.original_title || '').toLowerCase();
-  const qLow = queryTitle.toLowerCase();
+  const tNorm = normalizeTitleForMatch(candidate.name || candidate.title || '');
+  const oNorm = normalizeTitleForMatch(candidate.original_name || candidate.original_title || '');
+  const qNorm = normalizeTitleForMatch(queryTitle);
 
-  if (qLow === tName || qLow === oName) score += 60;
-  else if (qLow.includes(tName) || tName.includes(qLow) || qLow.includes(oName) || oName.includes(qLow)) score += 35;
-  else score += 10;
+  if (!qNorm || (!tNorm && !oNorm)) return -100;
 
+  const isExactMatch = qNorm === tNorm || qNorm === oNorm;
+  const qWords = qNorm.split(/\s+/).filter(Boolean);
+  const isShortQuery = qNorm.length <= 6 || qWords.length <= 1;
+
+  if (isExactMatch) {
+    score += 65;
+  } else if (!isShortQuery) {
+    const tWords = tNorm.split(/\s+/).filter(Boolean);
+    const oWords = oNorm.split(/\s+/).filter(Boolean);
+    const tContains = (tNorm.includes(qNorm) || qNorm.includes(tNorm)) && Math.abs(tWords.length - qWords.length) <= 1;
+    const oContains = (oNorm.includes(qNorm) || qNorm.includes(oNorm)) && Math.abs(oWords.length - qWords.length) <= 1;
+
+    if (tContains || oContains) {
+      score += 35;
+    } else {
+      score -= 30;
+    }
+  } else {
+    // Short title that is NOT an exact match: heavily penalize so substring never matches!
+    score -= 60;
+  }
+
+  // Release year check
   const dateStr = candidate.first_air_date || candidate.release_date || '';
-  if (dateStr && targetYear) {
+  if (dateStr && targetYear && targetYear > 1900) {
     const itemYear = parseInt(dateStr.slice(0, 4), 10);
     if (!isNaN(itemYear)) {
       const diff = Math.abs(itemYear - targetYear);
       if (diff === 0) score += 35;
-      else if (diff === 1) score += 20;
-      else if (diff >= 3) score -= 35;
+      else if (diff === 1) score += 15;
+      else if (diff > 1) score -= 60; // Diff > 1 year: heavy penalty!
     }
   }
 
@@ -133,12 +171,13 @@ function scoreTmdbCandidate(queryTitle: string, candidate: any, targetYear?: num
   const originCountries = candidate.origin_country || [];
   if (targetCountry) {
     const tc = targetCountry.toUpperCase();
-    if (originCountries.includes(tc)) score += 25;
-    else if (tc === 'KR' && origLang === 'ko') score += 25;
-    else if (tc === 'CN' && (origLang === 'zh' || origLang === 'cn')) score += 25;
-    else if (tc === 'JP' && origLang === 'ja') score += 25;
-    else if (tc === 'TH' && origLang === 'th') score += 25;
-    else if (['KR', 'CN', 'JP', 'TH'].includes(tc) && ['en', 'es', 'de', 'fr'].includes(origLang)) score -= 30;
+    if (originCountries.includes(tc)) score += 20;
+    else if (tc === 'KR' && origLang === 'ko') score += 20;
+    else if (tc === 'CN' && (origLang === 'zh' || origLang === 'cn')) score += 20;
+    else if (tc === 'JP' && origLang === 'ja') score += 20;
+    else if (tc === 'TH' && origLang === 'th') score += 20;
+    else if (tc === 'TR' && origLang === 'tr') score += 20;
+    else if (['KR', 'CN', 'JP', 'TH'].includes(tc) && ['en', 'es', 'de', 'fr', 'tr'].includes(origLang)) score -= 30;
   }
 
   if (candidate.poster_path) score += 10;
@@ -169,12 +208,32 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'id veya slug belirtilmelidir' }, { status: 400 });
     }
 
-    let q = supabase.from('media').select('*');
-    if (id) q = q.eq('id', Number(id));
-    else if (slug) q = q.eq('slug', slug);
+    let media: any = null;
+    if (id) {
+      const { data } = await supabase.from('media').select('*').eq('id', Number(id)).single();
+      media = data;
+    } else if (slug) {
+      const { data } = await supabase.from('media').select('*').eq('slug', slug).single();
+      media = data;
+      if (!media) {
+        const cleaned = cleanScrapedSlug(slug);
+        if (cleaned && cleaned !== slug) {
+          const { data: fallbackData } = await supabase.from('media').select('*').eq('slug', cleaned).single();
+          media = fallbackData;
+        }
+        if (!media) {
+          const { data: urlData } = await supabase
+            .from('media')
+            .select('*')
+            .ilike('source_url', `%/${slug}%`)
+            .limit(1)
+            .maybeSingle();
+          media = urlData;
+        }
+      }
+    }
 
-    const { data: media, error } = await q.single();
-    if (error || !media) {
+    if (!media) {
       return NextResponse.json({ error: 'Yapım bulunamadı' }, { status: 404 });
     }
 
@@ -213,19 +272,34 @@ export async function GET(req: NextRequest) {
       p_media_id: media.id,
     };
 
-    // Candidate titles to search TMDB & AniList
+    // Candidate titles to search TMDB & AniList (native_title and title_en BEFORE Turkish title)
+    const searchQueries: string[] = [];
+    function addSearchQuery(t?: string | null) {
+      if (!t) return;
+      const clean = t
+        .replace(/\(\d{4}\)/g, '')
+        .replace(/\b(izle|turkce|altyazili|dizi|film|hd|full)\b/gi, '')
+        .replace(/²/g, '2')
+        .replace(/³/g, '3')
+        .trim();
+      if (clean && clean.length >= 2 && !searchQueries.includes(clean)) {
+        searchQueries.push(clean);
+      }
+    }
+
+    if (media.native_title) addSearchQuery(media.native_title);
+    if (media.title_en) addSearchQuery(media.title_en);
+    if (Array.isArray(media.aka_titles)) {
+      for (const aka of media.aka_titles) addSearchQuery(aka);
+    }
     const rawClean = media.title
       .replace(/\(\d{4}\)/g, '')
       .replace(/\b(izle|turkce|altyazili|dizi|film|hd|full)\b/gi, '')
+      .replace(/²/g, '2')
+      .replace(/³/g, '3')
       .trim();
-    const searchQueries: string[] = [rawClean, media.title];
-    if (media.title_en && !searchQueries.includes(media.title_en)) searchQueries.push(media.title_en);
-    if (Array.isArray(media.aka_titles)) {
-      for (const aka of media.aka_titles) {
-        if (aka && !searchQueries.includes(aka)) searchQueries.push(aka);
-      }
-    }
-    if (media.native_title && !searchQueries.includes(media.native_title)) searchQueries.push(media.native_title);
+    addSearchQuery(rawClean);
+    addSearchQuery(media.title);
 
     // 1. Check local archive first (instant & clean)
     const db = getArchiveDb();
@@ -236,7 +310,8 @@ export async function GET(req: NextRequest) {
           if (hasBadOverview && !isBadOverview(sqliteRow.overview)) {
             patch.p_overview = cleanOverviewText(sqliteRow.overview);
           }
-          if (!media.mdl_id && sqliteRow.mydramalist_url) {
+          const isAsianCountry = !media.country_code || ['KR', 'CN', 'JP', 'TW', 'HK', 'TH', 'PH', 'VN', 'SG', 'MY', 'ID', 'IN', 'MM', 'KH', 'LA', 'MN', 'MO'].includes(String(media.country_code).toUpperCase());
+          if (!media.mdl_id && sqliteRow.mydramalist_url && isAsianCountry) {
             patch.p_mdl_id = extractMdlId(sqliteRow.mydramalist_url);
           }
           if (!media.imdb_id && sqliteRow.imdb_id && sqliteRow.imdb_id.startsWith('tt')) {
@@ -246,12 +321,25 @@ export async function GET(req: NextRequest) {
       } catch {}
     }
 
-    // 2. AniList GraphQL Lookup for Anime
+    // 2. AniList GraphQL Lookup for Anime (only if anilist_id is missing or we fetch by existing anilist_id)
     let anilistHit: any = null;
     if (media.content_type === 'anime') {
       try {
-        const cleanForAniList = rawClean.replace(/\b(TV|2nd Season|Season \d+|Part \d+)\b/gi, '').trim();
-        const gql = `
+        const gql = media.anilist_id
+          ? `
+          query ($id: Int) {
+            Media(id: $id, type: ANIME) {
+              id
+              siteUrl
+              title { romaji english native }
+              description(asHtml: false)
+              averageScore
+              bannerImage
+              coverImage { large extraLarge }
+            }
+          }
+        `
+          : `
           query ($search: String) {
             Media(search: $search, type: ANIME) {
               id
@@ -264,26 +352,23 @@ export async function GET(req: NextRequest) {
             }
           }
         `;
+        const vars = media.anilist_id ? { id: Number(media.anilist_id) } : { search: rawClean };
         const alResp = await fetch('https://graphql.anilist.co', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          body: JSON.stringify({ query: gql, variables: { search: cleanForAniList } }),
+          body: JSON.stringify({ query: gql, variables: vars }),
           signal: AbortSignal.timeout(6000),
         });
         if (alResp.ok) {
           const alJson = await alResp.json();
           anilistHit = alJson.data?.Media;
           if (anilistHit) {
-            patch.p_anilist_id = anilistHit.id;
+            if (!media.anilist_id) {
+              patch.p_anilist_id = anilistHit.id;
+            }
             patch.p_anilist_url = anilistHit.siteUrl || `https://anilist.co/anime/${anilistHit.id}`;
             if (anilistHit.averageScore) {
               patch.p_anilist_rating = Number(anilistHit.averageScore);
-            }
-            if ((hasBadOverview || !patch.p_overview) && anilistHit.description) {
-              const cleanAlDesc = cleanHtmlText(anilistHit.description);
-              if (cleanAlDesc.length > 30) {
-                patch.p_overview = cleanAlDesc;
-              }
             }
             if (!media.cover_image && (anilistHit.coverImage?.extraLarge || anilistHit.coverImage?.large)) {
               patch.p_cover_image = anilistHit.coverImage?.extraLarge || anilistHit.coverImage?.large;
@@ -300,9 +385,20 @@ export async function GET(req: NextRequest) {
     let tmdbHit: any = null;
     let tmdbType: 'tv' | 'movie' = media.content_type === 'film' ? 'movie' : 'tv';
 
+    // A0. If tmdb_id is ALREADY set on media, fetch that exact TMDB ID directly!
+    if (media.tmdb_id) {
+      try {
+        const directUrl = `https://api.themoviedb.org/3/${tmdbType}/${media.tmdb_id}?language=tr-TR&api_key=${TMDB_API_KEY}`;
+        const dResp = await fetch(directUrl, { signal: AbortSignal.timeout(5000) });
+        if (dResp.ok) {
+          tmdbHit = await dResp.json();
+        }
+      } catch {}
+    }
+
     // A. If imdb_id is available, find directly by IMDb ID
     const effectiveImdb = patch.p_imdb_id || media.imdb_id;
-    if (effectiveImdb && effectiveImdb.startsWith('tt')) {
+    if (!tmdbHit && effectiveImdb && effectiveImdb.startsWith('tt')) {
       try {
         const findUrl = `https://api.themoviedb.org/3/find/${effectiveImdb}?external_source=imdb_id&language=tr-TR&api_key=${TMDB_API_KEY}`;
         const fResp = await fetch(findUrl, { signal: AbortSignal.timeout(6000) });
@@ -317,15 +413,23 @@ export async function GET(req: NextRequest) {
       } catch {}
     }
 
-    // B. Search by candidate titles if not matched yet
-    if (!tmdbHit) {
+    // B. Search by candidate titles ONLY if media does not already have a tmdb_id
+    if (!tmdbHit && !media.tmdb_id) {
       const endpoints = media.content_type === 'film' ? ['search/movie', 'search/tv'] : ['search/tv', 'search/movie'];
       let bestScore = 0;
       for (const qTitle of searchQueries) {
         if (!qTitle || qTitle.length < 2) continue;
         for (const ep of endpoints) {
           try {
-            const searchUrl = `https://api.themoviedb.org/3/${ep}?query=${encodeURIComponent(qTitle)}&api_key=${TMDB_API_KEY}&language=tr-TR`;
+            const yearParam =
+              media.release_year && media.release_year > 1900
+                ? ep.includes('movie')
+                  ? `&primary_release_year=${media.release_year}`
+                  : `&first_air_date_year=${media.release_year}`
+                : '';
+            const searchUrl = `https://api.themoviedb.org/3/${ep}?query=${encodeURIComponent(
+              qTitle
+            )}&api_key=${TMDB_API_KEY}&language=tr-TR${yearParam}`;
             const sResp = await fetch(searchUrl, { signal: AbortSignal.timeout(5000) });
             if (sResp.ok) {
               const sData = await sResp.json();
@@ -342,16 +446,18 @@ export async function GET(req: NextRequest) {
             }
           } catch {}
         }
-        if (bestScore >= 80) break;
+        if (bestScore >= 95) break;
       }
-      if (bestScore < 45) {
+      if (bestScore < 90) {
         tmdbHit = null;
       }
     }
 
     // Process TMDB Hit
     if (tmdbHit) {
-      patch.p_tmdb_id = tmdbHit.id;
+      if (!media.tmdb_id) {
+        patch.p_tmdb_id = tmdbHit.id;
+      }
 
       // Turkish Overview: Try TMDB tr-TR first, otherwise fetch English and translate to Turkish!
       const trOv = cleanOverviewText(tmdbHit.overview);
@@ -388,18 +494,22 @@ export async function GET(req: NextRequest) {
       const originCountries = tmdbHit.origin_country || [];
       let detectedCountry = originCountries[0];
       if (!detectedCountry && tmdbHit.original_language) {
-        const langMap: Record<string, string> = { ko: 'KR', zh: 'CN', ja: 'JP', th: 'TH', en: 'US' };
+        const langMap: Record<string, string> = { ko: 'KR', zh: 'CN', ja: 'JP', th: 'TH', en: 'US', tr: 'TR' };
         detectedCountry = langMap[tmdbHit.original_language];
       }
       if (detectedCountry) {
         detectedCountry = detectedCountry.toUpperCase();
-        if (
-          media.country_code === 'US' ||
-          !media.country_code ||
-          (['KR', 'CN', 'JP', 'TH', 'TW'].includes(detectedCountry) && media.country_code !== detectedCountry)
-        ) {
-          patch.p_country_code = detectedCountry;
-          patch.p_country_name = COUNTRY_MAP[detectedCountry] || 'Asya';
+        // Do NOT overwrite country_code with TR unless genuinely Turkish in TMDB
+        const isLegitTr = detectedCountry === 'TR' && (tmdbHit.original_language === 'tr' || originCountries.includes('TR'));
+        if (detectedCountry !== 'TR' || isLegitTr) {
+          if (
+            media.country_code === 'US' ||
+            !media.country_code ||
+            (['KR', 'CN', 'JP', 'TH', 'TW', 'TR'].includes(detectedCountry) && media.country_code !== detectedCountry)
+          ) {
+            patch.p_country_code = detectedCountry;
+            patch.p_country_name = COUNTRY_MAP[detectedCountry] || 'Asya';
+          }
         }
       }
 
@@ -473,14 +583,14 @@ export async function GET(req: NextRequest) {
 
     // 4. Guaranteed Editorial Turkish Overview Fallback if still empty or garbage
     if (hasBadOverview && !patch.p_overview) {
-      const yearStr = media.release_year ? `${media.release_year} yılı ` : '';
-      const catStr = media.categories && media.categories.length > 0 ? `${media.categories.slice(0, 3).join(', ')} türündeki ` : '';
+      const yearStr = media.release_year ? `${media.release_year} çıkışlı, ` : '';
+      const catStr = media.categories && media.categories.length > 0 ? `${media.categories.slice(0, 3).join(', ').toLowerCase()} türündeki ` : '';
       const typeStr = formatContentTypeTR(media.content_type, media.country_code);
-      patch.p_overview = `${media.title}, ${yearStr}${catStr}${typeStr} yapımıdır. KoUp platformu üzerinde kesintisiz, Full HD ve Türkçe altyazılı seçenekleriyle tüm bölümlerini izleyebilirsiniz.`;
+      patch.p_overview = `${media.title}; ${yearStr}${catStr}${typeStr} yapımıdır.`;
     }
 
     // 5. Apply to Supabase DB via patch_media_metadata RPC
-    const { data: rpcRes, error: rpcErr } = await supabase.rpc('patch_media_metadata', patch);
+    const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc('patch_media_metadata', patch);
     if (rpcErr) {
       return NextResponse.json({ error: rpcErr.message, patch }, { status: 500 });
     }

@@ -3,7 +3,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { supabase } from '@/lib/supabase';
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { cleanFansubName, cleanSourceName } from '@/lib/cleanFansub';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -50,6 +51,9 @@ function classifyStreamType(
   if (
     p === 'diziyou-hls' ||
     p === 'hdfilm-hls' ||
+    p === 'hdfilm-close' ||
+    p === 'close' ||
+    p === 'rapidrame' ||
     p === 'asyawatch' ||
     p === 'dizilla' ||
     p === 'dbx' ||
@@ -58,35 +62,90 @@ function classifyStreamType(
     u.includes('dplayer') ||
     u.includes('hotlinger') ||
     u.includes('molystream') ||
+    u.includes('playmix.uno') ||
+    u.includes('rapidrame') ||
+    u.includes('/rplayer/') ||
+    u.includes('hdfilmcehennemi.mobi/video/embed/') ||
     u.includes('.m3u8') ||
     u.includes('master.txt')
   ) {
     return 'hls';
   }
-  if (u.endsWith('.mp4') || u.includes('.mp4?')) {
+  if (
+    u.endsWith('.mp4') ||
+    u.includes('.mp4?') ||
+    p === 'mail.ru' ||
+    p === 'mail' ||
+    u.includes('my.mail.ru')
+  ) {
     return 'mp4';
+  }
+  if (
+    p === 'uqload' ||
+    u.includes('uqload.') ||
+    p === 'voe' ||
+    u.includes('voe.sx') ||
+    u.includes('voe.') ||
+    p === 'vk' ||
+    u.includes('vk.com') ||
+    p === 'ok.ru' ||
+    p === 'odnoklassniki' ||
+    u.includes('ok.ru')
+  ) {
+    return 'hls';
   }
   if (p === 'tau-video' || u.includes('tau-video.xyz')) {
     return 'tau';
   }
-  if (['ok.ru', 'odnoklassniki', 'vk', 'dailymotion'].includes(p)) {
+  if (['dailymotion'].includes(p)) {
     return 'postmessage_iframe';
   }
   return 'locked_iframe';
+}
+
+function isDeadSource(provider?: string | null, directUrl?: string | null, sourceName?: string | null): boolean {
+  const p = (provider || '').toLowerCase();
+  const u = (directUrl || '').toLowerCase();
+  const n = (sourceName || '').toLowerCase();
+  if (!u || u === 'dead') return true;
+  if (
+    p === 'dead' ||
+    p === 'sibnet' ||
+    p === 'sendvid' ||
+    n.includes('sibnet') ||
+    u.includes('sibnet.ru') ||
+    u.includes('sendvid') ||
+    p.includes('gdrive') ||
+    p.includes('google') ||
+    u.includes('drive.google.com') ||
+    u.includes('docs.google.com') ||
+    u.includes('4meplayer') ||
+    u.includes('p2pplay') ||
+    u.includes('rpmplay') ||
+    u.includes('uns.bio') ||
+    u.includes('playerdkorea.xyz') ||
+    u.includes('video.diziasya.com')
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function getProviderPriority(provider: string, directUrl: string, contentType: string): number {
   const p = (provider || '').toLowerCase();
   const u = (directUrl || '').toLowerCase();
 
-  // Top priority: working AsyaWatch and Dizilla native streams
-  if (p === 'asyawatch' || u.includes('pichive') || p === 'dizilla' || u.includes('dplayer')) {
+  // Top priority: working AsyaWatch, Dizilla, and direct inner HLS streams
+  if (
+    p === 'asyawatch' ||
+    u.includes('pichive') ||
+    p === 'dizilla' ||
+    u.includes('dplayer') ||
+    p === 'hdfilm-hls' ||
+    u.includes('master.txt') ||
+    u.includes('.m3u8')
+  ) {
     return 0;
-  }
-
-  // Demote legacy/dead embed pages (like close player embeds)
-  if (p === 'hdfilm-close' || u.includes('/video/embed/')) {
-    return 10;
   }
 
   if (contentType === 'anime') {
@@ -96,34 +155,35 @@ function getProviderPriority(provider: string, directUrl: string, contentType: s
     if (
       p.includes('rapid') ||
       p.includes('hls') ||
+      p === 'hdfilm-close' ||
+      p === 'close' ||
       u.includes('rapidrame') ||
+      u.includes('/rplayer/') ||
+      u.includes('/video/embed/') ||
       p === 'diziyou' ||
       p === 'dbx' ||
       p === 'dizibox' ||
-      u.includes('molystream') ||
-      u.includes('.m3u8')
+      u.includes('molystream')
     ) {
       return 1;
     }
     if (p === 'tau-video' || u.includes('tau-video')) return 2;
   }
-  if (['vidmoly', 'filemoon', 'yourupload'].includes(p)) {
+  // Native player streams: Mail.ru, VK, Uqload, VOE
+  if (['mail.ru', 'mail', 'vk'].includes(p) || u.includes('mail.ru') || u.includes('vk.com')) {
     return 3;
   }
-  if (p === 'sibnet' || u.includes('sibnet.ru')) {
+  if (p === 'uqload' || u.includes('uqload') || p === 'voe' || u.includes('voe.sx') || u.includes('voe.')) {
     return 4;
   }
-  if (['sendvid', 'uqload', 'mp4upload', 'doodstream', 'voe', 'vudeo'].includes(p)) {
+  if (['vidmoly', 'filemoon', 'yourupload'].includes(p)) {
     return 5;
   }
-  if (['vk', 'mail.ru', 'mail', 'dailymotion', 'mega'].includes(p)) {
+  if (['mp4upload', 'dailymotion', 'mega'].includes(p)) {
     return 6;
   }
-  if (p.includes('gdrive') || p.includes('google') || u.includes('drive.google.com')) {
-    return 7;
-  }
   if (p === 'ok.ru' || p === 'odnoklassniki' || u.includes('ok.ru') || u.includes('odnoklassniki')) {
-    return 90;
+    return 7;
   }
   return 8;
 }
@@ -156,6 +216,9 @@ export async function GET(
       react_cry: number;
       react_shock: number;
       react_angry?: number;
+      views_count?: number;
+      intro_start_sec?: number | null;
+      intro_end_sec?: number | null;
       sources: Array<{
         source_name: string;
         embed_id: string;
@@ -206,9 +269,82 @@ export async function GET(
       } catch {}
     }
 
-    // TIER 2: SQLite Archive Database (Fast local fallback)
-    if (episodes.length === 0) {
-      const db = getArchiveDb();
+    // TIER 1.2: Check local disk bundle (if local disk has more up-to-date episodes than cloud R2)
+    const localBundlePath = path.resolve(process.cwd(), '..', 'r2_bundles', 'sources', `${idNum}.json`);
+    if (fs.existsSync(localBundlePath)) {
+      try {
+        const localRaw = fs.readFileSync(localBundlePath, 'utf-8');
+        const localData = JSON.parse(localRaw);
+        if (localData && Array.isArray(localData.episodes) && localData.episodes.length > episodes.length) {
+          episodes = localData.episodes;
+          // Auto-sync to R2 so Cloudflare R2 gets the complete dataset
+          if (s3) {
+            s3.send(
+              new PutObjectCommand({
+                Bucket: bucket,
+                Key: `sources/${idNum}.json`,
+                Body: localRaw,
+                ContentType: 'application/json',
+                CacheControl: 'public, max-age=60',
+              })
+            ).catch(() => {});
+          }
+        }
+      } catch {}
+    }
+
+    // Sanitize R2/CDN episodes to strip dead sources and re-normalize native streams (Mail.ru, Uqload, VOE, VK, OK.RU) as Orijinal
+    if (episodes.length > 0) {
+      const dramaRow = getArchiveDb()
+        ?.prepare('SELECT content_type FROM dramas WHERE id = ?')
+        ?.get(idNum) as { content_type?: string } | undefined;
+      const cType = (dramaRow?.content_type || 'dizi').toLowerCase();
+
+      episodes = episodes.map((ep) => {
+        const filtered = (ep.sources || []).filter(
+          (s) => !isDeadSource(s.provider, s.direct_url, s.source_name)
+        );
+        const sorted = [...filtered].sort(
+          (a, b) =>
+            getProviderPriority(a.provider, a.direct_url, cType) -
+            getProviderPriority(b.provider, b.direct_url, cType)
+        );
+
+        let orijinalIdx = 0;
+        const normalized = sorted.map((s) => {
+          const stype = classifyStreamType(s.provider, s.direct_url);
+          const isNative = stype === 'hls' || stype === 'tau' || stype === 'mp4';
+          let cleanName = cleanSourceName(s.source_name);
+          if (isNative) {
+            orijinalIdx++;
+            cleanName = orijinalIdx === 1 ? 'Orijinal' : `Orijinal ${orijinalIdx}`;
+          }
+          return {
+            ...s,
+            source_name: cleanName,
+            fansub: cleanFansubName(s.fansub),
+            stream_type: stype,
+            quality_label: isNative ? '1080p' : s.quality_label || 'HD Embed',
+          };
+        });
+        return {
+          ...ep,
+          sources: normalized,
+        };
+      });
+    }
+
+    // TIER 2: SQLite Archive Database (Fast local fallback or richer dataset)
+    const db = getArchiveDb();
+    let sqliteEpCount = 0;
+    if (db) {
+      try {
+        const countRow = db.prepare('SELECT COUNT(*) as count FROM episodes WHERE drama_id = ?').get(idNum) as { count?: number } | undefined;
+        sqliteEpCount = countRow?.count || 0;
+      } catch {}
+    }
+
+    if (episodes.length === 0 || sqliteEpCount > episodes.length) {
       if (db) {
       const dramaRow = db
         .prepare('SELECT content_type FROM dramas WHERE id = ?')
@@ -238,9 +374,12 @@ export async function GET(
            AND direct_url != 'dead'
            AND direct_url != ''
            AND provider != 'dead'
+           AND provider != 'sibnet'
            AND provider != 'sendvid'
+           AND provider NOT LIKE '%sibnet%'
            AND provider NOT LIKE '%gdrive%'
            AND provider NOT LIKE '%google%'
+           AND direct_url NOT LIKE '%sibnet.ru%'
            AND direct_url NOT LIKE '%sendvid%'
            AND direct_url NOT LIKE '%drive.google.com%'
            AND direct_url NOT LIKE '%docs.google.com%'
@@ -293,9 +432,9 @@ export async function GET(
             const stype = classifyStreamType(s.provider, s.direct_url);
             const prio = getProviderPriority(s.provider, s.direct_url, contentType);
 
-            let cleanName = s.source_name || s.provider || 'Kaynak';
+            let cleanName = cleanSourceName(s.source_name || s.provider || 'Kaynak');
             const isNative = stype === 'hls' || stype === 'tau' || stype === 'mp4' || s.provider === 'diziyou-hls' || s.provider === 'hdfilm-hls' || s.provider === 'asyawatch' || s.direct_url.includes('pichive');
-            let cleanFansub = s.fansub || null;
+            let cleanFansub = cleanFansubName(s.fansub);
 
             if (s.provider === 'asyawatch' || s.site === 'asyawatch' || s.direct_url.includes('pichive')) {
               cleanName = 'Orijinal';
@@ -307,10 +446,6 @@ export async function GET(
               cleanName = 'Orijinal';
             } else if (cleanName.toLowerCase().includes('dizikorea') || cleanName.toLowerCase().includes('diziyou')) {
               cleanName = 'Orijinal';
-            }
-
-            if (cleanFansub && ['asyawatch', 'dizilla', 'webdrama', 'koup', 'varsayılan'].includes(cleanFansub.toLowerCase())) {
-              cleanFansub = null;
             }
 
             return {
@@ -359,19 +494,26 @@ export async function GET(
           react_cry: 0,
           react_shock: 0,
           react_angry: 0,
+          views_count: 0,
           sources: processed,
         };
       });
     }
   }
 
-    // Merge live Supabase episode reactions & scheduled upcoming episodes
+    // Merge live Supabase episode reactions, view counts, scheduled upcoming episodes & intro skip timestamps
     const { data: liveEps } = await supabase
       .from('episodes')
       .select(
-        'season_number, episode_number, episode_name, status, scheduled_release_at, translation_note, react_fire, react_cry, react_shock, react_angry'
+        'season_number, episode_number, episode_name, status, scheduled_release_at, translation_note, react_fire, react_cry, react_shock, react_angry, views_count, intro_start_sec, intro_end_sec'
       )
-      .eq('media_id', idNum);
+      .eq('media_id', idNum)
+      .or(
+        'views_count.gt.0,react_fire.gt.0,react_cry.gt.0,react_shock.gt.0,react_angry.gt.0,status.eq.scheduled,intro_start_sec.not.is.null'
+      )
+      .order('season_number', { ascending: true })
+      .order('episode_number', { ascending: true })
+      .limit(3000);
 
     if (liveEps && liveEps.length > 0) {
       const epMap = new Map(
@@ -385,6 +527,9 @@ export async function GET(
           existing.react_cry = le.react_cry || 0;
           existing.react_shock = le.react_shock || 0;
           existing.react_angry = le.react_angry || 0;
+          existing.views_count = Number(le.views_count || 0);
+          if (le.intro_start_sec != null) existing.intro_start_sec = le.intro_start_sec;
+          if (le.intro_end_sec != null) existing.intro_end_sec = le.intro_end_sec;
           if (le.status === 'scheduled' && existing.sources.length === 0) {
             existing.status = 'scheduled';
             existing.scheduled_release_at = le.scheduled_release_at;
@@ -404,6 +549,9 @@ export async function GET(
             react_cry: le.react_cry || 0,
             react_shock: le.react_shock || 0,
             react_angry: le.react_angry || 0,
+            views_count: Number(le.views_count || 0),
+            intro_start_sec: le.intro_start_sec || null,
+            intro_end_sec: le.intro_end_sec || null,
             sources: [],
           });
         }

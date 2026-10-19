@@ -12,6 +12,11 @@ import {
   Newspaper,
   ChevronLeft,
   ChevronRight,
+  Calendar,
+  MapPin,
+  User,
+  Globe,
+  Activity,
 } from 'lucide-react';
 import {
   supabase,
@@ -20,7 +25,7 @@ import {
   MagazinePost,
   getProxiedImageUrl,
 } from '@/lib/supabase';
-import { cachedQuery, invalidateCache } from '@/lib/cache';
+import { cachedQuery, setCache, invalidateCache } from '@/lib/cache';
 import { useKoUp } from '@/context/KoUpContext';
 import AccordionMediaCard, { requestAccordionHover, preloadMediaImages } from '@/components/AccordionMediaCard';
 import { useDragScroll } from '@/hooks/useDragScroll';
@@ -30,6 +35,49 @@ interface PersonBundle {
   person: PersonItem | null;
   credits: CastMember[];
   coStars: PersonItem[];
+}
+
+function formatBirthDate(birthDateStr?: string | null, deathDateStr?: string | null): { formatted: string; ageText: string } | null {
+  if (!birthDateStr) return null;
+  const d = new Date(birthDateStr);
+  if (isNaN(d.getTime())) return null;
+
+  const formatted = d.toLocaleDateString('tr-TR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+
+  const endDate = deathDateStr ? new Date(deathDateStr) : new Date();
+  let age = endDate.getFullYear() - d.getFullYear();
+  const m = endDate.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && endDate.getDate() < d.getDate())) {
+    age--;
+  }
+
+  const ageText = deathDateStr ? `${age} yaşında vefat etti` : `${age} yaşında`;
+  return { formatted, ageText };
+}
+
+function getCountryFlag(code?: string | null): string {
+  if (!code) return '🌐';
+  const c = code.toUpperCase();
+  if (c === 'KR') return '🇰🇷';
+  if (c === 'JP') return '🇯🇵';
+  if (c === 'CN') return '🇨🇳';
+  if (c === 'TW') return '🇹🇼';
+  if (c === 'TH') return '🇹🇭';
+  if (c === 'TR') return '🇹🇷';
+  if (c === 'US') return '🇺🇸';
+  if (c === 'GB') return '🇬🇧';
+  if (c === 'FR') return '🇫🇷';
+  if (c === 'DE') return '🇩🇪';
+  if (c === 'ES') return '🇪🇸';
+  if (c === 'IT') return '🇮🇹';
+  if (c === 'PH') return '🇵🇭';
+  if (c === 'IN') return '🇮🇳';
+  if (c === 'HK') return '🇭🇰';
+  return '🌐';
 }
 
 export default function PersonDetailPage({
@@ -62,7 +110,7 @@ export default function PersonDetailPage({
       try {
         const bundle = await cachedQuery<PersonBundle>(
           `person_${decoded}`,
-          5_000,
+          86_400_000, // 24-hour cache TTL (fast instant hydration)
           async () => {
             let { data: pData } = await supabase
               .from('people')
@@ -83,14 +131,40 @@ export default function PersonDetailPage({
               return { person: null, credits: [], coStars: [] };
             }
 
-            const item = pData as PersonItem;
+            let item = pData as PersonItem;
 
-            // Fetch cast appearances
-            const { data: castRows } = await supabase
-              .from('media_cast')
-              .select('*, media(*)')
-              .eq('person_id', item.id)
-              .limit(40);
+            const isMissingDetails =
+              !item.gender ||
+              !item.birth_date ||
+              !item.place_of_birth ||
+              !item.bio_tr ||
+              item.bio_tr.includes('KoUp arşivinde') ||
+              item.bio_tr.includes('önde gelen oyuncularından biridir') ||
+              item.bio_tr.length < 40;
+
+            // Fetch cast appearances and enriched bio details in PARALLEL!
+            const [castRowsRes, bioRes] = await Promise.all([
+              supabase
+                .from('media_cast')
+                .select('*, media(*)')
+                .eq('person_id', item.id)
+                .limit(40),
+              isMissingDetails
+                ? fetch(
+                    `/api/person/bio?id=${item.id}&name=${encodeURIComponent(item.name)}&type=${item.person_type || 'actor'}`
+                  )
+                    .then((r) => r.json())
+                    .catch(() => null)
+                : Promise.resolve(null),
+            ]);
+
+            if (bioRes?.success && bioRes?.person) {
+              item = { ...item, ...bioRes.person };
+            } else if (bioRes?.success && bioRes?.bio_tr) {
+              item = { ...item, bio_tr: bioRes.bio_tr };
+            }
+
+            const castRows = castRowsRes?.data;
 
             const validCredits = ((castRows as CastMember[]) || [])
               .filter((c) => c.media)
@@ -155,28 +229,43 @@ export default function PersonDetailPage({
     }
   }, [person?.name]);
 
-  // Fetch enriched / translated biography from TMDB & AniList if current bio is generic or missing
+  // Fetch enriched / translated biography & complete metadata (gender, birth, country, etc.)
   useEffect(() => {
     if (!person?.name) return;
-    const isGeneric =
+    const isMissingDetails =
+      !person.gender ||
+      !person.birth_date ||
+      !person.place_of_birth ||
       !person.bio_tr ||
       person.bio_tr.includes('KoUp arşivinde') ||
       person.bio_tr.includes('önde gelen oyuncularından biridir') ||
       person.bio_tr.length < 40;
 
-    if (isGeneric) {
+    if (isMissingDetails) {
       fetch(
         `/api/person/bio?id=${person.id}&name=${encodeURIComponent(person.name)}&type=${person.person_type || 'actor'}`
       )
         .then((r) => r.json())
         .then((data) => {
-          if (data?.success && data?.bio_tr) {
-            setPerson((prev) => (prev ? { ...prev, bio_tr: data.bio_tr } : prev));
+          if (data?.success && data?.person) {
+            setPerson((prev) => {
+              if (!prev) return prev;
+              const merged = { ...prev, ...data.person };
+              setCache(`person_${slug}`, { person: merged, credits, coStars }, 86_400_000);
+              return merged;
+            });
+          } else if (data?.success && data?.bio_tr) {
+            setPerson((prev) => {
+              if (!prev) return prev;
+              const merged = { ...prev, bio_tr: data.bio_tr };
+              setCache(`person_${slug}`, { person: merged, credits, coStars }, 86_400_000);
+              return merged;
+            });
           }
         })
         .catch(() => {});
     }
-  }, [person?.id, person?.name, person?.person_type, person?.bio_tr]);
+  }, [person?.id, person?.name, person?.person_type, person?.birth_date, person?.gender]);
 
   // Fetch related AsyaMag magazine news & gossip for actor
   useEffect(() => {
@@ -300,13 +389,92 @@ export default function PersonDetailPage({
               `${person.name}, KoUp arşivindeki ${credits.length} yapımda yer almaktadır.`}
           </p>
 
+          {/* DETAILED ACTOR / CHARACTER METADATA SPECS BAR */}
+          {(person.gender || person.birth_date || person.place_of_birth || person.country_code || (person.also_known_as && person.also_known_as.length > 0) || person.blood_type) && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 pt-1 max-w-3xl text-left">
+              {person.gender && (
+                <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
+                  <User className="w-4 h-4 text-sky-400 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Cinsiyet</div>
+                    <div className="text-xs font-semibold text-white/90 truncate">{person.gender}</div>
+                  </div>
+                </div>
+              )}
+
+              {formatBirthDate(person.birth_date, person.death_date) && (
+                <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
+                  <Calendar className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Doğum & Yaş</div>
+                    <div className="text-xs font-semibold text-white/90">
+                      <div>{formatBirthDate(person.birth_date, person.death_date)?.formatted}</div>
+                      <span className="text-[10px] text-emerald-400 font-mono font-bold">
+                        {formatBirthDate(person.birth_date, person.death_date)?.ageText}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {person.death_date && (
+                <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
+                  <Activity className="w-4 h-4 text-rose-400 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Vefat Tarihi</div>
+                    <div className="text-xs font-semibold text-rose-300">
+                      {new Date(person.death_date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {(person.place_of_birth || person.country_code) && (
+                <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
+                  <MapPin className="w-4 h-4 text-amber-400 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Ülke / Doğum Yeri</div>
+                    <div className="text-xs font-semibold text-white/90 flex items-center gap-1.5 truncate">
+                      <span>{getCountryFlag(person.country_code)}</span>
+                      <span className="truncate">
+                        {person.place_of_birth || (person.country_code === 'KR' ? 'Güney Kore' : person.country_code === 'JP' ? 'Japonya' : person.country_code === 'CN' ? 'Çin' : person.country_code === 'TH' ? 'Tayland' : person.country_code)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {person.blood_type && (
+                <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
+                  <Activity className="w-4 h-4 text-red-400 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Kan Grubu</div>
+                    <div className="text-xs font-semibold text-white/90">{person.blood_type}</div>
+                  </div>
+                </div>
+              )}
+
+              {person.also_known_as && person.also_known_as.length > 0 && (
+                <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
+                  <Globe className="w-4 h-4 text-purple-400 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Diğer İsimleri</div>
+                    <div className="text-xs font-semibold text-white/80 truncate">
+                      {person.also_known_as.slice(0, 2).join(', ')}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Action Buttons: Favorite (Heart), Follow (Bell) */}
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 pt-2">
             <button
               onClick={handleToggleFavorite}
               className={`flex items-center gap-2 px-6 py-3 rounded-full text-xs font-bold transition-all cursor-pointer ${
                 isFav
-                  ? 'bg-pink-500 text-white shadow-[0_0_25px_rgba(236,72,153,0.5)] active:scale-[0.98]'
+                  ? 'bg-pink-500 hover:bg-pink-400 text-white shadow-[0_0_20px_rgba(236,72,153,0.45)] hover:shadow-[0_0_30px_rgba(236,72,153,0.7)] active:scale-[0.98]'
                   : 'bg-white text-black hover:bg-white/90 active:scale-[0.98] transform-gpu backface-hidden'
               }`}
             >
@@ -318,13 +486,13 @@ export default function PersonDetailPage({
               onClick={() => togglePersonFollow(person.id, person.name)}
               className={`flex items-center gap-2 px-5 py-3 rounded-full text-xs font-bold border transition-all cursor-pointer ${
                 isFollowed
-                  ? 'bg-sky-400/20 border-sky-400 text-sky-300'
+                  ? 'bg-sky-400/20 hover:bg-sky-400/35 border-sky-400 hover:border-sky-300 text-sky-300 hover:text-sky-200 shadow-[0_0_15px_rgba(56,189,248,0.3)] hover:shadow-[0_0_25px_rgba(56,189,248,0.5)]'
                   : 'apple-glass-pill text-white hover:bg-white/15'
               }`}
             >
               <Bell className="w-4 h-4" />
               <span>
-                {isFollowed ? 'Takip Ediliyor (Bildirim Açık)' : '+ Takip Et'}
+                {isFollowed ? 'Takip Ediliyor (Bildirim Açık)' : 'Takip Et'}
               </span>
             </button>
           </div>
@@ -404,15 +572,17 @@ export default function PersonDetailPage({
               <Link
                 key={peer.id}
                 href={`/oyuncu/${peer.slug}`}
-                className="koup-projection-card rounded-2xl p-3 bg-[#121216] border border-white/[0.08] text-center group"
+                className="p-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/20 transition-all flex flex-col items-center text-center group relative cursor-pointer"
               >
-                <img
-                  src={getProxiedImageUrl(peer.image_url, peer.name, null, 'w500', 'person')}
-                  alt={peer.name}
-                  loading="lazy"
-                  className="w-16 h-16 rounded-full object-cover mx-auto mb-2 border border-white/15 group-hover:border-sky-400"
-                />
-                <div className="text-xs font-bold text-white truncate">
+                <div className="w-16 h-16 rounded-full overflow-hidden border border-white/15 group-hover:border-white/30 transition-colors mb-2 shadow-md shrink-0">
+                  <img
+                    src={getProxiedImageUrl(peer.image_url, peer.name, null, 'w500', 'person')}
+                    alt={peer.name}
+                    loading="lazy"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="text-xs font-bold text-white line-clamp-1 group-hover:text-sky-300 transition-colors">
                   {peer.name}
                 </div>
                 <div className="text-[10px] font-mono text-white/65 mt-0.5 flex items-center justify-center gap-1">
@@ -465,7 +635,7 @@ export default function PersonDetailPage({
                       src={getProxiedImageUrl(post.featured_image)}
                       alt={post.title}
                       loading="lazy"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      className="w-full h-full object-cover"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center bg-white/[0.04]">

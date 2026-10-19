@@ -24,6 +24,7 @@ import {
   getEpisodeProgressStats,
   cleanMediaTitle,
 } from '@/lib/supabase';
+import Pagination from '@/components/Pagination';
 
 type HistoryFilter = 'ALL' | 'in_progress' | 'completed';
 
@@ -38,6 +39,8 @@ export default function WatchHistoryPage() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<HistoryFilter>('ALL');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 24;
 
   // Collect all history items from progressMap that have media or progress
   const allHistoryItems = useMemo(() => {
@@ -77,6 +80,12 @@ export default function WatchHistoryPage() {
     });
   }, [allHistoryItems, filterType, searchQuery]);
 
+  // Paginated slice for current page
+  const paginatedHistory = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredHistory.slice(start, start + PAGE_SIZE);
+  }, [filteredHistory, currentPage]);
+
   // If user is not logged in
   if (!user) {
     return (
@@ -115,10 +124,6 @@ export default function WatchHistoryPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-white/[0.08]">
         <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-400/20 text-sky-400 text-xs font-mono font-semibold">
-            <Clock className="w-3.5 h-3.5" />
-            <span>Bölüm İlerlemesi & Geçmiş</span>
-          </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
             İzleme Geçmişim
           </h1>
@@ -154,6 +159,7 @@ export default function WatchHistoryPage() {
                 onClick={() => {
                   triggerSound('click');
                   setFilterType(flt.id);
+                  setCurrentPage(1);
                 }}
                 className={`relative px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors duration-200 cursor-pointer shrink-0 ${
                   active
@@ -180,13 +186,19 @@ export default function WatchHistoryPage() {
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
             placeholder="Geçmişte yapım ara..."
             className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full font-medium"
           />
           {searchQuery && (
             <button
-              onClick={() => setSearchQuery('')}
+              onClick={() => {
+                setSearchQuery('');
+                setCurrentPage(1);
+              }}
               className="text-white/40 hover:text-white transition-colors cursor-pointer"
               aria-label="Aramayı temizle"
             >
@@ -223,7 +235,7 @@ export default function WatchHistoryPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-          {filteredHistory.map((item, idx) => {
+          {paginatedHistory.map((item, idx) => {
             const media = item.media;
             const stats = getEpisodeProgressStats(item, media);
             const barPct = Math.max(
@@ -244,22 +256,22 @@ export default function WatchHistoryPage() {
                 <Link
                   href={playUrl}
                   onClick={() => triggerSound('click')}
-                  className="relative w-24 h-34 sm:w-28 sm:h-38 rounded-2xl overflow-hidden bg-black/60 shrink-0 border border-white/10 group-hover:border-sky-400/50 transition-colors"
+                  className="relative w-24 h-34 sm:w-28 sm:h-38 rounded-2xl overflow-hidden bg-black/60 shrink-0 border border-white/10 group-hover:border-white/25 transition-colors isolate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                 >
                   {media?.cover_image ? (
                     <img
                       src={getProxiedImageUrl(media.cover_image, media.title)}
                       alt={media.title || 'Kapak'}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      className="w-full h-full object-cover transition-transform duration-200 ease-out transform-gpu will-change-transform backface-hidden"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-white/30">
                       <Film className="w-8 h-8" />
                     </div>
                   )}
-                  <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-                    <div className="w-10 h-10 rounded-full bg-black/70 backdrop-blur-md border border-white/20 flex items-center justify-center text-white group-hover:scale-110 group-hover:bg-sky-500 group-hover:text-black group-hover:border-transparent transition-all shadow-lg">
-                      <Play className="w-4 h-4 fill-current ml-0.5" />
+                  <div className="absolute inset-0 bg-black/35 flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200 ease-out pointer-events-none">
+                    <div className="w-10 h-10 rounded-full bg-black/75 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-xl transition-all duration-200 ease-out">
+                      <Play className="w-4 h-4 fill-white text-white ml-0.5" />
                     </div>
                   </div>
                 </Link>
@@ -269,16 +281,24 @@ export default function WatchHistoryPage() {
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-md bg-white/[0.06] text-white/70">
-                        {media?.content_type === 'anime' ? 'ANİME' : 'DİZİ'}
+                        {stats.isFilm
+                          ? 'FİLM'
+                          : media?.content_type === 'anime'
+                          ? 'ANİME'
+                          : 'DİZİ'}
                       </span>
-                      {stats.isAllWatched || item.status === 'completed' ? (
+                      {stats.isAllWatched ? (
                         <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1 font-semibold">
                           <CheckCircle2 className="w-3 h-3" />
                           <span>Tamamlandı</span>
                         </span>
                       ) : (
                         <span className="text-[10px] font-mono text-sky-400 font-semibold">
-                          {stats.watchedCount}/{stats.totalEpisodes} Bölüm
+                          {stats.isFilm
+                            ? stats.resumePos > 60
+                              ? `${Math.floor(stats.resumePos / 60)}/${Math.max(1, Math.floor(stats.resumeDur / 60))} Dk`
+                              : 'İzleniyor'
+                            : `${stats.watchedCount}/${stats.totalEpisodes} Bölüm`}
                         </span>
                       )}
                     </div>
@@ -292,8 +312,12 @@ export default function WatchHistoryPage() {
                     </Link>
 
                     <div className="text-xs text-sky-400 font-mono font-semibold mt-0.5">
-                      {stats.isAllWatched || item.status === 'completed'
-                        ? `${stats.season}. Sezon · Tüm Bölümler İzlendi`
+                      {stats.isAllWatched
+                        ? stats.isFilm
+                          ? 'Film Tamamlandı'
+                          : `${stats.season}. Sezon · Tüm Bölümler İzlendi`
+                        : stats.isFilm
+                        ? 'Kaldığın Yerden Devam Et'
                         : `Sıradaki: ${stats.season}. Sezon · ${stats.nextEpisode}. Bölüm`}
                     </div>
                   </div>
@@ -302,7 +326,13 @@ export default function WatchHistoryPage() {
                     {/* Episode Progress Bar */}
                     <div className="space-y-1">
                       <div className="flex justify-between text-[10px] font-mono text-white/50">
-                        <span>{stats.watchedCount} Bölüm İzlendi</span>
+                        <span>
+                          {stats.isFilm
+                            ? stats.isAllWatched
+                              ? 'Film İzlendi'
+                              : `${Math.floor(stats.resumePos / 60)} Dk İzlendi`
+                            : `${stats.watchedCount} Bölüm İzlendi`}
+                        </span>
                         <span>%{stats.progressPercent}</span>
                       </div>
                       <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
@@ -321,8 +351,10 @@ export default function WatchHistoryPage() {
                     >
                       <Play className="w-3 h-3 fill-black" />
                       <span>
-                        {stats.isAllWatched || item.status === 'completed'
+                        {stats.isAllWatched
                           ? 'Tekrar İzle'
+                          : stats.isFilm
+                          ? 'Filme Devam Et'
                           : `${stats.nextEpisode}. Bölümden Devam Et`}
                       </span>
                     </Link>
@@ -332,6 +364,18 @@ export default function WatchHistoryPage() {
             );
           })}
         </div>
+      )}
+
+      {/* PAGINATION DECK (Apple TV+ Cinema Glass Design) */}
+      {filteredHistory.length > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalCount={filteredHistory.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setCurrentPage}
+          itemLabel="izleme kaydından"
+          scrollToOffset={240}
+        />
       )}
     </div>
   );

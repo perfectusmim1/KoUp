@@ -125,7 +125,7 @@ export default function ConfirmModal({
                 type="button"
                 disabled={isLoading}
                 onClick={onClose}
-                className="flex-1 py-3 px-4 rounded-xl bg-white/[0.07] hover:bg-white/12 text-white/80 hover:text-white text-xs sm:text-sm font-semibold transition-all border border-white/10 active:scale-95 cursor-pointer disabled:opacity-50"
+                className="flex-1 py-3 px-4 rounded-xl bg-white/[0.07] hover:bg-white/12 text-white/80 hover:text-white text-xs sm:text-sm font-semibold transition-all border border-white/10 cursor-pointer disabled:opacity-50"
               >
                 {cancelText}
               </button>
@@ -134,7 +134,7 @@ export default function ConfirmModal({
                 type="button"
                 disabled={isLoading}
                 onClick={onConfirm}
-                className={`flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 ${
+                className={`flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 ${
                   isDestructive
                     ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-[0_0_24px_rgba(244,63,94,0.4)] hover:shadow-[0_0_30px_rgba(244,63,94,0.6)]'
                     : 'bg-[#2997ff] hover:bg-sky-400 text-white shadow-[0_0_24px_rgba(41,151,255,0.4)]'

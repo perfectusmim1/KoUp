@@ -19,7 +19,7 @@ import unicodedata
 from bs4 import BeautifulSoup
 from database import get_connection, init_db
 from resolve_sources import identify_provider
-from multisite import safe_commit, done_urls, mark_done, _retry
+from multisite import safe_commit, done_urls, mark_done, _retry, parse_season_and_episode, clean_episode_title
 
 BASE = 'https://dizikorea3.com'
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
@@ -90,12 +90,11 @@ def parse_drama(html, url, slug):
         if full in seen:
             continue
         seen.add(full)
-        ms = re.search(r'sezon-(\d+)', h)
-        me = re.search(r'bolum-(\d+)', h)
+        s_num, e_num = parse_season_and_episode(h, a.get_text(strip=True))
         episodes.append({
-            'season': int(ms.group(1)) if ms else 1,
-            'number': int(me.group(1)) if me else 1,
-            'name': f"{me.group(1)}. Bölüm" if me else a.get_text(strip=True)[:60],
+            'season': s_num,
+            'number': e_num,
+            'name': clean_episode_title(a.get_text(strip=True), s_num, e_num),
             'url': full,
         })
     return {'slug': slug, 'title': title, 'year': year, 'country': country,

@@ -26,7 +26,7 @@ import {
   SIGNIFICANT_DELTA_SEC,
 } from '@/lib/progressSync';
 import { playNotificationChime, SoundTone } from '@/lib/sound';
-import { invalidateCache } from '@/lib/cache';
+import { invalidateCache, invalidateMediaCache, updateCachedMedia } from '@/lib/cache';
 import { getClientFingerprint } from '@/lib/fingerprint';
 import { registerOrHeartbeatDevice } from '@/lib/deviceTracker';
 import ConfirmModal from '@/components/ConfirmModal';
@@ -65,6 +65,9 @@ interface KoUpContextValue {
   personFavorites: number[];
   followedMediaIds: number[];
   followedPersonIds: number[];
+  likedMagazinePostIds: number[];
+  toggleMagazineLike: (postId: number) => Promise<boolean>;
+  isMagazinePostLiked: (postId: number) => boolean;
   notifications: ToastNotification[];
   activeToast: ToastNotification | null;
   soundEnabled: boolean;
@@ -186,6 +189,8 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
   const [favPersonIds, setFavPersonIds] = useState<number[]>([]);
   const [followedMediaIds, setFollowedMediaIds] = useState<number[]>([]);
   const [followedPersonIds, setFollowedPersonIds] = useState<number[]>([]);
+  const [likedMagazinePostIds, setLikedMagazinePostIds] = useState<number[]>([]);
+  const inFlightMagLikesRef = useRef<Set<number>>(new Set());
   const [notifications, setNotifications] = useState<ToastNotification[]>([]);
   const [activeToast, setActiveToast] = useState<ToastNotification | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -386,6 +391,8 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           role: 'user', // Default unprivileged
           is_private: false,
           hide_watch_history: false,
+          hide_library: false,
+          hide_comments: false,
           notification_settings: DEFAULT_NOTIFICATION_SETTINGS,
           stats_episodes_watched: 0,
           stats_series_completed: 0,
@@ -459,20 +466,39 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
                 .in('title', ['Yanıtınız Gönderildi', 'Yorumun Yayınlandı', 'Yanıtın Gönderildi']);
 
               setNotifications((prev) => {
-                const map = new Map<string, ToastNotification>();
-                formatted.forEach((n) => map.set(n.id, n));
+                const mapById = new Map<string, ToastNotification>();
+                const seenContent = new Set<string>();
+                const result: ToastNotification[] = [];
+
+                // 1. Process formatted (from DB, latest first)
+                formatted.forEach((n) => {
+                  const contentKey = `${(n.title || '').trim()}::${(n.body || '').trim()}`;
+                  if (!mapById.has(n.id) && !seenContent.has(contentKey)) {
+                    mapById.set(n.id, n);
+                    seenContent.add(contentKey);
+                    result.push(n);
+                  }
+                });
+
+                // 2. Process prev (from local cache / optimistic)
                 prev.forEach((n) => {
-                  const t = n.title.toLowerCase();
-                  const b = n.body.toLowerCase();
+                  const t = (n.title || '').toLowerCase();
+                  const b = (n.body || '').toLowerCase();
                   const isJunk =
                     t.includes('yorumun yayınlandı') ||
                     t.includes('yanıtınız gönderildi') ||
                     t.includes('yanıtın gönderildi') ||
                     b.includes('tartışmasına katkın kaydedildi') ||
                     b.includes('yorumuna yanıtınız eklendi');
-                  if (!isJunk && !map.has(n.id)) map.set(n.id, n);
+                  const contentKey = `${(n.title || '').trim()}::${(n.body || '').trim()}`;
+                  if (!isJunk && !mapById.has(n.id) && !seenContent.has(contentKey)) {
+                    mapById.set(n.id, n);
+                    seenContent.add(contentKey);
+                    result.push(n);
+                  }
                 });
-                const merged = Array.from(map.values()).slice(0, 50);
+
+                const merged = result.slice(0, 50);
                 try {
                   localStorage.setItem('koup_notifs_v1', JSON.stringify(merged));
                 } catch {}
@@ -492,6 +518,23 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
               setFavPersonIds(ids);
               try {
                 localStorage.setItem('koup_fav_people_v1', JSON.stringify(ids));
+              } catch {}
+            }
+          });
+
+        // Fetch authenticated user's magazine likes fresh from Supabase
+        void supabase
+          .from('magazine_likes')
+          .select('post_id')
+          .eq('user_id', activeUserId)
+          .then(({ data: dbMagLikes }) => {
+            if (dbMagLikes && Array.isArray(dbMagLikes)) {
+              const ids = dbMagLikes
+                .map((r: any) => Number(r.post_id))
+                .filter((id: number) => !isNaN(id) && id > 0);
+              setLikedMagazinePostIds(ids);
+              try {
+                localStorage.setItem('koup_mag_likes_v1', JSON.stringify(ids));
               } catch {}
             }
           });
@@ -544,7 +587,11 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           .from('user_follows')
           .select('target_type, target_id')
           .eq('user_id', activeUserId)
-          .then(({ data: dbFollows }) => {
+          .then(({ data: dbFollows, error: followsErr }) => {
+            if (followsErr) {
+              console.warn('[KoUp] user_follows query warning:', followsErr.message);
+              return;
+            }
             if (dbFollows && Array.isArray(dbFollows)) {
               const mIds: number[] = [];
               const pIds: number[] = [];
@@ -553,8 +600,8 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
                 if (row.target_type === 'media') mIds.push(numId);
                 else if (row.target_type === 'person') pIds.push(numId);
               });
-              setFollowedMediaIds(mIds);
-              setFollowedPersonIds(pIds);
+              setFollowedMediaIds((prev) => Array.from(new Set([...prev, ...mIds])));
+              setFollowedPersonIds((prev) => Array.from(new Set([...prev, ...pIds])));
               try {
                 localStorage.setItem('koup_fol_media_v1', JSON.stringify(mIds));
                 localStorage.setItem('koup_fol_people_v1', JSON.stringify(pIds));
@@ -667,6 +714,12 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
             if (Array.isArray(parsedFolP)) setFollowedPersonIds(parsedFolP);
           }
 
+          const savedMagLikes = localStorage.getItem('koup_mag_likes_v1');
+          if (savedMagLikes) {
+            const parsedMagLikes = JSON.parse(savedMagLikes);
+            if (Array.isArray(parsedMagLikes)) setLikedMagazinePostIds(parsedMagLikes);
+          }
+
           // Only load notifications if user is authenticated!
           const savedNotifs = localStorage.getItem('koup_notifs_v1');
           if (savedNotifs) {
@@ -708,10 +761,12 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           localStorage.removeItem('koup_fav_people_v1');
           localStorage.removeItem('koup_fol_media_v1');
           localStorage.removeItem('koup_fol_people_v1');
+          localStorage.removeItem('koup_mag_likes_v1');
           setUser(null);
           setFavPersonIds([]);
           setFollowedMediaIds([]);
           setFollowedPersonIds([]);
+          setLikedMagazinePostIds([]);
           setNotifications([]);
         }
       } else {
@@ -719,6 +774,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         setFavPersonIds([]);
         setFollowedMediaIds([]);
         setFollowedPersonIds([]);
+        setLikedMagazinePostIds([]);
         setNotifications([]);
       }
     } catch {
@@ -783,6 +839,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         setFavPersonIds([]);
         setFollowedMediaIds([]);
         setFollowedPersonIds([]);
+        setLikedMagazinePostIds([]);
         setNotifications([]);
         try {
           localStorage.removeItem('koup_profile_v1');
@@ -791,6 +848,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           localStorage.removeItem('koup_fav_people_v1');
           localStorage.removeItem('koup_fol_media_v1');
           localStorage.removeItem('koup_fol_people_v1');
+          localStorage.removeItem('koup_mag_likes_v1');
         } catch {}
         invalidateCache();
         setAuthLoading(false);
@@ -806,6 +864,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         setFavPersonIds([]);
         setFollowedMediaIds([]);
         setFollowedPersonIds([]);
+        setLikedMagazinePostIds([]);
         setNotifications([]);
         if (isMounted) setAuthLoading(false);
       }
@@ -828,6 +887,88 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     };
   }, [syncUserProfile]);
 
+  // Listen to realtime user notifications from Supabase
+  useEffect(() => {
+    if (!user?.id) return;
+    const channel = supabase
+      .channel(`realtime:user_notifications:${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'user_notifications',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          const row = payload.new as any;
+          if (!row) return;
+
+          let mappedType: ToastNotification['type'] = 'system';
+          if (row.type === 'comment_reply' || row.type === 'reply') mappedType = 'reply';
+          else if (row.type === 'new_episode' || row.type === 'episode') mappedType = 'episode';
+          else if (row.type === 'actor_update' || row.type === 'actor') mappedType = 'actor';
+
+          const item: ToastNotification = {
+            id: String(row.id),
+            title: row.title || 'Bildirim',
+            body: row.body || '',
+            type: mappedType,
+            linkUrl: row.link_url || undefined,
+            imageUrl: row.image_url || undefined,
+            createdAt: 'Şimdi',
+            isRead: Boolean(row.is_read),
+          };
+
+          setNotifications((prev) => {
+            const contentKey = `${(item.title || '').trim()}::${(item.body || '').trim()}`;
+            // If already present by id
+            if (prev.some((n) => n.id === item.id)) return prev;
+
+            // Check if there is an optimistic temporary item to replace
+            const tempIndex = prev.findIndex(
+              (n) => n.id.startsWith('notif-') && `${(n.title || '').trim()}::${(n.body || '').trim()}` === contentKey
+            );
+
+            let next: ToastNotification[];
+            if (tempIndex >= 0) {
+              next = [...prev];
+              next[tempIndex] = item;
+            } else {
+              // If already present by title & body, skip duplicate
+              if (prev.some((n) => `${(n.title || '').trim()}::${(n.body || '').trim()}` === contentKey)) {
+                return prev;
+              }
+              next = [item, ...prev].slice(0, 50);
+            }
+
+            try {
+              localStorage.setItem('koup_notifs_v1', JSON.stringify(next));
+            } catch {}
+            return next;
+          });
+
+          setActiveToast(item);
+          const settings = user.notification_settings || DEFAULT_NOTIFICATION_SETTINGS;
+          if (settings.sound_enabled) {
+            playNotificationChime(
+              (settings.sound_tone as SoundTone) || 'apple_glass',
+              settings.sound_volume ?? 0.7,
+              settings.mute_during_fullscreen ?? true
+            );
+          }
+          if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+          toastTimerRef.current = setTimeout(() => {
+            setActiveToast((curr) => (curr?.id === item.id ? null : curr));
+          }, 4500);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, user?.notification_settings]);
 
   // Push notification with guest guard, spam elimination, and 4 allowed notification types
   const pushNotification = useCallback(
@@ -933,6 +1074,10 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       };
 
       setNotifications((prev) => {
+        const contentKey = `${title.trim()}::${body.trim()}`;
+        if (prev.some((n) => `${(n.title || '').trim()}::${(n.body || '').trim()}` === contentKey)) {
+          return prev;
+        }
         const filtered = prev.filter((n) => n.id !== item.id);
         const next = [item, ...filtered].slice(0, 50);
         try {
@@ -1057,8 +1202,12 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         };
 
         const watchedSet = new Set(existing.watched_episodes || []);
-        if (markCompletedEpisode || (roundedDur > 0 && roundedPos / roundedDur >= 0.85)) {
+        const isFilm = media.content_type === 'film' || media.content_type === 'movie';
+        const isCompletedNow = markCompletedEpisode || (roundedDur > 0 && roundedPos / roundedDur >= 0.85);
+        if (isCompletedNow) {
           watchedSet.add(episodeNum);
+        } else if (isFilm && roundedPos > 15 && roundedDur > 0 && roundedPos / roundedDur < 0.85) {
+          watchedSet.delete(episodeNum);
         }
 
         const watchedArr = Array.from(watchedSet).sort((a, b) => a - b);
@@ -1069,7 +1218,6 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         let nextResumePos = roundedPos;
 
         // If this episode was just completed (or reached > 85%), advance the series-level pointer to the next episode
-        const isCompletedNow = markCompletedEpisode || (roundedDur > 0 && roundedPos / roundedDur >= 0.85);
         if (isCompletedNow) {
           const computedNext =
             media.episode_count && media.episode_count > 0
@@ -1116,7 +1264,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           resume_duration_sec: roundedDur,
           episode_positions: newEpisodePositions,
           updated_at: new Date().toISOString(),
-          media: existing.media || media,
+          media: media || existing.media,
         };
 
         const next = { ...prev, [media.id]: updated };
@@ -1402,6 +1550,25 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      // Synchronously invalidate and update caches so F5 never serves stale pre-vote data
+      try {
+        if (media.slug) {
+          invalidateMediaCache(media.slug);
+          invalidateCache(`media_detail_${media.slug}`);
+          invalidateCache(`media_stub_${media.slug}`);
+        }
+        if (media.id) {
+          invalidateMediaCache(media.id);
+          invalidateCache(`media_detail_${media.id}`);
+          invalidateCache(`media_${media.id}`);
+        }
+        invalidateCache('home_');
+        invalidateCache('catalog_');
+        invalidateCache('top_rated_');
+        invalidateCache('explore_');
+        updateCachedMedia(media);
+      } catch {}
+
       setProgressMap((prev) => {
         const existing = prev[media.id];
         const updated: UserMediaProgress = {
@@ -1564,23 +1731,18 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('koup_fol_media_v1', JSON.stringify(next));
       } catch {}
 
-      // Persist to user_follows in Supabase
-      if (exists) {
-        void supabase
-          .from('user_follows')
-          .delete()
-          .eq('user_id', user.id)
-          .eq('target_type', 'media')
-          .eq('target_id', media.id);
-      } else {
-        void supabase
-          .from('user_follows')
-          .insert({
-            user_id: user.id,
-            target_type: 'media',
-            target_id: media.id,
-          });
-      }
+      // Persist to user_follows in Supabase via server-side API route
+      void fetch('/api/follow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id,
+          target_type: 'media',
+          target_id: media.id,
+        }),
+      }).catch((err) => {
+        console.warn('[KoUp] /api/follow request failed:', err);
+      });
 
       return next;
     });
@@ -1659,27 +1821,104 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('koup_fol_people_v1', JSON.stringify(next));
       } catch {}
 
-      // Persist to user_follows in Supabase
-      if (exists) {
-        void supabase
-          .from('user_follows')
-          .delete()
-          .eq('user_id', user.id)
-          .eq('target_type', 'person')
-          .eq('target_id', personId);
-      } else {
-        void supabase
-          .from('user_follows')
-          .insert({
-            user_id: user.id,
-            target_type: 'person',
-            target_id: personId,
-          });
-      }
+      // Persist to user_follows in Supabase via server-side API route
+      void fetch('/api/follow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id,
+          target_type: 'person',
+          target_id: personId,
+        }),
+      }).catch((err) => {
+        console.warn('[KoUp] /api/follow request failed:', err);
+      });
 
       return next;
     });
   }, [user, isSoftBanned, openAuthModal, pushNotification]);
+
+  const isMagazinePostLiked = useCallback(
+    (postId: number): boolean => {
+      return likedMagazinePostIds.includes(postId);
+    },
+    [likedMagazinePostIds]
+  );
+
+  const triggerSound = useCallback((_kind?: string) => {
+    return;
+  }, []);
+
+  const toggleMagazineLike = useCallback(
+    async (postId: number): Promise<boolean> => {
+      if (!user) {
+        openAuthModal('Haberi beğenebilmek için lütfen giriş yapın.');
+        return false;
+      }
+      if (isSoftBanned) {
+        pushNotification(
+          'Hesap Askıda',
+          'Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır. İçerik etkileşimleri devre dışıdır.',
+          'info'
+        );
+        return false;
+      }
+      // Concurrency lock: prevent rapid spam-clicking from creating race conditions
+      if (inFlightMagLikesRef.current.has(postId)) {
+        return likedMagazinePostIds.includes(postId);
+      }
+      inFlightMagLikesRef.current.add(postId);
+
+      const wasLiked = likedMagazinePostIds.includes(postId);
+      const willLike = !wasLiked;
+      const nextIds = willLike
+        ? Array.from(new Set([...likedMagazinePostIds, postId]))
+        : likedMagazinePostIds.filter((id) => id !== postId);
+
+      setLikedMagazinePostIds(nextIds);
+      try {
+        localStorage.setItem('koup_mag_likes_v1', JSON.stringify(nextIds));
+      } catch {}
+
+      try {
+        playNotificationChime('apple_glass');
+      } catch {}
+      pushNotification(
+        willLike ? 'Haber Beğenildi' : 'Beğeni Kaldırıldı',
+        willLike ? 'Bu haber beğenilerinize eklendi.' : 'Haber beğenilerinizden kaldırıldı.',
+        'info'
+      );
+
+      try {
+        if (willLike) {
+          const { error } = await supabase
+            .from('magazine_likes')
+            .upsert({ user_id: user.id, post_id: postId }, { onConflict: 'user_id,post_id' });
+          if (error) throw error;
+        } else {
+          const { error } = await supabase
+            .from('magazine_likes')
+            .delete()
+            .eq('user_id', user.id)
+            .eq('post_id', postId);
+          if (error) throw error;
+        }
+        invalidateCache('magazin_');
+      } catch (err) {
+        console.error('Failed to persist magazine like in Supabase:', err);
+        setLikedMagazinePostIds(likedMagazinePostIds);
+        try {
+          localStorage.setItem('koup_mag_likes_v1', JSON.stringify(likedMagazinePostIds));
+        } catch {}
+        return wasLiked;
+      } finally {
+        inFlightMagLikesRef.current.delete(postId);
+      }
+
+      return willLike;
+    },
+    [user, isSoftBanned, likedMagazinePostIds, openAuthModal, pushNotification]
+  );
 
   const markNotificationRead = useCallback((id: string) => {
     setNotifications((prev) => {
@@ -1842,6 +2081,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     setFavPersonIds([]);
     setFollowedMediaIds([]);
     setFollowedPersonIds([]);
+    setLikedMagazinePostIds([]);
     setNotifications([]);
     try {
       localStorage.removeItem('koup_profile_v1');
@@ -1850,6 +2090,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('koup_fav_people_v1');
       localStorage.removeItem('koup_fol_media_v1');
       localStorage.removeItem('koup_fol_people_v1');
+      localStorage.removeItem('koup_mag_likes_v1');
     } catch {}
     invalidateCache();
   }, []);
@@ -1872,13 +2113,18 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const triggerSound = useCallback((_kind?: string) => {
-    return;
-  }, []);
-
   const continueWatchingList = useMemo(() => {
     return Object.values(progressMap)
-      .filter((p) => p.status === 'watching' && p.media)
+      .filter((p) => {
+        if (!p.media) return false;
+        if (p.status === 'watching') return true;
+        const pos = p.resume_position_sec || 0;
+        const dur = p.resume_duration_sec || 3600;
+        if (pos > 15 && dur > 0 && pos / dur < 0.85 && p.status !== 'dropped') {
+          return true;
+        }
+        return false;
+      })
       .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
       .slice(0, 30);
   }, [progressMap]);
@@ -2106,6 +2352,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       personFavorites: favPersonIds,
       followedMediaIds,
       followedPersonIds,
+      likedMagazinePostIds,
       notifications,
       unreadCount,
       updateWatchStatus,
@@ -2137,6 +2384,8 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       toggleMediaFollow,
       togglePersonFavorite,
       togglePersonFollow,
+      toggleMagazineLike,
+      isMagazinePostLiked,
       pushNotification,
       markAllNotificationsRead,
       markNotificationsRead: markAllNotificationsRead,
@@ -2183,6 +2432,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     favPersonIds,
     followedMediaIds,
     followedPersonIds,
+    likedMagazinePostIds,
     notifications,
     unreadCount,
     updateWatchStatus,
@@ -2210,6 +2460,8 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     toggleMediaFollow,
     togglePersonFavorite,
     togglePersonFollow,
+    toggleMagazineLike,
+    isMagazinePostLiked,
     pushNotification,
     markAllNotificationsRead,
     markNotificationRead,

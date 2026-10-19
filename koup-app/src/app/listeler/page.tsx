@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { getProxiedImageUrl } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
+import Pagination from '@/components/Pagination';
 
 interface ListCreator {
   id: string;
@@ -58,6 +59,8 @@ export default function PublicListsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'popular' | 'items' | 'newest'>('popular');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 12;
 
   // Create List Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -112,6 +115,12 @@ export default function PublicListsPage() {
 
     return result;
   }, [lists, searchQuery, sortBy]);
+
+  // Paginated slice for current page
+  const paginatedLists = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredLists.slice(start, start + PAGE_SIZE);
+  }, [filteredLists, currentPage]);
 
   const handleOpenCreateModal = () => {
     if (!user) {
@@ -205,10 +214,6 @@ export default function PublicListsPage() {
       {/* HEADER HERO */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-white/[0.08]">
         <div>
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-sky-500/10 border border-sky-400/25 text-sky-400 font-mono text-[11px] font-bold tracking-wider uppercase mb-3">
-            <ListOrdered className="w-3.5 h-3.5" />
-            <span>Topluluk & Özel Koleksiyonlar</span>
-          </div>
           <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight">
             Listeler
           </h1>
@@ -231,7 +236,7 @@ export default function PublicListsPage() {
 
           <button
             onClick={handleOpenCreateModal}
-            className="flex items-center gap-2 px-5 py-3 rounded-full bg-white text-black font-extrabold text-xs sm:text-sm hover:bg-white/90 cursor-pointer shadow-[0_0_25px_rgba(255,255,255,0.25)] hover:scale-[1.02] active:scale-95 transition-all"
+            className="flex items-center gap-2 px-5 py-3 rounded-full bg-white text-black font-extrabold text-xs sm:text-sm hover:bg-white/85 active:bg-white/75 cursor-pointer shadow-[0_0_20px_rgba(255,255,255,0.2)] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-colors duration-200"
           >
             <Plus className="w-4 h-4 stroke-[2.5]" />
             <span>Yeni Liste Oluştur</span>
@@ -247,13 +252,19 @@ export default function PublicListsPage() {
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
             placeholder="İçerik, liste veya kullanıcı ara..."
             className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full font-medium"
           />
           {searchQuery && (
             <button
-              onClick={() => setSearchQuery('')}
+              onClick={() => {
+                setSearchQuery('');
+                setCurrentPage(1);
+              }}
               className="text-white/40 hover:text-white transition-colors cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
@@ -279,6 +290,7 @@ export default function PublicListsPage() {
                 onClick={() => {
                   triggerSound('click');
                   setSortBy(opt.id);
+                  setCurrentPage(1);
                 }}
                 className={`relative flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors duration-200 select-none ${
                   active ? 'text-black' : 'text-white/70 hover:text-white'
@@ -342,7 +354,7 @@ export default function PublicListsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {filteredLists.map((list) => {
+          {paginatedLists.map((list) => {
             const posters = list.preview_posters || [];
             return (
               <Link
@@ -409,7 +421,7 @@ export default function PublicListsPage() {
                       posters.slice(0, 3).map((item, idx) => (
                         <div
                           key={item.id || idx}
-                          className="w-16 h-24 sm:w-20 sm:h-28 rounded-xl overflow-hidden border border-white/10 shadow-lg relative bg-[#181820] group-hover:scale-105 group-hover:-translate-y-1 transition-all duration-300"
+                          className="w-16 h-24 sm:w-20 sm:h-28 rounded-xl overflow-hidden border border-white/10 shadow-lg relative bg-[#181820]"
                         >
                           {item.cover_image ? (
                             <img
@@ -458,6 +470,18 @@ export default function PublicListsPage() {
             );
           })}
         </div>
+      )}
+
+      {/* PAGINATION DECK (Apple TV+ Cinema Glass Design) */}
+      {!isLoading && filteredLists.length > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalCount={filteredLists.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setCurrentPage}
+          itemLabel="topluluk listesinden"
+          scrollToOffset={260}
+        />
       )}
 
       {/* CREATE NEW LIST MODAL */}

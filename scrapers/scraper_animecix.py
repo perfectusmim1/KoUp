@@ -13,6 +13,10 @@ import sqlite3
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from curl_cffi import requests
+try:
+    from clean_fansub import clean_fansub_name, clean_source_name
+except ImportError:
+    from scrapers.clean_fansub import clean_fansub_name, clean_source_name
 
 # Force UTF-8 and unbuffered output so Windows cp1254 terminal never crashes on Japanese / special characters
 if hasattr(sys.stdout, 'reconfigure'):
@@ -377,10 +381,13 @@ def main():
                 
                 # Check source
                 direct_url = v.get('url') or ''
+                u_low = direct_url.lower()
+                if any(dead in u_low for dead in ('sibnet.ru', 'sibnet', 'sendvid', 'drive.google.com', 'docs.google.com', 'dood')):
+                    continue
                 if direct_url and (ep_id, direct_url) not in source_cache:
-                    src_name = v.get('name') or 'Tau Video'
+                    src_name = clean_source_name(v.get('name') or 'Tau Video')
                     provider = clean_provider(src_name, direct_url)
-                    fansub = v.get('extra') or None
+                    fansub = clean_fansub_name(v.get('extra'))
                     cur.execute("""
                         INSERT INTO episode_sources (episode_id, source_name, embed_id, direct_url, provider, fansub, site)
                         VALUES (?, ?, ?, ?, ?, ?, 'animecix')

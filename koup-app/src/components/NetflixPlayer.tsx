@@ -41,7 +41,9 @@ import {
   getEpisodeProgress,
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
+import { cleanFansubName, cleanSourceName } from '@/lib/cleanFansub';
 import NetflixEpisodePopover from '@/components/NetflixEpisodePopover';
+import { buildCleanTrailerEmbedUrl, watchYouTubeIframe } from '@/lib/youtubeTrailer';
 
 /* ============================================================================
    CUSTOM NETFLIX AUTHENTIC SVG ICONS (Matched to Reference Screenshots)
@@ -303,10 +305,24 @@ function parseWebVTT(vttText: string): SubtitleCue[] {
 
     const start = parseSec(match[1], match[2], match[3], match[4]);
     const end = parseSec(match[5], match[6], match[7], match[8]);
-    const textLines = lines.slice(timeIndex + 1);
-    const text = textLines.join('\n').replace(/<[^>]+>/g, '').trim();
+    const textLines = lines
+      .slice(timeIndex + 1)
+      .map((l) => l.replace(/<[^>]+>/g, '').trim())
+      .filter(Boolean);
+    const dedupedLines: string[] = [];
+    for (const line of textLines) {
+      if (dedupedLines.length === 0 || dedupedLines[dedupedLines.length - 1] !== line) {
+        dedupedLines.push(line);
+      }
+    }
+    const text = dedupedLines.join('\n').trim();
     if (text) {
-      cues.push({ start, end, text });
+      const prevCue = cues[cues.length - 1];
+      if (prevCue && prevCue.text === text && Math.abs(prevCue.start - start) < 0.05) {
+        prevCue.end = Math.max(prevCue.end, end);
+      } else {
+        cues.push({ start, end, text });
+      }
     }
   }
   return cues;
@@ -455,6 +471,7 @@ export default function NetflixPlayer({
   const isDraggingVolumeRef = useRef(false);
   const volumeHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedVolumeRef = useRef(1);
+  const isHoveringBottomControlsRef = useRef(false);
 
   const currentEpObj =
     episodes.find(
@@ -478,10 +495,13 @@ export default function NetflixPlayer({
     [onSelectSourceIdx]
   );
 
+  const safePropFansub = cleanFansubName(propSelectedFansub) || propSelectedFansub;
   const filteredSources =
     propSelectedFansub === 'all'
       ? availableSources
-      : availableSources.filter((s) => s.fansub === propSelectedFansub);
+      : availableSources.filter(
+          (s) => (cleanFansubName(s.fansub) || s.fansub) === safePropFansub
+        );
 
   const activeSource: EpisodeSource | undefined =
     filteredSources[selectedSourceIdx] || availableSources[0];
@@ -540,36 +560,55 @@ export default function NetflixPlayer({
   const [isTrailerReady, setIsTrailerReady] = useState(false);
   const effectiveTrailerYtId = isTrailerMode ? (internalTrailerYtId || propTrailerYoutubeId) : null;
   const trailerStreamUrl = effectiveTrailerYtId
-    ? `https://www.youtube-nocookie.com/embed/${effectiveTrailerYtId}?autoplay=1&enablejsapi=1&controls=0&disablekb=1&fs=0&modestbranding=1&rel=0&showinfo=0&iv_load_policy=3&playsinline=1&mute=1&cc_load_policy=1&cc_lang_pref=tr&hl=tr`
+    ? buildCleanTrailerEmbedUrl(effectiveTrailerYtId)
     : '';
 
-  // Auto-loop trailer and active-playback bezel suppression via YouTube postMessage telemetry
-  useEffect(() => {
-    if (!isTrailerMode || !effectiveTrailerYtId) return;
-    const handleLoop = (e: MessageEvent) => {
-      try {
-        const d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-        const isPlayingEvent =
-          (d?.event === 'onStateChange' && d?.info === 1) ||
-          (d?.event === 'infoDelivery' && d?.info?.playerState === 1);
-
-        if (isPlayingEvent) {
-          setTimeout(() => setIsTrailerReady(true), 350);
+  const trailerWatchCleanupRef = useRef<(() => void) | null>(null);
+  const handleTrailerIframeLoad = useCallback((e: React.SyntheticEvent<HTMLIFrameElement>) => {
+    trailerWatchCleanupRef.current?.();
+    sendTrailerYtCommand('mute');
+    trailerWatchCleanupRef.current = watchYouTubeIframe(e.currentTarget, {
+      onVisibleChange: (visible) => {
+        setIsTrailerReady(visible);
+        if (visible) {
           if (!isTrailerMuted) {
             sendTrailerYtCommand('unMute');
             sendTrailerYtCommand('setVolume', [85]);
+          } else {
+            sendTrailerYtCommand('mute');
           }
+        } else {
+          sendTrailerYtCommand('mute');
         }
+      },
+    });
+  }, [isTrailerMuted, sendTrailerYtCommand]);
 
-        if (d?.event === 'onStateChange' && d?.info === 0) {
-          sendTrailerYtCommand('seekTo', [0, true]);
-          sendTrailerYtCommand('playVideo', []);
-        }
-      } catch {}
+  useEffect(() => {
+    if (!isTrailerMode) {
+      trailerWatchCleanupRef.current?.();
+      trailerWatchCleanupRef.current = null;
+      setIsTrailerReady(false);
+    }
+  }, [isTrailerMode]);
+
+  useEffect(() => {
+    if (isTrailerMode && isTrailerReady) {
+      if (isTrailerMuted) {
+        sendTrailerYtCommand('mute');
+      } else {
+        sendTrailerYtCommand('unMute');
+        sendTrailerYtCommand('setVolume', [85]);
+      }
+    }
+  }, [isTrailerMuted, isTrailerMode, isTrailerReady, sendTrailerYtCommand]);
+
+  useEffect(() => {
+    return () => {
+      trailerWatchCleanupRef.current?.();
+      trailerWatchCleanupRef.current = null;
     };
-    window.addEventListener('message', handleLoop);
-    return () => window.removeEventListener('message', handleLoop);
-  }, [isTrailerMode, effectiveTrailerYtId, isTrailerMuted, sendTrailerYtCommand]);
+  }, []);
 
   const [qualities, setQualities] = useState<Array<{ label: string; url: string; levelIndex?: number }>>([]);
   const [selectedQuality, setSelectedQuality] = useState<string>(() => {
@@ -754,7 +793,7 @@ export default function NetflixPlayer({
     [streamUrl, triggerHudToast]
   );
 
-  // Ambient lighting canvas frame sampling loop
+  // Ambient lighting canvas frame sampling loop with temporal exponential smoothing (wave-like color flow)
   useEffect(() => {
     if (!ambientLightingEnabled || !isPlaying || isFullscreen || isTrailerMode) return;
     const canvas = ambientCanvasRef.current;
@@ -764,23 +803,42 @@ export default function NetflixPlayer({
 
     let animFrame: number;
     let lastSample = 0;
+    let isInitialFrame = true;
 
     const sample = (now: number) => {
-      // Sample at ~15fps for smooth atmospheric color blending
-      if (now - lastSample >= 66) {
+      // Sample at ~22fps for a continuous, wave-like organic color diffusion
+      if (now - lastSample >= 45) {
         lastSample = now;
         const v = videoRef.current;
         if (v && v.readyState >= 2 && !v.paused) {
           try {
-            ctx.drawImage(v, 0, 0, 32, 18);
+            if (isInitialFrame) {
+              ctx.globalAlpha = 1.0;
+              ctx.drawImage(v, 0, 0, 32, 18);
+              isInitialFrame = false;
+            } else {
+              // Soft exponential temporal blend: 10% per frame creates a gentle wave glide (~400-500ms transition)
+              ctx.globalCompositeOperation = 'source-over';
+              ctx.globalAlpha = 0.10;
+              ctx.drawImage(v, 0, 0, 32, 18);
+            }
           } catch {}
         }
       }
       animFrame = requestAnimationFrame(sample);
     };
 
+    const handleSeeked = () => {
+      isInitialFrame = true;
+    };
+    const vEl = videoRef.current;
+    vEl?.addEventListener('seeked', handleSeeked);
+
     animFrame = requestAnimationFrame(sample);
-    return () => cancelAnimationFrame(animFrame);
+    return () => {
+      cancelAnimationFrame(animFrame);
+      vEl?.removeEventListener('seeked', handleSeeked);
+    };
   }, [ambientLightingEnabled, isPlaying, isFullscreen, isTrailerMode]);
 
   // Detect touch / mobile device vs desktop mouse
@@ -1148,6 +1206,15 @@ export default function NetflixPlayer({
         if (cancelled) return;
 
         if (resp.status === 410 || data.isDead) {
+          if (selectedSourceIdx + 1 < filteredSources.length) {
+            pushNotification(
+              'Otomatik Yedek Kaynağa Geçildi',
+              `${activeSource?.source_name || 'Kaynak'} kullanılamıyor, sıradaki kaynağa geçiliyor.`,
+              'info'
+            );
+            setSelectedSourceIdx(selectedSourceIdx + 1);
+            return;
+          }
           setResolvedMode('error');
           return;
         }
@@ -1162,7 +1229,31 @@ export default function NetflixPlayer({
           setSelectedQuality(matchedPref ? cleanQualityLabel(matchedPref.label) : cleanQualityLabel(data.qualities?.[0]?.label || 'Otomatik'));
           const targetStream = matchedPref?.url || data.streamUrl || data.qualities?.[0]?.url || '';
           setStreamUrl(targetStream);
-          const incomingSubs: SubtitleTrack[] = data.subtitles || [];
+          const rawSubs: SubtitleTrack[] = data.subtitles || [];
+          const seenSubUrls = new Set<string>();
+          const byCleanLabel = new Map<string, SubtitleTrack>();
+          for (const s of rawSubs) {
+            if (!s?.url || seenSubUrls.has(s.url)) continue;
+            seenSubUrls.add(s.url);
+            let baseLabel = (s.label || 'Altyazı')
+              .replace(/\s*altyaz[ıi]$/i, '')
+              .replace(/\s*\(\d+\)$/, '')
+              .trim();
+            const lowLbl = baseLabel.toLocaleLowerCase('tr-TR').replace(/i\u0307/g, 'i');
+            if (lowLbl.includes('türk') || lowLbl.includes('turk') || lowLbl === 'forced') {
+              baseLabel = 'Türkçe';
+            } else if (lowLbl.includes('ing') || lowLbl.includes('eng')) {
+              baseLabel = 'İngilizce';
+            }
+            const isForcedUrl = s.url.toLowerCase().includes('forced') || lowLbl === 'forced';
+            if (!byCleanLabel.has(baseLabel) || !isForcedUrl) {
+              byCleanLabel.set(baseLabel, {
+                ...s,
+                label: baseLabel,
+              });
+            }
+          }
+          const incomingSubs: SubtitleTrack[] = Array.from(byCleanLabel.values());
           setSubtitles(incomingSubs);
           if (incomingSubs.length > 0) {
             const trSub = incomingSubs.find((s) => s.lang === 'tr') || incomingSubs[0];
@@ -1228,10 +1319,21 @@ export default function NetflixPlayer({
           maxMaxBufferLength: 60,
           startPosition: resumeSec > 3 ? resumeSec : -1,
         });
+        hls.subtitleDisplay = false;
+        hls.subtitleTrack = -1;
         hlsRef.current = hls;
         hls.loadSource(streamUrl);
         hls.attachMedia(video);
         hls.on(Hls.Events.MANIFEST_PARSED, (_ev, data) => {
+          hls.subtitleDisplay = false;
+          hls.subtitleTrack = -1;
+          try {
+            if (video.textTracks) {
+              for (let i = 0; i < video.textTracks.length; i++) {
+                video.textTracks[i].mode = 'disabled';
+              }
+            }
+          } catch {}
           setIsBuffering(false);
           const resumeSec = targetResumeRef.current;
           if (resumeSec > 3) {
@@ -1710,22 +1812,23 @@ export default function NetflixPlayer({
 
   const scheduleHideOverlay = useCallback(() => {
     if (hideControlsTimer.current) clearTimeout(hideControlsTimer.current);
-    if (activePanelRef.current !== null) return;
+    if (activePanelRef.current !== null || isHoveringBottomControlsRef.current) return;
     hideControlsTimer.current = setTimeout(() => {
       if (
         isPlayingRef.current &&
         !activePanelRef.current &&
-        !isScrubbingRef.current
+        !isScrubbingRef.current &&
+        !isHoveringBottomControlsRef.current
       ) {
         setShowOverlay(false);
         setShowVolumeSlider(false);
       }
-    }, 700);
+    }, 2500);
   }, []);
 
   const revealControls = useCallback(() => {
     setShowOverlay((prev) => (prev ? prev : true));
-    if (!activePanelRef.current) {
+    if (!activePanelRef.current && !isHoveringBottomControlsRef.current) {
       scheduleHideOverlay();
     }
   }, [scheduleHideOverlay]);
@@ -1979,7 +2082,7 @@ export default function NetflixPlayer({
         handleNextEpisode();
         return;
       }
-      if (key === 'e' && !isTrailerMode) {
+      if (key === 'e' && !isTrailerMode && !isMovie) {
         e.preventDefault();
         setActivePanel((prev) => (prev === 'episodes' ? null : 'episodes'));
         return;
@@ -2122,9 +2225,12 @@ export default function NetflixPlayer({
   const safeDuration = duration > 0 ? duration : isTrailerMode ? 180 : mediaTotalDuration || 100;
   const remainingSec = Math.max(0, safeDuration - effectiveTime);
 
+  const isMovie = media.content_type === 'film' || media.content_type === 'movie';
   const cleanTitle = cleanMediaTitle(media.title);
   const episodeDisplayTitle = isTrailerMode
     ? `${cleanTitle} • Resmi Tanıtım Fragmanı`
+    : isMovie
+    ? cleanTitle
     : formatEpisodeTitle(
         currentEpObj?.episode_name,
         currentSeason,
@@ -2141,24 +2247,28 @@ export default function NetflixPlayer({
 
   return (
     <div className={isTrailerMode ? "w-full h-full flex items-center justify-center overflow-hidden" : "relative"}>
-      {/* SİNEMATİK IŞIKLANDIRMA (YouTube-Style Ambient Lighting Aura) */}
+      {/* SİNEMATİK IŞIKLANDIRMA (YouTube-Style Ambient Lighting Aura with Theater Stage Spread) */}
       {ambientLightingEnabled && !isFullscreen && !isTrailerMode && (
         <div
           aria-hidden="true"
-          className="ambient-light-aura absolute -inset-6 sm:-inset-12 -z-10 pointer-events-none select-none transition-opacity duration-1000 ease-out"
-          style={{ opacity: isPlaying ? 0.8 : 0.35 }}
+          className={`ambient-light-aura absolute pointer-events-none select-none -z-10 transition-opacity duration-700 ease-out ${
+            isMovie
+              ? '-top-12 sm:-top-16 -bottom-16 sm:-bottom-20 -left-6 sm:-left-12 -right-6 sm:-right-12'
+              : '-top-12 sm:-top-16 -bottom-16 sm:-bottom-20 -left-6 sm:-left-12 -right-6 lg:-right-[320px] xl:-right-[340px]'
+          }`}
+          style={{ opacity: isPlaying ? 0.9 : 0.4 }}
         >
-          {/* Real-time ambient canvas sampled directly from active video */}
+          {/* Real-time ambient canvas sampled directly from active video with wave animation */}
           <canvas
             ref={ambientCanvasRef}
             width={32}
             height={18}
-            className="w-full h-full object-cover filter blur-[45px] sm:blur-[75px] md:blur-[105px] scale-[1.12] sm:scale-[1.18] transform-gpu rounded-3xl"
+            className="w-full h-full object-cover filter blur-[50px] sm:blur-[80px] md:blur-[115px] scale-[1.08] sm:scale-[1.14] saturate-[1.32] brightness-[1.06] transform-gpu rounded-[36px] animate-ambient-wave"
           />
 
           {/* Ambient radiant fallback aura blending smoothly into website glass background */}
           <div
-            className="absolute inset-0 filter blur-[60px] sm:blur-[90px] scale-[1.15] opacity-60 rounded-3xl -z-10"
+            className="absolute inset-0 filter blur-[65px] sm:blur-[95px] scale-[1.15] opacity-40 rounded-[36px] -z-10"
             style={{
               backgroundImage:
                 media?.backdrop_image || media?.cover_image
@@ -2186,6 +2296,7 @@ export default function NetflixPlayer({
           }
         }}
         onMouseLeave={() => {
+          isHoveringBottomControlsRef.current = false;
           if (isPlaying && !activePanel && !isScrubbing) {
             setShowOverlay(false);
             setShowVolumeSlider(false);
@@ -2199,7 +2310,7 @@ export default function NetflixPlayer({
             ? 'fixed inset-0 z-50 w-screen h-screen max-w-none rounded-none border-none aspect-auto flex flex-col justify-center items-center'
             : isTrailerMode
             ? 'w-full h-full max-w-[calc(100dvh*16/9)] max-h-[100dvh] aspect-video rounded-none border-none shadow-none z-20 flex flex-col justify-center'
-            : `w-full aspect-video rounded-2xl sm:rounded-3xl border z-20 transition-all duration-300 ${
+            : `w-full aspect-video rounded-2xl sm:rounded-3xl border z-20 transition-[border-color,box-shadow] duration-300 ${
                 cinemaLightsOff
                   ? 'border-sky-500/30 shadow-[0_0_30px_rgba(41,151,255,0.15),0_10px_25px_rgba(0,0,0,0.5)]'
                   : 'border-white/10 shadow-[0_10px_25px_rgba(0,0,0,0.45)]'
@@ -2220,7 +2331,9 @@ export default function NetflixPlayer({
             </h3>
             <div className="max-w-lg px-5 py-3 rounded-2xl bg-white/[0.04] border border-white/10 text-xs sm:text-sm text-white/80 leading-relaxed">
               {currentEpObj?.translation_note ||
-                'Çeviri işlemi için bölümün orijinal yayını bekleniyor. Bölüm yayınlandığı anda kaynaklar eklenecektir.'}
+                (isMovie
+                  ? 'Film yayını bekleniyor. Kaynaklar eklendiğinde oynatıcı aktif olacaktır.'
+                  : 'Çeviri işlemi için bölümün orijinal yayını bekleniyor. Bölüm yayınlandığı anda kaynaklar eklenecektir.')}
             </div>
           </div>
         ) : availableSources.length === 0 ? (
@@ -2232,7 +2345,9 @@ export default function NetflixPlayer({
               Kaynak Durumu
             </div>
             <h3 className="text-xl sm:text-2xl font-bold text-white tracking-tight mb-2">
-              Bu Bölüm İçin Aktif Video Kaynağı Hazırlanıyor
+              {isMovie
+                ? 'Bu Film İçin Aktif Video Kaynağı Hazırlanıyor'
+                : 'Bu Bölüm İçin Aktif Video Kaynağı Hazırlanıyor'}
             </h3>
             <p className="max-w-md text-xs sm:text-sm text-white/60 mb-5 leading-relaxed">
               Sunucular otomatik taranıyor veya video akışı güncelleniyor. Lütfen birkaç dakika sonra yeniden deneyin.
@@ -2343,9 +2458,7 @@ export default function NetflixPlayer({
                   key={trailerStreamUrl}
                   src={trailerStreamUrl}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  onLoad={() => {
-                    setTimeout(() => setIsTrailerReady(true), 1500);
-                  }}
+                  onLoad={handleTrailerIframeLoad}
                   className={`w-[138%] h-[138%] min-w-[138%] min-h-[138%] border-0 pointer-events-none select-none transition-opacity duration-700 ${
                     isTrailerReady ? 'opacity-100' : 'opacity-0'
                   }`}
@@ -2652,7 +2765,9 @@ export default function NetflixPlayer({
                           >
                             <Play className="w-3.5 h-3.5 fill-black" />
                             <span className="hidden sm:inline">
-                              {currentEpisode && currentEpisode > 1
+                              {isMovie
+                                ? 'Filmi İzle'
+                                : currentEpisode && currentEpisode > 1
                                 ? `${currentEpisode}. Bölümü İzle`
                                 : '1. Bölümü İzle'}
                             </span>
@@ -2924,12 +3039,32 @@ export default function NetflixPlayer({
                 <div
                   data-netflix-control="true"
                   onClick={(e) => e.stopPropagation()}
-                  className={`w-full px-3 sm:px-8 pb-1.5 sm:pb-5 pt-1.5 sm:pt-6 bg-gradient-to-t from-black/95 via-black/65 to-transparent space-y-1 sm:space-y-2.5 shrink-0 transition-opacity duration-200 ${
+                  onPointerEnter={() => {
+                    isHoveringBottomControlsRef.current = true;
+                    if (hideControlsTimer.current) {
+                      clearTimeout(hideControlsTimer.current);
+                      hideControlsTimer.current = null;
+                    }
+                    setShowOverlay(true);
+                  }}
+                  onPointerMove={() => {
+                    isHoveringBottomControlsRef.current = true;
+                    if (hideControlsTimer.current) {
+                      clearTimeout(hideControlsTimer.current);
+                      hideControlsTimer.current = null;
+                    }
+                    setShowOverlay(true);
+                  }}
+                  onPointerLeave={() => {
+                    isHoveringBottomControlsRef.current = false;
+                    scheduleHideOverlay();
+                  }}
+                  className={`w-full px-3 sm:px-8 pb-1.5 sm:pb-5 pt-1.5 sm:pt-6 bg-gradient-to-t from-black/80 via-black/40 to-transparent space-y-1 sm:space-y-2.5 shrink-0 transition-opacity duration-200 ${
                     showOverlay ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
                   }`}
                 >
                   {/* Floating Skip Intro & Auto-Next Buttons right above scrubber */}
-                  {(isInsideIntro || (nextCountdown !== null && nextEp)) && (
+                  {(isInsideIntro || (!isMovie && nextCountdown !== null && nextEp)) && (
                     <div className="flex items-center justify-end gap-2.5">
                       {isInsideIntro && (
                         <button
@@ -2942,7 +3077,7 @@ export default function NetflixPlayer({
                         </button>
                       )}
 
-                      {nextCountdown !== null && nextEp && (
+                      {!isMovie && nextCountdown !== null && nextEp && (
                         <button
                           type="button"
                           onClick={handleNextEpisode}
@@ -3044,7 +3179,7 @@ export default function NetflixPlayer({
                       type="button"
                       onClick={() => setShowRemainingTime((v) => !v)}
                       aria-label="Süre görünümünü değiştir"
-                      className="text-[11px] sm:text-sm font-semibold text-white/95 hover:text-white tabular-nums shrink-0 cursor-pointer min-w-[42px] sm:min-w-[54px] text-right"
+                      className="text-[11px] sm:text-xs font-medium text-white/95 hover:text-white tabular-nums shrink-0 cursor-pointer drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] transition-colors text-right select-none"
                     >
                       {showRemainingTime
                         ? formatTime(remainingSec)
@@ -3075,23 +3210,25 @@ export default function NetflixPlayer({
                             <span>Hız ({playbackRate}x)</span>
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setActivePanel((prev) =>
-                                prev === 'episodes' ? null : 'episodes'
-                              )
-                            }
-                            aria-label="Bölümler"
-                            className={`flex items-center gap-1 py-1 text-xs font-medium cursor-pointer shrink-0 ${
-                              activePanel === 'episodes'
-                                ? 'text-[#E50914] font-bold'
-                                : 'text-white/90'
-                            }`}
-                          >
-                            <NetflixEpisodesIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                            <span>Bölümler</span>
-                          </button>
+                          {!isMovie && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setActivePanel((prev) =>
+                                  prev === 'episodes' ? null : 'episodes'
+                                )
+                              }
+                              aria-label="Bölümler"
+                              className={`flex items-center gap-1 py-1 text-xs font-medium cursor-pointer shrink-0 ${
+                                activePanel === 'episodes'
+                                  ? 'text-[#E50914] font-bold'
+                                  : 'text-white/90'
+                              }`}
+                            >
+                              <NetflixEpisodesIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                              <span>Bölümler</span>
+                            </button>
+                          )}
 
                           {qualities.length > 0 && (
                             <div className="relative flex items-center shrink-0">
@@ -3125,18 +3262,10 @@ export default function NetflixPlayer({
                                     onClick={(e) => e.stopPropagation()}
                                     className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-50 min-w-[170px] max-w-[220px] max-h-[240px] overflow-y-auto no-scrollbar p-2.5 rounded-xl bg-[#181818]/95 backdrop-blur-xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1 select-none"
                                   >
-                                    <div className="flex items-center justify-between border-b border-white/10 pb-1.5 mb-1 px-1">
+                                    <div className="flex items-center border-b border-white/10 pb-1.5 mb-1 px-1">
                                       <span className="text-white/60 font-semibold text-[11px] uppercase tracking-wider">
                                         Kalite Seçimi
                                       </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => setActivePanel(null)}
-                                        aria-label="Kapat"
-                                        className="text-white/50 hover:text-white p-0.5 rounded cursor-pointer"
-                                      >
-                                        <X className="w-3.5 h-3.5" />
-                                      </button>
                                     </div>
                                     {qualities.map((q, qIdx) => {
                                       const cleanLabel = cleanQualityLabel(q.label);
@@ -3188,7 +3317,7 @@ export default function NetflixPlayer({
                             </button>
                           )}
 
-                          {nextEp && (
+                          {!isMovie && nextEp && (
                             <button
                               type="button"
                               onClick={handleNextEpisode}
@@ -3210,7 +3339,7 @@ export default function NetflixPlayer({
                           type="button"
                           onClick={togglePlayPause}
                           aria-label={isPlaying ? 'Duraklat (Space / K)' : 'Oynat (Space / K)'}
-                          className="text-white/95 hover:text-white hover:scale-110 active:scale-95 transition-transform cursor-pointer"
+                          className="text-white/95 hover:text-white hover:scale-110 active:scale-95 transition-transform cursor-pointer drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]"
                         >
                           {isPlaying ? (
                             <NetflixPauseBarsIcon className="w-6 h-6" />
@@ -3219,144 +3348,171 @@ export default function NetflixPlayer({
                           )}
                         </button>
 
-                        {/* VERTICAL POPPING VOLUME CONTROL */}
-                        <div
-                          className="relative flex items-center shrink-0"
-                          onMouseEnter={() => {
-                            if (volumeHideTimerRef.current) {
-                              clearTimeout(volumeHideTimerRef.current);
-                              volumeHideTimerRef.current = null;
+                        {/* HORIZONTAL VOLUME SLIDER: expands to the right (PC only) */}
+                        {(() => {
+                          const THUMB = 12;
+                          const TRACK_W = 72;
+                          const level = isMuted ? 0 : volume;
+                          const open = showVolumeSlider || isDraggingVolume;
+                          const applyVolume = (raw: number) => {
+                            const rounded = Math.round(Math.max(0, Math.min(1, raw)) * 100) / 100;
+                            setVolume(rounded);
+                            setIsMuted(rounded === 0);
+                            if (rounded > 0) savedVolumeRef.current = rounded;
+                            if (isTrailerMode) {
+                              sendTrailerYtCommand('setVolume', [Math.round(rounded * 100)]);
+                              if (rounded === 0) sendTrailerYtCommand('mute');
+                              else sendTrailerYtCommand('unMute');
+                            } else if (videoRef.current) {
+                              videoRef.current.volume = rounded;
+                              videoRef.current.muted = rounded === 0;
                             }
-                            setShowVolumeSlider(true);
-                          }}
-                          onMouseLeave={() => {
-                            if (isDraggingVolumeRef.current) return;
-                            volumeHideTimerRef.current = setTimeout(() => {
-                              if (!isDraggingVolumeRef.current) {
-                                setShowVolumeSlider(false);
-                              }
-                            }, 350);
-                          }}
-                          onWheel={(e) => {
-                            e.preventDefault();
-                            adjustVolume(e.deltaY < 0 ? 0.05 : -0.05);
-                          }}
-                        >
-                          <button
-                            type="button"
-                            onClick={toggleMute}
-                            aria-label={isMuted ? 'Sesi Aç (M)' : 'Sesi Kapat (M)'}
-                            className="text-white hover:scale-110 active:scale-95 transition-transform cursor-pointer p-1"
-                          >
-                            {isMuted || volume === 0 ? (
-                              <VolumeX className="w-5 h-5 text-white" />
-                            ) : volume < 0.5 ? (
-                              <Volume1 className="w-5 h-5 text-white" />
-                            ) : (
-                              <Volume2 className="w-5 h-5 text-white" />
-                            )}
-                          </button>
+                          };
 
-                          {/* Vertical Popover Opening Upwards (Matched to Reference Screenshot) */}
-                          <div
-                            className={`absolute bottom-full left-1/2 -translate-x-1/2 pb-2.5 z-50 transition-all duration-200 ease-out origin-bottom ${
-                              showVolumeSlider
-                                ? 'opacity-100 scale-100 pointer-events-auto translate-y-0'
-                                : 'opacity-0 scale-95 pointer-events-none translate-y-2'
-                            }`}
-                          >
+                          return (
                             <div
-                              onClick={(e) => e.stopPropagation()}
-                              className="w-8 sm:w-8.5 h-24 sm:h-28 bg-[#262626] border border-white/10 rounded-xl shadow-[0_8px_24px_rgba(0,0,0,0.85)] flex items-center justify-center select-none py-3 px-2"
+                              className="relative flex items-center h-8 shrink-0 select-none transition-all duration-200 ease-out"
+                              style={{ width: open ? 116 : 32 }}
+                              onMouseEnter={() => {
+                                if (volumeHideTimerRef.current) {
+                                  clearTimeout(volumeHideTimerRef.current);
+                                  volumeHideTimerRef.current = null;
+                                }
+                                setShowVolumeSlider(true);
+                              }}
+                              onMouseLeave={() => {
+                                if (isDraggingVolumeRef.current) return;
+                                volumeHideTimerRef.current = setTimeout(() => {
+                                  if (!isDraggingVolumeRef.current) setShowVolumeSlider(false);
+                                }, 350);
+                              }}
+                              onWheel={(e) => {
+                                e.preventDefault();
+                                adjustVolume(e.deltaY < 0 ? 0.05 : -0.05);
+                              }}
                             >
-                              {/* Vertical Slider Track with Generous Hit Area */}
-                              <div
-                                className="relative h-full w-full flex items-center justify-center cursor-pointer select-none group/slider touch-none"
-                                onPointerDown={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  isDraggingVolumeRef.current = true;
-                                  setIsDraggingVolume(true);
-                                  setShowVolumeSlider(true);
-                                  if (volumeHideTimerRef.current) {
-                                    clearTimeout(volumeHideTimerRef.current);
-                                    volumeHideTimerRef.current = null;
-                                  }
-                                  const rect = e.currentTarget.getBoundingClientRect();
-                                  const updateFromClientY = (clientY: number) => {
-                                    const rawPct = (rect.bottom - clientY) / rect.height;
-                                    const clamped = Math.max(0, Math.min(1, rawPct));
-                                    const rounded = Math.round(clamped * 100) / 100;
-                                    setVolume(rounded);
-                                    setIsMuted(rounded === 0);
-                                    if (rounded > 0) savedVolumeRef.current = rounded;
-                                    if (isTrailerMode) {
-                                      sendTrailerYtCommand('setVolume', [Math.round(rounded * 100)]);
-                                      if (rounded === 0) sendTrailerYtCommand('mute');
-                                      else sendTrailerYtCommand('unMute');
-                                    } else if (videoRef.current) {
-                                      videoRef.current.volume = rounded;
-                                      videoRef.current.muted = rounded === 0;
-                                    }
-                                  };
-                                  updateFromClientY(e.clientY);
-
-                                  const handleMove = (ev: PointerEvent) => {
-                                    updateFromClientY(ev.clientY);
-                                  };
-                                  const onPointerUp = () => {
-                                    isDraggingVolumeRef.current = false;
-                                    setIsDraggingVolume(false);
-                                    window.removeEventListener('pointermove', handleMove);
-                                    window.removeEventListener('pointerup', onPointerUp);
-                                    window.removeEventListener('pointercancel', onPointerUp);
-                                  };
-                                  window.addEventListener('pointermove', handleMove);
-                                  window.addEventListener('pointerup', onPointerUp);
-                                  window.addEventListener('pointercancel', onPointerUp);
-                                }}
+                              {/* Speaker Icon Button: Clean white with drop shadow, sized to match play/pause */}
+                              <button
+                                type="button"
+                                onClick={toggleMute}
+                                aria-label={isMuted ? 'Sesi Aç (M)' : 'Sesi Kapat (M)'}
+                                className="w-8 h-8 shrink-0 flex items-center justify-center text-white/95 hover:text-white hover:scale-110 active:scale-95 transition-transform cursor-pointer drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]"
                               >
-                                {/* Background Track Groove */}
-                                <div className="relative w-1 sm:w-1.5 h-full bg-white/20 rounded-full flex flex-col justify-end pointer-events-none overflow-visible">
-                                  {/* Red Fill Rising from Bottom */}
-                                  <div
-                                    style={{ height: `${(isMuted ? 0 : volume) * 100}%` }}
-                                    className={`w-full bg-[#E50914] rounded-full relative ${
-                                      isDraggingVolume ? 'transition-none' : 'transition-[height] duration-150 ease-out'
-                                    }`}
-                                  >
-                                    {/* Red Knob/Thumb at Top of Fill */}
-                                    <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full bg-[#E50914] shadow-[0_1px_3px_rgba(0,0,0,0.6)]" />
-                                  </div>
-                                </div>
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  className="w-[26px] h-[26px] shrink-0"
+                                  fill="none"
+                                >
+                                  {/* Solid white speaker cone */}
+                                  <polygon
+                                    points="11 4 6 8.5 2 8.5 2 15.5 6 15.5 11 20 11 4"
+                                    fill="currentColor"
+                                    stroke="currentColor"
+                                    strokeWidth="1.2"
+                                    strokeLinejoin="round"
+                                  />
+                                  {/* Sound waves or mute X */}
+                                  {level === 0 ? (
+                                    <>
+                                      <line x1="16" y1="8.5" x2="22" y2="15.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+                                      <line x1="22" y1="8.5" x2="16" y2="15.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+                                    </>
+                                  ) : level < 0.5 ? (
+                                    <path
+                                      d="M15.5 8a5 5 0 0 1 0 8"
+                                      stroke="currentColor"
+                                      strokeWidth="2.2"
+                                      strokeLinecap="round"
+                                    />
+                                  ) : (
+                                    <>
+                                      <path
+                                        d="M15.5 8a5 5 0 0 1 0 8"
+                                        stroke="currentColor"
+                                        strokeWidth="2.2"
+                                        strokeLinecap="round"
+                                      />
+                                      <path
+                                        d="M19 4.5a10.5 10.5 0 0 1 0 15"
+                                        stroke="currentColor"
+                                        strokeWidth="2.2"
+                                        strokeLinecap="round"
+                                      />
+                                    </>
+                                  )}
+                                </svg>
+                              </button>
 
-                                <input
-                                  type="range"
-                                  min={0}
-                                  max={1}
-                                  step={0.01}
-                                  value={isMuted ? 0 : volume}
-                                  aria-label="Ses seviyesi"
-                                  onChange={(e) => {
-                                    const v = Number(e.target.value);
-                                    setVolume(v);
-                                    setIsMuted(v === 0);
-                                    if (v > 0) savedVolumeRef.current = v;
-                                    if (isTrailerMode) {
-                                      sendTrailerYtCommand('setVolume', [Math.round(v * 100)]);
-                                      if (v === 0) sendTrailerYtCommand('mute');
-                                      else sendTrailerYtCommand('unMute');
-                                    } else if (videoRef.current) {
-                                      videoRef.current.volume = v;
-                                      videoRef.current.muted = v === 0;
+                              {/* Horizontal Slider Track: expands to the right without any background */}
+                              <div
+                                className={`shrink-0 w-[84px] h-full flex items-center pl-2 pr-1 transition-opacity duration-150 ease-out ${
+                                  open ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                                }`}
+                              >
+                                <div
+                                  className="relative w-[72px] h-8 flex items-center cursor-pointer touch-none"
+                                  onPointerDown={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    isDraggingVolumeRef.current = true;
+                                    setIsDraggingVolume(true);
+                                    setShowVolumeSlider(true);
+                                    if (volumeHideTimerRef.current) {
+                                      clearTimeout(volumeHideTimerRef.current);
+                                      volumeHideTimerRef.current = null;
                                     }
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    const calc = (clientX: number) =>
+                                      applyVolume(
+                                        (clientX - rect.left - THUMB / 2) / (rect.width - THUMB)
+                                      );
+                                    calc(e.clientX);
+                                    const handleMove = (ev: PointerEvent) => calc(ev.clientX);
+                                    const onUp = () => {
+                                      isDraggingVolumeRef.current = false;
+                                      setIsDraggingVolume(false);
+                                      window.removeEventListener('pointermove', handleMove);
+                                      window.removeEventListener('pointerup', onUp);
+                                      window.removeEventListener('pointercancel', onUp);
+                                    };
+                                    window.addEventListener('pointermove', handleMove);
+                                    window.addEventListener('pointerup', onUp);
+                                    window.addEventListener('pointercancel', onUp);
                                   }}
-                                  className="sr-only"
-                                />
+                                >
+                                  {/* Groove Line */}
+                                  <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[3px] rounded-full bg-white/40 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] pointer-events-none" />
+                                  {/* Filled Line */}
+                                  <div
+                                    className="absolute left-0 top-1/2 -translate-y-1/2 h-[3px] rounded-full bg-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] pointer-events-none"
+                                    style={{
+                                      width: `${level * (TRACK_W - THUMB) + THUMB / 2}px`,
+                                    }}
+                                  />
+                                  {/* Thumb */}
+                                  <div
+                                    className="absolute top-1/2 -translate-y-1/2 rounded-full bg-white pointer-events-none drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)] shadow-sm"
+                                    style={{
+                                      width: `${THUMB}px`,
+                                      height: `${THUMB}px`,
+                                      left: `${level * (TRACK_W - THUMB)}px`,
+                                    }}
+                                  />
+                                  <input
+                                    type="range"
+                                    min={0}
+                                    max={1}
+                                    step={0.01}
+                                    value={level}
+                                    aria-label="Ses seviyesi"
+                                    onChange={(e) => applyVolume(Number(e.target.value))}
+                                    className="sr-only"
+                                  />
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </div>
+                          );
+                        })()}
 
                         {!isTrailerMode && (
                           <button
@@ -3365,13 +3521,13 @@ export default function NetflixPlayer({
                               setActivePanel((prev) => (prev === 'speed' ? null : 'speed'))
                             }
                             aria-label="Oynatma Hızı"
-                            className={`flex items-center gap-1.5 py-1 text-sm font-medium transition-all cursor-pointer shrink-0 whitespace-nowrap ${
+                            className={`flex items-center gap-2 py-1 text-sm font-medium transition-all cursor-pointer shrink-0 whitespace-nowrap drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)] ${
                               activePanel === 'speed'
                                 ? 'text-[#E50914] font-bold'
                                 : 'text-white/90 hover:text-white'
                             }`}
                           >
-                            <NetflixSpeedIcon className="w-5 h-5 shrink-0" />
+                            <NetflixSpeedIcon className="w-6 h-6 shrink-0" />
                             <span className="hidden sm:inline">Hız ({playbackRate}x)</span>
                           </button>
                         )}
@@ -3380,49 +3536,51 @@ export default function NetflixPlayer({
                       <div className="flex items-center gap-2 sm:gap-4 md:gap-6 shrink-0 flex-nowrap min-w-0">
                         {!isTrailerMode && (
                           <>
-                            <div className="relative flex items-center shrink-0">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setActivePanel((prev) =>
-                                    prev === 'episodes' ? null : 'episodes'
-                                  )
-                                }
-                                aria-label="Bölümler (E)"
-                                className={`flex items-center gap-1.5 py-1 text-sm font-medium transition-all cursor-pointer shrink-0 whitespace-nowrap ${
-                                  activePanel === 'episodes'
-                                    ? 'text-[#E50914] font-bold'
-                                    : 'text-white/90 hover:text-white'
-                                }`}
-                              >
-                                <NetflixEpisodesIcon className="w-5 h-5 shrink-0" />
-                                <span className="hidden sm:inline">Bölümler</span>
-                              </button>
+                            {!isMovie && (
+                              <div className="relative flex items-center shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setActivePanel((prev) =>
+                                      prev === 'episodes' ? null : 'episodes'
+                                    )
+                                  }
+                                  aria-label="Bölümler (E)"
+                                  className={`flex items-center gap-1.5 py-1 text-sm font-medium transition-all cursor-pointer shrink-0 whitespace-nowrap ${
+                                    activePanel === 'episodes'
+                                      ? 'text-[#E50914] font-bold'
+                                      : 'text-white/90 hover:text-white'
+                                  }`}
+                                >
+                                  <NetflixEpisodesIcon className="w-5 h-5 shrink-0" />
+                                  <span className="hidden sm:inline">Bölümler</span>
+                                </button>
 
-                              <AnimatePresence>
-                                {activePanel === 'episodes' && (
-                                  <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-50">
-                                    <NetflixEpisodePopover
-                                      media={media}
-                                      episodes={episodes}
-                                      currentSeason={currentSeason}
-                                      currentEpisode={currentEpisode}
-                                      seasons={seasons}
-                                      effectiveTime={effectiveTime}
-                                      safeDuration={safeDuration}
-                                      progressMap={progressMap}
-                                      toggleEpisodeWatched={toggleEpisodeWatched}
-                                      onSelectEpisode={onSelectEpisode}
-                                      flushCurrentProgress={flushCurrentProgress}
-                                      onClose={() => setActivePanel(null)}
-                                      capturedFrameUrl={capturedFrameUrl}
-                                      fallbackBackdropUrl={fallbackBackdropUrl}
-                                      episodePreviewCache={episodePreviewCache}
-                                    />
-                                  </div>
-                                )}
-                              </AnimatePresence>
-                            </div>
+                                <AnimatePresence>
+                                  {activePanel === 'episodes' && (
+                                    <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-50">
+                                      <NetflixEpisodePopover
+                                        media={media}
+                                        episodes={episodes}
+                                        currentSeason={currentSeason}
+                                        currentEpisode={currentEpisode}
+                                        seasons={seasons}
+                                        effectiveTime={effectiveTime}
+                                        safeDuration={safeDuration}
+                                        progressMap={progressMap}
+                                        toggleEpisodeWatched={toggleEpisodeWatched}
+                                        onSelectEpisode={onSelectEpisode}
+                                        flushCurrentProgress={flushCurrentProgress}
+                                        onClose={() => setActivePanel(null)}
+                                        capturedFrameUrl={capturedFrameUrl}
+                                        fallbackBackdropUrl={fallbackBackdropUrl}
+                                        episodePreviewCache={episodePreviewCache}
+                                      />
+                                    </div>
+                                  )}
+                                </AnimatePresence>
+                              </div>
+                            )}
 
                             {(audioTracks.length > 1 || subtitles.length > 0) && (
                               <button
@@ -3444,7 +3602,7 @@ export default function NetflixPlayer({
                               </button>
                             )}
 
-                            {nextEp && (
+                            {!isMovie && nextEp && (
                               <button
                                 type="button"
                                 onClick={handleNextEpisode}
@@ -3493,18 +3651,10 @@ export default function NetflixPlayer({
                                         onClick={(e) => e.stopPropagation()}
                                         className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-50 min-w-[170px] max-w-[220px] max-h-[300px] overflow-y-auto no-scrollbar p-2.5 rounded-xl bg-[#181818]/95 backdrop-blur-xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1 select-none"
                                       >
-                                        <div className="flex items-center justify-between border-b border-white/10 pb-1.5 mb-1 px-1">
+                                        <div className="flex items-center border-b border-white/10 pb-1.5 mb-1 px-1">
                                           <span className="text-white/60 font-semibold text-[11px] uppercase tracking-wider">
                                             Kalite Seçimi
                                           </span>
-                                          <button
-                                            type="button"
-                                            onClick={() => setActivePanel(null)}
-                                            aria-label="Kapat"
-                                            className="text-white/50 hover:text-white p-0.5 rounded cursor-pointer"
-                                          >
-                                            <X className="w-3.5 h-3.5" />
-                                          </button>
                                         </div>
                                         {qualities.map((q, qIdx) => {
                                           const cleanLabel = cleanQualityLabel(q.label);
@@ -3743,22 +3893,8 @@ export default function NetflixPlayer({
                   transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
                   data-netflix-control="true"
                   onClick={(e) => e.stopPropagation()}
-                  className="absolute bottom-12 sm:bottom-20 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-md sm:max-w-xl p-5 sm:p-6 rounded-xl bg-[#181818]/95 backdrop-blur-xl border border-white/10 shadow-[0_24px_60px_rgba(0,0,0,0.95)] space-y-4 max-h-[80%] overflow-y-auto custom-scrollbar select-none"
+                  className="absolute bottom-12 sm:bottom-20 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-md sm:max-w-xl p-5 sm:p-6 rounded-xl bg-[#181818]/95 backdrop-blur-xl border border-white/10 shadow-[0_24px_60px_rgba(0,0,0,0.95)] max-h-[80%] overflow-y-auto custom-scrollbar select-none"
                 >
-                  <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                    <span className="text-sm sm:text-base font-bold text-white tracking-wide">
-                      Ses ve Altyazı
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setActivePanel(null)}
-                      aria-label="Kapat"
-                      className="text-white/60 hover:text-white cursor-pointer p-1 rounded-lg hover:bg-white/10 transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     {/* LEFT COLUMN: AUDIO */}
                     <div className="space-y-2.5">
@@ -3826,11 +3962,11 @@ export default function NetflixPlayer({
                         </button>
 
                         {/* Subtitle track list */}
-                        {subtitles.map((sub) => {
+                        {subtitles.map((sub, subIdx) => {
                           const isSelected = selectedSubtitle === sub.label;
                           return (
                             <button
-                              key={`sub-${sub.label}`}
+                              key={`sub-${sub.label}-${subIdx}`}
                               type="button"
                               onClick={() => handleSelectSubtitle(sub.label)}
                               className={`w-full px-2.5 py-1.5 rounded-md text-left text-xs sm:text-sm flex items-center gap-2.5 cursor-pointer transition-colors ${
@@ -3892,7 +4028,7 @@ export default function NetflixPlayer({
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
-                  {nextEp && (
+                  {!isMovie && nextEp && (
                     <button
                       type="button"
                       onClick={handleNextEpisode}

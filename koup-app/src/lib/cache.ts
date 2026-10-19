@@ -25,14 +25,31 @@ const inFlightRequests = new Map<string, Promise<any>>();
 const mediaBySlug = new Map<string, any>();
 const mediaById = new Map<number, any>();
 
-const STORAGE_PREFIX = 'koup_cache_v4_';
+const STORAGE_PREFIX = 'koup_cache_v5_';
+let hasPurgedLegacyStorage = false;
 
 function isBrowser(): boolean {
   return typeof window !== 'undefined';
 }
 
+function purgeLegacyCacheOnce(): void {
+  if (hasPurgedLegacyStorage || !isBrowser()) return;
+  hasPurgedLegacyStorage = true;
+  try {
+    const toRemove: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k && k.startsWith('koup_cache_') && !k.startsWith(STORAGE_PREFIX)) {
+        toRemove.push(k);
+      }
+    }
+    toRemove.forEach((k) => window.localStorage.removeItem(k));
+  } catch {}
+}
+
 function getFromStorage<T>(key: string): CacheEntry<T> | null {
   if (!isBrowser()) return null;
+  purgeLegacyCacheOnce();
   try {
     const raw =
       window.localStorage.getItem(STORAGE_PREFIX + key) ||
@@ -366,3 +383,71 @@ export function invalidateCache(keyOrPrefix?: string): void {
     } catch {}
   }
 }
+
+/**
+ * Synchronously update a media item across all caching tiers (memory registry and persistent storage).
+ * Ensures that rating changes, bookmark updates, or view counts immediately reflect across components and post-F5.
+ */
+export function updateCachedMedia(updated: any): void {
+  if (!updated || typeof updated !== 'object') return;
+  const rawSlug = updated.slug ? String(updated.slug).toLowerCase() : null;
+  const cleanSlug = rawSlug ? rawSlug.replace(/[^a-z0-9\-]/g, '') : null;
+  const idNum = updated.id ? Number(updated.id) : null;
+
+  // 1. In-memory registry update
+  const existing = (cleanSlug ? mediaBySlug.get(cleanSlug) : null) || (idNum ? mediaById.get(idNum) : null);
+  const merged = existing ? { ...existing, ...updated } : updated;
+
+  if (cleanSlug) {
+    mediaBySlug.set(cleanSlug, merged);
+  }
+  if (idNum) {
+    mediaById.set(idNum, merged);
+  }
+
+  // 2. Persistent storage update & query invalidation
+  if (isBrowser()) {
+    try {
+      if (cleanSlug) {
+        saveToStorage(`media_stub_${cleanSlug}`, {
+          data: merged,
+          timestamp: Date.now(),
+          ttlMs: 86400_000,
+        });
+        removeFromStorage(`media_detail_${cleanSlug}`);
+        memoryCache.delete(`media_detail_${cleanSlug}`);
+      }
+      if (idNum) {
+        removeFromStorage(`media_${idNum}`);
+        removeFromStorage(`media_detail_${idNum}`);
+        memoryCache.delete(`media_${idNum}`);
+        memoryCache.delete(`media_detail_${idNum}`);
+      }
+    } catch {}
+  }
+}
+
+/**
+ * Invalidate all cached entries (memory registry, stub, query) for a specific media item.
+ */
+export function invalidateMediaCache(slugOrId: string | number): void {
+  if (!slugOrId) return;
+  const clean = String(slugOrId).toLowerCase().replace(/[^a-z0-9\-]/g, '');
+  const num = Number(slugOrId);
+
+  if (clean) {
+    mediaBySlug.delete(clean);
+    memoryCache.delete(`media_stub_${clean}`);
+    memoryCache.delete(`media_detail_${clean}`);
+    removeFromStorage(`media_stub_${clean}`);
+    removeFromStorage(`media_detail_${clean}`);
+  }
+  if (!isNaN(num) && num > 0) {
+    mediaById.delete(num);
+    memoryCache.delete(`media_${num}`);
+    memoryCache.delete(`media_detail_${num}`);
+    removeFromStorage(`media_${num}`);
+    removeFromStorage(`media_detail_${num}`);
+  }
+}
+

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { use, useState, useEffect, useMemo, Suspense } from 'react';
+import React, { use, useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
@@ -47,12 +47,16 @@ import {
   UserMediaProgress,
   getProxiedImageUrl,
   getEpisodeProgressStats,
+  cleanMediaTitle,
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
-import AccordionMediaCard from '@/components/AccordionMediaCard';
+import AccordionMediaCard, { requestAccordionHover } from '@/components/AccordionMediaCard';
 import CountryFlag from '@/components/CountryFlag';
+import Pagination from '@/components/Pagination';
 
 type ProfileTab = 'overview' | 'library' | 'history' | 'lists' | 'comments' | 'import' | 'settings';
+
+const COMMENTS_PER_PAGE = 40;
 
 const AVATAR_PRESETS = [
   { name: 'K-Drama Protagonist', url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80' },
@@ -121,6 +125,13 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
       media_id?: number | null;
       season_number?: number | null;
       episode_number?: number | null;
+      person_id?: number | null;
+      magazine_id?: number | null;
+      parent_id?: string | null;
+      timestamp_sec?: number | null;
+      gif_url?: string | null;
+      sticker_id?: string | null;
+      image_url?: string | null;
       content_html: string;
       has_spoiler?: boolean;
       likes_count?: number;
@@ -133,9 +144,46 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
         cover_image?: string | null;
         content_type?: string;
       } | null;
+      people?: {
+        id: number;
+        slug: string;
+        name: string;
+        image_url?: string | null;
+      } | null;
+      magazine_posts?: {
+        id: number;
+        slug: string;
+        title: string;
+        featured_image?: string | null;
+      } | null;
     }>
   >([]);
+  const [commentsPage, setCommentsPage] = useState<number>(1);
   const [revealedSpoilers, setRevealedSpoilers] = useState<Record<string, boolean>>({});
+  const libraryContainerRef = useRef<HTMLDivElement>(null);
+  const [cardsPerRow, setCardsPerRow] = useState<number>(6);
+
+  useEffect(() => {
+    const updateRowCapacity = () => {
+      const w =
+        libraryContainerRef.current?.clientWidth ||
+        (typeof window !== 'undefined' ? Math.min(window.innerWidth - 64, 1568) : 1320);
+      const isMd = typeof window !== 'undefined' ? window.innerWidth >= 768 : true;
+      const isSm = typeof window !== 'undefined' ? window.innerWidth >= 640 : true;
+      const cardW = isMd ? 200 : isSm ? 185 : 165;
+      const expandDelta = isMd ? 220 : isSm ? 185 : 155;
+      const gap = 16;
+      // Exact capacity so (N * cardW + expandDelta + (N - 1) * gap <= w) — zero wrapping on hover!
+      const cap = Math.max(1, Math.floor((w - expandDelta + gap) / (cardW + gap)));
+      setCardsPerRow(cap);
+    };
+
+    updateRowCapacity();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', updateRowCapacity);
+      return () => window.removeEventListener('resize', updateRowCapacity);
+    }
+  }, [activeTab]);
 
   // Settings form states
   const [editDisplayName, setEditDisplayName] = useState('');
@@ -166,10 +214,6 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
         router.replace('/ayarlar');
         return;
       }
-      if (tabParam === 'history') {
-        router.replace('/gecmis');
-        return;
-      }
       if (validTabs.includes(tabParam)) {
         setActiveTab(tabParam);
       }
@@ -180,10 +224,6 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
     triggerSound('click');
     if (tab === 'settings' || tab === 'import') {
       router.push('/ayarlar');
-      return;
-    }
-    if (tab === 'history') {
-      router.push('/gecmis');
       return;
     }
     setActiveTab(tab);
@@ -221,6 +261,8 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
             role: 'user',
             is_private: false,
             hide_watch_history: false,
+            hide_library: false,
+            hide_comments: false,
             notification_settings: {
               sound_enabled: true,
               sound_tone: 'apple_glass',
@@ -279,10 +321,12 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
       const targetId = profileData.id;
       const isProfilePrivate = Boolean(profileData.is_private);
       const isHistoryHidden = Boolean(profileData.hide_watch_history);
+      const isLibraryHidden = Boolean(profileData.hide_library);
+      const isCommentsHidden = Boolean(profileData.hide_comments);
 
       try {
         // 1. WATCH PROGRESS & WATCHED MEDIA
-        if (!isOwner && (isProfilePrivate || isHistoryHidden)) {
+        if (!isOwner && isProfilePrivate) {
           if (isMounted) {
             setWatchedMedia([]);
             setTargetProgressMap({});
@@ -313,8 +357,8 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                 pMap[r.media_id] = r as UserMediaProgress;
                 if (r.media) mList.push(r.media as MediaItem);
               });
-              setTargetProgressMap(pMap);
-              setWatchedMedia(mList);
+              setTargetProgressMap(!isOwner && isHistoryHidden ? {} : pMap);
+              setWatchedMedia(!isOwner && isLibraryHidden ? [] : mList);
             } else {
               setTargetProgressMap({});
               setWatchedMedia([]);
@@ -338,16 +382,24 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
         }
 
         // 3. USER COMMENTS TAB
-        const { data: commentRows } = await supabase
-          .from('comments')
-          .select('id, user_id, target_type, media_id, season_number, episode_number, content_html, has_spoiler, likes_count, dislikes_count, created_at, media:media_id (id, slug, title, cover_image, content_type)')
-          .eq('user_id', targetId)
-          .eq('is_hidden', false)
-          .order('created_at', { ascending: false })
-          .limit(50);
+        if (!isOwner && (isProfilePrivate || isCommentsHidden)) {
+          if (isMounted) {
+            setProfileComments([]);
+            setCommentsPage(1);
+          }
+        } else {
+          const { data: commentRows } = await supabase
+            .from('comments')
+            .select('id, user_id, target_type, media_id, season_number, episode_number, person_id, magazine_id, parent_id, timestamp_sec, gif_url, sticker_id, image_url, content_html, has_spoiler, likes_count, dislikes_count, created_at, media:media_id (id, slug, title, cover_image, content_type), people:person_id (id, slug, name, image_url), magazine_posts:magazine_id (id, slug, title, featured_image)')
+            .eq('user_id', targetId)
+            .eq('is_hidden', false)
+            .order('created_at', { ascending: false })
+            .limit(1000);
 
-        if (isMounted) {
-          setProfileComments((commentRows as any[]) || []);
+          if (isMounted) {
+            setProfileComments((commentRows as any[]) || []);
+            setCommentsPage(1);
+          }
         }
 
         // 4. CUSTOM LISTS (Filtered by visibility for visitors, zero hardcoded data)
@@ -525,10 +577,33 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
   const currentDisplayProfile = isOwner && user ? user : profileData;
   const isPrivate = Boolean(currentDisplayProfile?.is_private);
   const hideHistory = Boolean(currentDisplayProfile?.hide_watch_history);
+  const hideLibrary = Boolean(currentDisplayProfile?.hide_library);
+  const hideComments = Boolean(currentDisplayProfile?.hide_comments);
 
   // Active progress map (Local-first for owner, targetProgressMap for visitors)
   const activeProgMap = isOwner && Object.keys(progressMap).length > 0 ? progressMap : targetProgressMap;
   const progressItems = Object.values(activeProgMap);
+
+  // Active watching list for history tab
+  const activeWatchingList = useMemo(() => {
+    if (isOwner && continueWatchingList.length > 0) return continueWatchingList;
+    return Object.values(activeProgMap)
+      .filter((p) => {
+        if (!p.media) return false;
+        if (p.status === 'watching') return true;
+        const pos = p.resume_position_sec || 0;
+        const dur = p.resume_duration_sec || 3600;
+        if (pos > 15 && dur > 0 && pos / dur < 0.85 && p.status !== 'dropped') {
+          return true;
+        }
+        if ((p.watched_episodes || []).length > 0 && p.status !== 'dropped') {
+          return true;
+        }
+        return false;
+      })
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+      .slice(0, 30);
+  }, [isOwner, continueWatchingList, activeProgMap]);
 
   // Filtered watched media
   const filteredWatchedMedia = watchedMedia.filter((m) => {
@@ -597,9 +672,22 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
     icon: React.ComponentType<{ className?: string }>;
   }> = [
     { id: 'overview', label: 'Genel Bakış & Drama DNA', icon: BarChart3 },
-    { id: 'library', label: `Kütüphane (${watchedMedia.length})`, icon: Library },
+    {
+      id: 'library',
+      label: !isOwner && hideLibrary ? 'Kütüphane (Gizli)' : `Kütüphane (${watchedMedia.length})`,
+      icon: !isOwner && hideLibrary ? Lock : Library,
+    },
+    {
+      id: 'history',
+      label: !isOwner && hideHistory ? 'İzleme Geçmişi (Gizli)' : `İzleme Geçmişi (${activeWatchingList.length})`,
+      icon: !isOwner && hideHistory ? Lock : Clock,
+    },
     { id: 'lists', label: `Özel Listeler (${customLists.length})`, icon: FolderHeart },
-    { id: 'comments', label: `Yorumlar (${profileComments.length})`, icon: MessageSquare },
+    {
+      id: 'comments',
+      label: !isOwner && hideComments ? 'Yorumlar (Gizli)' : `Yorumlar (${profileComments.length})`,
+      icon: !isOwner && hideComments ? Lock : MessageSquare,
+    },
   ];
 
   if (isLoadingProfile) {
@@ -644,188 +732,189 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
     );
   }
 
+  const bannerSrc = currentDisplayProfile?.banner_url
+    ? getProxiedImageUrl(
+        currentDisplayProfile.banner_url,
+        currentDisplayProfile.username,
+        null,
+        'original',
+        'banner'
+      )
+    : null;
+
   return (
-    <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 space-y-8 relative">
-      {/* AMBIENT CINEMATIC BACKGROUND GLOW FROM BANNER (Not in a box, spreads soft atmospheric light) */}
-      {currentDisplayProfile?.banner_url && (
-        <div className="absolute -top-12 left-0 right-0 h-[540px] overflow-hidden pointer-events-none -z-10 select-none">
-          <div
-            className="w-full h-full bg-cover bg-center blur-[75px] opacity-40 scale-125 transform-gpu transition-all duration-700"
-            style={{
-              backgroundImage: `url(${getProxiedImageUrl(
-                currentDisplayProfile.banner_url,
-                currentDisplayProfile.username,
-                null,
-                'original',
-                'banner'
-              )})`,
-            }}
-          />
-          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#09090b]/75 to-[#09090b]" />
-        </div>
-      )}
+    <div className="min-h-screen relative overflow-x-hidden pb-24">
+      {/* FULL-BLEED ATMOSPHERIC BACKGROUND & AMBIENT LIGHT GLOW */}
+      <div className="absolute top-0 left-0 right-0 h-[520px] sm:h-[600px] overflow-hidden pointer-events-none select-none z-0">
+        {bannerSrc ? (
+          <>
+            {/* Layer 1: Ambient Colored Glow behind everything */}
+            <img
+              src={bannerSrc}
+              alt=""
+              aria-hidden="true"
+              className="absolute inset-0 w-full h-full object-cover object-center blur-[80px] scale-125 opacity-70 saturate-150 transform-gpu"
+            />
+            {/* Layer 2: Full-Bleed Sharp Cover Image across the entire top banner */}
+            <img
+              src={bannerSrc}
+              alt=""
+              aria-hidden="true"
+              className="absolute inset-0 w-full h-full object-cover object-center opacity-65 transform-gpu"
+            />
+          </>
+        ) : (
+          <>
+            <div className="absolute -top-24 left-1/4 w-[500px] h-[350px] rounded-full bg-sky-500/15 blur-[120px]" />
+            <div className="absolute top-12 right-1/4 w-[450px] h-[300px] rounded-full bg-indigo-600/12 blur-[120px]" />
+          </>
+        )}
+        {/* Cinematic multi-stop gradient mask to smoothly dissolve into background */}
+        <div className="absolute inset-0 bg-gradient-to-b from-[#09090b]/30 via-[#09090b]/60 to-[#09090b]" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#09090b]/80 via-transparent to-[#09090b]/80" />
+      </div>
 
-      {/* PROFILE HERO BANNER */}
-      <div className="rounded-3xl overflow-hidden bg-[#0f0f11] border border-white/[0.08] shadow-2xl relative">
-        <div className="h-44 sm:h-64 relative overflow-hidden bg-gradient-to-r from-[#101524] via-[#141b2d] to-[#0c101d]">
-          {currentDisplayProfile?.banner_url ? (
-            <>
-              <img
-                src={getProxiedImageUrl(
-                  currentDisplayProfile.banner_url,
-                  currentDisplayProfile.username,
-                  null,
-                  'original',
-                  'banner'
-                )}
-                alt="Profil Kapak Görseli"
-                className="w-full h-full object-cover object-center scale-105 transform-gpu"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f11] via-[#0f0f11]/50 to-transparent" />
-              <div className="absolute inset-0 bg-gradient-to-r from-[#0f0f11]/70 via-transparent to-[#0f0f11]/70" />
-            </>
-          ) : (
-            <>
-              <div className="absolute inset-0 cinema-vignette" />
-              <div className="absolute -top-16 -right-16 w-80 h-80 rounded-full bg-sky-500/10 blur-3xl pointer-events-none" />
-              <div className="absolute bottom-0 left-1/4 w-96 h-36 bg-blue-600/10 blur-2xl pointer-events-none" />
-            </>
-          )}
-        </div>
-
-        <div className="px-6 sm:px-10 pb-8 -mt-12 relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div className="flex flex-col sm:flex-row sm:items-end gap-5">
-            {/* Clean Avatar Circle */}
-            <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-3xl overflow-hidden border-2 border-white/20 shadow-2xl bg-[#17171b] flex items-center justify-center shrink-0">
-              {currentDisplayProfile?.avatar_url ? (
-                <img
-                  src={getProxiedImageUrl(
-                    currentDisplayProfile.avatar_url,
-                    currentDisplayProfile.display_name || currentDisplayProfile.username,
-                    null,
-                    'w185',
-                    'person'
-                  )}
-                  alt={currentDisplayProfile.display_name || currentDisplayProfile.username}
-                  loading="eager"
-                  decoding="async"
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <User className="w-11 h-11 text-white/80" />
-              )}
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex flex-wrap items-center gap-2.5">
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-                  {currentDisplayProfile?.display_name || currentDisplayProfile?.username || targetUsername}
-                </h1>
-
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-white/[0.06] text-white/65 border border-white/10">
-                  @{currentDisplayProfile?.username || targetUsername}
-                </span>
-
-                {currentDisplayProfile?.role === 'admin' ? (
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30 flex items-center gap-1">
-                    <ShieldCheck className="w-3 h-3 text-amber-400" />
-                    <span>YÖNETİCİ (ADMIN)</span>
-                  </span>
+      <div className="pt-32 sm:pt-40 max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 space-y-8 relative z-10">
+        {/* FRAMELESS PROFILE HERO HEADER */}
+        <div className="space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="flex flex-col sm:flex-row sm:items-start gap-5 sm:gap-6">
+              {/* Avatar with Subtle Glass Ring */}
+              <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-3xl overflow-hidden border-2 border-white/20 shadow-[0_20px_50px_rgba(0,0,0,0.85)] bg-[#141418] flex items-center justify-center shrink-0">
+                {currentDisplayProfile?.avatar_url ? (
+                  <img
+                    src={getProxiedImageUrl(
+                      currentDisplayProfile.avatar_url,
+                      currentDisplayProfile.display_name || currentDisplayProfile.username,
+                      null,
+                      'w185',
+                      'person'
+                    )}
+                    alt={currentDisplayProfile.display_name || currentDisplayProfile.username}
+                    loading="eager"
+                    decoding="async"
+                    className="w-full h-full object-cover"
+                  />
                 ) : (
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-white/10 text-white/70 border border-white/10">
-                    {(currentDisplayProfile?.role || 'ÜYE').toUpperCase()}
-                  </span>
+                  <User className="w-11 h-11 text-white/80" />
                 )}
-
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-white/10 text-white border border-white/15">
-                  {isPrivate ? (
-                    <>
-                      <Lock className="w-3 h-3 text-sky-400" />
-                      <span>Gizli Profil</span>
-                    </>
-                  ) : (
-                    <>
-                      <Globe className="w-3 h-3 text-sky-400" />
-                      <span>Herkese Açık</span>
-                    </>
-                  )}
-                </span>
               </div>
 
-              <p className="text-xs sm:text-sm text-white/60 max-w-xl">
-                {currentDisplayProfile?.bio ||
-                  'K-Drama, C-Drama ve Anime tutkunu • KoUp Sinema Koleksiyoneri'}
-              </p>
+              <div className="flex flex-col justify-between pt-0.5 space-y-2.5">
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight leading-none drop-shadow-[0_2px_12px_rgba(0,0,0,0.8)]">
+                      {currentDisplayProfile?.display_name || currentDisplayProfile?.username || targetUsername}
+                    </h1>
+
+                    {currentDisplayProfile?.role === 'admin' ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-400/20 backdrop-blur-md text-amber-300 border border-amber-400/35 flex items-center gap-1 shadow-[0_0_15px_rgba(251,191,36,0.2)]">
+                        <ShieldCheck className="w-3 h-3 text-amber-400" />
+                        <span>YÖNETİCİ (ADMIN)</span>
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-black/45 backdrop-blur-md text-white/75 border border-white/15">
+                        {(currentDisplayProfile?.role || 'ÜYE').toUpperCase()}
+                      </span>
+                    )}
+
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-black/45 backdrop-blur-md text-white border border-white/15">
+                      {isPrivate ? (
+                        <>
+                          <Lock className="w-3 h-3 text-sky-400" />
+                          <span>Gizli Profil</span>
+                        </>
+                      ) : (
+                        <>
+                          <Globe className="w-3 h-3 text-sky-400" />
+                          <span>Herkese Açık</span>
+                        </>
+                      )}
+                    </span>
+                  </div>
+
+                  {/* Username Tag Directly Under Display Name */}
+                  <div>
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-black/45 backdrop-blur-md text-white/75 border border-white/15">
+                      @{currentDisplayProfile?.username || targetUsername}
+                    </span>
+                  </div>
+                </div>
+
+                <p className="text-xs sm:text-sm text-white/75 max-w-xl drop-shadow-[0_1px_6px_rgba(0,0,0,0.8)]">
+                  {currentDisplayProfile?.bio ||
+                    'K-Drama, C-Drama ve Anime tutkunu • KoUp Sinema Koleksiyoneri'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              {isOwner ? null : !user ? (
+                <button
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 cursor-pointer shadow-lg transition-all"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>Giriş Yap / Takip Et</span>
+                </button>
+              ) : (
+                <button
+                  onClick={async () => {
+                    if (!profileData?.id) return;
+                    triggerSound('click');
+                    if (isUserBlocked(profileData.id)) {
+                      await unblockUser(profileData.id);
+                    } else {
+                      await blockUser(
+                        profileData.id,
+                        profileData.username,
+                        profileData.display_name || undefined,
+                        profileData.avatar_url || undefined
+                      );
+                    }
+                  }}
+                  className={`flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold cursor-pointer transition-all backdrop-blur-md ${
+                    isUserBlocked(profileData?.id)
+                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30'
+                      : 'bg-black/45 text-white/75 border border-white/15 hover:bg-rose-500/15 hover:text-rose-300 hover:border-rose-500/30'
+                  }`}
+                >
+                  <UserX className="w-3.5 h-3.5" />
+                  <span>{isUserBlocked(profileData?.id) ? 'Engeli Kaldır' : 'Engelle'}</span>
+                </button>
+              )}
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
-            {isOwner ? null : !user ? (
-              <button
-                onClick={() => setIsAuthModalOpen(true)}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 cursor-pointer shadow-lg transition-all"
-              >
-                <LogIn className="w-3.5 h-3.5" />
-                <span>Giriş Yap / Takip Et</span>
-              </button>
-            ) : (
-              <button
-                onClick={async () => {
-                  if (!profileData?.id) return;
-                  triggerSound('click');
-                  if (isUserBlocked(profileData.id)) {
-                    await unblockUser(profileData.id);
-                  } else {
-                    await blockUser(
-                      profileData.id,
-                      profileData.username,
-                      profileData.display_name || undefined,
-                      profileData.avatar_url || undefined
-                    );
-                  }
-                }}
-                className={`flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold cursor-pointer transition-all ${
-                  isUserBlocked(profileData?.id)
-                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30'
-                    : 'bg-white/[0.06] text-white/70 border border-white/10 hover:bg-rose-500/15 hover:text-rose-300 hover:border-rose-500/30'
-                }`}
-              >
-                <UserX className="w-3.5 h-3.5" />
-                <span>{isUserBlocked(profileData?.id) ? 'Engeli Kaldır' : 'Engelle'}</span>
-              </button>
-            )}
-          </div>
+          {/* NAVIGATION TABS WITH FLUID SPRING SLIDING PILL */}
+          {(!isPrivate || isOwner) && (
+            <div className="pt-4 border-t border-white/10 flex items-center gap-2 overflow-x-auto no-scrollbar">
+              {TABS.map((t) => {
+                const Icon = t.icon;
+                const active = activeTab === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => switchTab(t.id)}
+                    className={`relative flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                      active ? 'text-black' : 'bg-black/40 backdrop-blur-md border border-white/10 text-white/80 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="profile-active-tab-pill"
+                        transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                        className="absolute inset-0 rounded-full bg-white shadow-[0_0_20px_rgba(255,255,255,0.35)]"
+                      />
+                    )}
+                    <Icon className="w-3.5 h-3.5 relative z-10" />
+                    <span className="relative z-10">{t.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
-
-        {/* NAVIGATION TABS WITH FLUID SPRING SLIDING PILL */}
-        {(!isPrivate || isOwner) && (
-          <div className="px-6 sm:px-10 pb-4 flex items-center gap-2 overflow-x-auto no-scrollbar border-t border-white/[0.06] pt-4">
-            {TABS.map((t) => {
-              const Icon = t.icon;
-              const active = activeTab === t.id;
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => switchTab(t.id)}
-                  className={`relative flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
-                    active ? 'text-black' : 'glass-pill text-white/75 hover:text-white'
-                  }`}
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="profile-active-tab-pill"
-                      transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                      className="absolute inset-0 rounded-full bg-white shadow-[0_0_20px_rgba(255,255,255,0.35)]"
-                    />
-                  )}
-                  <Icon className="w-3.5 h-3.5 relative z-10" />
-                  <span className="relative z-10">{t.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
 
       {/* PRIVATE PROFILE STATE FOR VISITORS */}
       {isPrivate && !isOwner ? (
@@ -1005,7 +1094,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
               transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
               className="space-y-6"
             >
-              {hideHistory && !isOwner ? (
+              {hideLibrary && !isOwner ? (
                 <div className="rounded-3xl bg-[#0f0f11] p-12 text-center border border-white/10 space-y-3">
                   <Lock className="w-8 h-8 text-sky-400 mx-auto" />
                   <p className="text-sm text-white/60">
@@ -1118,9 +1207,27 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                       )}
                     </div>
                   ) : (
-                    <div className="flex flex-wrap gap-4">
-                      {filteredWatchedMedia.map((m) => (
-                        <AccordionMediaCard key={m.id} item={m} />
+                    <div
+                      ref={libraryContainerRef}
+                      onMouseLeave={() => requestAccordionHover(null)}
+                      className="space-y-4 overflow-visible"
+                    >
+                      {Array.from(
+                        { length: Math.ceil(filteredWatchedMedia.length / cardsPerRow) },
+                        (_, rowIdx) =>
+                          filteredWatchedMedia.slice(
+                            rowIdx * cardsPerRow,
+                            (rowIdx + 1) * cardsPerRow
+                          )
+                      ).map((rowItems, rowIdx) => (
+                        <div
+                          key={`lib-row-${rowIdx}`}
+                          className="flex items-center gap-4 flex-nowrap overflow-visible"
+                        >
+                          {rowItems.map((m) => (
+                            <AccordionMediaCard key={m.id} item={m} />
+                          ))}
+                        </div>
                       ))}
                     </div>
                   )}
@@ -1146,104 +1253,104 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                     Bu kullanıcı izleme geçmişini gizli tutmaktadır.
                   </p>
                 </div>
-              ) : isOwner ? (
-                continueWatchingList.length === 0 ? (
-                  <div className="rounded-3xl bg-[#0f0f11] p-14 text-center border border-white/10 space-y-3">
-                    <Clock className="w-8 h-8 text-sky-400 mx-auto mb-2" />
-                    <p className="text-sm text-white/60">
-                      Henüz izleme geçmişiniz bulunmuyor.
-                    </p>
-                    <p className="text-xs text-white/40 max-w-sm mx-auto">
-                      Dizilerin bölümlerini izledikçe ve işaretledikçe sıradaki bölümleriniz otomatik olarak burada listelenecektir.
-                    </p>
+              ) : activeWatchingList.length === 0 ? (
+                <div className="rounded-3xl bg-[#0f0f11] p-14 text-center border border-white/10 space-y-3">
+                  <Clock className="w-8 h-8 text-sky-400 mx-auto mb-2" />
+                  <p className="text-sm text-white/60">
+                    {isOwner
+                      ? 'Henüz izleme geçmişiniz bulunmuyor.'
+                      : 'Bu kullanıcının henüz herkese açık bir izleme geçmişi bulunmuyor.'}
+                  </p>
+                  <p className="text-xs text-white/40 max-w-sm mx-auto">
+                    {isOwner
+                      ? 'Dizilerin bölümlerini izledikçe ve işaretledikçe sıradaki bölümleriniz otomatik olarak burada listelenecektir.'
+                      : 'Kullanıcı dizileri izledikçe son izlenen ve devam edilen yapımlar burada listelenir.'}
+                  </p>
+                  {isOwner && (
                     <Link
                       href="/kesfet"
                       className="inline-block mt-3 px-6 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all"
                     >
                       Dizi & Anime Keşfet
                     </Link>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {continueWatchingList.map((item) => {
-                      const media = item.media;
-                      const stats = getEpisodeProgressStats(item, media);
-                      const barPct = Math.max(
-                        stats.watchedCount > 0 ? 6 : 3,
-                        stats.progressPercent
-                      );
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {activeWatchingList.map((item) => {
+                    const media = item.media;
+                    const stats = getEpisodeProgressStats(item, media);
+                    const barPct = Math.max(
+                      stats.watchedCount > 0 ? 6 : 3,
+                      stats.progressPercent
+                    );
 
-                      return (
-                        <div
-                          key={item.media_id}
-                          className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-4 flex gap-4 hover:border-white/20 transition-all group"
-                        >
-                          <div className="relative w-20 h-28 rounded-2xl overflow-hidden bg-black/60 shrink-0 border border-white/10">
-                            {media?.cover_image ? (
-                              <img
-                                src={getProxiedImageUrl(media.cover_image, media.title)}
-                                alt={media.title || 'Kapak'}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-white/30">
-                                <FilmIcon />
-                              </div>
-                            )}
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                    return (
+                      <div
+                        key={item.media_id}
+                        className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-4 flex gap-4 hover:border-white/20 transition-all group"
+                      >
+                        <div className="relative w-20 h-28 rounded-2xl overflow-hidden bg-black/60 shrink-0 border border-white/10">
+                          {media?.cover_image ? (
+                            <img
+                              src={getProxiedImageUrl(media.cover_image, media.title)}
+                              alt={media.title || 'Kapak'}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-white/30">
+                              <FilmIcon />
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                        </div>
+
+                        <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+                          <div>
+                            <h4 className="text-sm font-bold text-white truncate">
+                              {media?.title || `Yapım #${item.media_id}`}
+                            </h4>
+                            <div className="text-xs text-sky-400 font-mono mt-0.5">
+                              {isOwner
+                                ? `Sıradaki: ${stats.season}. Sezon · ${stats.nextEpisode}. Bölüm`
+                                : `Kaldığı Yer: ${stats.season}. Sezon · ${stats.nextEpisode}. Bölüm`}
+                            </div>
+                            <p className="text-[11px] text-white/50 truncate mt-0.5">
+                              {stats.watchedCount} / {stats.totalEpisodes} Bölüm İzlendi
+                            </p>
                           </div>
 
-                          <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
-                            <div>
-                              <h4 className="text-sm font-bold text-white truncate">
-                                {media?.title || `Yapım #${item.media_id}`}
-                              </h4>
-                              <div className="text-xs text-sky-400 font-mono mt-0.5">
-                                Sıradaki: {stats.season}. Sezon · {stats.nextEpisode}. Bölüm
+                          <div className="space-y-2 mt-2">
+                            {/* Episode Progress bar */}
+                            <div className="space-y-1">
+                              <div className="flex justify-between text-[10px] font-mono text-white/50">
+                                <span>Bölüm İlerlemesi</span>
+                                <span>%{stats.progressPercent}</span>
                               </div>
-                              <p className="text-[11px] text-white/50 truncate mt-0.5">
-                                {stats.watchedCount} / {stats.totalEpisodes} Bölüm İzlendi
-                              </p>
+                              <div className="h-1 rounded-full bg-white/10 overflow-hidden">
+                                <div
+                                  className="h-full bg-sky-400 rounded-full"
+                                  style={{ width: `${barPct}%` }}
+                                />
+                              </div>
                             </div>
 
-                            <div className="space-y-2 mt-2">
-                              {/* Episode Progress bar */}
-                              <div className="space-y-1">
-                                <div className="flex justify-between text-[10px] font-mono text-white/50">
-                                  <span>Bölüm İlerlemesi</span>
-                                  <span>%{stats.progressPercent}</span>
-                                </div>
-                                <div className="h-1 rounded-full bg-white/10 overflow-hidden">
-                                  <div
-                                    className="h-full bg-sky-400 rounded-full"
-                                    style={{ width: `${barPct}%` }}
-                                  />
-                                </div>
-                              </div>
-
-                              <Link
-                                href={
-                                  media?.slug
-                                    ? `/seri/${media.slug}/${stats.nextEpisode}?season=${stats.season}`
-                                    : `/seri/${item.media_id}`
-                                }
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-[11px] font-semibold transition-all w-fit"
-                              >
-                                <Play className="w-3 h-3 text-sky-400 fill-sky-400" />
-                                <span>{stats.nextEpisode}. Bölümden Devam Et</span>
-                              </Link>
-                            </div>
+                            <Link
+                              href={
+                                media?.slug
+                                  ? `/seri/${media.slug}/${stats.nextEpisode}?season=${stats.season}`
+                                  : `/seri/${item.media_id}`
+                              }
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-[11px] font-semibold transition-all w-fit"
+                            >
+                              <Play className="w-3 h-3 text-sky-400 fill-sky-400" />
+                              <span>{isOwner ? `${stats.nextEpisode}. Bölümden Devam Et` : `${stats.nextEpisode}. Bölümü İzle`}</span>
+                            </Link>
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                )
-              ) : (
-                <div className="rounded-3xl bg-[#0f0f11] p-12 text-center border border-white/10 space-y-2">
-                  <p className="text-xs text-white/50">
-                    Kullanıcının herkese açık izleme geçmişi burada listelenir.
-                  </p>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </motion.div>
@@ -1364,21 +1471,28 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-              className="space-y-4"
+              className="space-y-5"
             >
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
                     <MessageSquare className="w-4 h-4 text-sky-400" />
                     <span>Paylaşılan Yorumlar ({profileComments.length})</span>
                   </h3>
                   <p className="text-xs text-white/50 mt-0.5">
-                    Kullanıcının dizi, film, anime ve bölümlere yazdığı en son değerlendirmeler.
+                    Kullanıcının dizi, film, anime ve bölümlere yazdığı değerlendirmeler.
                   </p>
                 </div>
               </div>
 
-              {profileComments.length === 0 ? (
+              {hideComments && !isOwner ? (
+                <div className="rounded-3xl bg-[#0f0f11] p-12 text-center border border-white/10 space-y-3">
+                  <Lock className="w-8 h-8 text-sky-400 mx-auto" />
+                  <p className="text-sm text-white/60">
+                    Bu kullanıcı profilindeki yorumları gizli tutmayı tercih etmiştir.
+                  </p>
+                </div>
+              ) : profileComments.length === 0 ? (
                 <div className="rounded-3xl bg-[#0f0f11] p-12 text-center border border-white/[0.08] space-y-3">
                   <MessageSquare className="w-8 h-8 text-white/20 mx-auto" />
                   <p className="text-sm text-white/60">
@@ -1386,113 +1500,270 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-4">
-                  {profileComments.map((comment) => {
-                    const isSpoiler = Boolean(comment.has_spoiler);
-                    const isRevealed = revealedSpoilers[comment.id];
-                    const media = comment.media;
-                    const isEpisode = Boolean(comment.season_number && comment.episode_number);
+                <>
+                  <div className="grid grid-cols-1 gap-4">
+                    {profileComments
+                      .slice(
+                        (commentsPage - 1) * COMMENTS_PER_PAGE,
+                        commentsPage * COMMENTS_PER_PAGE
+                      )
+                      .map((comment) => {
+                        const isSpoiler = Boolean(comment.has_spoiler);
+                        const isRevealed = revealedSpoilers[comment.id];
+                        const media = comment.media;
+                        const person = comment.people;
+                        const mag = comment.magazine_posts;
+                        const isEpisode = Boolean(
+                          comment.season_number && comment.episode_number
+                        );
 
-                    const targetLink = media?.slug
-                      ? isEpisode
-                        ? `/seri/${media.slug}/${comment.episode_number}?season=${comment.season_number}`
-                        : `/${media.content_type === 'film' ? 'film' : 'seri'}/${media.slug}`
-                      : '#';
+                        // Content page link (series, episode, actor, or magazine)
+                        const contentHref = media?.slug
+                          ? isEpisode
+                            ? `/seri/${media.slug}/${comment.episode_number}?season=${comment.season_number || 1}`
+                            : `/seri/${media.slug}`
+                          : person?.slug
+                          ? `/oyuncu/${person.slug}`
+                          : mag?.slug
+                          ? `/magazin/${mag.slug}`
+                          : '#';
 
-                    return (
-                      <div
-                        key={comment.id}
-                        className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-5 sm:p-6 space-y-3.5 hover:border-white/20 transition-all"
-                      >
-                        {/* Target Media Header */}
-                        <div className="flex items-center justify-between gap-3 flex-wrap">
-                          <Link
-                            href={targetLink}
-                            className="flex items-center gap-3 group/link min-w-0"
-                          >
-                            {media?.cover_image && (
-                              <img
-                                src={getProxiedImageUrl(media.cover_image, media.title, null, 'w185', 'poster')}
-                                alt={media.title || 'Kapak'}
-                                className="w-9 h-12 rounded-lg object-cover border border-white/10 shrink-0 group-hover/link:scale-105 transition-transform"
-                              />
-                            )}
-                            <div className="min-w-0">
-                              <div className="text-xs font-bold text-white group-hover/link:text-sky-300 transition-colors truncate">
-                                {media?.title || 'Yapım'}
-                              </div>
-                              <div className="flex items-center gap-2 text-[10px] font-mono text-white/45 mt-0.5 flex-wrap">
-                                {isEpisode ? (
-                                  <span className="text-sky-400 bg-sky-400/10 px-2 py-0.5 rounded-full border border-sky-400/20">
-                                    {comment.season_number}. Sezon {comment.episode_number}. Bölüm
-                                  </span>
-                                ) : (
-                                  <span className="text-white/60 bg-white/5 px-2 py-0.5 rounded-full border border-white/10">
-                                    Genel İnceleme
-                                  </span>
-                                )}
-                                <span>•</span>
-                                <span>
-                                  {comment.created_at
-                                    ? new Date(comment.created_at).toLocaleDateString('tr-TR', {
-                                        day: 'numeric',
-                                        month: 'long',
-                                        year: 'numeric',
-                                      })
-                                    : 'Geçmiş'}
-                                </span>
-                              </div>
-                            </div>
-                          </Link>
+                        // Direct jump link to the exact comment (#comment-ID + ?comment_id=ID)
+                        const commentJumpUrl =
+                          contentHref !== '#'
+                            ? `${contentHref}${contentHref.includes('?') ? '&' : '?'}comment_id=${comment.id}#comment-${comment.id}`
+                            : '#';
 
-                          {/* Likes count */}
-                          <div className="flex items-center gap-3 text-xs font-mono text-white/50 shrink-0">
-                            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.03] border border-white/10">
-                              <Heart className="w-3.5 h-3.5 text-rose-400 fill-rose-400/30" />
-                              <span>{comment.likes_count || 0}</span>
-                            </span>
-                          </div>
-                        </div>
+                        const displayTitle = media?.title
+                          ? cleanMediaTitle(media.title)
+                          : person?.name || mag?.title || 'İçerik Yorumu';
 
-                        {/* Comment Body with Spoiler Protection */}
-                        {isSpoiler && !isRevealed ? (
+                        const thumbSrc = media?.cover_image
+                          ? getProxiedImageUrl(
+                              media.cover_image,
+                              media.title,
+                              null,
+                              'w342',
+                              'poster'
+                            )
+                          : person?.image_url
+                          ? getProxiedImageUrl(
+                              person.image_url,
+                              person.name,
+                              null,
+                              'w342',
+                              'person'
+                            )
+                          : mag?.featured_image
+                          ? getProxiedImageUrl(mag.featured_image, mag.title)
+                          : null;
+
+                        return (
                           <div
-                            onClick={() =>
-                              setRevealedSpoilers((prev) => ({ ...prev, [comment.id]: true }))
-                            }
-                            className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 cursor-pointer hover:bg-amber-500/15 transition-all flex items-center justify-between gap-3"
+                            key={comment.id}
+                            className="rounded-3xl bg-[#0e0e13]/90 backdrop-blur-xl border border-white/[0.08] hover:border-white/20 p-4 sm:p-5 transition-colors duration-120 flex items-start gap-4 sm:gap-5 shadow-lg"
                           >
-                            <div className="flex items-center gap-2.5 text-xs text-amber-300 font-semibold">
-                              <EyeOff className="w-4 h-4 text-amber-400 shrink-0" />
-                              <span>Bu yorum sürprizbozan (spoiler) içerir. Görmek için tıklayın.</span>
-                            </div>
-                            <span className="text-[10px] font-mono text-amber-400 underline shrink-0">
-                              Göster
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="text-xs sm:text-sm text-white/80 leading-relaxed break-words bg-black/20 p-4 rounded-2xl border border-white/[0.04]">
-                            <div
-                              dangerouslySetInnerHTML={{ __html: comment.content_html }}
-                              className="prose prose-invert prose-xs max-w-none [&_p]:m-0"
-                            />
-                            {isSpoiler && (
-                              <div className="mt-2 text-[10px] font-mono text-amber-400/70 flex items-center gap-1">
-                                <Eye className="w-3 h-3" />
-                                <span>Spoiler içeriği gösterildi</span>
+                            {/* Left: Fixed-size Larger Poster Thumbnail (Zero scale/zoom on hover or focus) */}
+                            <Link
+                              href={contentHref}
+                              onClick={() => triggerSound('click')}
+                              className="w-16 h-24 sm:w-20 sm:h-28 rounded-2xl overflow-hidden border border-white/15 hover:border-white/30 bg-[#141418] shrink-0 shadow-md transition-colors duration-120 block focus:outline-none"
+                              aria-label={displayTitle}
+                            >
+                              {thumbSrc ? (
+                                <img
+                                  src={thumbSrc}
+                                  alt={displayTitle}
+                                  loading="lazy"
+                                  decoding="async"
+                                  className="w-full h-full object-cover block"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-white/25">
+                                  <FilmIcon />
+                                </div>
+                              )}
+                            </Link>
+
+                            {/* Right: Header, Comment Content & Actions */}
+                            <div className="flex-1 min-w-0 space-y-3">
+                              {/* Top Header Row: Title + Meta Badges on Left, Likes & "Yoruma Git" on Right */}
+                              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5">
+                                <div className="min-w-0 space-y-1.5">
+                                  <Link
+                                    href={contentHref}
+                                    onClick={() => triggerSound('click')}
+                                    className="text-sm sm:text-base font-bold text-white hover:text-sky-300 transition-colors duration-120 line-clamp-1 block focus:outline-none"
+                                  >
+                                    {displayTitle}
+                                  </Link>
+
+                                  <div className="flex items-center gap-2 text-[11px] font-mono text-white/50 flex-wrap">
+                                    {isEpisode ? (
+                                      <span className="text-sky-300 bg-sky-500/15 px-2.5 py-0.5 rounded-full border border-sky-400/30 font-semibold">
+                                        {comment.season_number}. Sezon • {comment.episode_number}. Bölüm
+                                      </span>
+                                    ) : person ? (
+                                      <span className="text-purple-300 bg-purple-500/15 px-2.5 py-0.5 rounded-full border border-purple-400/30 font-semibold">
+                                        Oyuncu Yorumu
+                                      </span>
+                                    ) : mag ? (
+                                      <span className="text-amber-300 bg-amber-500/15 px-2.5 py-0.5 rounded-full border border-amber-400/30 font-semibold">
+                                        Magazin Yorumu
+                                      </span>
+                                    ) : (
+                                      <span className="text-white/75 bg-white/[0.06] px-2.5 py-0.5 rounded-full border border-white/12 font-medium">
+                                        Genel İnceleme
+                                      </span>
+                                    )}
+
+                                    {comment.timestamp_sec !== undefined &&
+                                      comment.timestamp_sec !== null && (
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-400/30 text-[10px]">
+                                          <Clock className="w-2.5 h-2.5 text-sky-400" />
+                                          <span>
+                                            {Math.floor(comment.timestamp_sec / 60)}:
+                                            {String(comment.timestamp_sec % 60).padStart(2, '0')}
+                                          </span>
+                                        </span>
+                                      )}
+
+                                    {comment.sticker_id && (
+                                      <span className="px-2 py-0.5 rounded-full bg-amber-400/15 border border-amber-400/30 text-amber-200 text-[10px]">
+                                        {comment.sticker_id}
+                                      </span>
+                                    )}
+
+                                    <span className="text-white/30">•</span>
+                                    <span>
+                                      {comment.created_at
+                                        ? new Date(comment.created_at).toLocaleDateString(
+                                            'tr-TR',
+                                            {
+                                              day: 'numeric',
+                                              month: 'long',
+                                              year: 'numeric',
+                                            }
+                                          )
+                                        : 'Geçmiş'}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Right Action Bar: Likes + Yoruma Git Button */}
+                                <div className="flex items-center gap-2 shrink-0 self-start">
+                                  <span
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/[0.04] border border-white/10 text-xs font-mono tabular-nums text-white/75"
+                                    title="Beğeni Sayısı"
+                                  >
+                                    <Heart className="w-3.5 h-3.5 text-rose-400 fill-rose-400/30 shrink-0" />
+                                    <span>{comment.likes_count || 0}</span>
+                                  </span>
+
+                                  {commentJumpUrl !== '#' && (
+                                    <Link
+                                      href={commentJumpUrl}
+                                      onClick={() => triggerSound('click')}
+                                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/[0.06] hover:bg-sky-500/20 text-sky-300 hover:text-white border border-sky-400/30 hover:border-sky-400/60 text-xs font-semibold transition-colors duration-120 cursor-pointer select-none focus:outline-none"
+                                    >
+                                      <span>Yoruma Git</span>
+                                      <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                                    </Link>
+                                  )}
+                                </div>
                               </div>
-                            )}
+
+                              {/* Comment Body with Spoiler Protection */}
+                              {isSpoiler && !isRevealed ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setRevealedSpoilers((prev) => ({
+                                      ...prev,
+                                      [comment.id]: true,
+                                    }))
+                                  }
+                                  className="w-full p-3.5 rounded-2xl bg-rose-950/25 hover:bg-rose-950/40 border border-rose-400/30 cursor-pointer transition-colors duration-120 flex items-center justify-between gap-3 text-left"
+                                >
+                                  <div className="flex items-center gap-2.5 text-xs text-rose-200 font-semibold">
+                                    <EyeOff className="w-4 h-4 text-rose-400 shrink-0" />
+                                    <span>
+                                      Bu yorum sürprizbozan (spoiler) içeriyor · Görmek için tıkla
+                                    </span>
+                                  </div>
+                                  <span className="text-[11px] font-mono font-bold text-rose-300 px-2.5 py-0.5 rounded-full bg-rose-500/20 border border-rose-400/30 shrink-0">
+                                    Göster
+                                  </span>
+                                </button>
+                              ) : (
+                                <div className="text-xs sm:text-sm text-white/90 leading-relaxed break-words bg-[#08080c]/85 p-3.5 sm:p-4 rounded-2xl border border-white/[0.06] space-y-2.5">
+                                  {comment.content_html && (
+                                    <div
+                                      dangerouslySetInnerHTML={{
+                                        __html: comment.content_html,
+                                      }}
+                                      className="comment-content prose prose-invert prose-xs max-w-none [&_p]:m-0"
+                                    />
+                                  )}
+
+                                  {comment.gif_url && (
+                                    <img
+                                      src={comment.gif_url}
+                                      alt="Yorum GIF"
+                                      loading="lazy"
+                                      className="max-h-40 rounded-xl border border-white/10 object-contain block"
+                                    />
+                                  )}
+
+                                  {comment.image_url &&
+                                    comment.image_url.startsWith('https://') && (
+                                      <img
+                                        src={getProxiedImageUrl(comment.image_url)}
+                                        alt="Yorum Görseli"
+                                        loading="lazy"
+                                        className="max-h-52 rounded-xl border border-white/10 object-contain block"
+                                      />
+                                    )}
+
+                                  {isSpoiler && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setRevealedSpoilers((prev) => ({
+                                          ...prev,
+                                          [comment.id]: false,
+                                        }))
+                                      }
+                                      className="text-[10px] font-mono text-white/45 hover:text-white/75 flex items-center gap-1 cursor-pointer transition-colors pt-0.5"
+                                    >
+                                      <Eye className="w-3 h-3" />
+                                      <span>Spoiler içeriği tekrar gizle</span>
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                        );
+                      })}
+                  </div>
+
+                  {/* Pagination (40 comments per page) */}
+                  <Pagination
+                    currentPage={commentsPage}
+                    totalCount={profileComments.length}
+                    pageSize={COMMENTS_PER_PAGE}
+                    onPageChange={setCommentsPage}
+                    itemLabel="yorumdan"
+                    scrollToOffset={260}
+                  />
+                </>
               )}
             </motion.div>
           )}
         </AnimatePresence>
       )}
+      </div>
     </div>
   );
 }

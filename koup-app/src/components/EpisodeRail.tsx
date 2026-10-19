@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo, memo } from 'react';
-import { Film, Play, Check } from 'lucide-react';
-import { MediaItem, EpisodeData, formatEpisodeTitle, getEpisodeProgress, UserMediaProgress } from '@/lib/supabase';
+import { Film, Play, Check, Eye } from 'lucide-react';
+import { MediaItem, EpisodeData, formatEpisodeTitle, getEpisodeProgress, UserMediaProgress, formatViewCount } from '@/lib/supabase';
 import CustomSelect from '@/components/CustomSelect';
 
 const RAIL_ITEM_HEIGHT_NORMAL = 64;
@@ -23,6 +23,7 @@ interface EpisodeRailProps {
   onSelectEpisode: (epNum: number, seasonNum: number) => void;
   onToggleWatched: (ep: EpisodeData) => void;
   onSelectSeason: (season: number) => void;
+  ambientLightingEnabled?: boolean;
 }
 
 function EpisodeRailComponent({
@@ -40,6 +41,7 @@ function EpisodeRailComponent({
   onSelectEpisode,
   onToggleWatched,
   onSelectSeason,
+  ambientLightingEnabled = false,
 }: EpisodeRailProps) {
   const railListRef = useRef<HTMLDivElement | null>(null);
   const rafIdRef = useRef<number | null>(null);
@@ -115,14 +117,18 @@ function EpisodeRailComponent({
   );
 
   return (
-    <div className="w-full min-h-0">
+    <div className="w-full min-h-0 relative z-20">
       <div
         style={
           playerHeight
             ? ({ '--player-height': `${playerHeight}px` } as React.CSSProperties)
             : undefined
         }
-        className={`rounded-3xl bg-[#0e0e12]/95 border border-white/10 shadow-2xl flex flex-col transition-[padding,height] duration-200 min-h-0 overflow-hidden player-synced-height ${
+        className={`rounded-3xl border shadow-xl flex flex-col transition-all duration-300 min-h-0 overflow-hidden player-synced-height ${
+          ambientLightingEnabled
+            ? 'bg-[#0b0b0f]/72 backdrop-blur-xl border-white/15'
+            : 'bg-[#0e0e12] border-white/10'
+        } ${
           cinemaLightsOff
             ? 'p-2 sm:p-2.5 h-[380px] sm:h-[420px]'
             : 'p-4 sm:p-4.5 h-[470px] sm:h-[490px]'
@@ -275,36 +281,44 @@ function EpisodeRailComponent({
                           ep.episode_number
                         )}
                       </div>
-                      {epWatched ? (
-                        <div className="text-[10px] font-mono mt-0.5 flex items-center gap-1.5">
+                      <div className="mt-0.5 flex items-center flex-wrap gap-2 text-[10px] font-mono">
+                        <span
+                          className="inline-flex items-center gap-1 text-white/50"
+                          title="Bölüm Görüntülenme Sayısı"
+                        >
+                          <Eye className="w-3 h-3 text-sky-400/80 shrink-0" />
+                          <span>{formatViewCount(ep.views_count || 0)}</span>
+                        </span>
+
+                        {epWatched ? (
                           <span className="text-emerald-400 font-medium">
-                            İzlendi
+                            • İzlendi
                           </span>
-                        </div>
-                      ) : (() => {
-                        const epProg = getEpisodeProgress(
-                          userProgress,
-                          mediaId,
-                          ep.season_number || currentSeason,
-                          ep.episode_number
-                        );
-                        if (epProg.position > 15) {
-                          return (
-                            <div className="flex items-center gap-1.5 mt-1">
-                              <div className="w-12 h-1 bg-white/20 rounded-full overflow-hidden">
-                                <div
-                                  style={{ width: `${epProg.percent}%` }}
-                                  className="h-full bg-[#E50914]"
-                                />
-                              </div>
-                              <span className="text-[9px] font-mono text-white/50">
-                                {epProg.remainingMinutes} dk kaldı
-                              </span>
-                            </div>
+                        ) : (() => {
+                          const epProg = getEpisodeProgress(
+                            userProgress,
+                            mediaId,
+                            ep.season_number || currentSeason,
+                            ep.episode_number
                           );
-                        }
-                        return null;
-                      })()}
+                          if (epProg.position > 15) {
+                            return (
+                              <div className="flex items-center gap-1.5">
+                                <div className="w-12 h-1 bg-white/20 rounded-full overflow-hidden">
+                                  <div
+                                    style={{ width: `${epProg.percent}%` }}
+                                    className="h-full bg-[#E50914]"
+                                  />
+                                </div>
+                                <span className="text-[9px] font-mono text-white/50">
+                                  {epProg.remainingMinutes} dk kaldı
+                                </span>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
                     </div>
                   </div>
 

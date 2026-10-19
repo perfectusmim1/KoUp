@@ -24,8 +24,8 @@ if hasattr(sys.stdout, "reconfigure"):
 
 SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "https://aocvcotmikzlwbaezdpl.supabase.co")
 SUPABASE_KEY = os.environ.get(
-    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvY3Zjb3RtaWt6bHdiYWV6ZHBsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxMzk2NTEsImV4cCI6MjEwNzcxNTY1MX0.JDmNvA7OKvLjbXYl-yn6CSMdFFBpJ6EFIkTp_eg-qnk",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvY3Zjb3RtaWt6bHdiYWV6ZHBsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MjEzOTY1MSwiZXhwIjoyMTA3NzE1NjUxfQ.K78fnOdpdiZiZHxT_Yy80cTWsdFCHP2uDLMrpfL1Ceg",
 )
 
 HEADERS = {
@@ -119,6 +119,17 @@ def sync_dizikorea():
 
     day_panels = soup.select(".cal-day-panel")
     if day_panels:
+        # Purge old dizikorea entries before inserting current week
+        try:
+            requests.delete(
+                f"{SUPABASE_URL}/rest/v1/calendar_schedules?source_site=eq.dizikorea",
+                headers=HEADERS,
+                timeout=10,
+            )
+            print("Purged old dizikorea calendar entries.")
+        except Exception as e:
+            print(f"Warning purging dizikorea: {e}")
+
         dedup_map = {}
         for panel in day_panels:
             pid = panel.get("data-cal-panel")
@@ -243,6 +254,16 @@ def sync_dizibox():
 
     day_labels = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
     count = 0
+
+    try:
+        requests.delete(
+            f"{SUPABASE_URL}/rest/v1/calendar_schedules?source_site=eq.dizibox",
+            headers=HEADERS,
+            timeout=10,
+        )
+        print("Purged old dizibox calendar entries.")
+    except Exception as e:
+        print(f"Warning purging dizibox: {e}")
 
     for idx, col in enumerate(cols[:7]):
         day_num = idx + 1
@@ -387,6 +408,16 @@ def sync_asyaanimeleri_calendar():
     }
 
     count = 0
+    try:
+        requests.delete(
+            f"{SUPABASE_URL}/rest/v1/calendar_schedules?source_site=eq.asyaanimeleri",
+            headers=HEADERS,
+            timeout=10,
+        )
+        print("Purged old asyaanimeleri calendar entries.")
+    except Exception as e:
+        print(f"Warning purging asyaanimeleri: {e}")
+
     for sch_class, (day_num, day_name) in day_class_map.items():
         box = soup.select_one(f".bixbox.schedulepage.{sch_class}")
         if not box:

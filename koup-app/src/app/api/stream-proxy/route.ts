@@ -44,8 +44,19 @@ function isBlockedIpOrHost(hostname: string): boolean {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const targetUrl = searchParams.get('url');
+  let targetUrl = searchParams.get('url');
   const customRef = searchParams.get('ref');
+
+  if (targetUrl && !targetUrl.startsWith('http')) {
+    if (targetUrl.startsWith('//')) {
+      targetUrl = `https:${targetUrl}`;
+    } else if (targetUrl.startsWith('/') && customRef && customRef.startsWith('http')) {
+      try {
+        const refOrigin = new URL(customRef).origin;
+        targetUrl = `${refOrigin}${targetUrl}`;
+      } catch {}
+    }
+  }
 
   if (!targetUrl || !targetUrl.startsWith('http')) {
     return NextResponse.json({ error: 'Invalid url parameter' }, { status: 400 });
@@ -97,9 +108,12 @@ export async function GET(req: NextRequest) {
     } else if (targetUrl.includes('animecix') || targetUrl.includes('tau-video')) {
       referer = 'https://animecix.net/';
       origin = 'https://animecix.net';
-    } else if (targetUrl.includes('sibnet.ru')) {
-      referer = 'https://video.sibnet.ru/';
-      origin = 'https://video.sibnet.ru';
+    } else if (targetUrl.includes('mail.ru')) {
+      referer = 'https://my.mail.ru/';
+      origin = 'https://my.mail.ru';
+    } else if (targetUrl.includes('uqload')) {
+      referer = 'https://uqload.vc/';
+      origin = 'https://uqload.vc';
     } else if (targetUrl.includes('vidmoly') || targetUrl.includes('vmoly')) {
       referer = 'https://vidmoly.biz/';
       origin = 'https://vidmoly.biz';
@@ -166,14 +180,33 @@ export async function GET(req: NextRequest) {
       upstreamHeaders['Range'] = rangeHeader;
     }
 
+    const isMediaChunk =
+      targetUrl.includes('.ts') ||
+      targetUrl.includes('.mp4') ||
+      targetUrl.includes('.m4s') ||
+      targetUrl.includes('.webm') ||
+      (targetUrl.includes('.jpg') && (targetUrl.includes('/f/') || targetUrl.includes('/o/a/') || targetUrl.includes('/m/a/') || targetUrl.includes('/dual')));
+    const fetchTimeoutMs = isMediaChunk ? 60000 : 20000;
+
     let upstreamRes: Response | null = null;
     try {
       upstreamRes = await fetch(targetUrl, {
         headers: upstreamHeaders,
         redirect: 'follow',
-        signal: AbortSignal.timeout(12000),
+        signal: AbortSignal.timeout(fetchTimeoutMs),
       });
     } catch {}
+
+    // 1-time retry for media chunks if initial connection was interrupted
+    if (!upstreamRes && isMediaChunk) {
+      try {
+        upstreamRes = await fetch(targetUrl, {
+          headers: upstreamHeaders,
+          redirect: 'follow',
+          signal: AbortSignal.timeout(fetchTimeoutMs),
+        });
+      } catch {}
+    }
 
     // If upstream fetch failed or returned 403 (e.g. Cloudflare on Pichive/Hotlinger playlists/subtitles), fall back to curl!
     if (!upstreamRes || (!upstreamRes.ok && upstreamRes.status !== 206)) {

@@ -32,6 +32,7 @@ import {
   ListOrdered,
   FolderHeart,
   AlertTriangle,
+  Megaphone,
 } from 'lucide-react';
 import {
   supabase,
@@ -45,6 +46,7 @@ import { useKoUp } from '@/context/KoUpContext';
 import AuthModal from '@/components/AuthModal';
 import { cachedQuery, registerMediaItems } from '@/lib/cache';
 import { normalizeSearchQuery } from '@/lib/search';
+import { rankSearchResults } from '@/lib/searchRanking';
 
 const NAV_LINKS = [
   { href: '/', label: 'Ana Sayfa', icon: Home },
@@ -84,6 +86,29 @@ export default function Navbar() {
     navbarBehavior,
     floatingNavbarEnabled,
   } = useKoUp();
+
+  const dedupedNotifications = React.useMemo(() => {
+    const seenIds = new Set<string>();
+    const seenFps = new Set<string>();
+    const deduped: typeof notifications = [];
+    const sorted = [...notifications].sort((a, b) => {
+      const aIsDb = !a.id.startsWith('notif-');
+      const bIsDb = !b.id.startsWith('notif-');
+      if (aIsDb && !bIsDb) return -1;
+      if (!aIsDb && bIsDb) return 1;
+      return 0;
+    });
+    for (const n of sorted) {
+      if (!n || !n.id) continue;
+      if (seenIds.has(n.id)) continue;
+      const fp = `${(n.title || '').trim()}::${(n.body || '').trim()}`;
+      if (fp.length > 2 && seenFps.has(fp)) continue;
+      seenIds.add(n.id);
+      if (fp.length > 2) seenFps.add(fp);
+      deduped.push(n);
+    }
+    return deduped;
+  }, [notifications]);
 
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -180,7 +205,7 @@ export default function Navbar() {
         });
 
         if (!active) return;
-        const mediaItems = (mList as MediaItem[]) || [];
+        const mediaItems = rankSearchResults((mList as MediaItem[]) || [], raw);
         registerMediaItems(mediaItems);
         setMediaResults(mediaItems);
         setPersonResults((pList as PersonItem[]) || []);
@@ -268,20 +293,21 @@ export default function Navbar() {
             navbarBehavior === 'floating'
               ? isScrolled
                 ? 'mt-2 sm:mt-3.5 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-full bg-[#08080a]/92 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.9),0_0_30px_-5px_rgba(41,151,255,0.08)] py-2 sm:py-2.5 px-4 sm:px-6'
-                : 'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-[#080808]/95 via-[#080808]/70 to-transparent backdrop-blur-[12px] py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+                : 'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
               : navbarBehavior === 'sticky'
               ? isScrolled
                 ? 'mt-0 w-full max-w-full rounded-none bg-[#08080a]/95 backdrop-blur-2xl border-b border-white/10 shadow-[0_12px_32px_rgba(0,0,0,0.8)] py-3 sm:py-4 px-4 sm:px-8 lg:px-14'
-                : 'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-[#080808]/95 via-[#080808]/70 to-transparent backdrop-blur-[12px] py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+                : 'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
               : /* static: sitenin üstünde kalır, sayfa kayınca bizle gelmez */
-                'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-[#080808]/95 via-[#080808]/70 to-transparent backdrop-blur-[12px] py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+                'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
           }`}
         >
       {/* LEFT: Brand Mark (Original KU Logo — No Circle or Box Wrapper) */}
       <div className="pointer-events-auto flex items-center gap-2 sm:gap-3">
         <button
+          type="button"
           onClick={() => setMobileMenuOpen((v) => !v)}
-          className="lg:hidden w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white/80 hover:text-white cursor-pointer"
+          className="lg:hidden w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white/80 hover:text-white cursor-pointer select-none focus:outline-none focus-visible:outline-none active:bg-white/20"
           aria-label="Menü"
         >
           <Menu className="w-5 h-5" />
@@ -291,12 +317,12 @@ export default function Navbar() {
           href="/"
           prefetch={true}
           onClick={() => triggerSound('click')}
-          className="flex items-center gap-2 sm:gap-3 group"
+          className="hidden sm:flex items-center gap-2 sm:gap-3 group select-none"
         >
           <img
             src="/logo-dark.png"
             alt="KoUp"
-            className="h-8 sm:h-9 w-auto object-contain transition-transform duration-300 group-hover:scale-105 drop-shadow-[0_4px_16px_rgba(255,255,255,0.2)]"
+            className="h-8 sm:h-9 w-auto object-contain transition-opacity duration-300 group-hover:opacity-90 drop-shadow-[0_4px_16px_rgba(255,255,255,0.2)]"
           />
           <div className="flex flex-col">
             <span className="text-[15px] sm:text-[16px] font-bold tracking-wider text-white leading-none">
@@ -562,7 +588,11 @@ export default function Navbar() {
               setProfileDropdownOpen(false);
               setSearchOpen(false);
             }}
-            className="w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white/80 hover:text-white relative cursor-pointer transition-all duration-300 ease-out hover:border-[var(--accent-blue)]/50 hover:bg-white/[0.1] hover:shadow-[0_0_16px_rgba(41,151,255,0.25)] hover:scale-[1.05] active:scale-[0.95]"
+            className={`w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white/80 hover:text-white focus-visible:text-white relative cursor-pointer transition-all duration-200 focus:outline-none focus-visible:outline-none ${
+              notifOpen
+                ? 'bg-white/[0.22] border-white/45 shadow-[0_0_16px_rgba(255,255,255,0.18)] text-white'
+                : 'hover:bg-white/[0.20] hover:border-white/40 hover:shadow-[0_0_16px_rgba(255,255,255,0.14)] focus-visible:bg-white/[0.20] focus-visible:border-white/40'
+            }`}
             aria-label="Bildirimler"
           >
             <Bell className="w-4 h-4" />
@@ -592,7 +622,6 @@ export default function Navbar() {
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
                     {unreadCount > 0 && (
                       <button
                         onClick={() => markAllNotificationsRead()}
@@ -603,14 +632,7 @@ export default function Navbar() {
                         <span>Tümünü Oku</span>
                       </button>
                     )}
-                    <button
-                      onClick={() => setNotifOpen(false)}
-                      className="text-[11px] text-white/50 hover:text-white cursor-pointer px-1.5 py-0.5 rounded-lg hover:bg-white/10"
-                    >
-                      Kapat
-                    </button>
                   </div>
-                </div>
 
                 {/* Notifications List */}
                 <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
@@ -632,13 +654,13 @@ export default function Navbar() {
                         Giriş Yap
                       </button>
                     </div>
-                  ) : notifications.length === 0 ? (
+                  ) : dedupedNotifications.length === 0 ? (
                     <div className="py-8 text-center text-xs text-white/50 space-y-1">
                       <Bell className="w-5 h-5 text-white/30 mx-auto mb-1" />
                       <p>Yeni bildiriminiz yok.</p>
                     </div>
                   ) : (
-                    notifications.map((n) => {
+                    dedupedNotifications.map((n) => {
                       const href = n.linkUrl || (n as any).link_url;
                       const isUnread = !n.isRead;
 
@@ -655,8 +677,8 @@ export default function Navbar() {
                         CatIcon = MessageSquare;
                         catColor = 'bg-sky-500/20 text-sky-300 border-sky-400/30';
                       } else if (n.type === 'system' || n.type === 'info') {
-                        CatIcon = AlertTriangle;
-                        catColor = 'bg-rose-500/20 text-rose-300 border-rose-400/30';
+                        CatIcon = Megaphone;
+                        catColor = 'bg-indigo-500/20 text-indigo-300 border-indigo-400/30';
                       }
 
                       const cardContent = (
@@ -770,15 +792,15 @@ export default function Navbar() {
                 setNotifOpen(false);
                 setSearchOpen(false);
               }}
-              className={`group flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 rounded-full glass-pill hover:scale-[1.03] active:scale-[0.97] transition-all duration-300 ease-out cursor-pointer select-none relative ${
+              className={`group flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 rounded-full glass-pill transition-all duration-200 cursor-pointer select-none relative focus:outline-none focus-visible:outline-none ${
                 profileDropdownOpen
-                  ? 'border-sky-400/50 bg-white/[0.12] shadow-[0_0_18px_rgba(41,151,255,0.28)]'
-                  : 'hover:border-white/40 hover:bg-white/[0.12] hover:shadow-[0_0_18px_rgba(41,151,255,0.2)]'
+                  ? 'bg-white/[0.22] border-white/45 shadow-[0_0_16px_rgba(255,255,255,0.18)]'
+                  : 'hover:bg-white/[0.20] hover:border-white/40 hover:shadow-[0_0_16px_rgba(255,255,255,0.14)] focus-visible:bg-white/[0.20] focus-visible:border-white/40'
               }`}
               aria-label="Kullanıcı Menüsü"
               aria-expanded={profileDropdownOpen}
             >
-              <div className="w-7 h-7 rounded-full bg-white/15 border border-white/20 group-hover:border-sky-400/60 flex items-center justify-center text-white text-xs font-bold shrink-0 overflow-hidden shadow-xs transition-colors">
+              <div className="w-7 h-7 rounded-full bg-white/15 border border-white/20 flex items-center justify-center text-white text-xs font-bold shrink-0 overflow-hidden shadow-xs">
                 {user.avatar_url ? (
                   <img
                     src={getProxiedImageUrl(user.avatar_url, user.display_name || user.username, null, 'w185', 'person')}
@@ -844,7 +866,7 @@ export default function Navbar() {
                       triggerSound('click');
                       setProfileDropdownOpen(false);
                     }}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.08] transition-colors"
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.10] transition-colors duration-100 ease-out"
                   >
                     <User className="w-4 h-4 text-sky-400" />
                     <span>Profilim</span>
@@ -857,7 +879,7 @@ export default function Navbar() {
                       triggerSound('click');
                       setProfileDropdownOpen(false);
                     }}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.08] transition-colors"
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.10] transition-colors duration-100 ease-out"
                   >
                     <Library className="w-4 h-4 text-sky-400" />
                     <span>Kütüphanem</span>
@@ -870,7 +892,7 @@ export default function Navbar() {
                       triggerSound('click');
                       setProfileDropdownOpen(false);
                     }}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.08] transition-colors"
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.10] transition-colors duration-100 ease-out"
                   >
                     <Clock className="w-4 h-4 text-sky-400" />
                     <span>İzleme Geçmişim</span>
@@ -883,7 +905,7 @@ export default function Navbar() {
                       triggerSound('click');
                       setProfileDropdownOpen(false);
                     }}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.08] transition-colors"
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.10] transition-colors duration-100 ease-out"
                   >
                     <FolderHeart className="w-4 h-4 text-sky-400" />
                     <span>Özel Listelerim</span>
@@ -896,7 +918,7 @@ export default function Navbar() {
                       triggerSound('click');
                       setProfileDropdownOpen(false);
                     }}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.08] transition-colors"
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.10] transition-colors duration-100 ease-out"
                   >
                     <Settings className="w-4 h-4 text-sky-400" />
                     <span>Ayarlar</span>
@@ -910,7 +932,7 @@ export default function Navbar() {
                         triggerSound('click');
                         setProfileDropdownOpen(false);
                       }}
-                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-amber-300 hover:text-amber-200 hover:bg-amber-400/10 transition-colors"
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-amber-300 hover:text-amber-200 hover:bg-amber-400/15 transition-colors duration-100 ease-out"
                     >
                       <ShieldCheck className="w-4 h-4 text-amber-400" />
                       <span>Admin Paneli</span>
@@ -927,7 +949,7 @@ export default function Navbar() {
                       setProfileDropdownOpen(false);
                       logout();
                     }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-300 hover:text-rose-200 hover:bg-rose-500/15 transition-colors cursor-pointer text-left"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-300 hover:text-rose-200 hover:bg-rose-500/15 transition-colors duration-100 ease-out cursor-pointer text-left"
                   >
                     <LogOut className="w-4 h-4 text-rose-400" />
                     <span>Çıkış Yap</span>
@@ -942,7 +964,8 @@ export default function Navbar() {
               triggerSound('click');
               setIsAuthModalOpen(true);
             }}
-            className="group flex items-center gap-2 px-4.5 py-2 rounded-full glass-pill text-xs font-semibold text-white/90 hover:text-white hover:bg-white/[0.14] hover:border-white/45 hover:shadow-[0_0_20px_rgba(255,255,255,0.18)] hover:scale-[1.03] active:scale-[0.97] transition-all duration-300 ease-out cursor-pointer select-none"
+            className="group flex items-center gap-2 px-4.5 py-2 rounded-full glass-pill text-xs font-semibold text-white/90 hover:text-white hover:bg-white/[0.22] hover:border-white/45 hover:shadow-[0_0_16px_rgba(255,255,255,0.16)] focus-visible:bg-white/[0.22] focus-visible:border-white/45 focus:outline-none transition-all duration-200 cursor-pointer select-none"
+            aria-label="Giriş Yap"
           >
             <LogIn className="w-3.5 h-3.5 text-white/70 group-hover:text-white group-hover:translate-x-0.5 transition-all duration-300" />
             <span>Giriş Yap</span>
@@ -1127,7 +1150,7 @@ export default function Navbar() {
                       setMobileMenuOpen(false);
                       setIsAuthModalOpen(true);
                     }}
-                    className="w-full min-h-[48px] rounded-2xl bg-white text-black font-bold text-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-95 transition-all"
+                    className="w-full min-h-[48px] rounded-2xl bg-white text-black font-bold text-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg transition-all"
                   >
                     <LogIn className="w-4 h-4" />
                     <span>Giriş Yap / Kayıt Ol</span>

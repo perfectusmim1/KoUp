@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, useRef, useMemo, memo } from 'react';
 import { motion } from 'motion/react';
-import { X, Check, Play, ChevronDown } from 'lucide-react';
+import { X, Check, Play, ChevronDown, Eye } from 'lucide-react';
 import {
   MediaItem,
   EpisodeData,
   cleanMediaTitle,
   cleanEpisodeName,
   getEpisodeProgress,
+  formatViewCount,
 } from '@/lib/supabase';
 
 const EP_ROW_COLLAPSED_H = 44;
@@ -259,7 +260,17 @@ function NetflixEpisodePopoverComponent({
               <div
                 key={ep.id || `${ep.season_number}-${ep.episode_number}`}
                 style={{ contain: 'content' }}
-                className="bg-[#121212] px-2.5 sm:px-4 py-2 sm:py-2.5 flex flex-col gap-2 border-l-4 border-l-white"
+                onClick={() => {
+                  onClose();
+                  if (!isCurrent) {
+                    flushCurrentProgress('exit', false);
+                    onSelectEpisode(
+                      epSeason,
+                      ep.episode_number
+                    );
+                  }
+                }}
+                className="bg-[#121212] hover:bg-[#1a1a1a] px-2.5 sm:px-4 py-2 sm:py-2.5 flex flex-col gap-2 border-l-4 border-l-white cursor-pointer select-none group transition-colors duration-150"
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
@@ -309,19 +320,7 @@ function NetflixEpisodePopoverComponent({
                   </div>
                 </div>
 
-                <div
-                  onClick={() => {
-                    onClose();
-                    if (!isCurrent) {
-                      flushCurrentProgress('exit', false);
-                      onSelectEpisode(
-                        epSeason,
-                        ep.episode_number
-                      );
-                    }
-                  }}
-                  className="flex items-center gap-2.5 cursor-pointer group"
-                >
+                <div className="flex items-center gap-2.5">
                   <div className="relative w-20 sm:w-28 aspect-video rounded overflow-hidden bg-black/90 border border-white/15 shrink-0">
                     {previewImg && (
                       <img
@@ -360,13 +359,17 @@ function NetflixEpisodePopoverComponent({
                         ? 'Şu anda bu bölümdesiniz'
                         : `${epSeason}. Sezon ${ep.episode_number}. Bölüm${hasSubtitle ? ` • ${epSubtitle}` : ''}`}
                     </div>
-                    {epRemainingLabel && (
-                      <div className="flex items-center gap-1.5 text-[10px] font-mono">
+                    <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
+                      <span className="inline-flex items-center gap-1 text-white/55">
+                        <Eye className="w-3 h-3 text-sky-400 shrink-0" />
+                        <span>{formatViewCount(ep.views_count || 0)}</span>
+                      </span>
+                      {epRemainingLabel && (
                         <span className={isEpWatched ? 'text-emerald-400 font-semibold' : 'text-white/60'}>
-                          {isEpWatched ? '✓ İzlendi' : `⏱ ${epRemainingLabel}`}
+                          • {isEpWatched ? '✓ İzlendi' : `⏱ ${epRemainingLabel}`}
                         </span>
-                      </div>
-                    )}
+                      )}
+                    </div>
                     {ep.intro_start_sec != null && (
                       <div className="flex flex-wrap items-center gap-1.5 text-[9px] sm:text-[10px] font-mono text-amber-400 font-semibold">
                         <span>• İntro Atlama</span>
@@ -383,14 +386,7 @@ function NetflixEpisodePopoverComponent({
               key={ep.id || `${ep.season_number}-${ep.episode_number}`}
               style={{ height: EP_ROW_COLLAPSED_H, contain: 'content' }}
               onClick={() => {
-                onClose();
-                if (!isCurrent) {
-                  flushCurrentProgress('exit', false);
-                  onSelectEpisode(
-                    epSeason,
-                    ep.episode_number
-                  );
-                }
+                setExpandedEpNum(ep.episode_number);
               }}
               className="px-3.5 sm:px-5 flex items-center justify-between gap-3 bg-[#1b1b1b] hover:bg-[#262626] transition-colors duration-150 cursor-pointer select-none group"
             >
@@ -447,17 +443,6 @@ function NetflixEpisodePopoverComponent({
                   }`}
                 >
                   <Check className="w-3 h-3" />
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setExpandedEpNum(ep.episode_number);
-                  }}
-                  aria-label="Detaylar"
-                  className="w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center text-white/40 hover:text-white hover:bg-white/15 transition-colors cursor-pointer"
-                >
-                  <ChevronDown className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>

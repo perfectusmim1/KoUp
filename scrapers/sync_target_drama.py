@@ -42,7 +42,9 @@ from scrapers.multisite import (
     match_or_create_episode,
     add_source,
     safe_commit,
-    norm_title
+    norm_title,
+    parse_season_and_episode,
+    clean_episode_title,
 )
 
 DB_PATH = os.path.join(_ROOT, 'webdrama_archive.db')
@@ -189,6 +191,8 @@ def sync_dizibox_target(conn, cur, drama, target_url=None):
     return episodes_added, sources_added
 
 def sync_hdfilm_target(conn, cur, drama, target_url=None):
+    from scrapers.sync_hdfilm_target import resolve_hdfilm_streams
+
     title = drama['title']
     episodes_added = 0
     sources_added = 0
@@ -198,26 +202,41 @@ def sync_hdfilm_target(conn, cur, drama, target_url=None):
     detail_url = target_url
     if not detail_url:
         cand_slug = re.sub(r'[^a-zA-Z0-9]+', '-', title).strip('-').lower()
-        test_url = f"https://www.hdfilmcehennemi.nl/dizi/{cand_slug}-izle/"
-        try:
-            h = fetch_html(test_url)
-            if 'dizi' in h:
-                detail_url = test_url
-                log("HDFilm", f"Doğrudan dizi URL'si eşleşti: {detail_url}")
-        except Exception:
-            pass
+        for test_url in (
+            f"https://www.hdfilmcehennemi.nl/dizi/{cand_slug}-izle/",
+            f"https://www.hdfilmcehennemi.nl/{cand_slug}-izle/",
+            f"https://www.hdfilmcehennemi.nl/{cand_slug}/",
+        ):
+            try:
+                h = fetch_html(test_url)
+                if h and ('hdfilmcehennemi' in h.lower()) and ('Bulunamadı' not in h):
+                    detail_url = test_url
+                    log("HDFilm", f"Doğrudan yapım URL'si eşleşti: {detail_url}")
+                    break
+            except Exception:
+                pass
 
     if not detail_url:
-        log("HDFilm", "Arama deneniyor...")
+        log("HDFilm", f'Arama deneniyor: "{title}"...')
         try:
             q = urllib.parse.quote(title)
-            s_html = fetch_html(f"https://www.hdfilmcehennemi.nl/arama/?q={q}")
-            soup = BeautifulSoup(s_html, 'html.parser')
-            for a in soup.find_all('a', href=True):
-                if '/dizi/' in a['href']:
-                    detail_url = a['href']
-                    log("HDFilm", f"Arama sonucu bulundu: {detail_url}")
-                    break
+            s_raw = fetch_html(f"https://www.hdfilmcehennemi.nl/search?q={q}")
+            try:
+                s_data = json.loads(s_raw)
+                for r_html in s_data.get('results', []):
+                    bs = BeautifulSoup(r_html, 'html.parser')
+                    a = bs.find('a', href=True)
+                    if a and a['href']:
+                        detail_url = a['href']
+                        log("HDFilm", f"Arama sonucu bulundu: {detail_url}")
+                        break
+            except Exception:
+                soup = BeautifulSoup(s_raw, 'html.parser')
+                for a in soup.find_all('a', href=True):
+                    if '/dizi/' in a['href'] or '-izle' in a['href']:
+                        detail_url = a['href']
+                        log("HDFilm", f"Arama sonucu bulundu: {detail_url}")
+                        break
         except Exception:
             pass
 
@@ -240,6 +259,19 @@ def sync_hdfilm_target(conn, cur, drama, target_url=None):
                 if m:
                     ep_links.append((int(m.group(1)), int(m.group(2)), h))
 
+    if not ep_links:
+        # Movie or single-page item
+        ep_id, created = match_or_create_episode(cur, drama['id'], 1, 1, "Film", detail_url)
+        if created:
+            episodes_added += 1
+        streams = resolve_hdfilm_streams(detail_url, detail_html)
+        for sname, surl, sprov, ssite in streams:
+            if add_source(cur, ep_id, sname, surl, sprov, ssite):
+                sources_added += 1
+                safe_commit(conn)
+                log("HDFilm", f'"{title}" Film -> {sname} (Doğrudan HLS) bağlandı.')
+        return episodes_added, sources_added
+
     ep_links.sort(key=lambda x: (x[0], x[1]))
     log("HDFilm", f"{len(ep_links)} adet bölüm tespit edildi.")
 
@@ -250,25 +282,14 @@ def sync_hdfilm_target(conn, cur, drama, target_url=None):
 
         try:
             ep_html = fetch_html(ep_url, referer=detail_url)
-            m_close = re.search(r'https?://(?:[a-zA-Z0-9-]+\.)?hdfilmcehennemi\.(?:nl|mobi)/video/embed/([a-zA-Z0-9_-]+)', ep_html)
-            m_rapid = re.search(r'rapidrame_id=([a-zA-Z0-9]+)', ep_html)
-            m_rplayer = re.search(r'https?://(?:[a-zA-Z0-9-]+\.)?hdfilmcehennemi\.(?:nl|mobi)/rplayer/([a-zA-Z0-9]+)', ep_html)
-
-            if m_close:
-                v_url = m_close.group(0)
-                if add_source(cur, ep_id, 'Close Player Dual 1080p', v_url, 'close', 'hdfilmcehennemi'):
+            streams = resolve_hdfilm_streams(ep_url, ep_html)
+            for sname, surl, sprov, ssite in streams:
+                if add_source(cur, ep_id, sname, surl, sprov, ssite):
                     sources_added += 1
-
-            if m_rapid or m_rplayer:
-                rid = m_rapid.group(1) if m_rapid else m_rplayer.group(1)
-                r_url = f"https://www.hdfilmcehennemi.nl/rplayer/{rid}/"
-                if add_source(cur, ep_id, 'Rapidrame Altyazılı 1080p', r_url, 'rapidrame', 'hdfilmcehennemi'):
-                    sources_added += 1
-
-            safe_commit(conn)
-            log("HDFilm", f"S{s_num}E{e_num} -> Kaynaklar bağlandı.")
+                    safe_commit(conn)
+                    log("HDFilm", f'"{title}" S{s_num}B{e_num} -> {sname} (Doğrudan HLS) bağlandı.')
         except Exception as e:
-            log("HDFilm", f"S{s_num}E{e_num} hata: {e}")
+            log("HDFilm", f"S{s_num}B{e_num} hata: {e}")
 
     return episodes_added, sources_added
 
@@ -313,18 +334,18 @@ def sync_dizikorea_target(conn, cur, drama, target_url=None):
     seen = set()
     for a in soup.find_all('a', href=True):
         h = a['href']
-        if '-bolum' in h:
+        if '-bolum' in h or '/bolum-' in h:
             if h not in seen:
                 seen.add(h)
-                m = re.search(r'(\d+)\s*[-.]\s*bolum', h)
-                e_num = int(m.group(1)) if m else 1
-                ep_links.append((1, e_num, h))
+                s_num, e_num = parse_season_and_episode(h, a.get_text())
+                ep_links.append((s_num, e_num, h))
 
     ep_links.sort(key=lambda x: (x[0], x[1]))
     log("DiziKorea", f"{len(ep_links)} adet bölüm tespit edildi.")
 
     for s_num, e_num, ep_url in ep_links:
-        ep_id, created = match_or_create_episode(cur, drama['id'], s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_url)
+        clean_name = clean_episode_title(f"{s_num}. Sezon {e_num}. Bölüm", s_num, e_num)
+        ep_id, created = match_or_create_episode(cur, drama['id'], s_num, e_num, clean_name, ep_url)
         if created:
             episodes_added += 1
 
@@ -492,16 +513,13 @@ def sync_ddizi_target(conn, cur, drama, target_url=None):
                     continue
                 seen_urls.add(full_ep)
 
-                m_s = re.search(r'(\d+)\s*\.\s*sezon', txt, re.I) or re.search(r'sezon-(\d+)', h, re.I)
-                season = int(m_s.group(1)) if m_s else 1
+                season, ep_num = parse_season_and_episode(full_ep, txt)
 
-                m_e = re.search(r'(\d+)\s*\.\s*b[öo]l[üu]m', txt, re.I) or re.search(r'-(\d+)-bolum', h, re.I)
-                ep_num = int(m_e.group(1)) if m_e else 1
-
+                clean_name = clean_episode_title(txt or f"Bölüm {ep_num}", season, ep_num)
                 all_episodes.append({
                     'season': season,
                     'number': ep_num,
-                    'name': f"Bölüm {ep_num}",
+                    'name': clean_name,
                     'url': full_ep
                 })
 
@@ -512,7 +530,8 @@ def sync_ddizi_target(conn, cur, drama, target_url=None):
         s_num = ep['season']
         e_num = ep['number']
         ep_url = ep['url']
-        ep_id, created = match_or_create_episode(cur, drama['id'], s_num, e_num, f"Bölüm {e_num}", ep_url)
+        ep_name = ep.get('name') or f"Bölüm {e_num}"
+        ep_id, created = match_or_create_episode(cur, drama['id'], s_num, e_num, ep_name, ep_url)
         if created:
             episodes_added += 1
 
@@ -592,9 +611,13 @@ def sync_ddizi_target(conn, cur, drama, target_url=None):
     return episodes_added, sources_added
 
 def main():
+    from scrapers.supabase_sync_helper import sync_drama_bundle_and_counts
+    from scrapers.multisite import build_drama_index
+    from scrapers.live_scanner import scan_asyawatch, scan_dizilla
+
     parser = argparse.ArgumentParser(description="KoUp Single Series Target Synchronizer")
     parser.add_argument('--drama-id', type=int, required=True, help="Database drama ID")
-    parser.add_argument('--provider', default='auto', choices=['auto', 'dizibox', 'hdfilm', 'dizikorea', 'animecix', 'ddizi'])
+    parser.add_argument('--provider', default='auto', choices=['auto', 'dizibox', 'hdfilm', 'dizikorea', 'animecix', 'ddizi', 'asyawatch', 'dizilla'])
     parser.add_argument('--manual-url', default=None, help="Explicit target series URL")
     args = parser.parse_args()
 
@@ -627,6 +650,10 @@ def main():
                 chosen_provider = 'animecix'
             elif 'ddizi' in manual_url:
                 chosen_provider = 'ddizi'
+            elif 'asyawatch' in manual_url:
+                chosen_provider = 'asyawatch'
+            elif 'dizilla' in manual_url:
+                chosen_provider = 'dizilla'
         
         if chosen_provider == 'auto':
             cur.execute("""
@@ -643,6 +670,10 @@ def main():
                 chosen_provider = 'hdfilm'
             elif 'dizikorea' in existing_sites:
                 chosen_provider = 'dizikorea'
+            elif 'asyawatch' in existing_sites:
+                chosen_provider = 'asyawatch'
+            elif 'dizilla' in existing_sites:
+                chosen_provider = 'dizilla'
             elif 'animecix' in existing_sites:
                 chosen_provider = 'animecix'
             elif 'ddizi' in existing_sites:
@@ -674,21 +705,23 @@ def main():
         total_eps_added, total_srcs_added = sync_animecix_target(conn, cur, drama, manual_url)
     elif chosen_provider == 'ddizi':
         total_eps_added, total_srcs_added = sync_ddizi_target(conn, cur, drama, manual_url)
+    elif chosen_provider == 'asyawatch':
+        idx = build_drama_index(cur)
+        total_srcs_added, _ = scan_asyawatch(conn, cur, idx, limit=60, target=drama['title'])
+    elif chosen_provider == 'dizilla':
+        idx = build_drama_index(cur)
+        total_srcs_added, _ = scan_dizilla(conn, cur, idx, limit=60, target=drama['title'])
 
-    # Update sources_count and episode_count in dramas
-    cur.execute("""
-        UPDATE dramas 
-        SET sources_count = (
-            SELECT COUNT(*) FROM episode_sources es JOIN episodes e ON e.id = es.episode_id WHERE e.drama_id = ?
-        ),
-        episode_count = (
-            SELECT COUNT(*) FROM episodes WHERE drama_id = ?
-        )
-        WHERE id = ?
-    """, (drama['id'], drama['id'], drama['id']))
-
-    conn.commit()
+    # Update sources_count, episode_count, and R2 source bundle
+    sync_drama_bundle_and_counts(conn, cur, drama['id'])
     conn.close()
+
+    # Automatically backup updated SQLite database file to Cloudflare R2
+    try:
+        from scrapers.supabase_sync_helper import backup_db_to_r2
+        backup_db_to_r2()
+    except Exception as e:
+        log("UYARI", f"R2 DB yedekleme uyarısı: {e}")
 
     result = {
         "ok": True,

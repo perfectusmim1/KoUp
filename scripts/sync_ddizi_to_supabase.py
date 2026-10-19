@@ -13,6 +13,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 import json
 import sqlite3
 import requests
+from scrapers.multisite import clean_scraped_slug
 
 SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "https://aocvcotmikzlwbaezdpl.supabase.co")
 SUPABASE_KEY = os.environ.get(
@@ -75,9 +76,10 @@ def sync_ddizi_media():
         else:
             year_val = 2015
 
+        clean_s = clean_scraped_slug(slug) or f"dizi-{did}"
         media_payload.append({
             "id": did,
-            "slug": slug or f"dizi-{did}",
+            "slug": clean_s,
             "content_type": "dizi",
             "country_code": "TR",
             "country_name": "Türkiye",
@@ -96,7 +98,7 @@ def sync_ddizi_media():
             "tags": tags,
             "alt_sites": alts,
             "views_total": 450,
-            "search_text": f"{title} {slug} yerli dizi turkce ddizi",
+            "search_text": f"{title} {clean_s} yerli dizi turkce ddizi",
             "is_featured": False
         })
 

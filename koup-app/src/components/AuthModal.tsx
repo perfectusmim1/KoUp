@@ -462,7 +462,7 @@ export default function AuthModal() {
               <button
                 type="submit"
                 disabled={loading || lockoutSec > 0}
-                className="w-full mt-2 py-3 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer pointer-events-auto disabled:opacity-50 shadow-lg"
+                className="w-full mt-2 py-3 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 transition-all flex items-center justify-center gap-2 cursor-pointer pointer-events-auto disabled:opacity-50 shadow-lg"
               >
                 <span>
                   {loading

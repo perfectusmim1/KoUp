@@ -16,6 +16,8 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
+from scrapers.multisite import clean_episode_title
+
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
@@ -156,11 +158,12 @@ def sync_episodes():
         seen_keys.add(key)
 
         ep_srcs = sources_by_ep.get(eid, [])
+        clean_name = clean_episode_title(ep_name, s_num or 1, ep_num or 1)
         current_chunk.append({
             "media_id": did,
             "season_number": s_num or 1,
             "episode_number": ep_num or 1,
-            "episode_name": ep_name or f"{ep_num}. Bölüm",
+            "episode_name": clean_name,
             "episode_type": ep_type or "bolum",
             "status": "published",
             "video_sources": ep_srcs,
