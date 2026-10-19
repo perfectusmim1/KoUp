@@ -391,10 +391,11 @@ function rewritePlaylist(
       // Fix syntax defects in upstream master playlists (e.g. Pichive missing comma before RESOLUTION or double commas)
       if (trimmed.startsWith('#EXT-X-STREAM-INF:')) {
         let fixed = trimmed
+          // Strip misleading/hardcoded CODECS (e.g. Pichive advertising mp4a.40.2 when audio is actually MP3, causing Chrome MSE bufferAddCodecError)
+          .replace(/,?\s*CODECS="[^"]*"/i, '')
           .replace(/,,+/g, ',')
           .replace(/([0-9a-zA-Z_"])RESOLUTION=/g, '$1,RESOLUTION=')
           .replace(/([0-9a-zA-Z_"])NAME=/g, '$1,NAME=')
-          .replace(/([0-9a-zA-Z_"])CODECS=/g, '$1,CODECS=')
           .replace(/,,+/g, ',');
         return fixed;
       }

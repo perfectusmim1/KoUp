@@ -1414,6 +1414,7 @@ export default function SeriesDetailPage({
                     dramaId={media.id}
                     dramaTitle={media.title}
                     dramaSlug={media.slug}
+                    pendingCount={episodes.filter((e) => e.pending || e.status === 'pending_source').length}
                     onSyncComplete={handleAdminSyncComplete}
                   />
                 )}
@@ -1514,14 +1515,21 @@ export default function SeriesDetailPage({
                     </div>
 
                     <div className="min-w-0">
-                      <div
-                        className={`text-xs font-bold truncate transition-colors ${
-                          epWatched
-                            ? 'text-white group-hover:text-emerald-300'
-                            : 'text-white group-hover:text-sky-200'
-                        }`}
-                      >
-                        {epTitle}
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <div
+                          className={`text-xs font-bold truncate transition-colors ${
+                            epWatched
+                              ? 'text-white group-hover:text-emerald-300'
+                              : 'text-white group-hover:text-sky-200'
+                          }`}
+                        >
+                          {epTitle}
+                        </div>
+                        {(ep.pending || ep.status === 'pending_source') && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0">
+                            Yakında
+                          </span>
+                        )}
                       </div>
                       <div className="mt-0.5 flex items-center flex-wrap gap-2 text-[10px] font-mono">
                         <span

@@ -46,6 +46,11 @@ from scrapers.multisite import (
     parse_season_and_episode,
     clean_episode_title,
 )
+from scrapers.pending_sources import (
+    ensure_pending_columns,
+    page_is_placeholder,
+    reconcile_episode,
+)
 
 DB_PATH = os.path.join(_ROOT, 'webdrama_archive.db')
 
@@ -103,6 +108,7 @@ def get_db():
     conn.execute("PRAGMA busy_timeout=60000;")
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.row_factory = sqlite3.Row
+    ensure_pending_columns(conn)
     return conn
 
 def sync_dizibox_target(conn, cur, drama, target_url=None):
@@ -166,8 +172,10 @@ def sync_dizibox_target(conn, cur, drama, target_url=None):
         if created:
             episodes_added += 1
 
+        is_ph = False
         try:
             ep_html = fetch_html(ep_url, referer=detail_url)
+            is_ph = page_is_placeholder(ep_html)
             m_sheila = re.search(r'sheila/([a-zA-Z0-9_-]+)', ep_html)
             m_molystream = re.search(r'https?://(?:dbx\.)?molystream\.org/embed/[a-zA-Z0-9_/=-]+', ep_html)
             m_king = re.search(r'king\.php\?post_id=(\d+)', ep_html)
@@ -187,6 +195,9 @@ def sync_dizibox_target(conn, cur, drama, target_url=None):
                     log("DiziBOX", f"S{s_num}E{e_num} -> DBX Pro 1080p eklendi.")
         except Exception as e:
             log("DiziBOX", f"S{s_num}E{e_num} hata: {e}")
+
+        reconcile_episode(cur, ep_id, is_placeholder=is_ph)
+        safe_commit(conn)
 
     return episodes_added, sources_added
 
@@ -264,12 +275,15 @@ def sync_hdfilm_target(conn, cur, drama, target_url=None):
         ep_id, created = match_or_create_episode(cur, drama['id'], 1, 1, "Film", detail_url)
         if created:
             episodes_added += 1
+        is_ph = page_is_placeholder(detail_html)
         streams = resolve_hdfilm_streams(detail_url, detail_html)
         for sname, surl, sprov, ssite in streams:
             if add_source(cur, ep_id, sname, surl, sprov, ssite):
                 sources_added += 1
                 safe_commit(conn)
                 log("HDFilm", f'"{title}" Film -> {sname} (Doğrudan HLS) bağlandı.')
+        reconcile_episode(cur, ep_id, is_placeholder=is_ph)
+        safe_commit(conn)
         return episodes_added, sources_added
 
     ep_links.sort(key=lambda x: (x[0], x[1]))
@@ -280,8 +294,10 @@ def sync_hdfilm_target(conn, cur, drama, target_url=None):
         if created:
             episodes_added += 1
 
+        is_ph = False
         try:
             ep_html = fetch_html(ep_url, referer=detail_url)
+            is_ph = page_is_placeholder(ep_html)
             streams = resolve_hdfilm_streams(ep_url, ep_html)
             for sname, surl, sprov, ssite in streams:
                 if add_source(cur, ep_id, sname, surl, sprov, ssite):
@@ -290,6 +306,9 @@ def sync_hdfilm_target(conn, cur, drama, target_url=None):
                     log("HDFilm", f'"{title}" S{s_num}B{e_num} -> {sname} (Doğrudan HLS) bağlandı.')
         except Exception as e:
             log("HDFilm", f"S{s_num}B{e_num} hata: {e}")
+
+        reconcile_episode(cur, ep_id, is_placeholder=is_ph)
+        safe_commit(conn)
 
     return episodes_added, sources_added
 
@@ -349,17 +368,30 @@ def sync_dizikorea_target(conn, cur, drama, target_url=None):
         if created:
             episodes_added += 1
 
+        is_ph = False
         try:
             ep_html = fetch_html(ep_url, referer=detail_url)
-            m_iframe = re.search(r'src=["\'](https?://(?:playerdkorea\.xyz|vidmoly\.[a-z]+)/[^"\']+)["\']', ep_html)
-            if m_iframe:
-                v_url = m_iframe.group(1)
+            is_ph = page_is_placeholder(ep_html)
+            # Match both src and data-src (lazy-load) or anywhere in page for PlayerDKorea & Vidmoly
+            dk_matches = re.findall(r'https?://(?:www\.)?playerdkorea\.xyz/video/[a-zA-Z0-9]+', ep_html)
+            vm_matches = re.findall(r'https?://(?:www\.)?vidmoly\.[a-z]+/embed-[a-zA-Z0-9]+(?:\.html)?', ep_html)
+
+            for v_url in set(dk_matches):
                 if add_source(cur, ep_id, 'DiziKorea 1080p HLS', v_url, 'dizikorea', 'dizikorea'):
                     sources_added += 1
                     safe_commit(conn)
-                    log("DiziKorea", f"S{s_num}E{e_num} -> Kaynak eklendi.")
+                    log("DiziKorea", f"S{s_num}E{e_num} -> DiziKorea 1080p HLS eklendi.")
+
+            for v_url in set(vm_matches):
+                if add_source(cur, ep_id, 'Vidmoly', v_url, 'vidmoly', 'dizikorea'):
+                    sources_added += 1
+                    safe_commit(conn)
+                    log("DiziKorea", f"S{s_num}E{e_num} -> Vidmoly eklendi.")
         except Exception as e:
             log("DiziKorea", f"S{s_num}E{e_num} hata: {e}")
+
+        reconcile_episode(cur, ep_id, is_placeholder=is_ph)
+        safe_commit(conn)
 
     return episodes_added, sources_added
 
@@ -407,6 +439,9 @@ def sync_animecix_target(conn, cur, drama, target_url=None):
                         sources_added += 1
                         safe_commit(conn)
                         log("AnimeciX", f"S{s_num}E{e_num} -> {p_name} eklendi.")
+
+            reconcile_episode(cur, ep_id)
+            safe_commit(conn)
     except Exception as e:
         log("AnimeciX", f"Hata: {e}")
 
@@ -538,75 +573,86 @@ def sync_ddizi_target(conn, cur, drama, target_url=None):
         # Check existing source
         cur.execute("SELECT id FROM episode_sources WHERE episode_id=? AND provider IN ('ddizi', 'youtube')", (ep_id,))
         if cur.fetchone():
+            reconcile_episode(cur, ep_id)
+            safe_commit(conn)
             continue
 
+        is_ph = False
         try:
             ep_html = fetch_html(ep_url, referer=detail_url)
-            if not ep_html:
-                continue
-
-            # 1. Doğrudan YouTube embed / telif
-            yt_match = re.search(r'src=["\'](?:/player/telif/index\.php\?id=)?(https?://(?:www\.)?youtube\.com/watch\?v=[a-zA-Z0-9_\-]+|https?://youtu\.be/[a-zA-Z0-9_\-]+)["\']', ep_html)
-            if yt_match:
-                raw_yt = yt_match.group(1)
-                v_id_m = re.search(r'(?:v=|youtu\.be/)([a-zA-Z0-9_\-]+)', raw_yt)
-                if v_id_m:
-                    embed_url = f"https://www.youtube.com/embed/{v_id_m.group(1)}?autoplay=1&enablejsapi=1"
-                    if add_source(cur, ep_id, 'YouTube HD', embed_url, 'youtube', 'ddizi'):
-                        sources_added += 1
-                        safe_commit(conn)
-                        log("DDizi", f"S{s_num}E{e_num} -> YouTube HD eklendi.")
-                        continue
-
-            # 2. DDizi Native JWPlayer (/player/oynat/{hash})
-            player_paths = re.findall(r'<iframe[^>]+src=["\'](/player/oynat/[a-zA-Z0-9]+)["\']', ep_html)
-            if not player_paths:
-                player_paths = re.findall(r'<iframe[^>]+src=["\'](https?://[^"\']*/player/oynat/[a-zA-Z0-9]+)["\']', ep_html)
-
-            if player_paths:
-                p_path = player_paths[0]
-                p_url = p_path if p_path.startswith('http') else 'https://www.ddizi.tel' + p_path
-                p_html = fetch_html(p_url, referer=ep_url)
-                if p_html:
-                    # YouTube poster kontrolü
-                    yt_thumb = re.search(r'https?://(?:i\d*\.)?ytimg\.com/vi/([a-zA-Z0-9_\-]+)/', p_html)
-                    if yt_thumb:
-                        embed_url = f"https://www.youtube.com/embed/{yt_thumb.group(1)}?autoplay=1&enablejsapi=1"
+            if ep_html:
+                is_ph = page_is_placeholder(ep_html)
+                # 1. Doğrudan YouTube embed / telif
+                yt_match = re.search(r'src=["\'](?:/player/telif/index\.php\?id=)?(https?://(?:www\.)?youtube\.com/watch\?v=[a-zA-Z0-9_\-]+|https?://youtu\.be/[a-zA-Z0-9_\-]+)["\']', ep_html)
+                if yt_match:
+                    raw_yt = yt_match.group(1)
+                    v_id_m = re.search(r'(?:v=|youtu\.be/)([a-zA-Z0-9_\-]+)', raw_yt)
+                    if v_id_m:
+                        embed_url = f"https://www.youtube.com/embed/{v_id_m.group(1)}?autoplay=1&enablejsapi=1"
                         if add_source(cur, ep_id, 'YouTube HD', embed_url, 'youtube', 'ddizi'):
                             sources_added += 1
                             safe_commit(conn)
                             log("DDizi", f"S{s_num}E{e_num} -> YouTube HD eklendi.")
+                            reconcile_episode(cur, ep_id, is_placeholder=False)
+                            safe_commit(conn)
                             continue
 
-                    # HLS (.m3u8) akış kontrolü
-                    m3u8_matches = re.findall(r'file:\s*["\'](https?:\\?/\\?/[^"\']+\.m3u8[^"\']*)["\']', p_html)
-                    if not m3u8_matches:
-                        m3u8_matches = re.findall(r'["\'](https?:\\?/\\?/[^"\']+\.m3u8[^"\']*)["\']', p_html)
-                    added_m3u8 = False
-                    for raw_m in m3u8_matches:
-                        clean_m = raw_m.replace('\\/', '/')
-                        if clean_m.startswith('http'):
-                            if add_source(cur, ep_id, 'DDizi HLS', clean_m, 'ddizi', 'ddizi'):
-                                sources_added += 1
-                                safe_commit(conn)
-                                log("DDizi", f"S{s_num}E{e_num} -> DDizi HLS eklendi.")
-                                added_m3u8 = True
-                                break
-                    if added_m3u8:
-                        continue
+                # 2. DDizi Native JWPlayer (/player/oynat/{hash})
+                player_paths = re.findall(r'<iframe[^>]+src=["\'](/player/oynat/[a-zA-Z0-9]+)["\']', ep_html)
+                if not player_paths:
+                    player_paths = re.findall(r'<iframe[^>]+src=["\'](https?://[^"\']*/player/oynat/[a-zA-Z0-9]+)["\']', ep_html)
 
-                    # Kalıcı MP4 akış kontrolü
-                    raw_files = re.findall(r'file:\s*["\']([^"\']+)["\']', p_html)
-                    for raw_f in raw_files:
-                        clean_u = raw_f.replace('\\/', '/')
-                        if clean_u.startswith('http') and 'videoplayback' not in clean_u and 'googlevideo' not in clean_u and '.mp4' in clean_u:
-                            if add_source(cur, ep_id, 'DDizi HD', clean_u, 'ddizi', 'ddizi'):
+                if player_paths:
+                    p_path = player_paths[0]
+                    p_url = p_path if p_path.startswith('http') else 'https://www.ddizi.tel' + p_path
+                    p_html = fetch_html(p_url, referer=ep_url)
+                    if p_html:
+                        # YouTube poster kontrolü
+                        yt_thumb = re.search(r'https?://(?:i\d*\.)?ytimg\.com/vi/([a-zA-Z0-9_\-]+)/', p_html)
+                        if yt_thumb:
+                            embed_url = f"https://www.youtube.com/embed/{yt_thumb.group(1)}?autoplay=1&enablejsapi=1"
+                            if add_source(cur, ep_id, 'YouTube HD', embed_url, 'youtube', 'ddizi'):
                                 sources_added += 1
                                 safe_commit(conn)
-                                log("DDizi", f"S{s_num}E{e_num} -> DDizi HD eklendi.")
-                                break
+                                log("DDizi", f"S{s_num}E{e_num} -> YouTube HD eklendi.")
+                                reconcile_episode(cur, ep_id, is_placeholder=False)
+                                safe_commit(conn)
+                                continue
+
+                        # HLS (.m3u8) akış kontrolü
+                        m3u8_matches = re.findall(r'file:\s*["\'](https?:\\?/\\?/[^"\']+\.m3u8[^"\']*)["\']', p_html)
+                        if not m3u8_matches:
+                            m3u8_matches = re.findall(r'["\'](https?:\\?/\\?/[^"\']+\.m3u8[^"\']*)["\']', p_html)
+                        added_m3u8 = False
+                        for raw_m in m3u8_matches:
+                            clean_m = raw_m.replace('\\/', '/')
+                            if clean_m.startswith('http'):
+                                if add_source(cur, ep_id, 'DDizi HLS', clean_m, 'ddizi', 'ddizi'):
+                                    sources_added += 1
+                                    safe_commit(conn)
+                                    log("DDizi", f"S{s_num}E{e_num} -> DDizi HLS eklendi.")
+                                    added_m3u8 = True
+                                    break
+                        if added_m3u8:
+                            reconcile_episode(cur, ep_id, is_placeholder=False)
+                            safe_commit(conn)
+                            continue
+
+                        # Kalıcı MP4 akış kontrolü
+                        raw_files = re.findall(r'file:\s*["\']([^"\']+)["\']', p_html)
+                        for raw_f in raw_files:
+                            clean_u = raw_f.replace('\\/', '/')
+                            if clean_u.startswith('http') and 'videoplayback' not in clean_u and 'googlevideo' not in clean_u and '.mp4' in clean_u:
+                                if add_source(cur, ep_id, 'DDizi HD', clean_u, 'ddizi', 'ddizi'):
+                                    sources_added += 1
+                                    safe_commit(conn)
+                                    log("DDizi", f"S{s_num}E{e_num} -> DDizi HD eklendi.")
+                                    break
         except Exception as e:
             log("DDizi", f"S{s_num}E{e_num} hata: {e}")
+
+        reconcile_episode(cur, ep_id, is_placeholder=is_ph)
+        safe_commit(conn)
 
     return episodes_added, sources_added
 

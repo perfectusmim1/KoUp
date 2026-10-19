@@ -19,6 +19,7 @@ interface AdminSeriesSyncProps {
   dramaId: number;
   dramaTitle: string;
   dramaSlug: string;
+  pendingCount?: number;
   onSyncComplete?: (result: { episodesAdded: number; sourcesAdded: number; provider: string }) => void;
 }
 
@@ -37,12 +38,37 @@ export default function AdminSeriesSync({
   dramaId,
   dramaTitle,
   dramaSlug,
+  pendingCount,
   onSyncComplete,
 }: AdminSeriesSyncProps) {
   const [selectedProvider, setSelectedProvider] = useState<string>('auto');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [statusText, setStatusText] = useState<string | null>(null);
+  const [internalPendingCount, setInternalPendingCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (pendingCount !== undefined) return;
+    let isCancelled = false;
+    async function fetchPendingCount() {
+      try {
+        const { count } = await supabase
+          .from('episodes')
+          .select('id', { count: 'exact', head: true })
+          .eq('media_id', dramaId)
+          .eq('status', 'pending_source');
+        if (!isCancelled && typeof count === 'number') {
+          setInternalPendingCount(count);
+        }
+      } catch {}
+    }
+    fetchPendingCount();
+    return () => {
+      isCancelled = true;
+    };
+  }, [dramaId, pendingCount]);
+
+  const effectivePendingCount = pendingCount !== undefined ? pendingCount : (internalPendingCount || 0);
 
   // Manual URL Modal
   const [showManualModal, setShowManualModal] = useState(false);
@@ -222,119 +248,132 @@ export default function AdminSeriesSync({
       </AnimatePresence>
 
       {/* Main Admin Action Split Toolbar (Apple Cinema Glass) */}
-      <div
-        ref={dropdownRef}
-        className={`relative ${
-          isDropdownOpen ? 'z-[80]' : 'z-20'
-        } flex items-center rounded-full bg-[#121217]/90 backdrop-blur-2xl border border-white/15 hover:border-white/25 shadow-[0_4px_20px_rgba(0,0,0,0.45)] transition-all p-0.5`}
-      >
-        {/* Left Action Button */}
-        <button
-          type="button"
-          disabled={isSyncing}
-          onClick={() => handleTriggerSync()}
-          className="flex items-center gap-2 px-3.5 py-1.5 rounded-l-full hover:bg-white/[0.08] text-white/90 hover:text-white text-xs font-bold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+      <div className="flex flex-wrap items-center gap-2">
+        <div
+          ref={dropdownRef}
+          className={`relative ${
+            isDropdownOpen ? 'z-[80]' : 'z-20'
+          } flex items-center rounded-full bg-[#121217]/90 backdrop-blur-2xl border border-white/15 hover:border-white/25 shadow-[0_4px_20px_rgba(0,0,0,0.45)] transition-all p-0.5`}
         >
-          {isSyncing ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
-          ) : (
-            <RefreshCw className="w-3.5 h-3.5 text-sky-400" />
-          )}
-          <span>
-            {isSyncing ? statusText || 'Senkronize Ediliyor...' : 'Senkronize Et'}
-          </span>
-          {!isSyncing && (
-            <span className="text-[10px] font-mono text-sky-300 bg-sky-500/15 px-2 py-0.5 rounded-full border border-sky-400/25">
-              {activeProviderMeta.name.split(' ')[0]}
+          {/* Left Action Button */}
+          <button
+            type="button"
+            disabled={isSyncing}
+            onClick={() => handleTriggerSync()}
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-l-full hover:bg-white/[0.08] text-white/90 hover:text-white text-xs font-bold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSyncing ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
+            ) : (
+              <RefreshCw className="w-3.5 h-3.5 text-sky-400" />
+            )}
+            <span>
+              {isSyncing ? statusText || 'Senkronize Ediliyor...' : 'Senkronize Et'}
             </span>
-          )}
-        </button>
+            {!isSyncing && (
+              <span className="text-[10px] font-mono text-sky-300 bg-sky-500/15 px-2 py-0.5 rounded-full border border-sky-400/25">
+                {activeProviderMeta.name.split(' ')[0]}
+              </span>
+            )}
+          </button>
 
-        {/* Dropdown Toggle Arrow */}
-        <button
-          type="button"
-          disabled={isSyncing}
-          onClick={() => setIsDropdownOpen((v) => !v)}
-          className="px-2.5 py-1.5 rounded-r-full border-l border-white/10 hover:bg-white/[0.08] text-white/60 hover:text-white transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          aria-label="Kaynak sağlayıcı seç"
-        >
-          <ChevronDown
-            className={`w-3.5 h-3.5 transition-transform duration-200 ${
-              isDropdownOpen ? 'rotate-180' : ''
-            }`}
-          />
-        </button>
+          {/* Dropdown Toggle Arrow */}
+          <button
+            type="button"
+            disabled={isSyncing}
+            onClick={() => setIsDropdownOpen((v) => !v)}
+            className="px-2.5 py-1.5 rounded-r-full border-l border-white/10 hover:bg-white/[0.08] text-white/60 hover:text-white transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Kaynak sağlayıcı seç"
+          >
+            <ChevronDown
+              className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                isDropdownOpen ? 'rotate-180' : ''
+              }`}
+            />
+          </button>
 
-        {/* Dropdown Popover */}
-        <AnimatePresence>
-          {isDropdownOpen && (
-            <motion.div
-              initial={{ opacity: 0, y: 8, scale: 0.96 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 6, scale: 0.96 }}
-              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-              className="absolute top-full left-0 mt-2 w-80 rounded-2xl bg-[#0f0f13]/98 border border-white/20 shadow-[0_25px_60px_rgba(0,0,0,0.95),0_0_25px_rgba(0,0,0,0.8)] backdrop-blur-3xl p-2 z-[90] pointer-events-auto"
-            >
-              <div className="px-3 py-2 border-b border-white/10 mb-1 flex items-center justify-between">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-sky-400 font-bold flex items-center gap-1.5">
-                  <Sparkles className="w-3 h-3" />
-                  Senkronizasyon Sağlayıcısı
-                </span>
-              </div>
+          {/* Dropdown Popover */}
+          <AnimatePresence>
+            {isDropdownOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 6, scale: 0.96 }}
+                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                className="absolute top-full left-0 mt-2 w-80 rounded-2xl bg-[#0f0f13]/98 border border-white/20 shadow-[0_25px_60px_rgba(0,0,0,0.95),0_0_25px_rgba(0,0,0,0.8)] backdrop-blur-3xl p-2 z-[90] pointer-events-auto"
+              >
+                <div className="px-3 py-2 border-b border-white/10 mb-1 flex items-center justify-between">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-sky-400 font-bold flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3" />
+                    Senkronizasyon Sağlayıcısı
+                  </span>
+                </div>
 
-              <div className="space-y-1 max-h-[300px] overflow-y-auto no-scrollbar">
-                {PROVIDERS.map((p) => {
-                  const isSelected = selectedProvider === p.id;
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedProvider(p.id);
-                        setIsDropdownOpen(false);
-                        handleTriggerSync(p.id);
-                      }}
-                      className={`w-full text-left px-3 py-2 rounded-xl transition-all flex items-start gap-2.5 cursor-pointer ${
-                        isSelected
-                          ? 'bg-sky-500/15 border border-sky-400/40 text-white'
-                          : 'hover:bg-white/[0.06] text-white/80 hover:text-white'
-                      }`}
-                    >
-                      <span className="text-base shrink-0 mt-0.5">{p.icon}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-bold flex items-center justify-between">
-                          <span>{p.name}</span>
-                          {isSelected && (
-                            <span className="text-[10px] text-sky-400 font-mono font-bold">SEÇİLİ</span>
-                          )}
+                <div className="space-y-1 max-h-[300px] overflow-y-auto no-scrollbar">
+                  {PROVIDERS.map((p) => {
+                    const isSelected = selectedProvider === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedProvider(p.id);
+                          setIsDropdownOpen(false);
+                          handleTriggerSync(p.id);
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-xl transition-all flex items-start gap-2.5 cursor-pointer ${
+                          isSelected
+                            ? 'bg-sky-500/15 border border-sky-400/40 text-white'
+                            : 'hover:bg-white/[0.06] text-white/80 hover:text-white'
+                        }`}
+                      >
+                        <span className="text-base shrink-0 mt-0.5">{p.icon}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-bold flex items-center justify-between">
+                            <span>{p.name}</span>
+                            {isSelected && (
+                              <span className="text-[10px] text-sky-400 font-mono font-bold">SEÇİLİ</span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-white/50 line-clamp-1 mt-0.5">{p.desc}</p>
                         </div>
-                        <p className="text-[11px] text-white/50 line-clamp-1 mt-0.5">{p.desc}</p>
-                      </div>
-                    </button>
-                  );
-                })}
+                      </button>
+                    );
+                  })}
 
-                {/* Custom URL Option */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsDropdownOpen(false);
-                    setShowManualModal(true);
-                  }}
-                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-sky-500/15 border border-dashed border-sky-400/30 text-sky-300 hover:text-white transition-all flex items-start gap-2.5 cursor-pointer mt-1"
-                >
-                  <LinkIcon className="w-4 h-4 shrink-0 mt-0.5 text-sky-400" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-bold">Özel Kaynak Linki Gir...</div>
-                    <p className="text-[11px] text-sky-300/60 line-clamp-1 mt-0.5">
-                      DiziBOX, HDFilm vb. doğrudan dizi URL'sini yapıştırın
-                    </p>
-                  </div>
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+                  {/* Custom URL Option */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsDropdownOpen(false);
+                      setShowManualModal(true);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-xl hover:bg-sky-500/15 border border-dashed border-sky-400/30 text-sky-300 hover:text-white transition-all flex items-start gap-2.5 cursor-pointer mt-1"
+                  >
+                    <LinkIcon className="w-4 h-4 shrink-0 mt-0.5 text-sky-400" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-bold">Özel Kaynak Linki Gir...</div>
+                      <p className="text-[11px] text-sky-300/60 line-clamp-1 mt-0.5">
+                        DiziBOX, HDFilm vb. doğrudan dizi URL'sini yapıştırın
+                      </p>
+                    </div>
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Pending Episodes Badge for Admins */}
+        {effectivePendingCount > 0 && (
+          <span
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0 shadow-[0_0_12px_rgba(245,158,11,0.2)]"
+            title={`${effectivePendingCount} bölüm henüz oynatılabilir video kaynağına sahip değil ("pending_source")`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+            <span>{effectivePendingCount} kaynak bekliyor</span>
+          </span>
+        )}
       </div>
 
       {/* View Last / Live Logs Button if logs exist */}

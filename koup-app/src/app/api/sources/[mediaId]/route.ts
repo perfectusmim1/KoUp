@@ -209,7 +209,8 @@ export async function GET(
       episode_number: number;
       episode_name: string;
       episode_type: string;
-      status: 'published' | 'scheduled' | 'broken';
+      status: 'published' | 'scheduled' | 'broken' | 'pending_source';
+      pending?: boolean;
       scheduled_release_at?: string | null;
       translation_note?: string | null;
       react_fire: number;
@@ -327,8 +328,11 @@ export async function GET(
             quality_label: isNative ? '1080p' : s.quality_label || 'HD Embed',
           };
         });
+        const isPending = Boolean((ep as any).pending) || ep.status === 'pending_source';
         return {
           ...ep,
+          pending: isPending ? true : undefined,
+          status: isPending ? ('pending_source' as const) : ep.status,
           sources: normalized,
         };
       });
@@ -509,7 +513,7 @@ export async function GET(
       )
       .eq('media_id', idNum)
       .or(
-        'views_count.gt.0,react_fire.gt.0,react_cry.gt.0,react_shock.gt.0,react_angry.gt.0,status.eq.scheduled,intro_start_sec.not.is.null'
+        'views_count.gt.0,react_fire.gt.0,react_cry.gt.0,react_shock.gt.0,react_angry.gt.0,status.eq.scheduled,status.eq.pending_source,intro_start_sec.not.is.null'
       )
       .order('season_number', { ascending: true })
       .order('episode_number', { ascending: true })
@@ -530,19 +534,23 @@ export async function GET(
           existing.views_count = Number(le.views_count || 0);
           if (le.intro_start_sec != null) existing.intro_start_sec = le.intro_start_sec;
           if (le.intro_end_sec != null) existing.intro_end_sec = le.intro_end_sec;
-          if (le.status === 'scheduled' && existing.sources.length === 0) {
+          if (le.status === 'pending_source') {
+            existing.status = 'pending_source';
+            existing.pending = true;
+          } else if (le.status === 'scheduled' && existing.sources.length === 0) {
             existing.status = 'scheduled';
             existing.scheduled_release_at = le.scheduled_release_at;
             existing.translation_note = le.translation_note;
           }
-        } else if (le.status === 'scheduled') {
+        } else if (le.status === 'scheduled' || le.status === 'pending_source') {
           episodes.push({
             id: idNum * 1000 + le.episode_number,
             season_number: le.season_number || 1,
             episode_number: le.episode_number || 1,
             episode_name: le.episode_name || `${le.episode_number}. Bölüm`,
             episode_type: 'bolum',
-            status: 'scheduled',
+            status: le.status as 'scheduled' | 'pending_source',
+            pending: le.status === 'pending_source',
             scheduled_release_at: le.scheduled_release_at,
             translation_note: le.translation_note,
             react_fire: le.react_fire || 0,
@@ -556,6 +564,12 @@ export async function GET(
           });
         }
       }
+
+      episodes.sort((a, b) => {
+        const sDiff = (a.season_number || 1) - (b.season_number || 1);
+        if (sDiff !== 0) return sDiff;
+        return (a.episode_number || 1) - (b.episode_number || 1);
+      });
     }
 
     return NextResponse.json(

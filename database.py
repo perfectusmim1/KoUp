@@ -11,4 +11,10 @@ def get_connection():
     return conn
 
 def init_db():
-    pass
+    conn = get_connection()
+    try:
+        from scrapers.pending_sources import ensure_pending_columns
+        ensure_pending_columns(conn)
+    finally:
+        conn.close()
+

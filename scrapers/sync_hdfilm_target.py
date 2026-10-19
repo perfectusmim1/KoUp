@@ -44,6 +44,11 @@ from scrapers.multisite import (
     unique_slug,
     clean_scraped_slug,
 )
+from scrapers.pending_sources import (
+    ensure_pending_columns,
+    page_is_placeholder,
+    reconcile_episode,
+)
 from scrapers.translator import resolve_tmdb_metadata, COUNTRY_CODE_TO_NAME
 
 TURKISH_COUNTRY_NAME_TO_CODE = {
@@ -374,6 +379,7 @@ def sync_hdfilm_movie(url, conn, cur, idx):
             added += 1
             print(f"    + {sname} -> {sprov} ({surl[:60]}...)", flush=True)
 
+    reconcile_episode(cur, ep_id, is_placeholder=page_is_placeholder(html))
     safe_commit(conn)
     print(f"  Tamamlandı! +{added} yeni doğrudan medya kaynağı eklendi.", flush=True)
 
@@ -445,8 +451,10 @@ def sync_hdfilm_series(series_url, conn, cur, idx, episodes_limit=None):
 
     total_added = 0
     for s_num, e_num, ep_url in ep_links:
+        is_ph = False
         try:
             ep_html = fetch_html(ep_url, referer=series_url)
+            is_ph = page_is_placeholder(ep_html)
             streams = resolve_hdfilm_streams(ep_url, ep_html)
             ep_id, _ = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_url)
 
@@ -456,9 +464,12 @@ def sync_hdfilm_series(series_url, conn, cur, idx, episodes_limit=None):
                     ep_added += 1
 
             total_added += ep_added
+            reconcile_episode(cur, ep_id, is_placeholder=is_ph)
             if ep_added > 0:
                 safe_commit(conn)
                 print(f"    [{t}] S{s_num}B{e_num}: +{ep_added} doğrudan HLS kaynak bağlandı.", flush=True)
+            else:
+                safe_commit(conn)
         except Exception as err:
             print(f"    [{t}] S{s_num}B{e_num} hata: {err}", flush=True)
 
@@ -467,6 +478,7 @@ def sync_hdfilm_series(series_url, conn, cur, idx, episodes_limit=None):
 
 def main():
     conn = get_connection()
+    ensure_pending_columns(conn)
     cur = conn.cursor()
     cur.execute("PRAGMA journal_mode=WAL;")
     cur.execute("PRAGMA synchronous=NORMAL;")

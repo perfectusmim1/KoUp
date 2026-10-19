@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import Hls from 'hls.js';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   Volume2,
@@ -24,6 +25,8 @@ import {
   Sparkles,
   SlidersHorizontal,
   ChevronDown,
+  ChevronLeft,
+  Film,
   AlertTriangle,
   ChevronsLeft,
   ChevronsRight,
@@ -1187,7 +1190,10 @@ export default function NetflixPlayer({
       setIsResolving(false);
       return;
     }
-    if (!activeSourceUrl) return;
+    if (!activeSourceUrl) {
+      setIsResolving(false);
+      return;
+    }
     let cancelled = false;
 
     async function resolve() {
@@ -1785,6 +1791,31 @@ export default function NetflixPlayer({
         new Date(currentEpObj.scheduled_release_at).getTime() > Date.now()
     );
 
+  const isPendingOrNoSource =
+    !isTrulyScheduled &&
+    (Boolean(currentEpObj?.pending) ||
+      currentEpObj?.status === 'pending_source' ||
+      availableSources.length === 0);
+
+  const currentEpIdx = useMemo(() => {
+    const idx = episodes.findIndex(
+      (e) => (e.season_number || 1) === currentSeason && e.episode_number === currentEpisode
+    );
+    return idx >= 0 ? idx : episodes.findIndex((e) => e.episode_number === currentEpisode);
+  }, [episodes, currentSeason, currentEpisode]);
+
+  const prevAvailableEp = useMemo(() => {
+    if (currentEpIdx <= 0) return null;
+    for (let i = currentEpIdx - 1; i >= 0; i--) {
+      const ep = episodes[i];
+      const isPending = Boolean(ep.pending) || ep.status === 'pending_source' || !ep.sources || ep.sources.length === 0;
+      if (!isPending) {
+        return ep;
+      }
+    }
+    return episodes[currentEpIdx - 1] || null;
+  }, [episodes, currentEpIdx]);
+
   // Scheduled Episode Live Countdown Timer
   useEffect(() => {
     if (!isTrulyScheduled || !currentEpObj?.scheduled_release_at) {
@@ -2336,29 +2367,56 @@ export default function NetflixPlayer({
                   : 'Çeviri işlemi için bölümün orijinal yayını bekleniyor. Bölüm yayınlandığı anda kaynaklar eklenecektir.')}
             </div>
           </div>
-        ) : availableSources.length === 0 ? (
-          <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-gradient-to-b from-[#0c0c0e] to-black">
-            <div className="w-14 h-14 rounded-3xl bg-white/10 border border-white/15 flex items-center justify-center mb-4">
-              <Layers className="w-7 h-7 text-[#E50914]" />
+        ) : isPendingOrNoSource ? (
+          <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-gradient-to-b from-[#0c0c0e] via-[#08080a] to-black relative overflow-hidden select-none">
+            {/* Background subtle ambient glow */}
+            <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-20">
+              <div className="w-80 h-80 rounded-full bg-amber-500/25 blur-3xl" />
             </div>
-            <div className="text-xs font-mono uppercase tracking-widest text-[#E50914] mb-1">
-              Kaynak Durumu
+
+            <div className="relative z-10 flex flex-col items-center max-w-lg px-4">
+              <div className="w-16 h-16 rounded-3xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center mb-4 text-amber-400 shadow-[0_0_24px_rgba(245,158,11,0.18)]">
+                <Clock className="w-8 h-8" />
+              </div>
+
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/25 text-amber-400 font-mono text-[11px] font-semibold mb-3">
+                <span>Yakında</span>
+              </div>
+
+              <h3 className="text-xl sm:text-3xl font-bold text-white tracking-tight mb-2.5">
+                Bu bölüm yakında eklenecek
+              </h3>
+
+              <p className="text-xs sm:text-sm text-white/60 mb-6 leading-relaxed max-w-md">
+                Kaynak bulunduğunda otomatik olarak eklenecek. Daha sonra tekrar kontrol edebilirsin.
+              </p>
+
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                {prevAvailableEp && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSelectEpisode(
+                        prevAvailableEp.season_number || currentSeason,
+                        prevAvailableEp.episode_number
+                      );
+                    }}
+                    className="px-4.5 py-2.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-semibold flex items-center gap-2 cursor-pointer transition-all hover:scale-105 active:scale-95 shadow-lg"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    <span>Önceki Bölüm ({prevAvailableEp.episode_number}. Bölüm)</span>
+                  </button>
+                )}
+
+                <Link
+                  href={`/seri/${media.slug}`}
+                  className="px-5 py-2.5 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white text-xs font-bold flex items-center gap-2 cursor-pointer transition-all hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(41,151,255,0.4)]"
+                >
+                  <Film className="w-4 h-4" />
+                  <span>Seri Sayfasına Dön</span>
+                </Link>
+              </div>
             </div>
-            <h3 className="text-xl sm:text-2xl font-bold text-white tracking-tight mb-2">
-              {isMovie
-                ? 'Bu Film İçin Aktif Video Kaynağı Hazırlanıyor'
-                : 'Bu Bölüm İçin Aktif Video Kaynağı Hazırlanıyor'}
-            </h3>
-            <p className="max-w-md text-xs sm:text-sm text-white/60 mb-5 leading-relaxed">
-              Sunucular otomatik taranıyor veya video akışı güncelleniyor. Lütfen birkaç dakika sonra yeniden deneyin.
-            </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-5 py-2.5 rounded-full bg-[#E50914] hover:bg-[#f40612] text-white text-xs font-bold flex items-center gap-2 cursor-pointer transition-transform active:scale-95"
-            >
-              <RotateCw className="w-3.5 h-3.5" />
-              <span>Sayfayı Yenile</span>
-            </button>
           </div>
         ) : resolvedMode === 'resolving' ? (
           <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-black relative">

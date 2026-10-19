@@ -841,6 +841,10 @@ export default function EpisodeWatchPage({
                   })}
                 />
               </div>
+            ) : (currentEpObj?.pending || currentEpObj?.status === 'pending_source') ? (
+              <span className="px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-mono font-medium">
+                Bölüm Yakında Eklenecek
+              </span>
             ) : (
               <span className="text-xs text-white/40 font-mono">Kaynak Hazırlanıyor...</span>
             )}

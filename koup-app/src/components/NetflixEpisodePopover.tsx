@@ -280,6 +280,11 @@ function NetflixEpisodePopoverComponent({
                     <span className="text-xs sm:text-sm font-bold text-white truncate">
                       {epTitle}
                     </span>
+                    {(ep.pending || ep.status === 'pending_source') && (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0">
+                        Yakında
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-1.5 shrink-0">
@@ -407,6 +412,11 @@ function NetflixEpisodePopoverComponent({
                 >
                   {epTitle}
                 </span>
+                {(ep.pending || ep.status === 'pending_source') && (
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0">
+                    Yakında
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">

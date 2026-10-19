@@ -11,6 +11,7 @@ import os
 import re
 import ssl
 import urllib.request
+import urllib.error
 from datetime import datetime
 
 from scrapers.multisite import find_in_index, norm_title, tag_site, unique_slug, clean_episode_title, clean_scraped_slug
@@ -125,9 +126,16 @@ def sb_request(method: str, path: str, body=None, prefer: str = "return=represen
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         with urllib.request.urlopen(req, context=ctx, timeout=10) as resp:
             raw = resp.read().decode("utf-8")
-            return json.loads(raw) if raw else None
-    except Exception:
-        return None
+            return json.loads(raw) if raw else {"ok": True}
+    except urllib.error.HTTPError as e:
+        err_msg = ""
+        try:
+            err_msg = e.read().decode("utf-8")
+        except Exception:
+            pass
+        return {"_error": True, "status": e.code, "message": err_msg}
+    except Exception as e:
+        return {"_error": True, "message": str(e)}
 
 
 def emit_live_item(item_dict: dict):
@@ -368,7 +376,7 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
 
         cur.execute(
             """
-            SELECT id, season_number, episode_number, episode_name, episode_type
+            SELECT id, season_number, episode_number, episode_name, episode_type, source_status
             FROM episodes
             WHERE drama_id = ?
             ORDER BY COALESCE(season_number, 1) ASC, episode_number ASC
@@ -378,7 +386,7 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
         eps = cur.fetchall()
         ep_out = []
         for ep in eps:
-            ep_id, s_num, e_num, ep_name, ep_type = ep
+            ep_id, s_num, e_num, ep_name, ep_type, src_status = ep
             cur.execute(
                 """
                 SELECT id, source_name, provider, direct_url, embed_id, fansub, site
@@ -406,16 +414,20 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
                     "fansub": fsub or None,
                     "quality_label": "1080p",
                 })
-            if srcs:
+            is_pending = (src_status == "pending")
+            if srcs or is_pending:
                 clean_name = clean_episode_title(ep_name, s_num or 1, e_num)
-                ep_out.append({
+                ep_obj = {
                     "id": ep_id,
                     "season_number": s_num or 1,
                     "episode_number": e_num,
                     "episode_name": clean_name,
                     "episode_type": ep_type or "normal",
                     "sources": srcs,
-                })
+                }
+                if is_pending:
+                    ep_obj["pending"] = True
+                ep_out.append(ep_obj)
 
         if ep_out:
             bundle_dir = os.path.join(_ROOT, "r2_bundles", "sources")
@@ -445,24 +457,41 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
             # 3. Upsert episodes into Supabase public.episodes table with their sources
             sb_episodes = []
             for ep in ep_out:
+                is_pend = bool(ep.get("pending"))
                 sb_episodes.append({
                     "media_id": drama_id,
                     "season_number": ep.get("season_number") or 1,
                     "episode_number": ep.get("episode_number"),
                     "episode_name": ep.get("episode_name") or f"Bölüm {ep.get('episode_number')}",
                     "episode_type": ep.get("episode_type") or "normal",
-                    "status": "published",
+                    "status": "pending_source" if is_pend else "published",
                     "video_sources": ep.get("sources") or [],
                 })
             if sb_episodes:
                 for i in range(0, len(sb_episodes), 50):
                     chunk = sb_episodes[i : i + 50]
-                    sb_request(
+                    res = sb_request(
                         "POST",
                         "/rest/v1/episodes?on_conflict=media_id,season_number,episode_number",
                         body=chunk,
                         prefer="resolution=merge-duplicates,return=minimal",
                     )
+                    # If check constraint doesn't allow 'pending_source' yet, fall back to 'published'
+                    if isinstance(res, dict) and res.get("_error"):
+                        err_msg = str(res.get("message", ""))
+                        print(f"[SUPABASE_UPSERT_FALLBACK] Upsert with pending_source status failed ({err_msg[:120]}), falling back to published...", flush=True)
+                        fallback_chunk = []
+                        for ep_item in chunk:
+                            item_copy = dict(ep_item)
+                            if item_copy.get("status") == "pending_source":
+                                item_copy["status"] = "published"
+                            fallback_chunk.append(item_copy)
+                        sb_request(
+                            "POST",
+                            "/rest/v1/episodes?on_conflict=media_id,season_number,episode_number",
+                            body=fallback_chunk,
+                            prefer="resolution=merge-duplicates,return=minimal",
+                        )
 
         # Checkpoint SQLite WAL so changes flush directly into webdrama_archive.db
         try:

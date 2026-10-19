@@ -71,6 +71,11 @@ from scrapers.supabase_sync_helper import (
     match_or_create_enriched_drama,
     sync_drama_bundle_and_counts,
 )
+from scrapers.pending_sources import (
+    ensure_pending_columns,
+    page_is_placeholder,
+    reconcile_episode,
+)
 
 try:
     from curl_cffi import requests as cffi_requests
@@ -167,25 +172,29 @@ def scan_dizibox(conn, cur, idx, limit=10, target=None):
                 source_url=ep_url, log_fn=log
             )
 
-            ep_html = fetch_url(ep_url, headers=headers)
-            m_king = re.search(r'src=["\'](https://www\.dizibox\.live/player/king/king\.php\?v=[^"\']+)["\']', ep_html)
-            if not m_king:
-                continue
-            king_url = m_king.group(1)
-            king_html = fetch_url(king_url, headers={'Referer': ep_url})
-            m_moly = re.search(r'src=["\'](https://dbx\.molystream\.org/embed/[^"\']+)["\']', king_html)
-            if not m_moly:
-                continue
-            embed_url = m_moly.group(1)
-            m_id = re.search(r'/embed/([a-zA-Z0-9-]+)', embed_url)
-            if not m_id:
-                continue
-            video_id = m_id.group(1)
-            hls_url = f"https://dbx.molystream.org/embed/sheila/{video_id}"
-
             ep_id, _ = match_or_create_episode(cur, did, season, ep_num, f"{season}. Sezon {ep_num}. Bölüm", ep_url)
-            added = add_source(cur, ep_id, "Orijinal", hls_url, "dbx", "dizibox")
+            ep_html = fetch_url(ep_url, headers=headers)
+            is_ph = page_is_placeholder(ep_html)
+            added = False
+
+            m_king = re.search(r'src=["\'](https://www\.dizibox\.live/player/king/king\.php\?v=[^"\']+)["\']', ep_html)
+            if m_king:
+                king_url = m_king.group(1)
+                king_html = fetch_url(king_url, headers={'Referer': ep_url})
+                m_moly = re.search(r'src=["\'](https://dbx\.molystream\.org/embed/[^"\']+)["\']', king_html)
+                if m_moly:
+                    embed_url = m_moly.group(1)
+                    m_id = re.search(r'/embed/([a-zA-Z0-9-]+)', embed_url)
+                    if m_id:
+                        video_id = m_id.group(1)
+                        hls_url = f"https://dbx.molystream.org/embed/sheila/{video_id}"
+                        added = add_source(cur, ep_id, "Orijinal", hls_url, "dbx", "dizibox")
+
+            is_pending = reconcile_episode(cur, ep_id, is_placeholder=is_ph)
             touched_dramas.add(did)
+            safe_commit(conn)
+
+            status_text = 'Canlı Çözüldü' if added else ('Kaynak Bekleniyor (Yakında)' if is_pending else 'Doğrulandı')
             item_obj = {
                 'id': f"dizibox-{did}-{season}-{ep_num}",
                 'title': drama_title,
@@ -193,18 +202,17 @@ def scan_dizibox(conn, cur, idx, limit=10, target=None):
                 'image': cover_img,
                 'link': f"/seri/{drama_slug}/{ep_num}",
                 'date': datetime.now().isoformat(),
-                'status': 'Canlı Çözüldü' if added else 'Doğrulandı',
+                'status': status_text,
                 'sourceName': 'Orijinal',
             }
             if added:
-                safe_commit(conn)
                 log("AKINCI", f'"{drama_title}" -> {season}. Sezon {ep_num}. Bölüm (DBX Pro 1080p HLS) eklendi.')
-                emit_live_item(item_obj)
-                synced_items.append(item_obj)
+            elif is_pending:
+                log("BEKLEMEDE", f'"{drama_title}" -> {season}. Sezon {ep_num}. Bölüm henüz kaynak yok (yakında/hazırlanıyor).')
             else:
                 log("DOĞRULANDI", f'"{drama_title}" -> {season}. Sezon {ep_num}. Bölüm kaynağı güncel.')
-                emit_live_item(item_obj)
-                synced_items.append(item_obj)
+            emit_live_item(item_obj)
+            synced_items.append(item_obj)
         except Exception as err:
             log("HATA", f"{ep_url} çözümlenirken hata: {err}")
 
@@ -281,19 +289,22 @@ def scan_dizikorea(conn, cur, idx, limit=10, target=None):
 
             for ep_txt, ep_url in ep_anchors[:3]:
                 season_num, ep_num = parse_season_and_episode(ep_url, ep_txt)
+                clean_name = clean_episode_title(ep_txt or f"{season_num}. Sezon {ep_num}. Bölüm", season_num, ep_num)
+                ep_id, _ = match_or_create_episode(cur, did, season_num, ep_num, clean_name, ep_url)
                 ep_html = fetch_url(ep_url, headers=headers)
+                is_ph = page_is_placeholder(ep_html)
+
+                # Match both src and data-src (lazy-load) or anywhere in page for PlayerDKorea & Vidmoly
+                dk_matches = re.findall(r'https?://(?:www\.)?playerdkorea\.xyz/video/[a-zA-Z0-9]+', ep_html)
+                vm_matches = re.findall(r'https?://(?:www\.)?vidmoly\.[a-z]+/embed-[a-zA-Z0-9]+(?:\.html)?', ep_html)
 
                 sources_found = []
-                m_dk = re.search(r'(https?://(?:www\.)?playerdkorea\.xyz/video/[a-zA-Z0-9]+)', ep_html)
-                if m_dk:
-                    sources_found.append(('dizikorea', 'Orijinal', m_dk.group(1)))
-                m_vm = re.search(r'(https?://(?:www\.)?vidmoly\.[a-z]+/embed-[a-zA-Z0-9]+\.html)', ep_html)
-                if m_vm:
-                    sources_found.append(('vidmoly', 'Vidmoly', m_vm.group(1)))
+                for u in set(dk_matches):
+                    sources_found.append(('dizikorea', 'Orijinal', u))
+                for u in set(vm_matches):
+                    sources_found.append(('vidmoly', 'Vidmoly', u))
 
                 for prov, sname, direct_u in sources_found:
-                    clean_name = clean_episode_title(ep_txt or f"{season_num}. Sezon {ep_num}. Bölüm", season_num, ep_num)
-                    ep_id, _ = match_or_create_episode(cur, did, season_num, ep_num, clean_name, ep_url)
                     added = add_source(cur, ep_id, sname, direct_u, prov, "dizikorea")
                     touched_dramas.add(did)
                     item_obj = {
@@ -310,7 +321,26 @@ def scan_dizikorea(conn, cur, idx, limit=10, target=None):
                         safe_commit(conn)
                         log("AKINCI", f'"{drama_title}" -> {season_num}. Sezon {ep_num}. Bölüm ({sname}) eklendi.')
                     else:
-                        log("DOĞRULANDI", f'"{drama_title}" -> 1. Sezon {ep_num}. Bölüm ({sname}) güncel.')
+                        log("DOĞRULANDI", f'"{drama_title}" -> {season_num}. Sezon {ep_num}. Bölüm ({sname}) güncel.')
+                    emit_live_item(item_obj)
+                    synced_items.append(item_obj)
+
+                is_pending = reconcile_episode(cur, ep_id, is_placeholder=is_ph)
+                safe_commit(conn)
+
+                if not sources_found:
+                    touched_dramas.add(did)
+                    item_obj = {
+                        'id': f"dizikorea-{did}-{season_num}-{ep_num}",
+                        'title': drama_title,
+                        'subtitle': f"{season_num}. Sezon {ep_num}. Bölüm",
+                        'image': cover_img,
+                        'link': f"/seri/{drama_slug}/{ep_num}",
+                        'date': datetime.now().isoformat(),
+                        'status': 'Kaynak Bekleniyor (Yakında)',
+                        'sourceName': 'DiziKorea',
+                    }
+                    log("BEKLEMEDE", f'"{drama_title}" -> {season_num}. Sezon {ep_num}. Bölüm kaynak bekleniyor (yakında).')
                     emit_live_item(item_obj)
                     synced_items.append(item_obj)
         except Exception as err:
@@ -367,7 +397,10 @@ def scan_ddizi(conn, cur, idx, limit=10, target=None):
                 source_url=ep_url, log_fn=log
             )
 
+            clean_name = clean_episode_title(txt or f"{season_num}. Sezon {ep_num}. Bölüm", season_num, ep_num)
+            ep_id, _ = match_or_create_episode(cur, did, season_num, ep_num, clean_name, ep_url)
             ep_html = fetch_url(ep_url, headers=headers)
+            is_ph = page_is_placeholder(ep_html)
             yt_match = re.search(r'src=["\'](?:/player/telif/index\.php\?id=)?(https?://(?:www\.)?youtube\.com/watch\?v=[a-zA-Z0-9_\-]+|https?://youtu\.be/[a-zA-Z0-9_\-]+)["\']', ep_html)
             source_obj = None
             if yt_match:
@@ -389,10 +422,9 @@ def scan_ddizi(conn, cur, idx, limit=10, target=None):
                             yt_id = yt_thumb.group(1)
                             source_obj = ("YouTube HD", f"https://www.youtube.com/embed/{yt_id}?autoplay=1&enablejsapi=1", "youtube")
 
+            added = False
             if source_obj:
                 sname, surl, sprov = source_obj
-                clean_name = clean_episode_title(txt or f"{season_num}. Sezon {ep_num}. Bölüm", season_num, ep_num)
-                ep_id, _ = match_or_create_episode(cur, did, season_num, ep_num, clean_name, ep_url)
                 added = add_source(cur, ep_id, sname, surl, sprov, "ddizi")
                 touched_dramas.add(did)
                 item_obj = {
@@ -407,9 +439,27 @@ def scan_ddizi(conn, cur, idx, limit=10, target=None):
                 }
                 if added:
                     safe_commit(conn)
-                    log("AKINCI", f'"{clean_title}" -> 1. Sezon {ep_num}. Bölüm ({sname}) eklendi.')
+                    log("AKINCI", f'"{clean_title}" -> {season_num}. Sezon {ep_num}. Bölüm ({sname}) eklendi.')
                 else:
-                    log("DOĞRULANDI", f'"{clean_title}" -> 1. Sezon {ep_num}. Bölüm ({sname}) güncel.')
+                    log("DOĞRULANDI", f'"{clean_title}" -> {season_num}. Sezon {ep_num}. Bölüm ({sname}) güncel.')
+                emit_live_item(item_obj)
+                synced_items.append(item_obj)
+
+            is_pending = reconcile_episode(cur, ep_id, is_placeholder=is_ph)
+            safe_commit(conn)
+            if not source_obj:
+                touched_dramas.add(did)
+                item_obj = {
+                    'id': f"ddizi-{did}-{season_num}-{ep_num}",
+                    'title': clean_title,
+                    'subtitle': f"{season_num}. Sezon {ep_num}. Bölüm",
+                    'image': cover_img,
+                    'link': f"/seri/{drama_slug}/{ep_num}",
+                    'date': datetime.now().isoformat(),
+                    'status': 'Kaynak Bekleniyor (Yakında)',
+                    'sourceName': 'DDizi',
+                }
+                log("BEKLEMEDE", f'"{clean_title}" -> {season_num}. Sezon {ep_num}. Bölüm kaynak bekleniyor (yakında).')
                 emit_live_item(item_obj)
                 synced_items.append(item_obj)
         except Exception as err:
@@ -548,6 +598,7 @@ def scan_animecix(conn, cur, idx, limit=10, target=None):
                             }
                             emit_live_item(item_obj)
                             synced_items.append(item_obj)
+                    reconcile_episode(cur, ep_id)
 
                 if page >= v_data['pagination'].get('last_page', 1):
                     break
@@ -665,6 +716,7 @@ def scan_hdfilm(conn, cur, idx, limit=10, target=None):
                     ep_links.sort(key=lambda x: (x[0], x[1]))
                     for s_num, e_num, ep_url in ep_links[:5]:
                         ep_html = fetch_url(ep_url, headers={'Referer': item_url})
+                        is_ph = page_is_placeholder(ep_html)
                         streams = resolve_hdfilm_streams(ep_url, ep_html)
                         ep_id, _ = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_url)
                         for sname, surl, sprov, ssite in streams:
@@ -686,6 +738,8 @@ def scan_hdfilm(conn, cur, idx, limit=10, target=None):
                                 log("DOĞRULANDI", f'"{t}" -> S{s_num}B{e_num} ({sname}) güncel.')
                             emit_live_item(item_obj)
                             synced_items.append(item_obj)
+                        reconcile_episode(cur, ep_id, is_placeholder=is_ph)
+                        safe_commit(conn)
                 else:
                     m_html = fetch_url(item_url, headers=headers)
                     slug_cand = clean_scraped_slug(item_url.rstrip('/').split('/')[-1])
@@ -718,6 +772,8 @@ def scan_hdfilm(conn, cur, idx, limit=10, target=None):
                             log("DOĞRULANDI", f'"{t}" -> Film ({sname}) güncel.')
                         emit_live_item(item_obj)
                         synced_items.append(item_obj)
+                    reconcile_episode(cur, ep_id, is_placeholder=page_is_placeholder(m_html))
+                    safe_commit(conn)
             except Exception as err:
                 log("HATA", f"{item_url} işlenirken hata: {err}")
 
@@ -760,6 +816,7 @@ def scan_hdfilm(conn, cur, idx, limit=10, target=None):
                     touched_dramas.add(did)
 
                     ep_html = fetch_url(ep_url, headers=headers)
+                    is_ph = page_is_placeholder(ep_html)
                     streams = resolve_hdfilm_streams(ep_url, ep_html)
                     ep_id, _ = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_url)
                     for sname, surl, sprov, ssite in streams:
@@ -781,6 +838,8 @@ def scan_hdfilm(conn, cur, idx, limit=10, target=None):
                             log("DOĞRULANDI", f'"{clean_title}" -> S{s_num}B{e_num} ({sname}) güncel.')
                         emit_live_item(item_obj)
                         synced_items.append(item_obj)
+                    reconcile_episode(cur, ep_id, is_placeholder=is_ph)
+                    safe_commit(conn)
                 except Exception as err:
                     log("HATA", f"{ep_url} çözümlenirken hata: {err}")
 
@@ -855,12 +914,15 @@ def scan_asyawatch(conn, cur, idx, limit=10, target=None):
                     for s in esources:
                         s_content = s.get('source_content', '')
                         m_iframe = re.search(r'src=["\']([^"\']+)["\']', s_content)
+                    ep_id, _ = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_page_url)
+                    for s in esources:
+                        s_content = s.get('source_content', '')
+                        m_iframe = re.search(r'src=["\']([^"\']+)["\']', s_content)
                         if m_iframe:
                             embed_url = m_iframe.group(1)
                             if embed_url.startswith('//'):
                                 embed_url = 'https:' + embed_url
 
-                            ep_id, _ = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_page_url)
                             added = add_source(cur, ep_id, 'Asyawatch (1080p)', embed_url, 'asyawatch', 'asyawatch')
                             item_obj = {
                                 'id': f"asyawatch-{did}-{s_num}-{e_num}",
@@ -879,6 +941,8 @@ def scan_asyawatch(conn, cur, idx, limit=10, target=None):
                                 log("DOĞRULANDI", f'"{clean_title}" -> S{s_num}B{e_num} Asyawatch (1080p) güncel.')
                             emit_live_item(item_obj)
                             synced_items.append(item_obj)
+                    reconcile_episode(cur, ep_id)
+                    safe_commit(conn)
                 except Exception as e:
                     log("HATA", f"Bölüm {ep_slug} hatası: {e}")
         except Exception as e:
@@ -986,6 +1050,7 @@ def scan_dizilla(conn, cur, idx, limit=10, target=None):
                     ep_parsed = json.loads(edec[:-edec[-1]].decode('utf-8'))
                     esources = ep_parsed.get('RelatedResults', {}).get('getEpisodeSources', {}).get('result', [])
 
+                    ep_id, _ = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_page_url)
                     for s in esources:
                         s_content = s.get('source_content', '')
                         m_iframe = re.search(r'src=["\']([^"\']+)["\']', s_content)
@@ -994,7 +1059,6 @@ def scan_dizilla(conn, cur, idx, limit=10, target=None):
                             if embed_url.startswith('//'):
                                 embed_url = 'https:' + embed_url
 
-                            ep_id, _ = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_page_url)
                             added = add_source(cur, ep_id, 'Dizilla (1080p)', embed_url, 'dizilla', 'dizilla')
                             item_obj = {
                                 'id': f"dizilla-{did}-{s_num}-{e_num}",
@@ -1013,6 +1077,8 @@ def scan_dizilla(conn, cur, idx, limit=10, target=None):
                                 log("DOĞRULANDI", f'"{clean_title}" -> S{s_num}B{e_num} Dizilla (1080p) güncel.')
                             emit_live_item(item_obj)
                             synced_items.append(item_obj)
+                    reconcile_episode(cur, ep_id)
+                    safe_commit(conn)
                 except Exception as e:
                     log("HATA", f"Bölüm {ep_slug} hatası: {e}")
         except Exception as e:
@@ -1060,6 +1126,7 @@ def main():
     args = parser.parse_args()
 
     conn = get_connection()
+    ensure_pending_columns(conn)
     cur = conn.cursor()
     cur.execute("PRAGMA journal_mode=WAL;")
     cur.execute("PRAGMA synchronous=NORMAL;")
@@ -1095,6 +1162,15 @@ def main():
     new_total = cur.fetchone()[0]
 
     log("TAMAMLANDI", f"Tarama görevi tamamlandı. Yeni/Güncel Kaynak: +{delta}. Toplam Arşiv: {new_total:,}")
+
+    # Admin trigger auto re-check: small batch of pending episodes
+    try:
+        from scripts.recheck_pending_episodes import recheck_pending
+        recheck_res = recheck_pending(conn, cur, limit=40)
+        if recheck_res.get("checked", 0) > 0:
+            log("YENİDEN KONTROL", f"Bekleyen bölümler kontrol edildi: {recheck_res['checked']} kontrol, {recheck_res['resolved']} çözüldü, {recheck_res['pending']} halen beklemede.")
+    except Exception as recheck_err:
+        log("UYARI", f"Bekleyen kaynak yeniden kontrol uyarısı: {recheck_err}")
 
     # Output JSON line for API consumer
     result_data = {

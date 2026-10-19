@@ -265,7 +265,7 @@ function EpisodeRailComponent({
                       }
                     >
                       <div
-                        className={`text-xs font-bold truncate transition-colors ${
+                        className={`text-xs font-bold truncate transition-colors flex items-center gap-1.5 ${
                           isPlayingThis
                             ? epWatched
                               ? 'text-emerald-300'
@@ -275,10 +275,17 @@ function EpisodeRailComponent({
                             : 'text-white group-hover:text-sky-200'
                         }`}
                       >
-                        {formatEpisodeTitle(
-                          ep.episode_name,
-                          ep.season_number || currentSeason,
-                          ep.episode_number
+                        <span className="truncate">
+                          {formatEpisodeTitle(
+                            ep.episode_name,
+                            ep.season_number || currentSeason,
+                            ep.episode_number
+                          )}
+                        </span>
+                        {(ep.pending || ep.status === 'pending_source') && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0">
+                            Yakında
+                          </span>
                         )}
                       </div>
                       <div className="mt-0.5 flex items-center flex-wrap gap-2 text-[10px] font-mono">

@@ -144,7 +144,7 @@ def export_all():
         content_type = (content_type or "dizi").lower()
 
         ep_rows = c.execute("""
-            SELECT id, season_number, episode_number, episode_name, episode_type
+            SELECT id, season_number, episode_number, episode_name, episode_type, source_status
             FROM episodes
             WHERE drama_id = ?
             ORDER BY season_number ASC, episode_number ASC
@@ -152,9 +152,10 @@ def export_all():
 
         episodes = []
 
-        for ep_id, season_num, ep_num, ep_name, ep_type in ep_rows:
+        for ep_id, season_num, ep_num, ep_name, ep_type, src_status in ep_rows:
             raw_sources = c.execute(src_query, (ep_id,)).fetchall()
-            if not raw_sources:
+            is_pending = (src_status == "pending")
+            if not raw_sources and not is_pending:
                 continue
 
             has_alt = any(
@@ -227,13 +228,13 @@ def export_all():
             is_corrupted = not raw_ep_name or "\ufffd" in raw_ep_name or "B?l?m" in raw_ep_name or "?" in raw_ep_name
             cleaned_title = f"{ep_num or 1}. Bölüm" if is_corrupted else raw_ep_name
 
-            episodes.append({
+            ep_dict = {
                 "id": ep_id,
                 "season_number": season_num or 1,
                 "episode_number": ep_num or 1,
                 "episode_name": cleaned_title,
                 "episode_type": ep_type or "bolum",
-                "status": "published",
+                "status": "pending_source" if is_pending else "published",
                 "scheduled_release_at": None,
                 "translation_note": None,
                 "react_fire": 0,
@@ -241,7 +242,10 @@ def export_all():
                 "react_shock": 0,
                 "react_angry": 0,
                 "sources": processed
-            })
+            }
+            if is_pending:
+                ep_dict["pending"] = True
+            episodes.append(ep_dict)
             total_sources += len(processed)
 
         if not episodes:

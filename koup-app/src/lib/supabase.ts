@@ -140,7 +140,8 @@ export interface EpisodeData {
   episode_number: number;
   episode_name: string;
   episode_type: string;
-  status?: 'published' | 'scheduled' | 'broken';
+  status?: 'published' | 'scheduled' | 'broken' | 'pending_source';
+  pending?: boolean;
   scheduled_release_at?: string | null;
   translation_note?: string | null;
   react_fire?: number;
