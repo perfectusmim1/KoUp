@@ -59,8 +59,14 @@ jobs:
           CF_R2_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
           CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
           CF_R2_BUCKET: ${{ secrets.CF_R2_BUCKET }}
+          TARGET_SITE: ${{ github.event.inputs.target_site }}
+          PENDING_LIMIT: ${{ github.event.inputs.pending_limit }}
+          BATCH_DRAMAS: ${{ github.event.inputs.batch_dramas }}
         run: |
+          TARGET="${TARGET_SITE:-all}"
+          PLIMIT="${PENDING_LIMIT:-150}"
+          BDRAMAS="${BATCH_DRAMAS:-30}"
           python scripts/cron_sync_pipeline.py \
-            --target "${{ inputs.target_site || 'all' }}" \
-            --pending-limit "${{ inputs.pending_limit || '150' }}" \
-            --batch-dramas "${{ inputs.batch_dramas || '30' }}"
+            --target "$TARGET" \
+            --pending-limit "$PLIMIT" \
+            --batch-dramas "$BDRAMAS"
