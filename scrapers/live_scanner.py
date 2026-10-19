@@ -401,26 +401,34 @@ def scan_ddizi(conn, cur, idx, limit=10, target=None):
             ep_id, _ = match_or_create_episode(cur, did, season_num, ep_num, clean_name, ep_url)
             ep_html = fetch_url(ep_url, headers=headers)
             is_ph = page_is_placeholder(ep_html)
-            yt_match = re.search(r'src=["\'](?:/player/telif/index\.php\?id=)?(https?://(?:www\.)?youtube\.com/watch\?v=[a-zA-Z0-9_\-]+|https?://youtu\.be/[a-zA-Z0-9_\-]+)["\']', ep_html)
+            # DDizi: Prioritize full player stream (/player/oynat/) over YouTube trailers
+            m_p = re.search(r'<iframe[^>]+src=["\'](/player/oynat/[a-zA-Z0-9]+)["\']', ep_html)
             source_obj = None
-            if yt_match:
-                raw_yt = yt_match.group(1)
-                v_id = re.search(r'(?:v=|youtu\.be/)([a-zA-Z0-9_\-]+)', raw_yt).group(1)
-                source_obj = ("YouTube HD", f"https://www.youtube.com/embed/{v_id}?autoplay=1&enablejsapi=1", "youtube")
-            else:
-                m_p = re.search(r'<iframe[^>]+src=["\'](/player/oynat/[a-zA-Z0-9]+)["\']', ep_html)
-                if m_p:
-                    p_url = f"https://www.ddizi.tel{m_p.group(1)}"
-                    p_html = fetch_url(p_url, headers={'Referer': ep_url})
-                    m3u8_m = re.search(r'file:\s*["\'](https?:\\?/\\?/[^"\']+\.m3u8[^"\']*)["\']', p_html)
-                    if m3u8_m:
-                        hls_u = m3u8_m.group(1).replace('\\/', '/')
-                        source_obj = ("Orijinal", hls_u, "ddizi")
-                    else:
-                        yt_thumb = re.search(r'https?://(?:i\d*\.)?ytimg\.com/vi/([a-zA-Z0-9_\-]+)/', p_html)
-                        if yt_thumb:
-                            yt_id = yt_thumb.group(1)
-                            source_obj = ("YouTube HD", f"https://www.youtube.com/embed/{yt_id}?autoplay=1&enablejsapi=1", "youtube")
+            is_fragman = bool(re.search(r'fragman', txt or '', re.I) or re.search(r'fragman', ep_url, re.I))
+
+            if m_p:
+                p_url = f"https://www.ddizi.tel{m_p.group(1)}"
+                p_html = fetch_url(p_url, headers={'Referer': ep_url})
+                m3u8_m = re.search(r'file:\s*["\'](https?:\\?/\\?/[^"\']+\.m3u8[^"\']*)["\']', p_html)
+                if m3u8_m:
+                    hls_u = m3u8_m.group(1).replace('\\/', '/')
+                    source_obj = ("Orijinal", hls_u, "ddizi")
+                    cur.execute("DELETE FROM episode_sources WHERE episode_id = ? AND provider = 'youtube'", (ep_id,))
+                else:
+                    yt_thumb = re.search(r'https?://(?:i\d*\.)?ytimg\.com/vi/([a-zA-Z0-9_\-]+)/', p_html)
+                    if yt_thumb and not is_fragman:
+                        yt_id = yt_thumb.group(1)
+                        source_obj = ("YouTube HD", f"https://www.youtube.com/embed/{yt_id}?autoplay=1&enablejsapi=1", "youtube")
+
+            if not source_obj:
+                yt_match = re.search(r'src=["\'](?:/player/telif/index\.php\?id=)?(https?://(?:www\.)?youtube\.com/watch\?v=[a-zA-Z0-9_\-]+|https?://youtu\.be/[a-zA-Z0-9_\-]+)["\']', ep_html)
+                if yt_match and not is_fragman:
+                    raw_yt = yt_match.group(1)
+                    v_id = re.search(r'(?:v=|youtu\.be/)([a-zA-Z0-9_\-]+)', raw_yt).group(1)
+                    source_obj = ("YouTube HD", f"https://www.youtube.com/embed/{v_id}?autoplay=1&enablejsapi=1", "youtube")
+
+            if is_fragman and not source_obj:
+                is_ph = True
 
             added = False
             if source_obj:

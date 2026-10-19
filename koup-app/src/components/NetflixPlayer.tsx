@@ -404,6 +404,7 @@ function normalizePlayerStreamUrl(rawUrl: string, startSec: number): { url: stri
 export interface NetflixPlayerProps {
   media: MediaItem;
   episodes?: EpisodeData[];
+  isLoadingEpisodes?: boolean;
   currentSeason?: number;
   currentEpisode?: number;
   onSelectEpisode?: (season: number, episode: number) => void;
@@ -435,6 +436,7 @@ const EP_ROW_EXPANDED_H = 132;
 export default function NetflixPlayer({
   media,
   episodes = [],
+  isLoadingEpisodes = false,
   currentSeason = 1,
   currentEpisode = 1,
   onSelectEpisode = () => {},
@@ -1799,6 +1801,8 @@ export default function NetflixPlayer({
     );
 
   const isPendingOrNoSource =
+    !isLoadingEpisodes &&
+    episodes.length > 0 &&
     !isTrulyScheduled &&
     (Boolean(currentEpObj?.pending) ||
       currentEpObj?.status === 'pending_source' ||
@@ -2372,6 +2376,28 @@ export default function NetflixPlayer({
                 (isMovie
                   ? 'Film yayını bekleniyor. Kaynaklar eklendiğinde oynatıcı aktif olacaktır.'
                   : 'Çeviri işlemi için bölümün orijinal yayını bekleniyor. Bölüm yayınlandığı anda kaynaklar eklenecektir.')}
+            </div>
+          </div>
+        ) : (isLoadingEpisodes || (episodes.length === 0 && !isTrailerMode)) ? (
+          <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-black relative">
+            {(media.backdrop_image || media.cover_image) && (
+              <img
+                src={getProxiedImageUrl(
+                  media.backdrop_image || media.cover_image,
+                  media.cover_image,
+                  media.title,
+                  "w1280"
+                )}
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 w-full h-full object-cover opacity-20 filter blur-sm pointer-events-none"
+              />
+            )}
+            <div className="relative z-10 flex flex-col items-center gap-3">
+              <Film className="w-8 h-8 text-sky-400 animate-spin" />
+              <p className="text-white/80 font-medium text-sm">
+                KoUp Sinema Oynatıcısı Hazırlanıyor...
+              </p>
             </div>
           </div>
         ) : isPendingOrNoSource ? (

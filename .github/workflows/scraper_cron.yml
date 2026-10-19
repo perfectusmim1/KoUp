@@ -44,7 +44,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip'
 
       - name: Install Scraper & Resolver Dependencies
         run: |
@@ -53,15 +52,15 @@ jobs:
 
       - name: Run KoUp Multi-Site Scraper & Cross-Site Source Resolver
         env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://aocvcotmikzlwbaezdpl.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           CF_R2_ENDPOINT: ${{ secrets.CF_R2_ENDPOINT }}
           CF_R2_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
           CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
-          CF_R2_BUCKET: ${{ secrets.CF_R2_BUCKET || 'koup-archive' }}
+          CF_R2_BUCKET: ${{ secrets.CF_R2_BUCKET }}
         run: |
           python scripts/cron_sync_pipeline.py \
-            --target "${{ github.event.inputs.target_site || 'all' }}" \
-            --pending-limit "${{ github.event.inputs.pending_limit || '150' }}" \
-            --batch-dramas "${{ github.event.inputs.batch_dramas || '30' }}"
+            --target "${{ inputs.target_site || 'all' }}" \
+            --pending-limit "${{ inputs.pending_limit || '150' }}" \
+            --batch-dramas "${{ inputs.batch_dramas || '30' }}"

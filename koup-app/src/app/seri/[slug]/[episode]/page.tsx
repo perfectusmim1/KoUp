@@ -549,7 +549,7 @@ export default function EpisodeWatchPage({
 
 
 
-  if (isLoading && !media) {
+  if (isLoading && (!media || episodes.length === 0)) {
     return (
       <div className="min-h-screen pt-24 pb-20 bg-[#080808] px-4 sm:px-8 max-w-7xl mx-auto space-y-6">
         <div className="aspect-video w-full rounded-3xl bg-white/[0.03] border border-white/[0.08] animate-pulse flex items-center justify-center relative overflow-hidden">
@@ -846,6 +846,8 @@ export default function EpisodeWatchPage({
                   })}
                 />
               </div>
+            ) : isLoading || episodes.length === 0 ? (
+              <span className="text-xs text-white/40 font-mono">Kaynak Hazırlanıyor...</span>
             ) : (currentEpObj?.pending || currentEpObj?.status === 'pending_source') ? (
               <span className="px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-mono font-medium">
                 Bölüm Yakında Eklenecek
@@ -974,6 +976,7 @@ export default function EpisodeWatchPage({
               <NetflixPlayer
                 media={media}
                 episodes={episodes}
+                isLoadingEpisodes={isLoading || episodes.length === 0}
                 currentSeason={currentSeason}
                 currentEpisode={activeEpNum}
                 onSelectEpisode={handleSelectEpisode}
