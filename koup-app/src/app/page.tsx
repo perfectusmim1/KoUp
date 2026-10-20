@@ -1093,6 +1093,11 @@ export default function HomePage() {
                             activeHero.title,
                             'original'
                           );
+                        } else if (!target.dataset.triedProxy && activeHero.title) {
+                          target.dataset.triedProxy = 'true';
+                          target.src = `/api/image-proxy?tmdbId=${encodeURIComponent(String(activeHero.tmdb_id || ''))}&title=${encodeURIComponent(activeHero.title)}&type=banner`;
+                        } else {
+                          target.src = '/logo-dark.png';
                         }
                       }}
                       className="w-full h-full object-cover object-top md:object-center"
@@ -1404,7 +1409,12 @@ export default function HomePage() {
                     <img
                       src={getProxiedImageUrl(
                         item.backdrop_image || item.cover_image,
-                        item.title
+                        item.title,
+                        null,
+                        'w780',
+                        'banner',
+                        item.tmdb_id,
+                        item.content_type === 'film' ? 'movie' : 'tv'
                       )}
                       alt={item.title}
                       loading="lazy"
@@ -1535,7 +1545,12 @@ export default function HomePage() {
                     <img
                       src={getProxiedImageUrl(
                         m.backdrop_image || m.cover_image,
-                        m.title
+                        m.title,
+                        null,
+                        'w780',
+                        'banner',
+                        m.tmdb_id,
+                        m.content_type === 'film' ? 'movie' : 'tv'
                       )}
                       alt={m.title}
                       loading="lazy"
