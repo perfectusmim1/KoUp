@@ -19,6 +19,10 @@ import {
   Menu,
   LogIn,
   Tv,
+  Film,
+  Trophy,
+  Volume2,
+  VolumeX,
   UserCheck,
   MessageSquare,
   Sparkles,
@@ -174,6 +178,8 @@ export default function Navbar() {
   const markAllNotificationsRead = useKoUpSelector((s) => s.markAllNotificationsRead);
   const markNotificationRead = useKoUpSelector((s) => s.markNotificationRead);
   const triggerSound = useKoUpSelector((s) => s.triggerSound);
+  const soundEnabled = useKoUpSelector((s) => s.soundEnabled);
+  const toggleSound = useKoUpSelector((s) => s.toggleSound);
   const setIsAuthModalOpen = useKoUpSelector((s) => s.setIsAuthModalOpen);
   const logout = useKoUpSelector((s) => s.logout);
   const navbarBehavior = useKoUpSelector((s) => s.navbarBehavior);
@@ -473,21 +479,21 @@ export default function Navbar() {
           href="/"
           prefetch={true}
           onClick={() => triggerSound('click')}
-          className="hidden sm:flex items-center gap-2 sm:gap-3 group select-none"
+          className="flex items-center gap-2 sm:gap-3 group select-none"
         >
           <img
             src="/logo-dark.png"
             alt="KoUp"
-            className="h-8 sm:h-9 w-auto object-contain transition-opacity duration-300 group-hover:opacity-90 drop-shadow-[0_4px_16px_rgba(255,255,255,0.2)]"
+            className="h-7 sm:h-9 w-auto object-contain transition-opacity duration-300 group-hover:opacity-90 drop-shadow-[0_4px_16px_rgba(255,255,255,0.2)]"
           />
           <div className="flex flex-col">
-            <span className="text-[15px] sm:text-[16px] font-bold tracking-wider text-white leading-none">
+            <span className="text-[14px] sm:text-[16px] font-bold tracking-wider text-white leading-none">
               KoUp
-              <span className="text-white/55 font-light ml-1 text-[13px] hidden sm:inline">
+              <span className="text-white/55 font-light ml-1 text-xs sm:text-[13px]">
                 TV+
               </span>
             </span>
-            <span className="text-[9px] tracking-[0.22em] font-medium uppercase text-white/40 mt-1 hidden sm:block">
+            <span className="text-[8px] sm:text-[9px] tracking-[0.22em] font-medium uppercase text-white/40 mt-0.5 sm:mt-1 hidden xs:block sm:block">
               Cinema Studio
             </span>
           </div>
@@ -1151,7 +1157,7 @@ export default function Navbar() {
       </header>
       </div>
 
-      {/* Mobile Navigation Drawer with Liquid Glass Floating Sheet */}
+      {/* Mobile Navigation Drawer with Smoked Frosted Glass & Quick Discovery */}
       <AnimatePresence>
         {mobileMenuOpen && (
           <>
@@ -1161,59 +1167,66 @@ export default function Navbar() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
               onClick={() => setMobileMenuOpen(false)}
-              className="pointer-events-auto fixed inset-0 z-40 bg-black/65 backdrop-blur-xs touch-none overscroll-none lg:hidden transform-gpu will-change-[opacity]"
+              className="pointer-events-auto fixed inset-0 z-40 bg-black/75 backdrop-blur-sm touch-none overscroll-none lg:hidden transform-gpu will-change-[opacity]"
             />
             <motion.div
               initial={{ x: '-100%' }}
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
-              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className="pointer-events-auto lg:hidden fixed inset-y-0 left-0 w-[300px] max-w-[85vw] h-full h-dvh bg-[#0c0d12] p-5 border-r border-white/15 shadow-2xl z-50 flex flex-col justify-between overflow-y-auto overscroll-contain touch-pan-y transform-gpu will-change-transform no-scrollbar"
+              transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+              className="pointer-events-auto lg:hidden fixed inset-y-0 left-0 w-[310px] sm:w-[350px] max-w-[86vw] h-full h-dvh bg-[#0a0b10]/95 backdrop-blur-2xl p-4 sm:p-5 border-r border-white/[0.08] shadow-[24px_0_60px_rgba(0,0,0,0.95)] z-50 flex flex-col justify-between overflow-y-auto overscroll-contain touch-pan-y transform-gpu will-change-transform no-scrollbar"
             >
-              {/* Subtle Liquid Glass Top Specular Sheen */}
+              {/* Subtle Ambient Specular Sheen */}
               <div
                 aria-hidden="true"
-                className="pointer-events-none absolute -top-24 -left-16 w-64 h-64 rounded-full bg-white/[0.08] blur-3xl"
+                className="pointer-events-none absolute -top-24 -left-16 w-80 h-80 rounded-full bg-gradient-to-br from-white/[0.08] via-indigo-500/[0.03] to-transparent blur-3xl"
               />
 
-              {/* Drawer Top Header + Quick Search Pill */}
+              {/* Drawer Top Header + Search + Quick Categories */}
               <div className="relative z-10 flex flex-col min-h-0 flex-1">
-                <div className="flex items-center justify-between pb-4 border-b border-white/[0.10]">
+                {/* Brand Header */}
+                <div className="flex items-center justify-between pb-3.5 border-b border-white/[0.08]">
                   <Link
                     href="/"
+                    prefetch={true}
                     onClick={() => {
                       triggerSound('click');
                       setMobileMenuOpen(false);
                     }}
-                    className="flex items-center gap-2.5"
+                    className="flex items-center gap-2.5 group"
                   >
                     <img
                       src="/logo-dark.png"
                       alt="KoUp"
-                      className="h-8 w-auto object-contain drop-shadow-[0_4px_12px_rgba(255,255,255,0.2)]"
+                      className="h-8 w-auto object-contain drop-shadow-[0_4px_14px_rgba(255,255,255,0.22)]"
                     />
                     <div className="flex flex-col">
-                      <span className="text-[15px] font-bold text-white tracking-wider leading-none">
-                        KoUp
-                        <span className="text-white/55 font-light ml-1 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[15px] font-bold text-white tracking-wider leading-none">
+                          KoUp
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-white/10 border border-white/15 text-white/90">
                           TV+
                         </span>
-                      </span>
-                      <span className="text-[9px] tracking-[0.22em] font-medium uppercase text-white/40 mt-1">
+                      </div>
+                      <span className="text-[8.5px] tracking-[0.22em] font-medium uppercase text-white/40 mt-1">
                         Cinema Studio
                       </span>
                     </div>
                   </Link>
                   <button
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="w-9 h-9 rounded-full glass-pill flex items-center justify-center text-white/80 hover:text-white cursor-pointer"
+                    onClick={() => {
+                      triggerSound('click');
+                      setMobileMenuOpen(false);
+                    }}
+                    className="w-9 h-9 rounded-full bg-white/[0.06] hover:bg-white/[0.12] active:scale-95 border border-white/[0.10] flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
                     aria-label="Kapat"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
 
-                {/* Embedded Liquid Glass Quick Search Trigger */}
+                {/* Smoked Cinema Quick Search Trigger */}
                 <button
                   type="button"
                   onClick={() => {
@@ -1221,19 +1234,84 @@ export default function Navbar() {
                     setMobileMenuOpen(false);
                     setMobileSearchOpen(true);
                   }}
-                  className="mt-3.5 w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl glass-pill text-left text-xs text-white/65 hover:text-white cursor-pointer"
+                  className="mt-3.5 w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] active:bg-white/[0.10] border border-white/[0.08] text-left text-xs text-white/60 active:scale-[0.99] transition-all cursor-pointer"
                 >
                   <span className="flex items-center gap-2.5">
-                    <Search className="w-4 h-4 text-white/75 shrink-0" />
+                    <Search className="w-4 h-4 text-white/70 shrink-0" />
                     <span>İçerik veya oyuncu ara...</span>
                   </span>
-                  <span className="text-[10px] font-mono text-white/50 px-1.5 py-0.5 rounded-md bg-white/[0.08] border border-white/[0.14]">
+                  <span className="text-[10px] font-mono text-white/60 px-2 py-0.5 rounded-lg bg-white/[0.08] border border-white/[0.12]">
                     Ara
                   </span>
                 </button>
 
-                {/* Navigation Links with Liquid Glass Active Capsule */}
-                <div className="py-4 space-y-1.5 overflow-y-auto flex-1 no-scrollbar">
+                {/* 1-Tap Quick Category Access Chips */}
+                <div className="grid grid-cols-2 gap-2 mt-3">
+                  <Link
+                    href="/kesfet?type=dizi"
+                    prefetch={true}
+                    onClick={() => {
+                      triggerSound('click');
+                      setMobileMenuOpen(false);
+                    }}
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] active:bg-white/[0.10] border border-white/[0.07] text-xs font-semibold text-white/80 hover:text-white transition-all group"
+                  >
+                    <span className="w-6 h-6 rounded-lg bg-amber-500/15 border border-amber-500/25 flex items-center justify-center shrink-0">
+                      <Tv className="w-3.5 h-3.5 text-amber-300" />
+                    </span>
+                    <span className="truncate">Diziler</span>
+                  </Link>
+                  <Link
+                    href="/kesfet?type=film"
+                    prefetch={true}
+                    onClick={() => {
+                      triggerSound('click');
+                      setMobileMenuOpen(false);
+                    }}
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] active:bg-white/[0.10] border border-white/[0.07] text-xs font-semibold text-white/80 hover:text-white transition-all group"
+                  >
+                    <span className="w-6 h-6 rounded-lg bg-rose-500/15 border border-rose-500/25 flex items-center justify-center shrink-0">
+                      <Film className="w-3.5 h-3.5 text-rose-300" />
+                    </span>
+                    <span className="truncate">Filmler</span>
+                  </Link>
+                  <Link
+                    href="/kesfet?type=anime"
+                    prefetch={true}
+                    onClick={() => {
+                      triggerSound('click');
+                      setMobileMenuOpen(false);
+                    }}
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] active:bg-white/[0.10] border border-white/[0.07] text-xs font-semibold text-white/80 hover:text-white transition-all group"
+                  >
+                    <span className="w-6 h-6 rounded-lg bg-purple-500/15 border border-purple-500/25 flex items-center justify-center shrink-0">
+                      <Sparkles className="w-3.5 h-3.5 text-purple-300" />
+                    </span>
+                    <span className="truncate">Animeler</span>
+                  </Link>
+                  <Link
+                    href="/#top-10"
+                    prefetch={true}
+                    onClick={() => {
+                      triggerSound('click');
+                      setMobileMenuOpen(false);
+                    }}
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] active:bg-white/[0.10] border border-white/[0.07] text-xs font-semibold text-white/80 hover:text-white transition-all group"
+                  >
+                    <span className="w-6 h-6 rounded-lg bg-amber-400/15 border border-amber-400/25 flex items-center justify-center shrink-0">
+                      <Trophy className="w-3.5 h-3.5 text-amber-300" />
+                    </span>
+                    <span className="truncate">Top 10</span>
+                  </Link>
+                </div>
+
+                {/* Section Title */}
+                <div className="text-[10px] font-bold uppercase tracking-wider text-white/40 mt-4 mb-1 px-1">
+                  Gezinme
+                </div>
+
+                {/* Primary Navigation Links */}
+                <div className="space-y-1 overflow-y-auto flex-1 no-scrollbar pr-0.5">
                   {NAV_LINKS.map((item) => {
                     const Icon = item.icon;
                     const active = isNavActive(item.href);
@@ -1246,30 +1324,28 @@ export default function Navbar() {
                           triggerSound('click');
                           setMobileMenuOpen(false);
                         }}
-                        className={`group flex items-center justify-between px-3.5 min-h-[48px] rounded-2xl text-sm font-semibold transition-all duration-200 ${
+                        className={`group flex items-center justify-between px-3 py-2.5 rounded-xl text-[13px] font-semibold transition-all duration-150 ${
                           active
-                            ? 'liquid-glass-active-pill text-white'
-                            : 'text-white/70 hover:text-white hover:bg-white/[0.07] border border-transparent hover:border-white/[0.10]'
+                            ? 'bg-white/[0.12] text-white border border-white/[0.16] shadow-xs'
+                            : 'text-white/70 hover:text-white hover:bg-white/[0.05] border border-transparent hover:border-white/[0.07]'
                         }`}
                       >
                         <span className="flex items-center gap-3">
                           <span
-                            className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
+                            className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
                               active
-                                ? 'bg-white/[0.15] border border-white/[0.20] text-white'
-                                : 'bg-white/[0.05] border border-white/[0.08] text-white/65 group-hover:text-white group-hover:bg-white/[0.10]'
+                                ? 'bg-white/20 border border-white/25 text-white'
+                                : 'bg-white/[0.04] border border-white/[0.07] text-white/60 group-hover:text-white group-hover:bg-white/[0.08]'
                             }`}
                           >
-                            <Icon className="w-4 h-4 shrink-0" />
+                            <Icon className="w-3.5 h-3.5 shrink-0" />
                           </span>
-                          <span>
-                            {item.label}
-                          </span>
+                          <span>{item.label}</span>
                         </span>
                         {active ? (
-                          <span className="w-2 h-2 rounded-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.9)]" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.9)]" />
                         ) : (
-                          <ArrowRight className="w-3.5 h-3.5 text-white/25 group-hover:text-white/60 transition-colors" />
+                          <ArrowRight className="w-3.5 h-3.5 text-white/20 group-hover:text-white/60 transition-colors" />
                         )}
                       </Link>
                     );
@@ -1277,18 +1353,49 @@ export default function Navbar() {
                 </div>
               </div>
 
-              {/* Drawer Bottom Profile Dock */}
-              <div className="relative z-10 pt-3 border-t border-white/[0.10]">
+              {/* Drawer Bottom Profile Dock & Sound Toggle */}
+              <div className="relative z-10 pt-3 border-t border-white/[0.08] space-y-2">
+                {/* UI Sound FX Toggle */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    toggleSound();
+                    triggerSound('click');
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] text-xs text-white/70 hover:text-white transition-all cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    {soundEnabled ? (
+                      <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <VolumeX className="w-3.5 h-3.5 text-white/40" />
+                    )}
+                    <span>Arayüz Sesleri</span>
+                  </span>
+                  <span
+                    className={`text-[10px] font-mono px-2 py-0.5 rounded-md ${
+                      soundEnabled
+                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/25'
+                        : 'bg-white/[0.05] text-white/40 border border-white/[0.08]'
+                    }`}
+                  >
+                    {soundEnabled ? 'Açık' : 'Kapalı'}
+                  </span>
+                </button>
+
                 {user ? (
-                  <div className="p-2.5 rounded-2xl bg-white/[0.05] border border-white/[0.10] space-y-2.5">
+                  <div className="p-2.5 rounded-2xl bg-white/[0.04] border border-white/[0.08] space-y-2">
                     <Link
                       href={`/profil/${encodeURIComponent(user.username)}`}
                       prefetch={true}
-                      onClick={() => setMobileMenuOpen(false)}
-                      className="flex items-center justify-between gap-2.5 p-1.5 rounded-xl hover:bg-white/[0.06] transition-colors"
+                      onClick={() => {
+                        triggerSound('click');
+                        setMobileMenuOpen(false);
+                      }}
+                      className="flex items-center justify-between gap-2.5 p-1 rounded-xl hover:bg-white/[0.06] transition-colors"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-9 h-9 rounded-full overflow-hidden bg-white/12 border border-white/20 shrink-0 flex items-center justify-center shadow-xs">
+                        <div className="w-8 h-8 rounded-full overflow-hidden bg-white/12 border border-white/20 shrink-0 flex items-center justify-center shadow-xs">
                           {user.avatar_url ? (
                             <img
                               src={getProxiedImageUrl(
@@ -1328,7 +1435,7 @@ export default function Navbar() {
                           triggerSound('click');
                           setMobileMenuOpen(false);
                         }}
-                        className="flex items-center gap-2 px-2.5 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.08] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
+                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
                       >
                         <Library className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                         <span className="truncate">Kütüphanem</span>
@@ -1340,7 +1447,7 @@ export default function Navbar() {
                           triggerSound('click');
                           setMobileMenuOpen(false);
                         }}
-                        className="flex items-center gap-2 px-2.5 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.08] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
+                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
                       >
                         <Clock className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                         <span className="truncate">Geçmişim</span>
@@ -1352,7 +1459,7 @@ export default function Navbar() {
                           triggerSound('click');
                           setMobileMenuOpen(false);
                         }}
-                        className="flex items-center gap-2 px-2.5 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.08] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
+                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
                       >
                         <FolderHeart className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                         <span className="truncate">Listelerim</span>
@@ -1364,24 +1471,65 @@ export default function Navbar() {
                           triggerSound('click');
                           setMobileMenuOpen(false);
                         }}
-                        className="flex items-center gap-2 px-2.5 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.08] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
+                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
                       >
                         <Settings className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                         <span className="truncate">Ayarlar</span>
                       </Link>
                     </div>
+
+                    {user.role === 'admin' && (
+                      <Link
+                        href="/admin"
+                        prefetch={true}
+                        onClick={() => {
+                          triggerSound('click');
+                          setMobileMenuOpen(false);
+                        }}
+                        className="flex items-center justify-center gap-2 w-full py-1.5 rounded-xl bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/20 text-[11px] font-medium text-amber-300 hover:text-amber-200 transition-colors"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Admin Paneli</span>
+                      </Link>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        triggerSound('click');
+                        setMobileMenuOpen(false);
+                        logout();
+                      }}
+                      className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-[11px] font-medium text-rose-300 hover:text-rose-200 transition-colors cursor-pointer"
+                    >
+                      <LogOut className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Çıkış Yap</span>
+                    </button>
                   </div>
                 ) : (
-                  <button
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      setIsAuthModalOpen(true);
-                    }}
-                    className="w-full min-h-[48px] rounded-2xl bg-white text-black font-bold text-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg transition-all"
-                  >
-                    <LogIn className="w-4 h-4" />
-                    <span>Giriş Yap / Kayıt Ol</span>
-                  </button>
+                  <div className="p-3 rounded-2xl bg-gradient-to-b from-white/[0.07] to-white/[0.02] border border-white/[0.08] space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-md bg-amber-400/20 flex items-center justify-center">
+                        <Sparkles className="w-3 h-3 text-amber-300" />
+                      </span>
+                      <span className="text-xs font-bold text-white tracking-wide">
+                        KoUp Dünyasına Katıl
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-white/55 leading-relaxed">
+                      Kişisel listenizi oluşturun, kaldığınız yeri senkronize edin ve yeni bölümlerden haberdar olun.
+                    </p>
+                    <button
+                      onClick={() => {
+                        triggerSound('click');
+                        setMobileMenuOpen(false);
+                        setIsAuthModalOpen(true);
+                      }}
+                      className="w-full min-h-[42px] rounded-xl bg-white text-black font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-[0_4px_16px_rgba(255,255,255,0.18)] hover:bg-white/90 active:scale-[0.98] transition-all"
+                    >
+                      <LogIn className="w-4 h-4" />
+                      <span>Giriş Yap / Kayıt Ol</span>
+                    </button>
+                  </div>
                 )}
               </div>
             </motion.div>
@@ -1401,7 +1549,7 @@ export default function Navbar() {
           >
             {/* Top Search Input Bar */}
             <div className="flex items-center gap-2.5 pb-3 border-b border-white/10">
-              <div className="flex-1 flex items-center gap-2.5 px-4 py-2.5 rounded-full glass-pill focus-within:border-white/40">
+              <div className="flex-1 flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-black/50 border border-white/[0.12] focus-within:border-white/30 focus-within:bg-[#121318] focus-within:shadow-[0_0_16px_rgba(255,255,255,0.12)] transition-all">
                 <Search className="w-4 h-4 text-white/60 shrink-0" />
                 <input
                   autoFocus
