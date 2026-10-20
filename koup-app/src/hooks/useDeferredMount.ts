@@ -10,6 +10,7 @@ import {
 
 interface ScheduledTask {
   order: number;
+  urgent?: boolean;
   mount: () => void;
   isDone: () => boolean;
 }
@@ -17,9 +18,27 @@ interface ScheduledTask {
 class IdleQueueScheduler {
   private queue: ScheduledTask[] = [];
   private idleId: number | null = null;
+  private rafId: number | null = null;
   private isRunning = false;
 
+  private cancelPendingTimers() {
+    if (typeof window === 'undefined') return;
+    if (this.idleId !== null) {
+      if (typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(this.idleId);
+      } else {
+        window.clearTimeout(this.idleId);
+      }
+      this.idleId = null;
+    }
+    if (this.rafId !== null) {
+      window.cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+  }
+
   private scheduleNext() {
+    this.queue = this.queue.filter((t) => !t.isDone());
     if (this.queue.length === 0) {
       this.isRunning = false;
       return;
@@ -28,15 +47,21 @@ class IdleQueueScheduler {
 
     const runTask = () => {
       this.idleId = null;
-      // Clean up any tasks that were already mounted (e.g. by IntersectionObserver or scroll restoration)
+      this.rafId = null;
+      // Clean up any tasks that were already mounted
       this.queue = this.queue.filter((t) => !t.isDone());
       if (this.queue.length === 0) {
         this.isRunning = false;
         return;
       }
 
-      // Sort remaining tasks by order ascending (top-to-bottom sequence)
-      this.queue.sort((a, b) => a.order - b.order);
+      // Sort urgent tasks first, then by order ascending (top-to-bottom sequence)
+      this.queue.sort((a, b) => {
+        const uA = a.urgent ? 0 : 1;
+        const uB = b.urgent ? 0 : 1;
+        if (uA !== uB) return uA - uB;
+        return a.order - b.order;
+      });
 
       const nextTask = this.queue.shift();
       if (nextTask && !nextTask.isDone()) {
@@ -51,7 +76,11 @@ class IdleQueueScheduler {
     };
 
     if (typeof window !== 'undefined') {
-      if (typeof window.requestIdleCallback === 'function') {
+      const hasUrgent = this.queue.some((t) => t.urgent && !t.isDone());
+      if (hasUrgent) {
+        // Mount at most 1 urgent section per animation frame so fast scrolling never batches multiple rails
+        this.rafId = window.requestAnimationFrame(runTask);
+      } else if (typeof window.requestIdleCallback === 'function') {
         this.idleId = window.requestIdleCallback(runTask, { timeout: 600 });
       } else {
         this.idleId = window.setTimeout(runTask, 50);
@@ -66,28 +95,29 @@ class IdleQueueScheduler {
     }
   }
 
+  promoteUrgent(task: ScheduledTask) {
+    if (task.isDone()) return;
+    task.urgent = true;
+    if (!this.queue.includes(task)) {
+      this.queue.push(task);
+    }
+    // If waiting on an idle callback (not already waiting on rAF), upgrade to rAF
+    if (this.rafId === null) {
+      this.cancelPendingTimers();
+      this.scheduleNext();
+    }
+  }
+
   unregister(task: ScheduledTask) {
     this.queue = this.queue.filter((t) => t !== task);
-    if (this.queue.length === 0 && this.idleId !== null && typeof window !== 'undefined') {
-      if (typeof window.cancelIdleCallback === 'function') {
-        window.cancelIdleCallback(this.idleId);
-      } else {
-        window.clearTimeout(this.idleId);
-      }
-      this.idleId = null;
+    if (this.queue.length === 0) {
+      this.cancelPendingTimers();
       this.isRunning = false;
     }
   }
 
   mountAllNow() {
-    if (this.idleId !== null && typeof window !== 'undefined') {
-      if (typeof window.cancelIdleCallback === 'function') {
-        window.cancelIdleCallback(this.idleId);
-      } else {
-        window.clearTimeout(this.idleId);
-      }
-      this.idleId = null;
-    }
+    this.cancelPendingTimers();
     const pending = [...this.queue];
     this.queue = [];
     this.isRunning = false;
@@ -136,7 +166,8 @@ export interface DeferredMountResult {
  * Hook to progressively mount below-the-fold rails.
  * Sections with order <= 0 mount immediately.
  * Other sections mount either when their turn arrives in the idle queue or
- * when an IntersectionObserver with rootMargin 800px detects them near viewport.
+ * when an IntersectionObserver with rootMargin 250px promotes them to the
+ * 1-per-frame urgent rAF queue.
  */
 export function useDeferredMount(order: number): DeferredMountResult {
   // If order is <= 0 (e.g. the first content rail), mount immediately during SSR and initial hydration.
@@ -144,6 +175,7 @@ export function useDeferredMount(order: number): DeferredMountResult {
   const isMountedRef = useRef(order <= 0);
   const domNodeRef = useRef<HTMLElement | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
+  const taskRef = useRef<ScheduledTask | null>(null);
 
   const triggerMount = useCallback(() => {
     if (isMountedRef.current) return;
@@ -157,6 +189,17 @@ export function useDeferredMount(order: number): DeferredMountResult {
     });
   }, []);
 
+  if (!taskRef.current) {
+    taskRef.current = {
+      order,
+      mount: triggerMount,
+      isDone: () => isMountedRef.current,
+    };
+  } else {
+    taskRef.current.order = order;
+    taskRef.current.mount = triggerMount;
+  }
+
   const setRef = useCallback(
     (node: HTMLElement | null) => {
       domNodeRef.current = node;
@@ -168,12 +211,20 @@ export function useDeferredMount(order: number): DeferredMountResult {
             (entries) => {
               for (const entry of entries) {
                 if (entry.isIntersecting) {
-                  triggerMount();
+                  if (observerRef.current) {
+                    observerRef.current.disconnect();
+                    observerRef.current = null;
+                  }
+                  if (taskRef.current) {
+                    scheduler.promoteUrgent(taskRef.current);
+                  } else {
+                    triggerMount();
+                  }
                   break;
                 }
               }
             },
-            { rootMargin: '800px 0px' }
+            { rootMargin: '250px 0px' }
           );
         }
         observerRef.current.observe(node);
@@ -192,12 +243,7 @@ export function useDeferredMount(order: number): DeferredMountResult {
       return;
     }
 
-    const task: ScheduledTask = {
-      order,
-      mount: triggerMount,
-      isDone: () => isMountedRef.current,
-    };
-
+    const task = taskRef.current!;
     scheduler.register(task);
 
     return () => {

@@ -45,12 +45,22 @@ import { trackMediaView } from '@/lib/viewTracker';
 import { cachedQuery, getCache, getMediaFromCache, registerMediaItem, updateCachedMedia } from '@/lib/cache';
 import { recordTasteSignal } from '@/lib/tasteProfile';
 import { cleanFansubName, cleanSourceName } from '@/lib/cleanFansub';
+import dynamic from 'next/dynamic';
 import { useKoUpSelector } from '@/context/KoUpContext';
 import NetflixPlayer from '@/components/NetflixPlayer';
 import CountryFlag from '@/components/CountryFlag';
-import RichCommentSection from '@/components/RichCommentSection';
 import CustomSelect from '@/components/CustomSelect';
 import EpisodeRail from '@/components/EpisodeRail';
+
+const RichCommentSection = dynamic(
+  () => import('@/components/RichCommentSection'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="min-h-[280px] rounded-3xl bg-[#0f0f11] border border-white/[0.08]" />
+    ),
+  }
+);
 
 const EMPTY_WATCHED_ARRAY: number[] = [];
 

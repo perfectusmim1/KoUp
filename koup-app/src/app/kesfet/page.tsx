@@ -14,7 +14,6 @@ import {
   Check,
   X,
 } from 'lucide-react';
-import { motion } from 'motion/react';
 import { supabase, MediaItem, getCountryFlag } from '@/lib/supabase';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 import CountryFlag from '@/components/CountryFlag';
@@ -24,6 +23,7 @@ import CustomSelect from '@/components/CustomSelect';
 import { cachedQuery, getCache, registerMediaItems } from '@/lib/cache';
 import { normalizeSearchQuery } from '@/lib/search';
 import { useDragScroll } from '@/hooks/useDragScroll';
+import { useDeferredMount } from '@/hooks/useDeferredMount';
 import { rankSearchResults } from '@/lib/searchRanking';
 
 const ITEMS_PER_PAGE = 36;
@@ -143,6 +143,8 @@ function DiscoverContent() {
   const [totalCount, setTotalCount] = useState<number>(24746);
   const [items, setItems] = useState<MediaItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const batch2 = useDeferredMount(1);
+  const batch3 = useDeferredMount(2);
 
   useEffect(() => {
     setIsMounted(true);
@@ -557,9 +559,36 @@ function DiscoverContent() {
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3.5 sm:gap-4 pt-2.5 pb-6">
-          {items.map((item) => (
-            <AccordionMediaCard key={item.id} item={item} fluidWidth={true} />
+          {items.slice(0, 12).map((item, idx) => (
+            <AccordionMediaCard
+              key={item.id}
+              item={item}
+              fluidWidth={true}
+              priority={idx < 4}
+            />
           ))}
+          {items.slice(12, 24).map((item, idx) =>
+            batch2.isMounted ? (
+              <AccordionMediaCard key={item.id} item={item} fluidWidth={true} />
+            ) : (
+              <div
+                key={item.id}
+                ref={idx === 0 ? batch2.ref : undefined}
+                className="aspect-[2/3] rounded-2xl bg-white/[0.03] border border-white/[0.06]"
+              />
+            )
+          )}
+          {items.slice(24, 36).map((item, idx) =>
+            batch3.isMounted ? (
+              <AccordionMediaCard key={item.id} item={item} fluidWidth={true} />
+            ) : (
+              <div
+                key={item.id}
+                ref={idx === 0 ? batch3.ref : undefined}
+                className="aspect-[2/3] rounded-2xl bg-white/[0.03] border border-white/[0.06]"
+              />
+            )
+          )}
         </div>
       )}
 

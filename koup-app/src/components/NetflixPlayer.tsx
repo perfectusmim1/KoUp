@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import Hls from 'hls.js';
+import type Hls from 'hls.js';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -1344,193 +1344,205 @@ export default function NetflixPlayer({
     setCurrentAudioTrackId(0);
 
     setIsBuffering(true);
+    let cancelled = false;
 
     if (resolvedMode === 'native_hls') {
-      if (Hls.isSupported()) {
-        const resumeSec = targetResumeRef.current;
-        const hls = new Hls({
-          enableWorker: true,
-          lowLatencyMode: false,
-          maxBufferLength: 30,
-          maxMaxBufferLength: 60,
-          startPosition: resumeSec > 3 ? resumeSec : -1,
-        });
-        hls.subtitleDisplay = false;
-        hls.subtitleTrack = -1;
-        hlsRef.current = hls;
-        hls.loadSource(streamUrl);
-        hls.attachMedia(video);
-        hls.on(Hls.Events.MANIFEST_PARSED, (_ev, data) => {
-          hls.subtitleDisplay = false;
-          hls.subtitleTrack = -1;
-          try {
-            if (video.textTracks) {
-              for (let i = 0; i < video.textTracks.length; i++) {
-                video.textTracks[i].mode = 'disabled';
-              }
-            }
-          } catch {}
-          setIsBuffering(false);
-          const resumeSec = targetResumeRef.current;
-          if (resumeSec > 3) {
-            try {
-              video.currentTime = resumeSec;
-            } catch {}
-          } else {
-            setIsResumeReady(true);
-          }
-          video.playbackRate = playbackRate;
-          video.play().catch(() => {});
-
-          if (data?.levels && data.levels.length > 0) {
-            const hlsQualities: Array<{ label: string; url: string; levelIndex?: number }> = [
-              { label: 'Otomatik', url: '', levelIndex: -1 },
-            ];
-            const sortedLevels = data.levels
-              .map((lvl: any, index: number) => ({ lvl, index }))
-              .sort((a: any, b: any) => {
-                const hA = a.lvl.height || (a.lvl.attrs?.RESOLUTION ? parseInt(a.lvl.attrs.RESOLUTION.split('x')[1] || '0', 10) : 0) || a.lvl.bitrate || 0;
-                const hB = b.lvl.height || (b.lvl.attrs?.RESOLUTION ? parseInt(b.lvl.attrs.RESOLUTION.split('x')[1] || '0', 10) : 0) || b.lvl.bitrate || 0;
-                return hB - hA;
-              });
-
-            const seenLabels = new Set<string>();
-            const defaultRankLabels = ['1080p', '720p', '480p', '360p'];
-
-            for (let rank = 0; rank < sortedLevels.length; rank++) {
-              const item = sortedLevels[rank];
-              const lvl = item.lvl;
-              let label = '';
-
-              if (lvl.height && lvl.height > 0) {
-                label = `${lvl.height}p`;
-              } else if (lvl.attrs?.RESOLUTION) {
-                const m = String(lvl.attrs.RESOLUTION).match(/\d+x(\d+)/);
-                if (m?.[1]) label = `${m[1]}p`;
-              } else if (lvl.name || lvl.attrs?.NAME) {
-                const n = String(lvl.name || lvl.attrs?.NAME).toUpperCase();
-                if (n.includes('FHD') || n.includes('1080')) label = '1080p';
-                else if (n.includes('HD') || n.includes('720')) label = '720p';
-                else if (n.includes('SD') || n.includes('480')) label = '480p';
-                else if (n.includes('360')) label = '360p';
-              } else if (lvl.bitrate) {
-                if (lvl.bitrate >= 2000000) label = '1080p';
-                else if (lvl.bitrate >= 1000000) label = '720p';
-                else if (lvl.bitrate >= 500000) label = '480p';
-                else label = '360p';
-              }
-
-              if (!label || seenLabels.has(label)) {
-                const fallback = defaultRankLabels.find((l) => !seenLabels.has(l));
-                label = fallback || `${Math.max(360, 1080 - rank * 360)}p`;
-              }
-
-              seenLabels.add(label);
-              hlsQualities.push({
-                label,
-                url: '',
-                levelIndex: item.index,
-              });
-            }
-            const savedPref = typeof window !== 'undefined' ? localStorage.getItem('koup_preferred_quality') : null;
-            let appliedQuality = 'Otomatik';
-            if (savedPref && savedPref !== 'Otomatik') {
-              const matched = hlsQualities.find(
-                (q) =>
-                  q.label.toLowerCase() === savedPref.toLowerCase() ||
-                  (savedPref.includes('1080') && q.label.includes('1080')) ||
-                  (savedPref.includes('720') && q.label.includes('720'))
-              );
-              if (matched && matched.levelIndex !== undefined && matched.levelIndex >= 0) {
-                hls.currentLevel = matched.levelIndex;
-                appliedQuality = matched.label;
-              }
-            }
-            setQualities(hlsQualities);
-            setSelectedQuality(appliedQuality);
-          }
-        });
-
-        hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_ev, data) => {
-          if (data?.audioTracks && data.audioTracks.length > 0) {
-            const mapped = data.audioTracks.map((t, idx) => {
-              const name = (t.name || '').toLowerCase();
-              const lang = (t.lang || '').toLowerCase();
-              let label = t.name || `Ses ${idx + 1}`;
-              if (name.includes('turkish') || name.includes('türk') || lang === 'tr') {
-                label = 'Türkçe (Dublaj)';
-              } else if (name.includes('original') || name.includes('eng') || lang === 'en') {
-                label = 'Orijinal Ses';
-              }
-              return {
-                id: idx,
-                name: t.name,
-                lang: t.lang,
-                label,
-              };
+      import('hls.js')
+        .then(({ default: Hls }) => {
+          if (cancelled || !videoRef.current) return;
+          if (Hls.isSupported()) {
+            const resumeSec = targetResumeRef.current;
+            const hls = new Hls({
+              enableWorker: true,
+              lowLatencyMode: false,
+              maxBufferLength: 30,
+              maxMaxBufferLength: 60,
+              startPosition: resumeSec > 3 ? resumeSec : -1,
             });
-            setAudioTracks(mapped);
-            setCurrentAudioTrackId(hls.audioTrack >= 0 ? hls.audioTrack : 0);
-          } else {
-            setAudioTracks([]);
-            setCurrentAudioTrackId(0);
-          }
-        });
-
-        hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_ev, data) => {
-          setCurrentAudioTrackId(data.id);
-        });
-
-        let hlsNetworkRetryCount = 0;
-        hls.on(Hls.Events.ERROR, (_ev, errData) => {
-          if (errData.fatal) {
-            switch (errData.type) {
-              case Hls.ErrorTypes.NETWORK_ERROR: {
-                const httpCode = errData.response?.code;
-                hlsNetworkRetryCount += 1;
-                if (httpCode === 403 || httpCode === 404 || hlsNetworkRetryCount > 2) {
-                  if (selectedSourceIdx + 1 < filteredSources.length) {
-                    pushNotification(
-                      'Otomatik Yedek Kaynağa Geçildi',
-                      `${activeSource?.source_name || 'Mevcut kaynak'} yanıt vermedi (${httpCode || 'bağlantı hatası'}), sıradaki kaynağa geçiliyor.`,
-                      'info'
-                    );
-                    setSelectedSourceIdx(selectedSourceIdx + 1);
-                  } else if (fallbackIframeUrl) {
-                    setStreamUrl(fallbackIframeUrl);
-                    setResolvedMode('iframe');
+            hls.subtitleDisplay = false;
+            hls.subtitleTrack = -1;
+            hlsRef.current = hls;
+            hls.loadSource(streamUrl);
+            hls.attachMedia(video);
+            hls.on(Hls.Events.MANIFEST_PARSED, (_ev, data) => {
+              hls.subtitleDisplay = false;
+              hls.subtitleTrack = -1;
+              try {
+                if (video.textTracks) {
+                  for (let i = 0; i < video.textTracks.length; i++) {
+                    video.textTracks[i].mode = 'disabled';
                   }
-                } else {
-                  hls.startLoad();
                 }
-                break;
+              } catch {}
+              setIsBuffering(false);
+              const resumeSec = targetResumeRef.current;
+              if (resumeSec > 3) {
+                try {
+                  video.currentTime = resumeSec;
+                } catch {}
+              } else {
+                setIsResumeReady(true);
               }
-              case Hls.ErrorTypes.MEDIA_ERROR:
-                hls.recoverMediaError();
-                break;
-              default:
-                if (fallbackIframeUrl) {
-                  setStreamUrl(fallbackIframeUrl);
-                  setResolvedMode('iframe');
-                } else if (selectedSourceIdx + 1 < filteredSources.length) {
-                  pushNotification(
-                    'Otomatik Yedek Kaynağa Geçildi',
-                    `${activeSource?.source_name} yanıt vermedi, sıradaki kaynağa geçiliyor.`,
-                    'info'
-                  );
-                  setSelectedSourceIdx(selectedSourceIdx + 1);
-                } else {
-                  setResolvedMode('iframe');
+              video.playbackRate = playbackRate;
+              video.play().catch(() => {});
+
+              if (data?.levels && data.levels.length > 0) {
+                const hlsQualities: Array<{ label: string; url: string; levelIndex?: number }> = [
+                  { label: 'Otomatik', url: '', levelIndex: -1 },
+                ];
+                const sortedLevels = data.levels
+                  .map((lvl: any, index: number) => ({ lvl, index }))
+                  .sort((a: any, b: any) => {
+                    const hA = a.lvl.height || (a.lvl.attrs?.RESOLUTION ? parseInt(a.lvl.attrs.RESOLUTION.split('x')[1] || '0', 10) : 0) || a.lvl.bitrate || 0;
+                    const hB = b.lvl.height || (b.lvl.attrs?.RESOLUTION ? parseInt(b.lvl.attrs.RESOLUTION.split('x')[1] || '0', 10) : 0) || b.lvl.bitrate || 0;
+                    return hB - hA;
+                  });
+
+                const seenLabels = new Set<string>();
+                const defaultRankLabels = ['1080p', '720p', '480p', '360p'];
+
+                for (let rank = 0; rank < sortedLevels.length; rank++) {
+                  const item = sortedLevels[rank];
+                  const lvl = item.lvl;
+                  let label = '';
+
+                  if (lvl.height && lvl.height > 0) {
+                    label = `${lvl.height}p`;
+                  } else if (lvl.attrs?.RESOLUTION) {
+                    const m = String(lvl.attrs.RESOLUTION).match(/\d+x(\d+)/);
+                    if (m?.[1]) label = `${m[1]}p`;
+                  } else if (lvl.name || lvl.attrs?.NAME) {
+                    const n = String(lvl.name || lvl.attrs?.NAME).toUpperCase();
+                    if (n.includes('FHD') || n.includes('1080')) label = '1080p';
+                    else if (n.includes('HD') || n.includes('720')) label = '720p';
+                    else if (n.includes('SD') || n.includes('480')) label = '480p';
+                    else if (n.includes('360')) label = '360p';
+                  } else if (lvl.bitrate) {
+                    if (lvl.bitrate >= 2000000) label = '1080p';
+                    else if (lvl.bitrate >= 1000000) label = '720p';
+                    else if (lvl.bitrate >= 500000) label = '480p';
+                    else label = '360p';
+                  }
+
+                  if (!label || seenLabels.has(label)) {
+                    const fallback = defaultRankLabels.find((l) => !seenLabels.has(l));
+                    label = fallback || `${Math.max(360, 1080 - rank * 360)}p`;
+                  }
+
+                  seenLabels.add(label);
+                  hlsQualities.push({
+                    label,
+                    url: '',
+                    levelIndex: item.index,
+                  });
                 }
-                break;
-            }
+                const savedPref = typeof window !== 'undefined' ? localStorage.getItem('koup_preferred_quality') : null;
+                let appliedQuality = 'Otomatik';
+                if (savedPref && savedPref !== 'Otomatik') {
+                  const matched = hlsQualities.find(
+                    (q) =>
+                      q.label.toLowerCase() === savedPref.toLowerCase() ||
+                      (savedPref.includes('1080') && q.label.includes('1080')) ||
+                      (savedPref.includes('720') && q.label.includes('720'))
+                  );
+                  if (matched && matched.levelIndex !== undefined && matched.levelIndex >= 0) {
+                    hls.currentLevel = matched.levelIndex;
+                    appliedQuality = matched.label;
+                  }
+                }
+                setQualities(hlsQualities);
+                setSelectedQuality(appliedQuality);
+              }
+            });
+
+            hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_ev, data) => {
+              if (data?.audioTracks && data.audioTracks.length > 0) {
+                const mapped = data.audioTracks.map((t, idx) => {
+                  const name = (t.name || '').toLowerCase();
+                  const lang = (t.lang || '').toLowerCase();
+                  let label = t.name || `Ses ${idx + 1}`;
+                  if (name.includes('turkish') || name.includes('türk') || lang === 'tr') {
+                    label = 'Türkçe (Dublaj)';
+                  } else if (name.includes('original') || name.includes('eng') || lang === 'en') {
+                    label = 'Orijinal Ses';
+                  }
+                  return {
+                    id: idx,
+                    name: t.name,
+                    lang: t.lang,
+                    label,
+                  };
+                });
+                setAudioTracks(mapped);
+                setCurrentAudioTrackId(hls.audioTrack >= 0 ? hls.audioTrack : 0);
+              } else {
+                setAudioTracks([]);
+                setCurrentAudioTrackId(0);
+              }
+            });
+
+            hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_ev, data) => {
+              setCurrentAudioTrackId(data.id);
+            });
+
+            let hlsNetworkRetryCount = 0;
+            hls.on(Hls.Events.ERROR, (_ev, errData) => {
+              if (errData.fatal) {
+                switch (errData.type) {
+                  case Hls.ErrorTypes.NETWORK_ERROR: {
+                    const httpCode = errData.response?.code;
+                    hlsNetworkRetryCount += 1;
+                    if (httpCode === 403 || httpCode === 404 || hlsNetworkRetryCount > 2) {
+                      if (selectedSourceIdx + 1 < filteredSources.length) {
+                        pushNotification(
+                          'Otomatik Yedek Kaynağa Geçildi',
+                          `${activeSource?.source_name || 'Mevcut kaynak'} yanıt vermedi (${httpCode || 'bağlantı hatası'}), sıradaki kaynağa geçiliyor.`,
+                          'info'
+                        );
+                        setSelectedSourceIdx(selectedSourceIdx + 1);
+                      } else if (fallbackIframeUrl) {
+                        setStreamUrl(fallbackIframeUrl);
+                        setResolvedMode('iframe');
+                      }
+                    } else {
+                      hls.startLoad();
+                    }
+                    break;
+                  }
+                  case Hls.ErrorTypes.MEDIA_ERROR:
+                    hls.recoverMediaError();
+                    break;
+                  default:
+                    if (fallbackIframeUrl) {
+                      setStreamUrl(fallbackIframeUrl);
+                      setResolvedMode('iframe');
+                    } else if (selectedSourceIdx + 1 < filteredSources.length) {
+                      pushNotification(
+                        'Otomatik Yedek Kaynağa Geçildi',
+                        `${activeSource?.source_name} yanıt vermedi, sıradaki kaynağa geçiliyor.`,
+                        'info'
+                      );
+                      setSelectedSourceIdx(selectedSourceIdx + 1);
+                    } else {
+                      setResolvedMode('iframe');
+                    }
+                    break;
+                }
+              }
+            });
+          } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.src = streamUrl;
+            video.playbackRate = playbackRate;
+            video.play().catch(() => {});
+          }
+        })
+        .catch(() => {
+          if (!cancelled && video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.src = streamUrl;
+            video.playbackRate = playbackRate;
+            video.play().catch(() => {});
           }
         });
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = streamUrl;
-        video.playbackRate = playbackRate;
-        video.play().catch(() => {});
-      }
     } else if (resolvedMode === 'native_mp4') {
       video.src = streamUrl;
       video.playbackRate = playbackRate;
@@ -1538,6 +1550,7 @@ export default function NetflixPlayer({
     }
 
     return () => {
+      cancelled = true;
       if (hlsRef.current) {
         hlsRef.current.stopLoad();
         hlsRef.current.detachMedia();

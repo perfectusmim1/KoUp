@@ -50,15 +50,31 @@ import {
 import { trackMediaView } from '@/lib/viewTracker';
 import { cachedQuery, getMediaFromCache, getCache, registerMediaItem, setCache, invalidateCache, invalidateMediaCache, updateCachedMedia } from '@/lib/cache';
 import { recordTasteSignal, rankRelatedMedia } from '@/lib/tasteProfile';
+import dynamic from 'next/dynamic';
 import { useKoUpSelector } from '@/context/KoUpContext';
 import CountryFlag from '@/components/CountryFlag';
-import RichCommentSection from '@/components/RichCommentSection';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 import { useDragScroll } from '@/hooks/useDragScroll';
 import CustomSelect from '@/components/CustomSelect';
-import AddToListModal from '@/components/AddToListModal';
-import AdminSeriesSync from '@/components/AdminSeriesSync';
 import { extractYouTubeId, buildModalTrailerEmbedUrl } from '@/lib/youtubeTrailer';
+
+const RichCommentSection = dynamic(
+  () => import('@/components/RichCommentSection'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="min-h-[280px] rounded-3xl bg-[#0f0f11] border border-white/[0.08]" />
+    ),
+  }
+);
+
+const AddToListModal = dynamic(() => import('@/components/AddToListModal'), {
+  ssr: false,
+});
+
+const AdminSeriesSync = dynamic(() => import('@/components/AdminSeriesSync'), {
+  ssr: false,
+});
 
 export default function SeriesDetailPage({
   params,
@@ -1473,41 +1489,34 @@ export default function SeriesDetailPage({
             <div className="flex items-center justify-between sm:justify-end gap-3">
               {/* Season Selector Tabs if Multi-Season with Fluid Sliding Pill */}
               {seasons.length > 1 && (
-                <LayoutGroup id="seri-season-selector-group">
-                  <div className="flex items-center gap-1 p-1 rounded-full glass-pill-dark border border-white/12 overflow-x-auto no-scrollbar">
-                    {seasons.map((s) => {
-                      const active = selectedSeason === s;
-                      return (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => {
-                            if (selectedSeason === s) return;
-                            React.startTransition(() => {
-                              setSelectedSeason(s);
-                              setShowAllEpisodes(false);
-                            });
-                          }}
-                          className={`relative px-4 py-1.5 rounded-full text-xs font-bold font-mono transition-colors duration-200 cursor-pointer select-none ${
-                            active
-                              ? 'text-white'
-                              : 'text-white/70 hover:text-white'
-                          }`}
-                        >
-                          {active && (
-                            <motion.span
-                              layoutId="seri-season-active-pill"
-                              initial={false}
-                              transition={{ type: 'spring', stiffness: 500, damping: 35, mass: 0.5 }}
-                              className="absolute inset-0 rounded-full bg-[#2997ff] shadow-[0_0_16px_rgba(41,151,255,0.45)]"
-                            />
-                          )}
-                          <span className="relative z-10">{s}. Sezon</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </LayoutGroup>
+                <div className="flex items-center gap-1 p-1 rounded-full glass-pill-dark border border-white/12 overflow-x-auto no-scrollbar">
+                  {seasons.map((s) => {
+                    const active = selectedSeason === s;
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => {
+                          if (selectedSeason === s) return;
+                          React.startTransition(() => {
+                            setSelectedSeason(s);
+                            setShowAllEpisodes(false);
+                          });
+                        }}
+                        className={`relative px-4 py-1.5 rounded-full text-xs font-bold font-mono transition-colors duration-200 cursor-pointer select-none ${
+                          active
+                            ? 'text-white'
+                            : 'text-white/70 hover:text-white'
+                        }`}
+                      >
+                        {active && (
+                          <span className="absolute inset-0 rounded-full bg-[#2997ff] shadow-[0_0_16px_rgba(41,151,255,0.45)] transition-opacity duration-200" />
+                        )}
+                        <span className="relative z-10">{s}. Sezon</span>
+                      </button>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>
@@ -1769,11 +1778,13 @@ export default function SeriesDetailPage({
       </div>
 
       {/* Add To List Modal */}
-      <AddToListModal
-        isOpen={showAddToListModal}
-        onClose={() => setShowAddToListModal(false)}
-        media={media}
-      />
+      {showAddToListModal && (
+        <AddToListModal
+          isOpen={showAddToListModal}
+          onClose={() => setShowAddToListModal(false)}
+          media={media}
+        />
+      )}
 
       {/* Official Native YouTube Cinema Trailer Modal */}
       <AnimatePresence>
