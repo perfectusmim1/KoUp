@@ -276,7 +276,7 @@ export default function CalendarPage() {
               return (
                 <div
                   key={`${item.source_site}-${item.id}`}
-                  className="group rounded-2xl apple-glass cv-card overflow-hidden border border-white/10 hover:border-white/30 transition-[border-color] duration-200 flex flex-col [content-visibility:auto] [contain-intrinsic-size:auto_380px]"
+                  className="group rounded-2xl apple-glass cv-card overflow-hidden border border-white/10 hover:border-white/30 transition-[border-color] duration-200 flex flex-col"
                 >
                   {/* Poster Thumbnail */}
                   <Link

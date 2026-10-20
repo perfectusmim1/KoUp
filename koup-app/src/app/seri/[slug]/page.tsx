@@ -1542,7 +1542,7 @@ export default function SeriesDetailPage({
                   aria-label={epTitle}
                   title={`${epTitle}${epWatched ? ' (İzlendi)' : ''}`}
                   style={{ contain: 'content' }}
-                  className={`p-3 sm:p-3.5 rounded-2xl border transition-colors duration-150 cursor-pointer flex items-center justify-between gap-3 group select-none [content-visibility:auto] [contain-intrinsic-size:auto_72px] ${
+                  className={`p-3 sm:p-3.5 rounded-2xl border transition-colors duration-150 cursor-pointer flex items-center justify-between gap-3 group select-none ${
                     epWatched
                       ? 'bg-emerald-500/[0.05] hover:bg-emerald-500/[0.09] border-emerald-500/35 hover:border-emerald-400/65 shadow-[0_0_8px_rgba(16,185,129,0.12)] hover:shadow-[0_0_14px_rgba(16,185,129,0.22)]'
                       : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/[0.06] hover:border-sky-400/60 hover:shadow-[0_0_12px_rgba(56,189,248,0.18)]'

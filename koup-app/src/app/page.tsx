@@ -1279,7 +1279,7 @@ export default function HomePage() {
               </h2>
             </div>
 
-            <div className="flex md:grid md:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 overflow-x-auto md:overflow-visible pb-3 md:pb-0 no-scrollbar snap-x snap-mandatory md:snap-none [-webkit-overflow-scrolling:touch] max-w-full">
+            <div className="flex md:grid md:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 overflow-x-auto md:overflow-visible pb-3 md:pb-0 no-scrollbar [-webkit-overflow-scrolling:touch] max-w-full">
               {continueWatchingItems.map((item) => {
                 const prog = progressMap[item.id];
                 const stats = getEpisodeProgressStats(prog, item);
@@ -1388,7 +1388,7 @@ export default function HomePage() {
 
             <div
               ref={top10SeriesScrollRef}
-              className="flex items-end gap-4 sm:gap-8 md:gap-10 overflow-x-auto overflow-y-hidden overscroll-y-auto overscroll-x-contain pb-6 pt-3 no-scrollbar snap-x snap-mandatory md:snap-none [-webkit-overflow-scrolling:touch] h-[240px] sm:h-[320px] md:h-[380px] max-w-full"
+              className="flex items-end gap-4 sm:gap-8 md:gap-10 overflow-x-auto overflow-y-hidden overscroll-y-auto overscroll-x-contain pb-6 pt-3 no-scrollbar [-webkit-overflow-scrolling:touch] h-[240px] sm:h-[320px] md:h-[380px] max-w-full"
             >
               {top10SeriesItems.map((item, idx) => (
                 <Link
@@ -1466,7 +1466,7 @@ export default function HomePage() {
 
             <div
               ref={top10MoviesScrollRef}
-              className="flex items-end gap-4 sm:gap-8 md:gap-10 overflow-x-auto overflow-y-hidden overscroll-y-auto overscroll-x-contain pb-6 pt-3 no-scrollbar snap-x snap-mandatory md:snap-none [-webkit-overflow-scrolling:touch] h-[240px] sm:h-[320px] md:h-[380px] max-w-full"
+              className="flex items-end gap-4 sm:gap-8 md:gap-10 overflow-x-auto overflow-y-hidden overscroll-y-auto overscroll-x-contain pb-6 pt-3 no-scrollbar [-webkit-overflow-scrolling:touch] h-[240px] sm:h-[320px] md:h-[380px] max-w-full"
             >
               {top10MoviesItems.map((item, idx) => (
                 <Link

@@ -629,22 +629,24 @@ export default function BenchmarkRunner() {
         setProgressPercent(Math.round(progress * 100));
         setElapsedSec(Math.round(elapsed / 1000));
 
-        fpsHistoryRef.current.push(currentFps);
-        setLiveSparkline((prev) => {
-          const next = [...prev, currentFps];
-          return next.length > 36 ? next.slice(-36) : next;
-        });
+        if (now >= stageTransitionCooldownRef.current) {
+          fpsHistoryRef.current.push(currentFps);
+          setLiveSparkline((prev) => {
+            const next = [...prev, currentFps];
+            return next.length > 36 ? next.slice(-36) : next;
+          });
 
-        // Running progressive average FPS & min FPS
-        const frames = frameTimesRef.current;
-        if (frames.length > 10) {
-          const totalTime = frames.reduce((a, b) => a + b, 0);
-          const runningAvg = Math.round((frames.length / (totalTime / 1000)) * 10) / 10;
-          setCurrentAvgFps(runningAvg);
+          // Running progressive average FPS & min FPS
+          const frames = frameTimesRef.current;
+          if (frames.length > 10) {
+            const totalTime = frames.reduce((a, b) => a + b, 0);
+            const runningAvg = Math.round((frames.length / (totalTime / 1000)) * 10) / 10;
+            setCurrentAvgFps(runningAvg);
 
-          const hist = fpsHistoryRef.current;
-          if (hist.length > 4) {
-            setCurrentMinFps(Math.min(...hist.slice(3)));
+            const hist = fpsHistoryRef.current;
+            if (hist.length > 4) {
+              setCurrentMinFps(Math.min(...hist.slice(3)));
+            }
           }
         }
 

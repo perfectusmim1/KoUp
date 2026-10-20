@@ -479,23 +479,12 @@ function DiscoverContent() {
                   setTypeFilter(ct.id);
                   setCurrentPage(1);
                 }}
-                className={`relative shrink-0 flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition-colors duration-200 cursor-pointer ${
-                  active ? 'text-black' : 'glass-pill text-white/75 hover:text-white'
+                className={`relative shrink-0 flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition-all duration-200 cursor-pointer ${
+                  active
+                    ? 'bg-white text-black font-bold shadow-[0_0_24px_rgba(255,255,255,0.4)]'
+                    : 'glass-pill text-white/75 hover:text-white'
                 }`}
               >
-                {active && (
-                  <motion.span
-                    layoutId="kesfet-type-active-pill"
-                    initial={false}
-                    transition={{
-                      type: 'spring',
-                      stiffness: 480,
-                      damping: 34,
-                      mass: 0.6,
-                    }}
-                    className="absolute inset-0 rounded-full bg-white shadow-[0_0_24px_rgba(255,255,255,0.4)]"
-                  />
-                )}
                 <Icon className="w-3.5 h-3.5 relative z-10" />
                 <span className="relative z-10">{ct.label}</span>
               </button>
@@ -514,25 +503,12 @@ function DiscoverContent() {
               setSelectedGenres([]);
               setCurrentPage(1);
             }}
-            className={`relative shrink-0 px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-colors duration-200 cursor-pointer ${
+            className={`relative shrink-0 px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-all duration-200 cursor-pointer ${
               selectedGenres.length === 0
-                ? 'text-black font-bold'
+                ? 'bg-white text-black font-bold shadow-[0_0_20px_rgba(255,255,255,0.35)]'
                 : 'bg-white/[0.04] text-white/65 border border-white/10 hover:text-white'
             }`}
           >
-            {selectedGenres.length === 0 && (
-              <motion.span
-                layoutId="kesfet-genre-active-pill"
-                initial={false}
-                transition={{
-                  type: 'spring',
-                  stiffness: 480,
-                  damping: 34,
-                  mass: 0.6,
-                }}
-                className="absolute inset-0 rounded-full bg-white shadow-[0_0_20px_rgba(255,255,255,0.35)]"
-              />
-            )}
             <span className="relative z-10">Tümü</span>
           </button>
 
@@ -550,7 +526,7 @@ function DiscoverContent() {
                       : [...prev, g]
                   );
                 }}
-                className={`relative shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-colors duration-200 cursor-pointer ${
+                className={`relative shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-all duration-200 cursor-pointer ${
                   active
                     ? 'bg-white text-black font-bold shadow-[0_0_16px_rgba(255,255,255,0.35)]'
                     : 'bg-white/[0.04] text-white/65 border border-white/10 hover:text-white'
@@ -582,9 +558,7 @@ function DiscoverContent() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3.5 sm:gap-4 pt-2.5 pb-6">
           {items.map((item) => (
-            <div key={item.id} className="[content-visibility:auto] [contain-intrinsic-size:auto_340px]">
-              <AccordionMediaCard item={item} fluidWidth={true} />
-            </div>
+            <AccordionMediaCard key={item.id} item={item} fluidWidth={true} />
           ))}
         </div>
       )}
