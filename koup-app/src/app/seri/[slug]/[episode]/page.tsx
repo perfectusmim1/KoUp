@@ -23,6 +23,7 @@ import {
   Maximize,
   Eye,
   X,
+  Clock,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -218,6 +219,24 @@ export default function EpisodeWatchPage({
   const [reportCategory, setReportCategory] = useState('Kaynak Açılmıyor / Kırık');
   const [reportNote, setReportNote] = useState('');
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [reportCooldownSec, setReportCooldownSec] = useState<number>(0);
+
+  // Issue report rate-limit cooldown tracker
+  useEffect(() => {
+    try {
+      const lastReport = Number(localStorage.getItem('koup_last_issue_report_time') || 0);
+      const diff = Math.ceil((60_000 - (Date.now() - lastReport)) / 1000);
+      if (diff > 0) setReportCooldownSec(diff);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (reportCooldownSec <= 0) return;
+    const timer = setInterval(() => {
+      setReportCooldownSec((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [reportCooldownSec]);
 
   const handleToggleWatchedEpisode = (ep: EpisodeData) => {
     if (!user) {
@@ -706,24 +725,60 @@ export default function EpisodeWatchPage({
 
   const submitReport = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!media) return;
+
+    if (reportCooldownSec > 0) {
+      pushNotification(
+        'İşlem Sınırı',
+        `Peş peşe bildirim gönderemezsiniz. Lütfen ${reportCooldownSec} saniye bekleyin.`,
+        'info'
+      );
+      return;
+    }
+
     setIsSubmittingReport(true);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const uid = sessionData?.session?.user?.id || user?.id || null;
 
-      await supabase.from('issue_reports').insert({
-        reporter_id: uid,
-        target_type: 'episode',
-        media_id: media.id,
-        season_number: currentSeason,
-        episode_number: activeEpNum,
-        provider_name: activeSource?.provider || 'episode_player',
-        issue_category: reportCategory,
-        details:
-          reportNote.trim() ||
-          `${media.title} S${currentSeason}:B${activeEpNum} (${activeSource?.source_name || 'Varsayılan Kaynak'}) — ${reportCategory}`,
-        status: 'open',
+      const res = await fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reporter_id: uid,
+          target_type: 'episode',
+          media_id: media.id,
+          season_number: currentSeason,
+          episode_number: activeEpNum,
+          provider_name: activeSource?.provider || 'episode_player',
+          issue_category: reportCategory,
+          details:
+            reportNote.trim() ||
+            `${media.title} S${currentSeason}:B${activeEpNum} (${activeSource?.source_name || 'Varsayılan Kaynak'}) – ${reportCategory}`,
+        }),
       });
+
+      const payload = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        if (res.status === 429) {
+          const cd = Number(payload.cooldownRemaining) || 60;
+          setReportCooldownSec(cd);
+          try {
+            localStorage.setItem('koup_last_issue_report_time', String(Date.now() - (60 - cd) * 1000));
+          } catch {}
+          pushNotification('Bildirim Limiti', payload.error || 'Lütfen bekleyin.', 'info');
+        } else {
+          pushNotification('Hata', payload.error || 'Bildirim kaydedilemedi.', 'info');
+        }
+        return;
+      }
+
+      // Success: Save cooldown
+      try {
+        localStorage.setItem('koup_last_issue_report_time', String(Date.now()));
+      } catch {}
+      setReportCooldownSec(60);
 
       pushNotification(
         'Sorun Bildirimi Alındı',
@@ -732,16 +787,16 @@ export default function EpisodeWatchPage({
           : `${media.title} ${activeEpNum}. Bölüm için bildiriminiz teknik ekibe iletildi.`,
         'info'
       );
+      setShowReport(false);
+      setReportNote('');
     } catch {
       pushNotification(
-        'Sorun Bildirimi Alındı',
-        'Bildiriminiz kaydedildi.',
+        'Sorun Bildirimi',
+        'Sunucuya ulaşılamadı, lütfen daha sonra tekrar deneyin.',
         'info'
       );
     } finally {
       setIsSubmittingReport(false);
-      setShowReport(false);
-      setReportNote('');
     }
   };
 
@@ -1314,6 +1369,14 @@ export default function EpisodeWatchPage({
                   />
                 </div>
 
+                {/* Cooldown Warning Banner */}
+                {reportCooldownSec > 0 && (
+                  <div className="flex items-center gap-2 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs font-medium">
+                    <Clock className="w-4 h-4 shrink-0 text-amber-400 animate-spin" style={{ animationDuration: '3s' }} />
+                    <span>Peş peşe bildirim limiti aktif: Yeni bildirim için <strong>{reportCooldownSec}</strong> saniye bekleyin.</span>
+                  </div>
+                )}
+
                 {/* Action Buttons */}
                 <div className="flex items-center justify-end gap-2 pt-2">
                   <button
@@ -1325,10 +1388,14 @@ export default function EpisodeWatchPage({
                   </button>
                   <button
                     type="submit"
-                    disabled={isSubmittingReport}
-                    className="px-5 py-2 rounded-full bg-amber-400 text-black font-bold text-xs hover:bg-amber-300 disabled:opacity-50 transition-colors duration-120 cursor-pointer"
+                    disabled={isSubmittingReport || reportCooldownSec > 0}
+                    className="px-5 py-2 rounded-full bg-amber-400 text-black font-bold text-xs hover:bg-amber-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-120 cursor-pointer"
                   >
-                    {isSubmittingReport ? 'İletiliyor...' : 'Bildirimi Gönder'}
+                    {isSubmittingReport
+                      ? 'İletiliyor...'
+                      : reportCooldownSec > 0
+                      ? `Bekleyin (${reportCooldownSec}s)`
+                      : 'Bildirimi Gönder'}
                   </button>
                 </div>
               </form>

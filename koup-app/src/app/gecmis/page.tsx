@@ -127,9 +127,6 @@ export default function WatchHistoryPage() {
           <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
             İzleme Geçmişim
           </h1>
-          <p className="text-xs sm:text-sm text-white/55 max-w-2xl">
-            Tüm cihazlarınızda senkronize edilen izleme geçmişiniz, izlediğiniz bölümler ve sıradaki bölüm detayları.
-          </p>
         </div>
 
         <div className="flex items-center gap-3">

@@ -226,9 +226,6 @@ export default function KutuphanePage() {
           <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
             Kütüphanem
           </h1>
-          <p className="text-xs sm:text-sm text-white/55 max-w-2xl">
-            İzlemekte olduğunuz, tamamladığınız, planladığınız ve duraklattığınız tüm Asya dizileri ve animeleri tek ekrandan yönetin.
-          </p>
         </div>
 
         {/* Action Link to Discover */}

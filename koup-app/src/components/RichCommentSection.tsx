@@ -371,6 +371,24 @@ export default function RichCommentSection({
   const [reportCategory, setReportCategory] = useState<string>('Spoiler / İpuçları İçeriyor');
   const [reportDetails, setReportDetails] = useState('');
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [reportCooldownSec, setReportCooldownSec] = useState<number>(0);
+
+  // Issue report rate-limit cooldown tracker
+  useEffect(() => {
+    try {
+      const lastReport = Number(localStorage.getItem('koup_last_issue_report_time') || 0);
+      const diff = Math.ceil((60_000 - (Date.now() - lastReport)) / 1000);
+      if (diff > 0) setReportCooldownSec(diff);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (reportCooldownSec <= 0) return;
+    const timer = setInterval(() => {
+      setReportCooldownSec((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [reportCooldownSec]);
 
   // Inline Reply state (render reply box directly beneath comment)
   const [inlineReplyId, setInlineReplyId] = useState<string | null>(null);
@@ -1267,26 +1285,62 @@ export default function RichCommentSection({
 
   const handleSubmitReport = async () => {
     if (!reportingComment || !user) return;
+
+    if (reportCooldownSec > 0) {
+      pushNotification(
+        'İşlem Sınırı',
+        `Peş peşe bildirim gönderemezsiniz. Lütfen ${reportCooldownSec} saniye bekleyin.`,
+        'info'
+      );
+      return;
+    }
+
     setIsSubmittingReport(true);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const uid = sessionData?.session?.user?.id || user.id;
 
-      await supabase.from('issue_reports').insert({
-        reporter_id: uid,
-        target_type: 'comment',
-        media_id: mediaId || null,
-        season_number: seasonNumber || null,
-        episode_number: episodeNumber || null,
-        issue_category: reportCategory,
-        details: `Yorum ID: ${reportingComment.id} - Yazar: ${reportingComment.author_username || 'Bilinmiyor'} - Kategori: ${reportCategory}${reportDetails ? ` - Detay: ${reportDetails.trim()}` : ''}`,
-        status: 'open',
+      const res = await fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reporter_id: uid,
+          target_type: 'comment',
+          media_id: mediaId || null,
+          season_number: seasonNumber || null,
+          episode_number: episodeNumber || null,
+          issue_category: reportCategory,
+          details: `Yorum ID: ${reportingComment.id} - Yazar: ${reportingComment.author_username || 'Bilinmiyor'} - Kategori: ${reportCategory}${reportDetails ? ` - Detay: ${reportDetails.trim()}` : ''}`,
+        }),
       });
+
+      const payload = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        if (res.status === 429) {
+          const cd = Number(payload.cooldownRemaining) || 60;
+          setReportCooldownSec(cd);
+          try {
+            localStorage.setItem('koup_last_issue_report_time', String(Date.now() - (60 - cd) * 1000));
+          } catch {}
+          pushNotification('Bildirim Limiti', payload.error || 'Lütfen bekleyin.', 'info');
+        } else {
+          pushNotification('Hata', payload.error || 'Bildirim kaydedilemedi.', 'info');
+        }
+        return;
+      }
+
+      // Success: Save cooldown
+      try {
+        localStorage.setItem('koup_last_issue_report_time', String(Date.now()));
+      } catch {}
+      setReportCooldownSec(60);
+
       pushNotification('Bildirim Alındı', 'Yorum incelenmek üzere moderatör ekibine iletildi.', 'info');
       setReportingComment(null);
+      setReportDetails('');
     } catch {
-      pushNotification('Bildirim Alındı', 'Bildiriminiz kaydedildi.', 'info');
-      setReportingComment(null);
+      pushNotification('Bildirim', 'Sunucuya ulaşılamadı, lütfen daha sonra tekrar deneyin.', 'info');
     } finally {
       setIsSubmittingReport(false);
     }
@@ -2443,6 +2497,14 @@ export default function RichCommentSection({
               />
             </div>
 
+            {/* Cooldown Warning Banner */}
+            {reportCooldownSec > 0 && (
+              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs font-medium">
+                <Clock className="w-3.5 h-3.5 shrink-0 text-amber-400 animate-spin" style={{ animationDuration: '3s' }} />
+                <span>Peş peşe bildirim limiti aktif: <strong>{reportCooldownSec}</strong>s bekleyin.</span>
+              </div>
+            )}
+
             {/* Actions */}
             <div className="flex items-center justify-end gap-2.5 pt-2">
               <button
@@ -2454,12 +2516,18 @@ export default function RichCommentSection({
               </button>
               <button
                 type="button"
-                disabled={isSubmittingReport}
+                disabled={isSubmittingReport || reportCooldownSec > 0}
                 onClick={handleSubmitReport}
-                className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs glow-rose transition-all cursor-pointer disabled:opacity-50"
+                className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs glow-rose transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Flag className="w-3.5 h-3.5" />
-                <span>{isSubmittingReport ? 'Gönderiliyor...' : 'Bildir'}</span>
+                <span>
+                  {isSubmittingReport
+                    ? 'Gönderiliyor...'
+                    : reportCooldownSec > 0
+                    ? `Bekleyin (${reportCooldownSec}s)`
+                    : 'Bildir'}
+                </span>
               </button>
             </div>
           </div>
