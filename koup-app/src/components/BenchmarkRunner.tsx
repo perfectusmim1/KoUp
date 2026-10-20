@@ -126,7 +126,7 @@ export default function BenchmarkRunner() {
   const [isRunning, setIsRunning] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [selectedDuration, setSelectedDuration] = useState<number>(60);
-  const [selectedMode, setSelectedMode] = useState<BenchmarkMode>('desktop');
+  const [selectedMode, setSelectedMode] = useState<BenchmarkMode>('mobile');
 
   // Real-time HUD states
   const [liveFps, setLiveFps] = useState<number>(60);
@@ -242,8 +242,8 @@ export default function BenchmarkRunner() {
     const maxFrameTimeMs = Math.max(...frames);
 
     const history = fpsHistoryRef.current;
-    // Skip initial 4 warmup samples
-    const validSamples = history.length > 5 ? history.slice(4) : history;
+    // Skip initial warmup samples (while launcher modal closes & initial render stabilizes)
+    const validSamples = history.length > 8 ? history.slice(6) : history;
     const minFps = validSamples.length > 0 ? Math.min(...validSamples) : Math.round(avgFps);
     const maxFps = validSamples.length > 0 ? Math.max(...validSamples) : Math.round(avgFps);
 
@@ -633,38 +633,16 @@ export default function BenchmarkRunner() {
             window.scrollBy({ top: fastScrollDelta, behavior: 'auto' });
           }
         } else if (stage.id === 'calendar') {
-          // Calendar Day Tab testing
-          setActiveStageText('📅 Yayın Takvimi: Gün Sekmeleri & Akış...');
-          const dayButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).filter(
-            (b) => {
-              const text = b.textContent || '';
-              return (
-                text.includes('Pazartesi') ||
-                text.includes('Salı') ||
-                text.includes('Çarşamba') ||
-                text.includes('Perşembe') ||
-                text.includes('Cuma') ||
-                text.includes('Bugün')
-              );
-            }
-          );
+          // Calendar Schedule Stream Sweep
+          setActiveStageText('📅 Yayın Takvimi: Günün Dizileri & Bölüm Akışı...');
+          window.scrollBy({ top: fastScrollDelta, behavior: 'auto' });
 
-          if (dayButtons.length > 0) {
-            const btnIdx = Math.floor(elapsed / 1500) % dayButtons.length;
-            const targetBtn = dayButtons[btnIdx];
-
-            setVirtualPointerPos({
-              x: Math.min(window.innerWidth - 60, 60 + (btnIdx * 45) % Math.max(100, window.innerWidth - 120)),
-              y: isMobile ? 160 : 190,
-              visible: true,
-              label: `Gün Sekmesi: ${targetBtn.textContent?.trim().slice(0, 10)}`,
-            });
-
-            if (Math.floor(elapsed / 1500) !== Math.floor((elapsed - 100) / 1500)) {
-              targetBtn.click();
-            }
-          }
-          window.scrollBy({ top: isMobile ? 8 : 12, behavior: 'auto' });
+          setVirtualPointerPos({
+            x: window.innerWidth * (isMobile ? 0.5 : 0.6),
+            y: window.innerHeight * 0.6,
+            visible: true,
+            label: '📅 Yayın Akışı & Dizi Programı',
+          });
         }
       } else {
         // --- PHASE C: FAST HORIZONTAL SWIPE & FLICK TO BOTTOM/TOP ---
