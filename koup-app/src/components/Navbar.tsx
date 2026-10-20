@@ -479,21 +479,21 @@ export default function Navbar() {
           href="/"
           prefetch={true}
           onClick={() => triggerSound('click')}
-          className="flex items-center gap-2 sm:gap-3 group select-none"
+          className="hidden sm:flex items-center gap-2 sm:gap-3 group select-none"
         >
           <img
             src="/logo-dark.png"
             alt="KoUp"
-            className="h-7 sm:h-9 w-auto object-contain transition-opacity duration-300 group-hover:opacity-90 drop-shadow-[0_4px_16px_rgba(255,255,255,0.2)]"
+            className="h-8 sm:h-9 w-auto object-contain transition-opacity duration-300 group-hover:opacity-90 drop-shadow-[0_4px_16px_rgba(255,255,255,0.2)]"
           />
           <div className="flex flex-col">
-            <span className="text-[14px] sm:text-[16px] font-bold tracking-wider text-white leading-none">
+            <span className="text-[15px] sm:text-[16px] font-bold tracking-wider text-white leading-none">
               KoUp
-              <span className="text-white/55 font-light ml-1 text-xs sm:text-[13px]">
+              <span className="text-white/55 font-light ml-1 text-[13px] hidden sm:inline">
                 TV+
               </span>
             </span>
-            <span className="text-[8px] sm:text-[9px] tracking-[0.22em] font-medium uppercase text-white/40 mt-0.5 sm:mt-1 hidden xs:block sm:block">
+            <span className="text-[9px] tracking-[0.22em] font-medium uppercase text-white/40 mt-1 hidden sm:block">
               Cinema Studio
             </span>
           </div>
