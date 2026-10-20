@@ -572,12 +572,18 @@ async function processImageBuffer(
         ? 154
         : sizeParam === 'w185'
         ? 185
+        : sizeParam === 'w300'
+        ? 300
         : sizeParam === 'w342'
         ? 342
-        : 92;
+        : sizeParam === 'w500'
+        ? 500
+        : sizeParam === 'w780'
+        ? 780
+        : 342;
     const resized = await sharp(inputBuf)
       .resize({ width: targetWidth, withoutEnlargement: true })
-      .webp({ quality: 60 })
+      .webp({ quality: 75 })
       .toBuffer();
     return { buf: new Uint8Array(resized), contentType: 'image/webp' };
   } catch {

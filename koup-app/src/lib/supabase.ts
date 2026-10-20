@@ -433,7 +433,7 @@ export function getProxiedImageUrl(
   url?: string | null,
   fallbackOrTitle?: string | null,
   titleHint?: string | null,
-  tmdbSize: 'w92' | 'w154' | 'w185' | 'w342' | 'w500' | 'w780' | 'w1280' | 'original' = 'w92',
+  tmdbSize: 'w92' | 'w154' | 'w185' | 'w300' | 'w342' | 'w500' | 'w780' | 'w1280' | 'original' = 'w342',
   type?: 'media' | 'person' | 'character' | 'banner' | 'poster',
   tmdbId?: number | string | null,
   mediaType?: 'tv' | 'movie' | null,
@@ -467,16 +467,19 @@ export function getProxiedImageUrl(
     url = url.replace(/https?:\/\/cdn\.webdrama\.io\/actor\//i, 'https://i.mydramalist.com/');
   }
 
-  // TMDB resolution: vitrin & seri sayfası original kalır, tüm kartlar belirgin şekilde düşük çözünürlüğe çekilir
+  // TMDB resolution: vitrin & seri sayfası original kalır, kartlar optimize edilmiş hafif boyutlara çekilir
   if (url.includes('image.tmdb.org')) {
     let effectiveSize: string;
 
     if (tmdbSize === 'original') {
       // Vitrin / Series Detail: uncompressed original
       effectiveSize = 'original';
+    } else if (type === 'banner') {
+      // Kart sinematik geniş arka planı: hafif ama net w300
+      effectiveSize = 'w300';
     } else {
-      // Tüm seri kartları, oyuncular, listeler, takvim: bariz fark edilebilen w92 düşük çözünürlük
-      effectiveSize = type === 'banner' ? 'w300' : 'w92';
+      // Seri kartları, oyuncular, listeler, takvim afişleri: net ve hafif w342 (veya belirtilen boyut)
+      effectiveSize = tmdbSize && tmdbSize !== 'w92' ? tmdbSize : 'w342';
     }
 
     return url.replace(
@@ -493,20 +496,17 @@ export function getProxiedImageUrl(
     return `${url}=s192-c`;
   }
 
-  // AniList images: vitrin ve seri sayfasında orijinal kaliteli hali (404 vermemesi için URL korunur), kartlarda small (64x90px)
+  // AniList images: vitrin ve seri sayfasında orijinal kaliteli hali, kartlarda optimize ve net large (230px)
   if (url.includes('s4.anilist.co')) {
     if (tmdbSize === 'original') {
       return url;
     }
-    // Kapak görseli ise AniList CDN'inin doğrudan 64x90'lık küçük versiyonunu kullan
+    // Kapak görseli ise kartlarda aşırı pikselli 64x90 yerine net ve hafif (~20KB) large versiyonunu kullan
     if (url.includes('/cover/')) {
-      return url
-        .replace('/cover/extraLarge/', '/cover/small/')
-        .replace('/cover/large/', '/cover/small/')
-        .replace('/cover/medium/', '/cover/small/');
+      return url.replace('/cover/extraLarge/', '/cover/large/');
     }
     // AniList banner görseli ise (/banner/), CDN'de küçük versiyon bulunmadığı için
-    // aşağıya düşerek /api/image-proxy üzerinden sharp ile küçültülmesini sağla.
+    // aşağıya düşerek /api/image-proxy üzerinden sharp ile w300 genişliğine küçültülmesini sağla.
   }
 
   const params = new URLSearchParams({ url });

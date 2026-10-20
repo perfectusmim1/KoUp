@@ -166,7 +166,7 @@ export function preloadMediaImages(items?: (MediaItem | null | undefined)[]) {
       item.backdrop_image,
       item.cover_image,
       item.title,
-      'w92',
+      'w300',
       'banner',
       item.tmdb_id,
       mediaType
@@ -260,12 +260,12 @@ function AccordionMediaCardComponent({
       ? 0
       : Math.max(Number(item.episode_count || 0), Number(item.episodes_available || 0));
 
-  // Request w92 for 2:3 vertical poster (bariz dusuk cozunurluk test modu)
+  // Balanced compact resolution: w342 for 2:3 vertical posters, w300 for widescreen backdrops
   const posterSrc = getProxiedImageUrl(
     effectiveCover,
     item.poster_fallback_url || null,
     item.title,
-    'w92',
+    'w342',
     'poster',
     item.tmdb_id,
     mediaType
@@ -276,7 +276,7 @@ function AccordionMediaCardComponent({
       effectiveBackdrop !== effectiveCover
   );
   const backdropSrc = hasDistinctBackdrop
-    ? getProxiedImageUrl(effectiveBackdrop, effectiveCover, item.title, 'w92', 'banner', item.tmdb_id, mediaType)
+    ? getProxiedImageUrl(effectiveBackdrop, effectiveCover, item.title, 'w300', 'banner', item.tmdb_id, mediaType)
     : posterSrc;
 
   const countryCode = item.country_code || item.country;
@@ -371,7 +371,8 @@ function AccordionMediaCardComponent({
       if (!hasRealCover && entry.posterUrl && entry.posterUrl.includes('image.tmdb.org')) {
         setUpgradedPoster(entry.posterUrl);
       }
-      if (!item.backdrop_image && entry.backdropUrl) {
+      // AniList 4.75:1 ultra-panoramik şerit banner'lar kartta fazla yakınlaşıp kırpıldığı için TMDB 16:9 sinematik backdrop varsa önceliklendir
+      if ((!item.backdrop_image || item.backdrop_image.includes('s4.anilist.co/file/anilistcdn/media/anime/banner')) && entry.backdropUrl) {
         setUpgradedBackdrop(entry.backdropUrl);
       }
       if (entry.youtubeId) {
@@ -660,7 +661,9 @@ function AccordionMediaCardComponent({
                 target.src = `/api/image-proxy?title=${encodeURIComponent(item.title)}&type=media`;
               }
             }}
-            className={`absolute inset-0 w-full h-full object-cover object-center pointer-events-none select-none transition-opacity duration-250 ${
+            className={`absolute inset-0 w-full h-full object-cover pointer-events-none select-none transition-opacity duration-250 ${
+              isAccordionExpanded && !hasDistinctBackdrop ? 'object-[center_18%]' : 'object-center'
+            } ${
               isAccordionExpanded && ((hasDistinctBackdrop && mountBackdrop) || isTrailerReady)
                 ? 'opacity-0'
                 : 'opacity-100'

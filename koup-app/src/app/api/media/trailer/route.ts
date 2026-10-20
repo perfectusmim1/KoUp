@@ -474,6 +474,7 @@ export async function GET(req: NextRequest) {
     let backdropUrl: string | null = null;
 
     // 2. If Anime, try AniList first
+    let alBackdropUrl: string | null = null;
     if (contentType === 'anime' || media?.anilist_id) {
       const al = await fetchAniListTrailer(media?.anilist_id || null, titles);
       if (al.youtubeId && !youtubeId) {
@@ -481,7 +482,7 @@ export async function GET(req: NextRequest) {
         source = 'anilist';
       }
       if (al.posterUrl) posterUrl = al.posterUrl;
-      if (al.backdropUrl) backdropUrl = al.backdropUrl;
+      if (al.backdropUrl) alBackdropUrl = al.backdropUrl;
     }
 
     // 3. Try TMDB (for trailer & backdrop resolution with strict candidate matching)
@@ -500,7 +501,12 @@ export async function GET(req: NextRequest) {
       source = 'tmdb';
     }
     if (tmdb.posterUrl && !posterUrl) posterUrl = tmdb.posterUrl;
-    if (tmdb.backdropUrl && !backdropUrl) backdropUrl = tmdb.backdropUrl;
+    // TMDB 16:9 sinematik backdrop'lar, AniList'in 4.75:1 ultra-panoramik kesilen banner'larına kıyasla kartta çok daha düzgün görünür
+    if (tmdb.backdropUrl) {
+      backdropUrl = tmdb.backdropUrl;
+    } else if (alBackdropUrl) {
+      backdropUrl = alBackdropUrl;
+    }
 
     // 4. Fallback to YouTube Trailer Search (covers MDL Asian dramas & Turkish TV series)
     if (!youtubeId && titles[0]) {
