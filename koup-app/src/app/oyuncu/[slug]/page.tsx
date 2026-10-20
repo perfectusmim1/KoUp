@@ -80,6 +80,126 @@ function getCountryFlag(code?: string | null): string {
   return '🌐';
 }
 
+interface ResolvedActorCountry {
+  countryCode: string;
+  countryName: string;
+  flag: string;
+  displayPlace: string;
+}
+
+function resolveActorNationality(
+  person: PersonItem | null,
+  credits: CastMember[] = []
+): ResolvedActorCountry {
+  const rawPlace = (person?.place_of_birth || '').trim();
+  const lowPlace = rawPlace.toLowerCase();
+  const rawCode = (person?.country_code || '').trim().toUpperCase();
+
+  // 1. Textual detection from place_of_birth
+  const isChina =
+    lowPlace.includes('çin') ||
+    lowPlace.includes('china') ||
+    lowPlace.includes('sichuan') ||
+    lowPlace.includes('chongqing') ||
+    lowPlace.includes('beijing') ||
+    lowPlace.includes('shanghai') ||
+    lowPlace.includes('guangdong') ||
+    lowPlace.includes('zhejiang') ||
+    lowPlace.includes('hunan') ||
+    lowPlace.includes('hubei') ||
+    lowPlace.includes('liaoning') ||
+    lowPlace.includes('shandong') ||
+    lowPlace.includes('henan') ||
+    lowPlace.includes('hebei') ||
+    lowPlace.includes('tianjin') ||
+    lowPlace.includes('fujian') ||
+    lowPlace.includes('guangxi') ||
+    lowPlace.includes('yunnan') ||
+    lowPlace.includes('harbin') ||
+    lowPlace.includes('wuhan') ||
+    lowPlace.includes('chengdu') ||
+    lowPlace.includes('guangzhou') ||
+    lowPlace.includes('shenzhen') ||
+    lowPlace.includes('dongguan') ||
+    lowPlace.includes('jiangsu') ||
+    lowPlace.includes('anhui') ||
+    lowPlace.includes('jiangxi') ||
+    lowPlace.includes('shanxi') ||
+    lowPlace.includes('shaanxi');
+
+  const isTaiwan = lowPlace.includes('taiwan') || lowPlace.includes('tayvan') || lowPlace.includes('taipei');
+  const isHongKong = lowPlace.includes('hong kong') || lowPlace.includes('hongkong');
+  const isJapan =
+    lowPlace.includes('japon') ||
+    lowPlace.includes('japan') ||
+    lowPlace.includes('tokyo') ||
+    lowPlace.includes('osaka') ||
+    lowPlace.includes('kyoto') ||
+    lowPlace.includes('hokkaido') ||
+    lowPlace.includes('fukuoka') ||
+    lowPlace.includes('kanagawa') ||
+    lowPlace.includes('nagoya') ||
+    lowPlace.includes('saitama') ||
+    lowPlace.includes('chiba') ||
+    lowPlace.includes('hyogo');
+
+  const isThailand = lowPlace.includes('tayland') || lowPlace.includes('thailand') || lowPlace.includes('bangkok') || lowPlace.includes('chiang mai') || lowPlace.includes('phuket');
+  const isKorea = lowPlace.includes('kore') || lowPlace.includes('korea') || lowPlace.includes('seoul') || lowPlace.includes('busan') || lowPlace.includes('incheon') || lowPlace.includes('daegu') || lowPlace.includes('daejeon') || lowPlace.includes('gwangju') || lowPlace.includes('ulsan') || lowPlace.includes('gyeonggi') || lowPlace.includes('gangwon');
+  const isTurkey = lowPlace.includes('türkiye') || lowPlace.includes('turkey') || lowPlace.includes('istanbul') || lowPlace.includes('ankara') || lowPlace.includes('izmir');
+  const isUSA = lowPlace.includes('amerika') || lowPlace.includes('united states') || lowPlace.includes('usa') || lowPlace.includes('california') || lowPlace.includes('new york') || lowPlace.includes('los angeles');
+  const isUK = lowPlace.includes('ingiltere') || lowPlace.includes('united kingdom') || lowPlace.includes('uk') || lowPlace.includes('england') || lowPlace.includes('london');
+
+  if (isChina) return { countryCode: 'CN', countryName: 'Çin', flag: '🇨🇳', displayPlace: rawPlace || 'Çin' };
+  if (isTaiwan) return { countryCode: 'TW', countryName: 'Tayvan', flag: '🇹🇼', displayPlace: rawPlace || 'Tayvan' };
+  if (isHongKong) return { countryCode: 'HK', countryName: 'Hong Kong', flag: '🇭🇰', displayPlace: rawPlace || 'Hong Kong' };
+  if (isJapan) return { countryCode: 'JP', countryName: 'Japonya', flag: '🇯🇵', displayPlace: rawPlace || 'Japonya' };
+  if (isThailand) return { countryCode: 'TH', countryName: 'Tayland', flag: '🇹🇭', displayPlace: rawPlace || 'Tayland' };
+  if (isTurkey) return { countryCode: 'TR', countryName: 'Türkiye', flag: '🇹🇷', displayPlace: rawPlace || 'Türkiye' };
+  if (isUSA) return { countryCode: 'US', countryName: 'Amerika Birleşik Devletleri', flag: '🇺🇸', displayPlace: rawPlace || 'ABD' };
+  if (isUK) return { countryCode: 'GB', countryName: 'Birleşik Krallık', flag: '🇬🇧', displayPlace: rawPlace || 'Birleşik Krallık' };
+  if (isKorea) return { countryCode: 'KR', countryName: 'Güney Kore', flag: '🇰🇷', displayPlace: rawPlace || 'Güney Kore' };
+
+  // 2. Filmography credits tally
+  if (credits && credits.length > 0) {
+    const tally: Record<string, number> = {};
+    for (const c of credits) {
+      const cc = c.media?.country_code?.toUpperCase();
+      if (cc) tally[cc] = (tally[cc] || 0) + 1;
+    }
+    const totalCredits = credits.length;
+    const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+    if (sorted.length > 0) {
+      const [topCountry, topCount] = sorted[0];
+      if (topCount / totalCredits >= 0.45 || sorted.length === 1) {
+        if (topCountry === 'CN') return { countryCode: 'CN', countryName: 'Çin', flag: '🇨🇳', displayPlace: rawPlace || 'Çin' };
+        if (topCountry === 'JP') return { countryCode: 'JP', countryName: 'Japonya', flag: '🇯🇵', displayPlace: rawPlace || 'Japonya' };
+        if (topCountry === 'TW') return { countryCode: 'TW', countryName: 'Tayvan', flag: '🇹🇼', displayPlace: rawPlace || 'Tayvan' };
+        if (topCountry === 'TH') return { countryCode: 'TH', countryName: 'Tayland', flag: '🇹🇭', displayPlace: rawPlace || 'Tayland' };
+        if (topCountry === 'TR') return { countryCode: 'TR', countryName: 'Türkiye', flag: '🇹🇷', displayPlace: rawPlace || 'Türkiye' };
+        if (topCountry === 'US') return { countryCode: 'US', countryName: 'ABD', flag: '🇺🇸', displayPlace: rawPlace || 'ABD' };
+        if (topCountry === 'KR') return { countryCode: 'KR', countryName: 'Güney Kore', flag: '🇰🇷', displayPlace: rawPlace || 'Güney Kore' };
+      }
+    }
+  }
+
+  // 3. Fallback
+  if (rawCode === 'CN') return { countryCode: 'CN', countryName: 'Çin', flag: '🇨🇳', displayPlace: rawPlace || 'Çin' };
+  if (rawCode === 'JP') return { countryCode: 'JP', countryName: 'Japonya', flag: '🇯🇵', displayPlace: rawPlace || 'Japonya' };
+  if (rawCode === 'TW') return { countryCode: 'TW', countryName: 'Tayvan', flag: '🇹🇼', displayPlace: rawPlace || 'Tayvan' };
+  if (rawCode === 'TH') return { countryCode: 'TH', countryName: 'Tayland', flag: '🇹🇭', displayPlace: rawPlace || 'Tayland' };
+  if (rawCode === 'TR') return { countryCode: 'TR', countryName: 'Türkiye', flag: '🇹🇷', displayPlace: rawPlace || 'Türkiye' };
+  if (rawCode === 'US') return { countryCode: 'US', countryName: 'ABD', flag: '🇺🇸', displayPlace: rawPlace || 'ABD' };
+  if (rawCode === 'GB') return { countryCode: 'GB', countryName: 'Birleşik Krallık', flag: '🇬🇧', displayPlace: rawPlace || 'Birleşik Krallık' };
+  if (rawCode === 'KR') return { countryCode: 'KR', countryName: 'Güney Kore', flag: '🇰🇷', displayPlace: rawPlace || 'Güney Kore' };
+
+  return {
+    countryCode: rawCode || 'KR',
+    countryName: rawCode === 'KR' ? 'Güney Kore' : rawCode || 'Bilinmiyor',
+    flag: getCountryFlag(rawCode || 'KR'),
+    displayPlace: rawPlace || (rawCode === 'KR' ? 'Güney Kore' : rawCode || 'Bilinmiyor'),
+  };
+}
+
 export default function PersonDetailPage({
   params,
 }: {
@@ -429,20 +549,21 @@ export default function PersonDetailPage({
                 </div>
               )}
 
-              {(person.place_of_birth || person.country_code) && (
-                <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
-                  <MapPin className="w-4 h-4 text-amber-400 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Ülke / Doğum Yeri</div>
-                    <div className="text-xs font-semibold text-white/90 flex items-center gap-1.5 truncate">
-                      <span>{getCountryFlag(person.country_code)}</span>
-                      <span className="truncate">
-                        {person.place_of_birth || (person.country_code === 'KR' ? 'Güney Kore' : person.country_code === 'JP' ? 'Japonya' : person.country_code === 'CN' ? 'Çin' : person.country_code === 'TH' ? 'Tayland' : person.country_code)}
-                      </span>
+              {(() => {
+                const nat = resolveActorNationality(person, credits);
+                return (
+                  <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
+                    <MapPin className="w-4 h-4 text-amber-400 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Ülke / Doğum Yeri</div>
+                      <div className="text-xs font-semibold text-white/90 flex items-center gap-1.5 truncate">
+                        <span>{nat.flag}</span>
+                        <span className="truncate">{nat.displayPlace}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {person.blood_type && (
                 <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">

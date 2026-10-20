@@ -72,6 +72,8 @@ function classifyStreamType(
     return 'hls';
   }
   if (
+    p === 'mp4upload' ||
+    u.includes('mp4upload') ||
     u.endsWith('.mp4') ||
     u.includes('.mp4?') ||
     p === 'mail.ru' ||
@@ -97,8 +99,8 @@ function classifyStreamType(
   if (p === 'tau-video' || u.includes('tau-video.xyz')) {
     return 'tau';
   }
-  if (['dailymotion'].includes(p)) {
-    return 'postmessage_iframe';
+  if (p === 'dailymotion' || u.includes('dailymotion.com') || u.includes('dai.ly')) {
+    return 'hls';
   }
   return 'locked_iframe';
 }
@@ -107,7 +109,7 @@ function isDeadSource(provider?: string | null, directUrl?: string | null, sourc
   const p = (provider || '').toLowerCase();
   const u = (directUrl || '').toLowerCase();
   const n = (sourceName || '').toLowerCase();
-  if (!u || u === 'dead') return true;
+  if (!u || u === 'dead' || !u.startsWith('http') || u.startsWith('javascript:') || u.includes('void(0)')) return true;
   if (
     p === 'dead' ||
     p === 'sibnet' ||
@@ -237,21 +239,20 @@ function getProviderPriority(provider: string, directUrl: string, contentType: s
     }
     if (p === 'tau-video' || u.includes('tau-video')) return 2;
   }
-  // Native player streams: Mail.ru, VK, Uqload, VOE
-  if (['mail.ru', 'mail', 'vk'].includes(p) || u.includes('mail.ru') || u.includes('vk.com')) {
+  // High-priority native players: Uqload, Vidmoly, Mp4Upload (fast direct stream, 0 ads)
+  if (['uqload', 'vidmoly', 'mp4upload'].includes(p) || u.includes('uqload') || u.includes('vidmoly') || u.includes('mp4upload')) {
     return 3;
   }
-  if (p === 'uqload' || u.includes('uqload') || p === 'voe' || u.includes('voe.sx') || u.includes('voe.')) {
+  // Stable multi-resolution players: Mail.ru, OK.ru, VK
+  if (['mail.ru', 'mail', 'vk', 'ok.ru', 'odnoklassniki'].includes(p) || u.includes('mail.ru') || u.includes('vk.com') || u.includes('ok.ru')) {
     return 4;
   }
-  if (['vidmoly', 'filemoon', 'yourupload'].includes(p)) {
+  // VOE (lower priority due to frequent 404s, so working players appear first)
+  if (p === 'voe' || u.includes('voe.sx') || u.includes('voe.')) {
     return 5;
   }
-  if (['mp4upload', 'dailymotion', 'mega'].includes(p)) {
+  if (['filemoon', 'yourupload', 'dailymotion', 'mega'].includes(p)) {
     return 6;
-  }
-  if (p === 'ok.ru' || p === 'odnoklassniki' || u.includes('ok.ru') || u.includes('odnoklassniki')) {
-    return 7;
   }
   return 8;
 }

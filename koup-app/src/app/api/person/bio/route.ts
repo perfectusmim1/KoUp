@@ -24,17 +24,44 @@ function getArchiveDb(): DatabaseSync | null {
 const COUNTRY_NORM: Record<string, { code: string; name: string }> = {
   korea: { code: 'KR', name: 'Güney Kore' },
   'south korea': { code: 'KR', name: 'Güney Kore' },
+  seoul: { code: 'KR', name: 'Güney Kore' },
+  busan: { code: 'KR', name: 'Güney Kore' },
+  incheon: { code: 'KR', name: 'Güney Kore' },
   japan: { code: 'JP', name: 'Japonya' },
+  tokyo: { code: 'JP', name: 'Japonya' },
+  osaka: { code: 'JP', name: 'Japonya' },
+  kyoto: { code: 'JP', name: 'Japonya' },
   china: { code: 'CN', name: 'Çin' },
+  sichuan: { code: 'CN', name: 'Çin' },
+  chongqing: { code: 'CN', name: 'Çin' },
+  beijing: { code: 'CN', name: 'Çin' },
+  shanghai: { code: 'CN', name: 'Çin' },
+  guangdong: { code: 'CN', name: 'Çin' },
+  zhejiang: { code: 'CN', name: 'Çin' },
+  hunan: { code: 'CN', name: 'Çin' },
+  hubei: { code: 'CN', name: 'Çin' },
+  shandong: { code: 'CN', name: 'Çin' },
+  henan: { code: 'CN', name: 'Çin' },
+  hebei: { code: 'CN', name: 'Çin' },
+  wuhan: { code: 'CN', name: 'Çin' },
+  chengdu: { code: 'CN', name: 'Çin' },
+  guangzhou: { code: 'CN', name: 'Çin' },
+  shenzhen: { code: 'CN', name: 'Çin' },
+  dongguan: { code: 'CN', name: 'Çin' },
+  harbin: { code: 'CN', name: 'Çin' },
   taiwan: { code: 'TW', name: 'Tayvan' },
+  taipei: { code: 'TW', name: 'Tayvan' },
   thailand: { code: 'TH', name: 'Tayland' },
+  bangkok: { code: 'TH', name: 'Tayland' },
   turkey: { code: 'TR', name: 'Türkiye' },
   türkiye: { code: 'TR', name: 'Türkiye' },
+  istanbul: { code: 'TR', name: 'Türkiye' },
   'united states': { code: 'US', name: 'Amerika Birleşik Devletleri' },
   usa: { code: 'US', name: 'Amerika Birleşik Devletleri' },
   uk: { code: 'GB', name: 'Birleşik Krallık' },
   'united kingdom': { code: 'GB', name: 'Birleşik Krallık' },
   england: { code: 'GB', name: 'Birleşik Krallık' },
+  london: { code: 'GB', name: 'Birleşik Krallık' },
   germany: { code: 'DE', name: 'Almanya' },
   france: { code: 'FR', name: 'Fransa' },
   spain: { code: 'ES', name: 'İspanya' },
@@ -294,7 +321,7 @@ export async function GET(req: NextRequest) {
             if (det.place_of_birth) {
               const norm = normalizePlaceOfBirth(det.place_of_birth);
               placeOfBirth = norm.place;
-              if (norm.countryCode && !countryCode) countryCode = norm.countryCode;
+              if (norm.countryCode) countryCode = norm.countryCode;
             }
 
             if (Array.isArray(det.also_known_as) && det.also_known_as.length > 0) {
@@ -312,6 +339,28 @@ export async function GET(req: NextRequest) {
       } catch (err) {
         console.warn('TMDB details fetch error:', err);
       }
+    }
+
+    // 3b. If countryCode is still KR or null, verify against their drama credits
+    if (cleanId && (!countryCode || countryCode === 'KR')) {
+      try {
+        const { data: castRows } = await supabaseAdmin
+          .from('media_cast')
+          .select('media:media_id(country_code)')
+          .eq('person_id', cleanId)
+          .limit(15);
+        if (castRows && castRows.length > 0) {
+          const counts: Record<string, number> = {};
+          for (const r of castRows as any[]) {
+            const c = r?.media?.country_code;
+            if (c) counts[c] = (counts[c] || 0) + 1;
+          }
+          const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+          if (sorted[0] && (sorted[0][0] === 'CN' || sorted[0][0] === 'JP' || sorted[0][0] === 'TH' || sorted[0][0] === 'TW')) {
+            countryCode = sorted[0][0];
+          }
+        }
+      } catch {}
     }
 
     // 4. Translate English bio to Turkish if needed

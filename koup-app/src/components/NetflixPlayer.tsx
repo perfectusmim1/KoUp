@@ -1466,12 +1466,30 @@ export default function NetflixPlayer({
           setCurrentAudioTrackId(data.id);
         });
 
+        let hlsNetworkRetryCount = 0;
         hls.on(Hls.Events.ERROR, (_ev, errData) => {
           if (errData.fatal) {
             switch (errData.type) {
-              case Hls.ErrorTypes.NETWORK_ERROR:
-                hls.startLoad();
+              case Hls.ErrorTypes.NETWORK_ERROR: {
+                const httpCode = errData.response?.code;
+                hlsNetworkRetryCount += 1;
+                if (httpCode === 403 || httpCode === 404 || hlsNetworkRetryCount > 2) {
+                  if (selectedSourceIdx + 1 < filteredSources.length) {
+                    pushNotification(
+                      'Otomatik Yedek Kaynağa Geçildi',
+                      `${activeSource?.source_name || 'Mevcut kaynak'} yanıt vermedi (${httpCode || 'bağlantı hatası'}), sıradaki kaynağa geçiliyor.`,
+                      'info'
+                    );
+                    setSelectedSourceIdx(selectedSourceIdx + 1);
+                  } else if (fallbackIframeUrl) {
+                    setStreamUrl(fallbackIframeUrl);
+                    setResolvedMode('iframe');
+                  }
+                } else {
+                  hls.startLoad();
+                }
                 break;
+              }
               case Hls.ErrorTypes.MEDIA_ERROR:
                 hls.recoverMediaError();
                 break;

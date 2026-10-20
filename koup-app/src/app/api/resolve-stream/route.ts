@@ -1263,6 +1263,70 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // 4d2. Mp4Upload (mp4upload.com/embed-...html) -> Direct 1080p MP4 Stream
+  if (provider === 'mp4upload' || lowerUrl.includes('mp4upload.com')) {
+    try {
+      let embedUrl = url;
+      if (!embedUrl.includes('/embed-') && embedUrl.includes('mp4upload.com/')) {
+        const idMatch = embedUrl.match(/mp4upload\.com\/([a-zA-Z0-9]+)/);
+        if (idMatch?.[1]) {
+          embedUrl = `https://www.mp4upload.com/embed-${idMatch[1]}.html`;
+        }
+      }
+
+      const resp = await fetch(embedUrl, {
+        headers: {
+          'User-Agent': commonUA,
+          Referer: 'https://www.mp4upload.com/',
+        },
+        signal: AbortSignal.timeout(6000),
+      });
+
+      if (!resp.ok && (resp.status === 404 || resp.status === 410)) {
+        return NextResponse.json(
+          { error: 'Mp4Upload videosu bulunamadı (404)', isDead: true },
+          { status: 410 }
+        );
+      }
+
+      const html = await resp.text();
+      const lowHtml = html.toLowerCase();
+      if (
+        html.includes('document.FL.login') ||
+        lowHtml.includes('file was deleted') ||
+        lowHtml.includes('file not found') ||
+        lowHtml.includes('video not found') ||
+        lowHtml.includes('no video found') ||
+        lowHtml.includes('file is no longer available')
+      ) {
+        return NextResponse.json(
+          { error: 'Mp4Upload videosu silinmiş veya kaldırılmış', isDead: true },
+          { status: 410 }
+        );
+      }
+
+      const srcMatch =
+        html.match(/player\.src\(\s*\{\s*type:\s*["'][^"']+["'],\s*src:\s*["']([^"']+\.mp4[^"']*)["']/i) ||
+        html.match(/src:\s*["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i) ||
+        html.match(/["'](https?:\/\/[a-zA-Z0-9\.\-]+(?::\d+)?\/d\/[a-zA-Z0-9\/\-_]+\.mp4)["']/i);
+
+      if (srcMatch?.[1]) {
+        const directMp4 = srcMatch[1];
+        const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(directMp4)}&ref=${encodeURIComponent('https://www.mp4upload.com/')}`;
+        const result = {
+          mode: 'native_mp4' as const,
+          streamUrl: proxiedUrl,
+          qualities: [{ label: '1080p MP4', url: proxiedUrl }],
+          fallbackIframe: embedUrl,
+        };
+        setCachedStream(url, result);
+        return NextResponse.json(result, { headers: CACHE_HEADERS });
+      }
+    } catch (err: any) {
+      console.warn('Mp4Upload extraction error:', err?.message || err);
+    }
+  }
+
   // 4e. DailyMotion (dailymotion.com/embed/video/... or dai.ly/...) -> Direct HLS
   if (provider.includes('dailymotion') || lowerUrl.includes('dailymotion.com') || lowerUrl.includes('dai.ly')) {
     try {
@@ -1278,18 +1342,30 @@ export async function GET(req: NextRequest) {
         });
         if (dmResp.ok) {
           const dmData = await dmResp.json();
+          if (dmData?.error) {
+            return NextResponse.json(
+              { error: 'Dailymotion videosu silinmiş veya bulunamadı (404)', isDead: true },
+              { status: 410 }
+            );
+          }
           const m3u8Url = dmData?.qualities?.auto?.[0]?.url;
           if (m3u8Url && typeof m3u8Url === 'string') {
+            const proxiedHls = `/api/stream-proxy?url=${encodeURIComponent(m3u8Url)}&ref=${encodeURIComponent('https://www.dailymotion.com/')}`;
             return NextResponse.json(
               {
                 mode: 'native_hls',
-                streamUrl: m3u8Url,
-                qualities: [{ label: '1080p', url: m3u8Url }],
+                streamUrl: proxiedHls,
+                qualities: [{ label: '1080p HLS', url: proxiedHls }],
                 fallbackIframe: url,
               },
               { headers: CACHE_HEADERS }
             );
           }
+        } else if (dmResp.status === 404 || dmResp.status === 410) {
+          return NextResponse.json(
+            { error: 'Dailymotion videosu bulunamadı (404)', isDead: true },
+            { status: 410 }
+          );
         }
       }
     } catch {
