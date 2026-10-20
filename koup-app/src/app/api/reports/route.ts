@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseAdmin } from '@/lib/supabase';
 
 // In-memory sliding window rate limiter
 interface RateRecord {
@@ -88,10 +88,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const db = supabaseAdmin || supabase;
+
     // 3. Database Check: Prevent duplicate reports for the exact same media/episode in the last 15 minutes
     if (media_id) {
       const fifteenMinutesAgo = new Date(now - 15 * 60 * 1000).toISOString();
-      let dupQuery = supabase
+      let dupQuery = db
         .from('issue_reports')
         .select('id')
         .eq('media_id', media_id)
@@ -124,7 +126,7 @@ export async function POST(req: NextRequest) {
       .trim();
 
     // Insert into Supabase issue_reports
-    const { error: insertError } = await supabase.from('issue_reports').insert({
+    const { error: insertError } = await db.from('issue_reports').insert({
       reporter_id: reporter_id || null,
       target_type: target_type || 'media',
       media_id: media_id ? Number(media_id) : null,

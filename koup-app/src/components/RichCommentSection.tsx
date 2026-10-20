@@ -1996,7 +1996,166 @@ export default function RichCommentSection({
           )}
 
           {/* Formatting Toolbar */}
-          <div className="flex flex-wrap items-center gap-1.5 py-1.5 px-2 rounded-xl bg-black/40 border border-white/[0.07] max-w-full overflow-x-auto no-scrollbar">
+          {/* Mobile Toolbar (< sm) */}
+          <div className="sm:hidden flex flex-col gap-2 p-2 rounded-xl bg-black/40 border border-white/[0.07] max-w-full">
+            {/* Top Row: H2/B/I on Left, Görsel & Spoiler on the Right */}
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleHeadingToggle();
+                  }}
+                  className={`p-1.5 rounded-lg text-xs cursor-pointer transition-colors duration-120 ease-out ${
+                    isHeading ? 'bg-white hover:bg-[#e8e8ed] text-black font-bold shadow-sm' : 'text-white/70 hover:text-white hover:bg-white/10'
+                  }`}
+                  aria-label="Başlık Yap (H2)"
+                  title="Başlık Yap (H2)"
+                >
+                  <Heading2 className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleBoldToggle();
+                  }}
+                  className={`p-1.5 rounded-lg text-xs cursor-pointer transition-colors duration-120 ease-out ${
+                    isBold ? 'bg-white hover:bg-[#e8e8ed] text-black font-bold shadow-sm' : 'text-white/70 hover:text-white hover:bg-white/10'
+                  }`}
+                  aria-label="Kalın Yazı (B)"
+                  title="Kalın Yazı (B)"
+                >
+                  <Bold className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleItalicToggle();
+                  }}
+                  className={`p-1.5 rounded-lg text-xs cursor-pointer transition-colors duration-120 ease-out ${
+                    isItalic ? 'bg-white hover:bg-[#e8e8ed] text-black font-bold shadow-sm' : 'text-white/70 hover:text-white hover:bg-white/10'
+                  }`}
+                  aria-label="İtalik Yazı (I)"
+                  title="İtalik Yazı (I)"
+                >
+                  <Italic className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setShowImageInput((v) => !v)}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors duration-120 ease-out cursor-pointer select-none ${
+                    showImageInput
+                      ? 'bg-white hover:bg-[#e8e8ed] text-black border-white'
+                      : 'bg-transparent border-transparent text-white/70 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <ImageIcon className="w-3.5 h-3.5 shrink-0" />
+                  <span>Görsel</span>
+                </button>
+
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setHasSpoiler((v) => !v)}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors duration-120 ease-out cursor-pointer select-none ${
+                    hasSpoiler
+                      ? 'bg-rose-500/25 hover:bg-rose-500/35 text-rose-300 border-rose-400/40 hover:border-rose-300'
+                      : 'bg-transparent border-transparent text-white/70 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <EyeOff className="w-3.5 h-3.5 shrink-0" />
+                  <span>Spoiler</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Middle Row: Centered GIF & Etiket */}
+            <div className="flex items-center justify-center gap-2.5 w-full">
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setShowGifPicker((v) => !v);
+                  setShowStickerPicker(false);
+                }}
+                className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold border transition-colors duration-120 ease-out cursor-pointer select-none ${
+                  showGifPicker
+                    ? 'bg-white hover:bg-[#e8e8ed] text-black border-white'
+                    : 'bg-transparent border-transparent text-white/70 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <span>GIF</span>
+              </button>
+
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setShowStickerPicker((v) => !v);
+                  setShowGifPicker(false);
+                }}
+                className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold border transition-colors duration-120 ease-out cursor-pointer select-none ${
+                  showStickerPicker
+                    ? 'bg-white hover:bg-[#e8e8ed] text-black border-white'
+                    : 'bg-transparent border-transparent text-white/70 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <Smile className="w-3.5 h-3.5 shrink-0" />
+                <span>Etiket</span>
+              </button>
+            </div>
+
+            {/* Bottom Row: Colors on Left, Timestamp (Süre) on Right */}
+            <div className="flex items-center justify-between w-full gap-2 pt-0.5">
+              <div className="flex items-center gap-1.5 shrink-0">
+                {APPLE_DARK_PALETTE.map((c) => (
+                  <button
+                    key={c.hex}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleColorSelect(c.hex);
+                    }}
+                    aria-label={`Renk: ${c.name}`}
+                    title={`Renk: ${c.name}`}
+                    style={{ backgroundColor: c.hex }}
+                    className={`w-4 h-4 rounded-full cursor-pointer transition-transform ${
+                      selectedColor === c.hex
+                        ? 'scale-125 ring-2 ring-white shadow-sm'
+                        : 'opacity-75 hover:opacity-100 hover:scale-110'
+                    }`}
+                  />
+                ))}
+              </div>
+
+              <div
+                title="Sahne Dakikası (Örn: 14:20)"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#121217] hover:bg-[#181820] border border-white/15 hover:border-white/25 focus-within:border-sky-400/60 focus-within:ring-2 focus-within:ring-sky-400/20 focus-within:shadow-[0_0_12px_rgba(56,189,248,0.25)] transition-all cursor-text group shrink-0"
+              >
+                <Clock className="w-3.5 h-3.5 text-sky-400 shrink-0 group-focus-within:scale-110 transition-transform" />
+                <input
+                  type="text"
+                  value={timestampInput}
+                  onChange={(e) => setTimestampInput(e.target.value)}
+                  placeholder="14:20"
+                  maxLength={8}
+                  className="w-11 bg-transparent text-xs font-mono font-medium text-white placeholder-white/35 focus:outline-none text-center"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Desktop Toolbar (sm:) */}
+          <div className="hidden sm:flex items-center gap-1.5 py-1.5 px-2 rounded-xl bg-black/40 border border-white/[0.07] max-w-full overflow-x-auto no-scrollbar">
             <button
               type="button"
               onMouseDown={(e) => {
@@ -2095,7 +2254,7 @@ export default function RichCommentSection({
                 showGifPicker
                   ? 'bg-white hover:bg-[#e8e8ed] text-black border-white'
                   : 'bg-transparent border-transparent text-white/70 hover:text-white hover:bg-white/10'
-              }`}
+                }`}
             >
               <span>GIF</span>
             </button>
@@ -2118,7 +2277,7 @@ export default function RichCommentSection({
               <span>Etiket</span>
             </button>
 
-            {/* External Image URL Toggle */}
+            {/* External Image Toggle */}
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}
@@ -2130,7 +2289,7 @@ export default function RichCommentSection({
               }`}
             >
               <ImageIcon className="w-3.5 h-3.5 shrink-0" />
-              <span>Görsel URL</span>
+              <span>Görsel</span>
             </button>
 
             {/* Timestamp / Scene Duration Pill Input */}
@@ -2150,7 +2309,7 @@ export default function RichCommentSection({
             </div>
           </div>
 
-          {/* GIF Picker Drawer with Dynamic Search */}
+                    {/* GIF Picker Drawer with Dynamic Search */}
           {showGifPicker && (
             <div className="space-y-3 p-3.5 rounded-2xl bg-[#0b0b0f]/95 border border-white/12 backdrop-blur-xl shadow-2xl">
               {/* Search Bar + Quick Category Pills */}
