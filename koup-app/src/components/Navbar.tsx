@@ -350,17 +350,17 @@ export default function Navbar() {
         }`}
       >
         <header
-          className={`pointer-events-auto flex items-center justify-between border-0 outline-none transition-[width,max-width,margin-top,padding,border-radius,background-color,box-shadow] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+          className={`pointer-events-auto flex items-center justify-between border outline-none transition-[width,max-width,margin-top,padding,border-radius,background-color,box-shadow,border-color] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)] ${
             navbarBehavior === 'floating'
               ? isScrolled
-                ? 'mt-2 sm:mt-3 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-[28px] bg-[#0a0b10]/72 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.78)] py-2 sm:py-2.5 px-4 sm:px-6'
-                : 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+                ? 'mt-2 sm:mt-3 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-[28px] bg-[#0a0b10]/94 backdrop-blur-2xl border-white/[0.08] shadow-[0_20px_50px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.12)] py-2 sm:py-2.5 px-4 sm:px-6'
+                : 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-transparent shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
               : navbarBehavior === 'sticky'
               ? isScrolled
-                ? 'mt-0 w-full max-w-[2560px] rounded-none bg-[#0a0b10]/76 backdrop-blur-2xl shadow-[0_12px_32px_rgba(0,0,0,0.75)] py-3 sm:py-4 px-4 sm:px-8 lg:px-14'
-                : 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+                ? 'mt-0 w-full max-w-[2560px] rounded-none bg-[#0a0b10]/95 backdrop-blur-2xl border-white/[0.08] shadow-[0_12px_32px_rgba(0,0,0,0.85)] py-3 sm:py-4 px-4 sm:px-8 lg:px-14'
+                : 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-transparent shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
               : /* static: sitenin üstünde kalır, sayfa kayınca bizle gelmez */
-                'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+                'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-transparent shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
           }`}
         >
       {/* LEFT: Brand Mark (Original KU Logo — No Circle or Box Wrapper) */}
@@ -509,7 +509,7 @@ export default function Navbar() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 6, scale: 0.97 }}
                 transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="absolute right-0 mt-3 w-[calc(100vw-2.5rem)] sm:w-[440px] max-w-[440px] rounded-3xl bg-[#101218]/82 backdrop-blur-2xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.22)] border border-white/[0.16] z-50"
+                className="absolute right-0 mt-3 w-[calc(100vw-2.5rem)] sm:w-[440px] max-w-[440px] rounded-3xl bg-[#0c0d13]/96 backdrop-blur-2xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.14)] border border-white/[0.12] z-50"
               >
                 <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-white/10">
                   <span className="text-[11px] font-bold uppercase tracking-widest text-white/50">
@@ -679,7 +679,7 @@ export default function Navbar() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 6, scale: 0.96 }}
                 transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="fixed left-3 right-3 top-20 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-3 sm:w-[410px] sm:max-w-[410px] rounded-3xl bg-[#101218]/82 backdrop-blur-2xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.22)] border border-white/[0.16] z-50 flex flex-col gap-3"
+                className="fixed left-3 right-3 top-20 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-3 sm:w-[410px] sm:max-w-[410px] rounded-3xl bg-[#0c0d13]/96 backdrop-blur-2xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.14)] border border-white/[0.12] z-50 flex flex-col gap-3"
               >
                 {/* Header */}
                 <div className="flex items-center justify-between pb-2.5 border-b border-white/10">
@@ -893,7 +893,7 @@ export default function Navbar() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 6, scale: 0.96 }}
                   transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                  className="fixed right-3 top-20 sm:absolute sm:right-0 sm:top-full sm:mt-3 w-64 rounded-3xl bg-[#101218]/82 backdrop-blur-2xl p-3 shadow-[0_28px_64px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.22)] border border-white/[0.16] z-50 flex flex-col gap-1"
+                  className="fixed right-3 top-20 sm:absolute sm:right-0 sm:top-full sm:mt-3 w-64 rounded-3xl bg-[#0c0d13]/96 backdrop-blur-2xl p-3 shadow-[0_28px_64px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.14)] border border-white/[0.12] z-50 flex flex-col gap-1"
                 >
                   {/* User Header */}
                   <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/[0.06] flex items-center gap-3 mb-1">
@@ -1290,7 +1290,7 @@ export default function Navbar() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="pointer-events-auto md:hidden fixed inset-0 z-50 bg-[#0b0c12]/88 backdrop-blur-2xl p-4 flex flex-col"
+            className="pointer-events-auto md:hidden fixed inset-0 z-50 bg-[#0b0c12]/96 backdrop-blur-2xl p-4 flex flex-col"
           >
             {/* Top Search Input Bar */}
             <div className="flex items-center gap-2.5 pb-3 border-b border-white/10">
