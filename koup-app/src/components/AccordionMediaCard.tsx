@@ -166,7 +166,7 @@ export function preloadMediaImages(items?: (MediaItem | null | undefined)[]) {
       item.backdrop_image,
       item.cover_image,
       item.title,
-      'w300',
+      'w780',
       'banner',
       item.tmdb_id,
       mediaType
@@ -260,12 +260,12 @@ function AccordionMediaCardComponent({
       ? 0
       : Math.max(Number(item.episode_count || 0), Number(item.episodes_available || 0));
 
-  // Compact low-res tier: w154 for posters, w300 for widescreen backdrops
+  // 480p resolution tier: w342 (342x513) for vertical posters, w780 (780x439) for widescreen backdrops
   const posterSrc = getProxiedImageUrl(
     effectiveCover,
     item.poster_fallback_url || null,
     item.title,
-    'w154',
+    'w342',
     'poster',
     item.tmdb_id,
     mediaType
@@ -276,7 +276,7 @@ function AccordionMediaCardComponent({
       effectiveBackdrop !== effectiveCover
   );
   const backdropSrc = hasDistinctBackdrop
-    ? getProxiedImageUrl(effectiveBackdrop, effectiveCover, item.title, 'w300', 'banner', item.tmdb_id, mediaType)
+    ? getProxiedImageUrl(effectiveBackdrop, effectiveCover, item.title, 'w780', 'banner', item.tmdb_id, mediaType)
     : posterSrc;
 
   const countryCode = item.country_code || item.country;
