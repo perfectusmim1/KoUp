@@ -1474,22 +1474,21 @@ export default function HomePage() {
           >
             <div
               ref={top10SeriesScrollRef}
-              className="flex items-end gap-4 sm:gap-8 md:gap-10 overflow-x-auto overflow-y-hidden overscroll-y-auto overscroll-x-contain pb-6 pt-3 no-scrollbar [-webkit-overflow-scrolling:touch] h-[240px] sm:h-[320px] md:h-[380px] max-w-full"
+              className="flex items-end gap-3.5 sm:gap-5 md:gap-6 overflow-x-auto overflow-y-hidden overscroll-y-auto overscroll-x-contain pb-5 pt-4 pl-1 no-scrollbar [-webkit-overflow-scrolling:touch] max-w-full"
             >
               {top10SeriesItems.map((item, idx) => (
                 <Link
                   key={item.id}
                   href={`/seri/${item.slug}`}
-                 
-                  className="shrink-0 flex items-end group cursor-pointer snap-start relative pl-2 sm:pl-4 md:pl-6"
+                  className="shrink-0 group cursor-pointer snap-start relative pt-4 sm:pt-5 pl-1"
                 >
-                  {/* Netflix/Apple TV+ Top 10 Stroke Numeral (Vector Clean, Artifact-Free) */}
+                  {/* Top-Left Corner Outlined Two-Digit Rank Badge (01..10) */}
                   <Top10Numeral
                     rank={idx + 1}
-                    className="h-[135px] sm:h-[195px] md:h-[250px] w-auto select-none pointer-events-none drop-shadow-[0_8px_20px_rgba(0,0,0,0.9)] -mr-3 sm:-mr-5 md:-mr-6 z-0 shrink-0"
+                    className="absolute top-0 left-0 h-9 sm:h-11 md:h-[52px] w-auto select-none pointer-events-none drop-shadow-[0_4px_12px_rgba(0,0,0,0.85)] z-20 transition-transform duration-300 group-hover:-translate-y-1.5"
                   />
 
-                  <div className="relative z-10 w-28 sm:w-40 md:w-52 min-w-[112px] sm:min-w-[160px] aspect-[2/3] rounded-xl sm:rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 group-hover:border-white/30 shadow-[0_20px_45px_rgba(0,0,0,0.85)] group-hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-end p-2.5 sm:p-4">
+                  <div className="relative z-10 w-36 sm:w-44 md:w-52 min-w-[144px] sm:min-w-[176px] md:min-w-[208px] aspect-[2/3] rounded-xl sm:rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 group-hover:border-white/30 shadow-[0_20px_45px_rgba(0,0,0,0.85)] group-hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-end p-3 sm:p-4">
                     <img
                       src={getProxiedImageUrl(item.cover_image, item.title, null, 'w342', 'poster')}
                       alt={item.title}
@@ -1559,22 +1558,21 @@ export default function HomePage() {
           >
             <div
               ref={top10MoviesScrollRef}
-              className="flex items-end gap-4 sm:gap-8 md:gap-10 overflow-x-auto overflow-y-hidden overscroll-y-auto overscroll-x-contain pb-6 pt-3 no-scrollbar [-webkit-overflow-scrolling:touch] h-[240px] sm:h-[320px] md:h-[380px] max-w-full"
+              className="flex items-end gap-3.5 sm:gap-5 md:gap-6 overflow-x-auto overflow-y-hidden overscroll-y-auto overscroll-x-contain pb-5 pt-4 pl-1 no-scrollbar [-webkit-overflow-scrolling:touch] max-w-full"
             >
               {top10MoviesItems.map((item, idx) => (
                 <Link
                   key={item.id}
                   href={`/seri/${item.slug}`}
-                 
-                  className="shrink-0 flex items-end group cursor-pointer snap-start relative pl-2 sm:pl-4 md:pl-6"
+                  className="shrink-0 group cursor-pointer snap-start relative pt-4 sm:pt-5 pl-1"
                 >
-                  {/* Netflix/Apple TV+ Top 10 Stroke Numeral (Vector Clean, Artifact-Free) */}
+                  {/* Top-Left Corner Outlined Two-Digit Rank Badge (01..10) */}
                   <Top10Numeral
                     rank={idx + 1}
-                    className="h-[135px] sm:h-[195px] md:h-[250px] w-auto select-none pointer-events-none drop-shadow-[0_8px_20px_rgba(0,0,0,0.9)] -mr-3 sm:-mr-5 md:-mr-6 z-0 shrink-0"
+                    className="absolute top-0 left-0 h-9 sm:h-11 md:h-[52px] w-auto select-none pointer-events-none drop-shadow-[0_4px_12px_rgba(0,0,0,0.85)] z-20 transition-transform duration-300 group-hover:-translate-y-1.5"
                   />
 
-                  <div className="relative z-10 w-28 sm:w-40 md:w-52 min-w-[112px] sm:min-w-[160px] aspect-[2/3] rounded-xl sm:rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 group-hover:border-white/30 shadow-[0_20px_45px_rgba(0,0,0,0.85)] group-hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-end p-2.5 sm:p-4">
+                  <div className="relative z-10 w-36 sm:w-44 md:w-52 min-w-[144px] sm:min-w-[176px] md:min-w-[208px] aspect-[2/3] rounded-xl sm:rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 group-hover:border-white/30 shadow-[0_20px_45px_rgba(0,0,0,0.85)] group-hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-end p-3 sm:p-4">
                     <img
                       src={getProxiedImageUrl(item.cover_image, item.title, null, 'w342', 'poster')}
                       alt={item.title}

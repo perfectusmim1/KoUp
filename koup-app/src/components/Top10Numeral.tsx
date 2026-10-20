@@ -25,56 +25,47 @@ interface Top10NumeralProps {
 }
 
 export default function Top10Numeral({ rank, className = '' }: Top10NumeralProps) {
-  const rankStr = String(rank);
+  const padded = String(rank).padStart(2, '0');
+  const d1 = padded[0] || '0';
+  const d2 = padded[1] || '1';
 
-  // Single digit (1-9) vs Double digit (10)
-  const isDoubleDigit = rankStr.length > 1;
-  const viewBox = isDoubleDigit ? '0 0 236 162' : '0 0 136 162';
+  // Optical kerning for 2-digit badge ("01" .. "10")
+  const tx1 = d1 === '1' ? 14 : 2;
+  const tx2 = d1 === '1' ? 116 : d2 === '1' ? 124 : 132;
 
   return (
     <svg
-      viewBox={viewBox}
+      viewBox="0 0 264 162"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={`inline-block overflow-visible ${className}`}
       aria-hidden="true"
     >
       <defs>
-        {/* Crisp Netflix-style vector stroke & deep dark fill */}
         <style>{`
           .top10-num-path {
-            fill: #09090b;
-            stroke: rgba(165, 165, 175, 0.72);
-            stroke-width: 0.036px;
+            fill: rgba(255, 255, 255, 0.14);
+            stroke: rgba(255, 255, 255, 0.88);
+            stroke-width: 0.018px;
             stroke-linejoin: round;
             stroke-linecap: round;
-            paint-order: stroke fill;
-            transition: fill 250ms ease, stroke 250ms ease, stroke-width 250ms ease;
+            transition: fill 220ms ease, stroke 220ms ease, transform 220ms ease;
           }
           .group:hover .top10-num-path {
-            fill: #18181c;
+            fill: rgba(255, 255, 255, 0.26);
             stroke: #ffffff;
-            stroke-width: 0.042px;
           }
         `}</style>
       </defs>
 
-      {!isDoubleDigit ? (
-        <g transform="matrix(200, 0, 0, -200, 4, 154)">
-          <path d={GLYPH_PATHS[rankStr] || GLYPH_PATHS['1']} className="top10-num-path" />
+      <g>
+        <g transform={`matrix(200, 0, 0, -200, ${tx1}, 154)`}>
+          <path d={GLYPH_PATHS[d1] || GLYPH_PATHS['0']} className="top10-num-path" />
         </g>
-      ) : (
-        <g>
-          {/* Digit 1 */}
-          <g transform="matrix(200, 0, 0, -200, -6, 154)">
-            <path d={GLYPH_PATHS[rankStr[0]]} className="top10-num-path" />
-          </g>
-          {/* Digit 2 (0 for 10) with tight Netflix optical overlap */}
-          <g transform="matrix(200, 0, 0, -200, 102, 154)">
-            <path d={GLYPH_PATHS[rankStr[1]]} className="top10-num-path" />
-          </g>
+        <g transform={`matrix(200, 0, 0, -200, ${tx2}, 154)`}>
+          <path d={GLYPH_PATHS[d2] || GLYPH_PATHS['1']} className="top10-num-path" />
         </g>
-      )}
+      </g>
     </svg>
   );
 }

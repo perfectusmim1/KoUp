@@ -353,11 +353,11 @@ export default function Navbar() {
           className={`pointer-events-auto flex items-center justify-between border outline-none transition-[width,max-width,margin-top,padding,border-radius,background-color,box-shadow,border-color] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)] ${
             navbarBehavior === 'floating'
               ? isScrolled
-                ? 'mt-2 sm:mt-3 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-[28px] bg-[#0a0b10]/94 backdrop-blur-2xl border-white/[0.08] shadow-[0_20px_50px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.12)] py-2 sm:py-2.5 px-4 sm:px-6'
+                ? 'mt-2 sm:mt-3 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-[28px] bg-[#0a0b10]/95 backdrop-blur-xl border-white/[0.08] shadow-[0_20px_50px_rgba(0,0,0,0.85)] py-2 sm:py-2.5 px-4 sm:px-6'
                 : 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-transparent shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
               : navbarBehavior === 'sticky'
               ? isScrolled
-                ? 'mt-0 w-full max-w-[2560px] rounded-none bg-[#0a0b10]/95 backdrop-blur-2xl border-white/[0.08] shadow-[0_12px_32px_rgba(0,0,0,0.85)] py-3 sm:py-4 px-4 sm:px-8 lg:px-14'
+                ? 'mt-0 w-full max-w-[2560px] rounded-none bg-[#0a0b10]/95 backdrop-blur-xl border-white/[0.08] shadow-[0_12px_32px_rgba(0,0,0,0.85)] py-3 sm:py-4 px-4 sm:px-8 lg:px-14'
                 : 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-transparent shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
               : /* static: sitenin üstünde kalır, sayfa kayınca bizle gelmez */
                 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-transparent shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
@@ -440,7 +440,7 @@ export default function Navbar() {
               }}
               className={`relative px-5 py-2 rounded-full text-[13px] font-semibold transition-colors duration-200 select-none ${
                 active
-                  ? 'text-white [text-shadow:0_1px_10px_rgba(255,255,255,0.35)]'
+                  ? 'text-white'
                   : 'text-white/65 hover:text-white'
               }`}
             >
@@ -464,9 +464,9 @@ export default function Navbar() {
           <Search className="w-4 h-4" />
         </button>
 
-        {/* Desktop Instant Search Bar / Trigger (>= md) — Unified Liquid Glass */}
+        {/* Desktop Instant Search Bar / Trigger (>= md) */}
         <div ref={searchContainerRef} className="relative hidden md:block">
-          <div className="flex items-center gap-2 px-3.5 py-2 rounded-full glass-pill hover:bg-white/[0.15] hover:border-white/[0.28] focus-within:bg-white/[0.16] focus-within:border-white/[0.38] focus-within:shadow-[inset_0_1px_1px_rgba(255,255,255,0.35),0_8px_24px_rgba(0,0,0,0.35),0_0_20px_rgba(255,255,255,0.10)] transition-all duration-200 w-44 lg:w-64">
+          <div className="flex items-center gap-2 px-3.5 py-2 rounded-full glass-pill hover:bg-white/[0.13] hover:border-white/[0.20] focus-within:bg-[#14151a] focus-within:border-white/[0.25] transition-all duration-200 w-44 lg:w-64">
             <Search className="w-4 h-4 text-white/75 shrink-0" />
             <input
               ref={searchInputRef}
@@ -495,13 +495,13 @@ export default function Navbar() {
                 <X className="w-3.5 h-3.5" />
               </button>
             ) : (
-              <kbd className="hidden xl:inline-block text-[10px] font-mono text-white/60 px-1.5 py-0.5 rounded-md bg-white/[0.10] border border-white/[0.18] shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]">
+              <kbd className="hidden xl:inline-block text-[10px] font-mono text-white/50 px-1.5 py-0.5 rounded-md bg-white/[0.07] border border-white/[0.12]">
                 ⌘K
               </kbd>
             )}
           </div>
 
-          {/* Search Omnibox Dropdown with Spring Animation & Liquid Glass */}
+          {/* Search Omnibox Dropdown */}
           <AnimatePresence>
             {searchOpen && query.trim().length >= 2 && (
               <motion.div
@@ -509,7 +509,7 @@ export default function Navbar() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 6, scale: 0.97 }}
                 transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="absolute right-0 mt-3 w-[calc(100vw-2.5rem)] sm:w-[440px] max-w-[440px] rounded-3xl bg-[#0c0d13]/96 backdrop-blur-2xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.14)] border border-white/[0.12] z-50"
+                className="absolute right-0 mt-3 w-[calc(100vw-2.5rem)] sm:w-[440px] max-w-[440px] rounded-3xl bg-[#0e0f14]/96 backdrop-blur-xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.95)] border border-white/[0.10] z-50"
               >
                 <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-white/10">
                   <span className="text-[11px] font-bold uppercase tracking-widest text-white/50">
@@ -679,7 +679,7 @@ export default function Navbar() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 6, scale: 0.96 }}
                 transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="fixed left-3 right-3 top-20 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-3 sm:w-[410px] sm:max-w-[410px] rounded-3xl bg-[#0c0d13]/96 backdrop-blur-2xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.14)] border border-white/[0.12] z-50 flex flex-col gap-3"
+                className="fixed left-3 right-3 top-20 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-3 sm:w-[410px] sm:max-w-[410px] rounded-3xl bg-[#0e0f14]/96 backdrop-blur-xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.95)] border border-white/[0.10] z-50 flex flex-col gap-3"
               >
                 {/* Header */}
                 <div className="flex items-center justify-between pb-2.5 border-b border-white/10">
@@ -893,7 +893,7 @@ export default function Navbar() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 6, scale: 0.96 }}
                   transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                  className="fixed right-3 top-20 sm:absolute sm:right-0 sm:top-full sm:mt-3 w-64 rounded-3xl bg-[#0c0d13]/96 backdrop-blur-2xl p-3 shadow-[0_28px_64px_rgba(0,0,0,0.95),inset_0_1px_0_rgba(255,255,255,0.14)] border border-white/[0.12] z-50 flex flex-col gap-1"
+                  className="fixed right-3 top-20 sm:absolute sm:right-0 sm:top-full sm:mt-3 w-64 rounded-3xl bg-[#0e0f14]/96 backdrop-blur-xl p-3 shadow-[0_28px_64px_rgba(0,0,0,0.95)] border border-white/[0.10] z-50 flex flex-col gap-1"
                 >
                   {/* User Header */}
                   <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/[0.06] flex items-center gap-3 mb-1">
@@ -1149,13 +1149,13 @@ export default function Navbar() {
                           <span
                             className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
                               active
-                                ? 'bg-white/[0.18] border border-white/[0.32] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]'
+                                ? 'bg-white/[0.15] border border-white/[0.20] text-white'
                                 : 'bg-white/[0.05] border border-white/[0.08] text-white/65 group-hover:text-white group-hover:bg-white/[0.10]'
                             }`}
                           >
                             <Icon className="w-4 h-4 shrink-0" />
                           </span>
-                          <span className={active ? '[text-shadow:0_1px_8px_rgba(255,255,255,0.3)]' : ''}>
+                          <span>
                             {item.label}
                           </span>
                         </span>
@@ -1170,10 +1170,10 @@ export default function Navbar() {
                 </div>
               </div>
 
-              {/* Drawer Bottom Liquid Glass Profile Dock */}
+              {/* Drawer Bottom Profile Dock */}
               <div className="relative z-10 pt-3 border-t border-white/[0.10]">
                 {user ? (
-                  <div className="p-2.5 rounded-2xl bg-white/[0.05] border border-white/[0.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.14)] space-y-2.5">
+                  <div className="p-2.5 rounded-2xl bg-white/[0.05] border border-white/[0.10] space-y-2.5">
                     <Link
                       href={`/profil/${encodeURIComponent(user.username)}`}
                       prefetch={true}
@@ -1270,7 +1270,7 @@ export default function Navbar() {
                       setMobileMenuOpen(false);
                       setIsAuthModalOpen(true);
                     }}
-                    className="w-full min-h-[48px] rounded-2xl liquid-glass-active-pill text-white font-bold text-sm flex items-center justify-center gap-2 cursor-pointer transition-all hover:bg-white/25"
+                    className="w-full min-h-[48px] rounded-2xl bg-white text-black font-bold text-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg transition-all"
                   >
                     <LogIn className="w-4 h-4" />
                     <span>Giriş Yap / Kayıt Ol</span>
