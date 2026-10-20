@@ -148,6 +148,101 @@ def sync_dizifon_latest(limit: int = 10) -> int:
         return 0
 
 
+def sync_animecix_latest(limit: int = 15) -> int:
+    """https://animecix.tv üzerinden son eklenen anime bölümlerini tarar ve ekler."""
+    print(f"[AnimeciX] Canlı tarayıcı başlatılıyor (limit: {limit})...", flush=True)
+    try:
+        from scrapers.live_scanner import scan_animecix, build_drama_index
+        conn = get_connection()
+        cur = conn.cursor()
+        try:
+            idx = build_drama_index(cur)
+            delta, _ = scan_animecix(conn, cur, idx, limit=limit)
+            print(f"[AnimeciX] {delta} yeni/güncel anime bölümü işlendi.", flush=True)
+            return delta
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[AnimeciX] Tarama hatası: {e}", flush=True)
+        return 0
+
+
+def sync_hdfilm_latest(limit: int = 15) -> int:
+    """https://www.hdfilmcehennemi.nl üzerinden son eklenen filmleri tarar ve ekler."""
+    print(f"[HDFilm] Canlı film tarayıcısı başlatılıyor (limit: {limit})...", flush=True)
+    try:
+        from scrapers.live_scanner import scan_hdfilm, build_drama_index
+        conn = get_connection()
+        cur = conn.cursor()
+        try:
+            idx = build_drama_index(cur)
+            delta, _ = scan_hdfilm(conn, cur, idx, limit=limit)
+            print(f"[HDFilm] {delta} yeni/güncel film kaynağı işlendi.", flush=True)
+            return delta
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[HDFilm] Tarama hatası: {e}", flush=True)
+        return 0
+
+
+def sync_ddizi_latest(limit: int = 15) -> int:
+    """https://www.ddizi.tel üzerinden son eklenen yerli dizi bölümlerini tarar ve ekler."""
+    print(f"[DDizi] Canlı yerli dizi tarayıcısı başlatılıyor (limit: {limit})...", flush=True)
+    try:
+        from scrapers.live_scanner import scan_ddizi, build_drama_index
+        conn = get_connection()
+        cur = conn.cursor()
+        try:
+            idx = build_drama_index(cur)
+            delta, _ = scan_ddizi(conn, cur, idx, limit=limit)
+            print(f"[DDizi] {delta} yeni/güncel yerli dizi bölümü işlendi.", flush=True)
+            return delta
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[DDizi] Tarama hatası: {e}", flush=True)
+        return 0
+
+
+def sync_dizilla_latest(limit: int = 10) -> int:
+    """https://dizilla.now üzerinden son eklenen yabancı dizi bölümlerini tarar ve ekler."""
+    print(f"[Dizilla] Canlı tarayıcı başlatılıyor (limit: {limit})...", flush=True)
+    try:
+        from scrapers.live_scanner import scan_dizilla, build_drama_index
+        conn = get_connection()
+        cur = conn.cursor()
+        try:
+            idx = build_drama_index(cur)
+            delta, _ = scan_dizilla(conn, cur, idx, limit=limit)
+            print(f"[Dizilla] {delta} yeni/güncel bölüm kaynağı işlendi.", flush=True)
+            return delta
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[Dizilla] Tarama hatası: {e}", flush=True)
+        return 0
+
+
+def sync_asyawatch_latest(limit: int = 10) -> int:
+    """https://asyawatch.com üzerinden son eklenen Asya dizi bölümlerini tarar ve ekler."""
+    print(f"[AsyaWatch] Canlı tarayıcı başlatılıyor (limit: {limit})...", flush=True)
+    try:
+        from scrapers.live_scanner import scan_asyawatch, build_drama_index
+        conn = get_connection()
+        cur = conn.cursor()
+        try:
+            idx = build_drama_index(cur)
+            delta, _ = scan_asyawatch(conn, cur, idx, limit=limit)
+            print(f"[AsyaWatch] {delta} yeni/güncel bölüm kaynağı işlendi.", flush=True)
+            return delta
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[AsyaWatch] Tarama hatası: {e}", flush=True)
+        return 0
+
+
 def run_pending_resolver(limit: int = 100, batch_dramas: int = 25) -> dict:
     """Bekleyen bölümleri doğrudan ve çapraz site araması ile oynatılabilir kaynaklara bağlar."""
     print(f"[Pending Resolver] En fazla {limit} bekleyen bölüm ve {batch_dramas} dizi için çapraz arama başlatılıyor...", flush=True)
@@ -197,14 +292,29 @@ def main():
     if target in ("all", "asyamag"):
         sync_asyamag(15)
 
+    if target in ("all", "animecix", "anime"):
+        sync_animecix_latest(15)
+
+    if target in ("all", "hdfilm", "film", "movie"):
+        sync_hdfilm_latest(15)
+
+    if target in ("all", "ddizi", "yerli"):
+        sync_ddizi_latest(15)
+
     if target in ("all", "dizibox"):
         sync_dizibox_latest(10)
+
+    if target in ("all", "dizilla"):
+        sync_dizilla_latest(10)
 
     if target in ("all", "dizikorea"):
         sync_dizikorea_latest(10)
 
     if target in ("all", "dizifon"):
         sync_dizifon_latest(10)
+
+    if target in ("all", "asyawatch"):
+        sync_asyawatch_latest(10)
 
     if target in ("all", "pending_resolver", "pending"):
         run_pending_resolver(limit=args.pending_limit, batch_dramas=args.batch_dramas)

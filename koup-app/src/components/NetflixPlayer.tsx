@@ -1210,6 +1210,8 @@ export default function NetflixPlayer({
       setResolvedMode('resolving');
       const normalizedFallback = normalizePlayerStreamUrl(activeSourceUrl, targetResume).url;
       setFallbackIframeUrl(normalizedFallback);
+      setAudioTracks([]);
+      setCurrentAudioTrackId(0);
 
       try {
         const params = new URLSearchParams({
@@ -1237,6 +1239,8 @@ export default function NetflixPlayer({
         if (data.mode === 'native_hls' || data.mode === 'native_mp4') {
           setResolvedMode(data.mode);
           setQualities(data.qualities || []);
+          setAudioTracks([]);
+          setCurrentAudioTrackId(0);
           const savedPref = typeof window !== 'undefined' ? localStorage.getItem('koup_preferred_quality') : null;
           const matchedPref = savedPref && savedPref !== 'Otomatik'
             ? (data.qualities || []).find((q: any) => cleanQualityLabel(q.label) === cleanQualityLabel(savedPref))
@@ -1321,6 +1325,8 @@ export default function NetflixPlayer({
       hlsRef.current.destroy();
       hlsRef.current = null;
     }
+    setAudioTracks([]);
+    setCurrentAudioTrackId(0);
 
     setIsBuffering(true);
 
@@ -1450,6 +1456,9 @@ export default function NetflixPlayer({
             });
             setAudioTracks(mapped);
             setCurrentAudioTrackId(hls.audioTrack >= 0 ? hls.audioTrack : 0);
+          } else {
+            setAudioTracks([]);
+            setCurrentAudioTrackId(0);
           }
         });
 

@@ -146,12 +146,7 @@ def extract_streams_from_html(html: str, site_label: str = "general") -> list:
             seen.add(u)
             sources.append(("Vidmoly 1080p", u, "vidmoly", site_label, None))
 
-    # 3. PlayerDKorea
-    for dk_id in set(re.findall(r'https?://(?:www\.)?playerdkorea\.xyz/video/([a-zA-Z0-9]+)', html)):
-        u = f"https://playerdkorea.xyz/video/{dk_id}"
-        if u not in seen:
-            seen.add(u)
-            sources.append(("DiziKorea 1080p HLS", u, "dizikorea", site_label, None))
+    # 3. PlayerDKorea deprecated/dead
 
     # 4. Pichive (AsyaWatch 1080p standalone player)
     for p_id in set(re.findall(r'https?://[a-zA-Z0-9_\-\.]*pichive\.[a-z]+/iframe\.php\?v=([a-zA-Z0-9]+)', html)):
@@ -658,7 +653,7 @@ def resolve_drama_cross_site(conn, cur, drama_id: int, dry_run: bool = False) ->
                         if v_data and 'pagination' in v_data:
                             for v in v_data['pagination'].get('data', []):
                                 v_url = (v.get('url') or '').strip()
-                                if not v_url or any(dead in v_url.lower() for dead in ['sibnet', 'short.icu']):
+                                if not v_url or any(dead in v_url.lower() for dead in ['sibnet', 'short.icu', 'sendvid', 'pixeldrain', 'playerdkorea.xyz', 'uns.bio', '4meplayer', 'video.diziasya']) or v_url.lower().endswith('/e/') or v_url.lower().endswith('/embed/video/'):
                                     continue
                                 s_no = v.get('season_num') or 1
                                 e_no = v.get('episode_num') or 1

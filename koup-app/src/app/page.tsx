@@ -1526,7 +1526,6 @@ export default function HomePage() {
         {orderedCategoryRows.map((row) => (
           <AccordionRow
             key={row.key}
-            subtitle={row.subtitle}
             title={row.title}
             href={row.href}
             items={row.items}

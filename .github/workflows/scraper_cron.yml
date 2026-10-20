@@ -14,9 +14,14 @@ on:
         options:
           - all
           - pending_resolver
-          - dizifon
+          - animecix
+          - hdfilm
+          - ddizi
           - dizikorea
           - dizibox
+          - dizilla
+          - dizifon
+          - asyawatch
           - asyamag
           - calendar
           - watchdog_24h

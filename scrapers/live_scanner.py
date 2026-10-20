@@ -188,7 +188,15 @@ def scan_dizibox(conn, cur, idx, limit=10, target=None):
                     if m_id:
                         video_id = m_id.group(1)
                         hls_url = f"https://dbx.molystream.org/embed/sheila/{video_id}"
-                        added = add_source(cur, ep_id, "Orijinal", hls_url, "dbx", "dizibox")
+                        is_dead = False
+                        try:
+                            probe_html = fetch_url(embed_url, headers={'Referer': 'https://www.dizibox.live/'}, timeout=6)
+                            if not probe_html or any(err in probe_html.lower() for err in ['no video found', 'this video not found', 'file was deleted', 'video not found', 'file not found', '404 not found']) or '{"status":"error"}' in probe_html:
+                                is_dead = True
+                        except Exception:
+                            pass
+                        if not is_dead:
+                            added = add_source(cur, ep_id, "Orijinal", hls_url, "dbx", "dizibox")
 
             is_pending = reconcile_episode(cur, ep_id, is_placeholder=is_ph)
             touched_dramas.add(did)

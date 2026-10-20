@@ -325,9 +325,17 @@ def add_source(cur, episode_id, source_name, direct_url, provider, site, fansub=
     p_low = (provider or '').lower()
     n_low = (source_name or '').lower()
     if (
-        p_low in ('sibnet', 'sendvid', 'dead', 'googledrive')
+        p_low in ('sibnet', 'sendvid', 'dead', 'googledrive', 'pixeldrain', 'playerdkorea', '4meplayer', 'uns.bio', 'p2pplay', 'rpmplay')
         or 'sibnet' in n_low
-        or any(dead in u_low for dead in ('sibnet.ru', 'sendvid', 'drive.google.com', 'docs.google.com', 'short.icu', 'short.ink', 'vudeo.', 'dood'))
+        or 'pixeldrain' in n_low
+        or any(dead in u_low for dead in (
+            'sibnet.ru', 'sendvid', 'drive.google.com', 'docs.google.com',
+            'short.icu', 'short.ink', 'vudeo.', 'dood', 'playerdkorea.xyz',
+            'pixeldrain.com', 'pixeldrain', '4meplayer', 'uns.bio', 'p2pplay',
+            'rpmplay', 'video.diziasya.com'
+        ))
+        or u_low.endswith('/e/')
+        or u_low.endswith('/embed/video/')
     ):
         return False
     def _op():

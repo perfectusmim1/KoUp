@@ -35,6 +35,101 @@ function setCachedStream(key: string, data: any, ttlMs: number = 2 * 60 * 60 * 1
   streamResolutionCache.set(key, { data, expiresAt: Date.now() + ttlMs });
 }
 
+function extractHdfilmSubtitles(
+  html: string,
+  embedOrigin = 'https://hdfilmcehennemi.mobi',
+  subRef = 'https://hdfilmcehennemi.mobi/'
+): Array<{ label: string; lang: string; url: string; default?: boolean }> {
+  const tracksMatch = html.match(/tracks:\s*(\[[^\]]+\])/);
+  if (!tracksMatch?.[1]) return [];
+  try {
+    const unescaped = tracksMatch[1].replaceAll('\\/', '/');
+    const rawTracks = JSON.parse(unescaped);
+    const validTracks = rawTracks.filter(
+      (t: any) => t?.file && (t.kind === 'captions' || t.kind === 'subtitles' || !t.kind)
+    );
+
+    // Check if a full non-forced Turkish track exists so we can skip redundant "Forced" track
+    const hasFullTurkish = validTracks.some((t: any) => {
+      const lbl = String(t.label || '').toLocaleLowerCase('tr-TR');
+      const lng = String(t.language || t.lang || '').toLowerCase();
+      const fn = String(t.file || '').toLowerCase();
+      const isForced = lbl.includes('forced') || lng.includes('forced') || fn.includes('forced');
+      const isTr =
+        lng === 'tr' ||
+        lbl.includes('türk') ||
+        lbl.includes('turk') ||
+        fn.includes('_turkish') ||
+        fn.includes('subtitles02tur');
+      return isTr && !isForced;
+    });
+
+    const byLabel = new Map<string, { label: string; lang: string; url: string; default?: boolean }>();
+
+    for (const t of validTracks) {
+      const rawLabel = String(t.label || 'Altyazı').trim();
+      const lower = rawLabel.toLocaleLowerCase('tr-TR').replace(/i\u0307/g, 'i');
+      const rawLang = String(t.language || t.lang || '').toLowerCase();
+      const rawFile = String(t.file || '');
+      const isForced =
+        lower.includes('forced') ||
+        rawLang.includes('forced') ||
+        rawFile.toLowerCase().includes('forced');
+
+      if (isForced && hasFullTurkish) {
+        continue;
+      }
+
+      let cleanLabel = rawLabel.replace(/\s*altyaz[ıi]$/i, '').trim() || 'Altyazı';
+      let lang = rawLang || 'tr';
+
+      if (
+        rawLang === 'tr' ||
+        lower.includes('tur') ||
+        lower.includes('türk') ||
+        lower.includes('forced')
+      ) {
+        cleanLabel = 'Türkçe';
+        lang = 'tr';
+      } else if (rawLang === 'en' || lower.includes('eng') || lower.includes('ing')) {
+        cleanLabel = 'İngilizce';
+        lang = 'en';
+      } else if (rawLang === 'fr' || lower.includes('fre') || lower.includes('frans')) {
+        cleanLabel = 'Fransızca';
+        lang = 'fr';
+      } else if (rawLang === 'es' || lower.includes('spa') || lower.includes('ispan')) {
+        cleanLabel = 'İspanyolca';
+        lang = 'es';
+      } else if (rawLang === 'pt' || lower.includes('por') || lower.includes('portek')) {
+        cleanLabel = 'Portekizce';
+        lang = 'pt';
+      } else if (rawLang === 'de' || lower.includes('ger') || lower.includes('alman')) {
+        cleanLabel = 'Almanca';
+        lang = 'de';
+      }
+
+      const fullFileUrl = rawFile.startsWith('http')
+        ? rawFile
+        : `${embedOrigin}${rawFile.startsWith('/') ? '' : '/'}${rawFile}`;
+      const proxiedSub = `/api/stream-proxy?url=${encodeURIComponent(fullFileUrl)}&ref=${encodeURIComponent(subRef)}`;
+
+      // Keep the non-forced / latest full track per language label
+      if (!byLabel.has(cleanLabel) || !isForced) {
+        byLabel.set(cleanLabel, {
+          label: cleanLabel,
+          lang,
+          url: proxiedSub,
+          default: lang === 'tr' ? true : !!t.default,
+        });
+      }
+    }
+
+    return Array.from(byLabel.values());
+  } catch {
+    return [];
+  }
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const url = searchParams.get('url') || '';
@@ -65,6 +160,7 @@ export async function GET(req: NextRequest) {
     'sibnet.ru',
     'video.sibnet.ru',
     'diziasya',
+    'video.diziasya.com',
     'short.icu',
     'short.ink',
     'vudeo.io',
@@ -86,8 +182,20 @@ export async function GET(req: NextRequest) {
     'sendvid.com',
     'drive.google.com',
     'docs.google.com',
+    'playerdkorea.xyz',
+    'pixeldrain.com',
+    'pixeldrain',
+    '4meplayer',
+    'uns.bio',
+    'p2pplay',
+    'rpmplay',
   ];
-  if (provider === 'sibnet' || deadDomains.some((d) => lowerUrl.includes(d))) {
+  if (
+    provider === 'sibnet' ||
+    deadDomains.some((d) => lowerUrl.includes(d)) ||
+    lowerUrl.endsWith('/e/') ||
+    lowerUrl.endsWith('/embed/video/')
+  ) {
     return NextResponse.json(
       { error: 'Kaynak artık kullanılabilir değil veya engellendi', isDead: true },
       { status: 410 }
@@ -379,6 +487,39 @@ export async function GET(req: NextRequest) {
       const videoId = mId?.[1];
       if (videoId) {
         const fullEmbed = `https://dbx.molystream.org/embed/${videoId}`;
+        // Health check: probe embed to ensure video is not 404 / deleted / "No Video Found"
+        try {
+          const probe = await fetch(fullEmbed, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              'Referer': 'https://www.dizibox.live/',
+            },
+            signal: AbortSignal.timeout(4000),
+          });
+          if (!probe.ok && (probe.status === 404 || probe.status === 410 || probe.status === 500)) {
+            return NextResponse.json(
+              { error: 'Molystream videosu sunucudan silinmiş veya bulunamadı (404)', isDead: true },
+              { status: 410 }
+            );
+          }
+          const probeText = await probe.text();
+          const lowText = probeText.toLowerCase();
+          if (
+            lowText.includes('no video found') ||
+            lowText.includes('this video not found') ||
+            lowText.includes('file was deleted') ||
+            lowText.includes('video not found') ||
+            lowText.includes('file not found') ||
+            lowText.includes('404 not found') ||
+            probeText.includes('{"status":"error"}')
+          ) {
+            return NextResponse.json(
+              { error: 'Molystream videosu silinmiş (404 No Video Found)', isDead: true },
+              { status: 410 }
+            );
+          }
+        } catch {}
+
         return NextResponse.json({
           mode: 'iframe',
           iframeUrl: fullEmbed,
@@ -412,15 +553,36 @@ export async function GET(req: NextRequest) {
           ? 'https://www.hdfilmcehennemi.nl/'
           : 'https://hdfilmcehennemi.mobi/';
         const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(url)}&ref=${encodeURIComponent(streamReferer)}`;
-        return NextResponse.json(
-          {
-            mode: 'native_hls',
-            streamUrl: proxiedUrl,
-            qualities: [{ label: '1080p', url: proxiedUrl }],
-            fallbackIframe: url,
-          },
-          { headers: CACHE_HEADERS }
-        );
+
+        let subtitles: Array<{ label: string; lang: string; url: string; default?: boolean }> = [];
+        const embedMatch = url.match(/-([a-zA-Z0-9]{8,15})\.mp4/);
+        if (embedMatch?.[1]) {
+          try {
+            const embedUrl = `https://hdfilmcehennemi.mobi/video/embed/${embedMatch[1]}`;
+            const embedResp = await fetch(embedUrl, {
+              headers: {
+                'User-Agent':
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                Referer: 'https://hdfilmcehennemi.mobi/',
+              },
+              signal: AbortSignal.timeout(3500),
+            });
+            if (embedResp.ok) {
+              const embedHtml = await embedResp.text();
+              subtitles = extractHdfilmSubtitles(embedHtml, 'https://hdfilmcehennemi.mobi', 'https://hdfilmcehennemi.mobi/');
+            }
+          } catch {}
+        }
+
+        const payload = {
+          mode: 'native_hls',
+          streamUrl: proxiedUrl,
+          qualities: [{ label: '1080p', url: proxiedUrl }],
+          subtitles: subtitles.length > 0 ? subtitles : undefined,
+          fallbackIframe: url,
+        };
+        setCachedStream(url, payload);
+        return NextResponse.json(payload, { headers: CACHE_HEADERS });
       }
 
       // Embed page (e.g. Close Player https://hdfilmcehennemi.mobi/video/embed/... or Rapidrame https://www.hdfilmcehennemi.nl/rplayer/...)
@@ -481,101 +643,13 @@ export async function GET(req: NextRequest) {
 
         if (html) {
           // 1. Extract WebVTT subtitles (deduplicated & normalized)
-          const tracksMatch = html.match(/tracks:\s*(\[[^\]]+\])/);
-          let subtitles: Array<{ label: string; lang: string; url: string; default?: boolean }> = [];
-          if (tracksMatch?.[1]) {
-            try {
-              const unescaped = tracksMatch[1].replaceAll('\\/', '/');
-              const rawTracks = JSON.parse(unescaped);
-              const embedOrigin = url.includes('/rplayer/')
-                ? 'https://www.hdfilmcehennemi.nl'
-                : new URL(url).origin;
-              const subRef = url.includes('/rplayer/')
-                ? 'https://www.hdfilmcehennemi.nl/'
-                : 'https://hdfilmcehennemi.mobi/';
-
-              const validTracks = rawTracks.filter(
-                (t: any) => t?.file && (t.kind === 'captions' || t.kind === 'subtitles' || !t.kind)
-              );
-
-              // Check if a full non-forced Turkish track exists so we can skip redundant "Forced" track
-              const hasFullTurkish = validTracks.some((t: any) => {
-                const lbl = String(t.label || '').toLocaleLowerCase('tr-TR');
-                const lng = String(t.language || t.lang || '').toLowerCase();
-                const fn = String(t.file || '').toLowerCase();
-                const isForced = lbl.includes('forced') || lng.includes('forced') || fn.includes('forced');
-                const isTr =
-                  lng === 'tr' ||
-                  lbl.includes('türk') ||
-                  lbl.includes('turk') ||
-                  fn.includes('_turkish') ||
-                  fn.includes('subtitles02tur');
-                return isTr && !isForced;
-              });
-
-              const byLabel = new Map<string, { label: string; lang: string; url: string; default?: boolean }>();
-
-              for (const t of validTracks) {
-                const rawLabel = String(t.label || 'Altyazı').trim();
-                const lower = rawLabel.toLocaleLowerCase('tr-TR').replace(/i\u0307/g, 'i');
-                const rawLang = String(t.language || t.lang || '').toLowerCase();
-                const rawFile = String(t.file || '');
-                const isForced =
-                  lower.includes('forced') ||
-                  rawLang.includes('forced') ||
-                  rawFile.toLowerCase().includes('forced');
-
-                if (isForced && hasFullTurkish) {
-                  continue;
-                }
-
-                let cleanLabel = rawLabel.replace(/\s*altyaz[ıi]$/i, '').trim() || 'Altyazı';
-                let lang = rawLang || 'tr';
-
-                if (
-                  rawLang === 'tr' ||
-                  lower.includes('tur') ||
-                  lower.includes('türk') ||
-                  lower.includes('forced')
-                ) {
-                  cleanLabel = 'Türkçe';
-                  lang = 'tr';
-                } else if (rawLang === 'en' || lower.includes('eng') || lower.includes('ing')) {
-                  cleanLabel = 'İngilizce';
-                  lang = 'en';
-                } else if (rawLang === 'fr' || lower.includes('fre') || lower.includes('frans')) {
-                  cleanLabel = 'Fransızca';
-                  lang = 'fr';
-                } else if (rawLang === 'es' || lower.includes('spa') || lower.includes('ispan')) {
-                  cleanLabel = 'İspanyolca';
-                  lang = 'es';
-                } else if (rawLang === 'pt' || lower.includes('por') || lower.includes('portek')) {
-                  cleanLabel = 'Portekizce';
-                  lang = 'pt';
-                } else if (rawLang === 'de' || lower.includes('ger') || lower.includes('alman')) {
-                  cleanLabel = 'Almanca';
-                  lang = 'de';
-                }
-
-                const fullFileUrl = rawFile.startsWith('http')
-                  ? rawFile
-                  : `${embedOrigin}${rawFile.startsWith('/') ? '' : '/'}${rawFile}`;
-                const proxiedSub = `/api/stream-proxy?url=${encodeURIComponent(fullFileUrl)}&ref=${encodeURIComponent(subRef)}`;
-
-                // Keep the non-forced / latest full track per language label
-                if (!byLabel.has(cleanLabel) || !isForced) {
-                  byLabel.set(cleanLabel, {
-                    label: cleanLabel,
-                    lang,
-                    url: proxiedSub,
-                    default: lang === 'tr' ? true : !!t.default,
-                  });
-                }
-              }
-
-              subtitles = Array.from(byLabel.values());
-            } catch {}
-          }
+          const embedOrigin = url.includes('/rplayer/')
+            ? 'https://www.hdfilmcehennemi.nl'
+            : new URL(url).origin;
+          const subRef = url.includes('/rplayer/')
+            ? 'https://www.hdfilmcehennemi.nl/'
+            : 'https://hdfilmcehennemi.mobi/';
+          const subtitles = extractHdfilmSubtitles(html, embedOrigin, subRef);
 
           // 2. Resolve Master HLS URL from obfuscated jwplayer setup or unpack
           let masterHlsUrl: string | null = null;
@@ -974,16 +1048,19 @@ export async function GET(req: NextRequest) {
       }
 
       const html = await resp.text();
+      const lowHtml = html.toLowerCase();
       if (
-        html.includes('This video not found') ||
-        html.includes('File was deleted') ||
-        html.includes('Video not found') ||
-        html.includes('deleted by owner') ||
-        html.includes('File Not Found') ||
-        html.includes('404 Not Found')
+        lowHtml.includes('no video found') ||
+        lowHtml.includes('this video not found') ||
+        lowHtml.includes('file was deleted') ||
+        lowHtml.includes('video not found') ||
+        lowHtml.includes('deleted by owner') ||
+        lowHtml.includes('file not found') ||
+        lowHtml.includes('404 not found') ||
+        html.includes('{"status":"error"}')
       ) {
         return NextResponse.json(
-          { error: 'Vidmoly videosu silinmiş', isDead: true },
+          { error: 'Vidmoly / Molystream videosu silinmiş veya bulunamadı (404 No Video Found)', isDead: true },
           { status: 410 }
         );
       }
