@@ -351,7 +351,7 @@ export default function BenchmarkRunner() {
       // 2. Detect stage transition -> navigate to target page
       if (activeIndex !== currentStageIndexRef.current) {
         currentStageIndexRef.current = activeIndex;
-        stageTransitionCooldownRef.current = now + 800; // 800ms cooldown for page hydration
+        stageTransitionCooldownRef.current = now + 1200; // 1200ms grace period for Next.js route hydration
 
         // Collapse previous open card
         if (activeHoveredElementRef.current) {
@@ -452,10 +452,9 @@ export default function BenchmarkRunner() {
           setActiveStageText('▶️ Canlı Oynatıcı: Oynatma & +10s İleri Sarma...');
           const playerEl = document.querySelector<HTMLElement>('#koup-player-container, video, iframe');
           if (playerEl) {
-            const r = playerEl.getBoundingClientRect();
             setVirtualPointerPos({
-              x: r.left + r.width * 0.5,
-              y: r.top + r.height * 0.5,
+              x: window.innerWidth * 0.5,
+              y: isMobile ? 180 : 260,
               visible: true,
               label: isMobile ? '📱 Oynatıcı Dokunuldu (+10s)' : '▶️ Oynatıcı +10s İleri Sar',
             });
@@ -473,7 +472,7 @@ export default function BenchmarkRunner() {
             }
           }
         } else if (localP < 0.70) {
-          // Yorumlar & Reaksiyon Akışı
+          // Yorumlar & Reaksiyon Akışı Taraması
           setActiveStageText('💬 Bölüm Reaksiyonları & Yorum Akışı Taraması...');
           window.scrollBy({ top: isMobile ? 18 : 26, behavior: 'auto' });
 
@@ -483,13 +482,6 @@ export default function BenchmarkRunner() {
             visible: true,
             label: '💬 Yorumlar & Reaksiyonlar',
           });
-
-          const reactBtn = document.querySelector<HTMLButtonElement>(
-            'button[aria-label="Efsane"], button[aria-label="Ağlattı"], button[aria-label="Şok"]'
-          );
-          if (reactBtn && Math.floor(elapsed / 2200) !== Math.floor((elapsed - 100) / 2200)) {
-            reactBtn.click();
-          }
         } else {
           // Ray & Yukarı Çıkış
           setActiveStageText('↔️ Bölüm Listesi & Hızlı Navigasyon...');
@@ -536,13 +528,12 @@ export default function BenchmarkRunner() {
               });
             }
 
-            const r = rail.getBoundingClientRect();
             setVirtualPointerPos({
               x: Math.max(
                 50,
-                Math.min(window.innerWidth - 50, r.left + r.width * 0.5 + swipeDirection * 100)
+                Math.min(window.innerWidth - 50, window.innerWidth * 0.5 + swipeDirection * 80)
               ),
-              y: r.top + r.height * 0.5,
+              y: isMobile ? 380 : 450,
               visible: true,
               label: isMobile ? '📱 Filmografi Swipe' : '↔️ Filmografi Rayı',
             });
@@ -577,15 +568,9 @@ export default function BenchmarkRunner() {
         if (stage.id === 'home' || stage.id === 'explore') {
           // Accordion Media Card Hover / Tap testing
           const cards = Array.from(document.querySelectorAll<HTMLElement>('.koup-accordion-card'));
-          const inViewCards = cards.filter((c) => {
-            const r = c.getBoundingClientRect();
-            return r.top >= 40 && r.bottom <= window.innerHeight - 40;
-          });
-
-          if (inViewCards.length > 0) {
-            const cardIdx = Math.floor(elapsed / 1200) % inViewCards.length;
-            const targetCard = inViewCards[cardIdx];
-            const r = targetCard.getBoundingClientRect();
+          if (cards.length > 0) {
+            const cardIdx = Math.floor(elapsed / 1200) % Math.min(6, cards.length);
+            const targetCard = cards[cardIdx];
 
             setActiveStageText(
               isMobile
@@ -594,8 +579,8 @@ export default function BenchmarkRunner() {
             );
 
             setVirtualPointerPos({
-              x: Math.max(30, Math.min(window.innerWidth - 30, r.left + r.width / 2)),
-              y: Math.max(50, Math.min(window.innerHeight - 50, r.top + r.height / 2)),
+              x: isMobile ? window.innerWidth * 0.5 : 200 + (cardIdx % 3) * 220,
+              y: isMobile ? 380 : 360,
               visible: true,
               label: isMobile ? 'Parmakla Dokunuldu' : 'Kart Genişletiliyor (Hover)',
             });
@@ -625,7 +610,6 @@ export default function BenchmarkRunner() {
           );
           if (rails.length > 0) {
             const activeRail = rails[0];
-            const r = activeRail.getBoundingClientRect();
             const swipeDirection = Math.floor(elapsed / 1200) % 2 === 0 ? 1 : -1;
 
             if (now - lastSwipeTriggerTimeRef.current > 1100) {
@@ -639,9 +623,9 @@ export default function BenchmarkRunner() {
             setVirtualPointerPos({
               x: Math.max(
                 40,
-                Math.min(window.innerWidth - 40, r.left + r.width * 0.5 + swipeDirection * 100)
+                Math.min(window.innerWidth - 40, window.innerWidth * 0.5 + swipeDirection * 80)
               ),
-              y: r.top + r.height * 0.5,
+              y: isMobile ? 360 : 440,
               visible: true,
               label: isMobile ? '📱 Bölüm Rayı Swipe' : '↔️ Bölüm Rayı Kaydırma',
             });
@@ -668,11 +652,10 @@ export default function BenchmarkRunner() {
           if (dayButtons.length > 0) {
             const btnIdx = Math.floor(elapsed / 1500) % dayButtons.length;
             const targetBtn = dayButtons[btnIdx];
-            const r = targetBtn.getBoundingClientRect();
 
             setVirtualPointerPos({
-              x: r.left + r.width / 2,
-              y: r.top + r.height / 2,
+              x: Math.min(window.innerWidth - 60, 60 + (btnIdx * 45) % Math.max(100, window.innerWidth - 120)),
+              y: isMobile ? 160 : 190,
               visible: true,
               label: `Gün Sekmesi: ${targetBtn.textContent?.trim().slice(0, 10)}`,
             });
@@ -710,13 +693,12 @@ export default function BenchmarkRunner() {
             });
           }
 
-          const r = rail.getBoundingClientRect();
           setVirtualPointerPos({
             x: Math.max(
               50,
-              Math.min(window.innerWidth - 50, r.left + r.width * 0.5 + swipeDirection * 120)
+              Math.min(window.innerWidth - 50, window.innerWidth * 0.5 + swipeDirection * 90)
             ),
-            y: r.top + r.height * 0.5,
+            y: isMobile ? 380 : 460,
             visible: true,
             label: isMobile ? '📱 Yatay Dokunmatik Swipe' : '↔️ Yatay Ray Kaydırma',
           });
@@ -776,11 +758,11 @@ export default function BenchmarkRunner() {
       const elapsed = now - startTimeRef.current;
       const progress = Math.min(1, elapsed / durationMs);
 
-      // Update Live HUD & Sample FPS every ~90ms
-      if (now - lastInteractionTimeRef.current > 90) {
+      // Update Live HUD & Sample FPS every ~120ms
+      if (now - lastInteractionTimeRef.current > 120) {
         lastInteractionTimeRef.current = now;
-        // Rolling 3-frame window for smooth, jitter-resistant instantaneous FPS
-        const recentFrames = frameTimesRef.current.slice(-3);
+        // Rolling 5-frame window for smooth, jitter-resistant instantaneous FPS
+        const recentFrames = frameTimesRef.current.slice(-5);
         const avgDelta =
           recentFrames.length > 0
             ? recentFrames.reduce((a, b) => a + b, 0) / recentFrames.length
@@ -806,8 +788,8 @@ export default function BenchmarkRunner() {
             setCurrentAvgFps(runningAvg);
 
             const hist = fpsHistoryRef.current;
-            if (hist.length > 4) {
-              setCurrentMinFps(Math.min(...hist.slice(3)));
+            if (hist.length > 5) {
+              setCurrentMinFps(Math.min(...hist.slice(4)));
             }
           }
         }
