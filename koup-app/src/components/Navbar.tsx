@@ -1226,92 +1226,8 @@ export default function Navbar() {
                   </button>
                 </div>
 
-                {/* Smoked Cinema Quick Search Trigger */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerSound('click');
-                    setMobileMenuOpen(false);
-                    setMobileSearchOpen(true);
-                  }}
-                  className="mt-3.5 w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] active:bg-white/[0.10] border border-white/[0.08] text-left text-xs text-white/60 active:scale-[0.99] transition-all cursor-pointer"
-                >
-                  <span className="flex items-center gap-2.5">
-                    <Search className="w-4 h-4 text-white/70 shrink-0" />
-                    <span>İçerik veya oyuncu ara...</span>
-                  </span>
-                  <span className="text-[10px] font-mono text-white/60 px-2 py-0.5 rounded-lg bg-white/[0.08] border border-white/[0.12]">
-                    Ara
-                  </span>
-                </button>
-
-                {/* 1-Tap Quick Category Access Chips */}
-                <div className="grid grid-cols-2 gap-2 mt-3">
-                  <Link
-                    href="/kesfet?type=dizi"
-                    prefetch={true}
-                    onClick={() => {
-                      triggerSound('click');
-                      setMobileMenuOpen(false);
-                    }}
-                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] active:bg-white/[0.10] border border-white/[0.07] text-xs font-semibold text-white/80 hover:text-white transition-all group"
-                  >
-                    <span className="w-6 h-6 rounded-lg bg-amber-500/15 border border-amber-500/25 flex items-center justify-center shrink-0">
-                      <Tv className="w-3.5 h-3.5 text-amber-300" />
-                    </span>
-                    <span className="truncate">Diziler</span>
-                  </Link>
-                  <Link
-                    href="/kesfet?type=film"
-                    prefetch={true}
-                    onClick={() => {
-                      triggerSound('click');
-                      setMobileMenuOpen(false);
-                    }}
-                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] active:bg-white/[0.10] border border-white/[0.07] text-xs font-semibold text-white/80 hover:text-white transition-all group"
-                  >
-                    <span className="w-6 h-6 rounded-lg bg-rose-500/15 border border-rose-500/25 flex items-center justify-center shrink-0">
-                      <Film className="w-3.5 h-3.5 text-rose-300" />
-                    </span>
-                    <span className="truncate">Filmler</span>
-                  </Link>
-                  <Link
-                    href="/kesfet?type=anime"
-                    prefetch={true}
-                    onClick={() => {
-                      triggerSound('click');
-                      setMobileMenuOpen(false);
-                    }}
-                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] active:bg-white/[0.10] border border-white/[0.07] text-xs font-semibold text-white/80 hover:text-white transition-all group"
-                  >
-                    <span className="w-6 h-6 rounded-lg bg-purple-500/15 border border-purple-500/25 flex items-center justify-center shrink-0">
-                      <Sparkles className="w-3.5 h-3.5 text-purple-300" />
-                    </span>
-                    <span className="truncate">Animeler</span>
-                  </Link>
-                  <Link
-                    href="/#top-10"
-                    prefetch={true}
-                    onClick={() => {
-                      triggerSound('click');
-                      setMobileMenuOpen(false);
-                    }}
-                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] active:bg-white/[0.10] border border-white/[0.07] text-xs font-semibold text-white/80 hover:text-white transition-all group"
-                  >
-                    <span className="w-6 h-6 rounded-lg bg-amber-400/15 border border-amber-400/25 flex items-center justify-center shrink-0">
-                      <Trophy className="w-3.5 h-3.5 text-amber-300" />
-                    </span>
-                    <span className="truncate">Top 10</span>
-                  </Link>
-                </div>
-
-                {/* Section Title */}
-                <div className="text-[10px] font-bold uppercase tracking-wider text-white/40 mt-4 mb-1 px-1">
-                  Gezinme
-                </div>
-
                 {/* Primary Navigation Links */}
-                <div className="space-y-1 overflow-y-auto flex-1 no-scrollbar pr-0.5">
+                <div className="pt-3 space-y-1.5 overflow-y-auto flex-1 no-scrollbar pr-0.5">
                   {NAV_LINKS.map((item) => {
                     const Icon = item.icon;
                     const active = isNavActive(item.href);
@@ -1353,35 +1269,8 @@ export default function Navbar() {
                 </div>
               </div>
 
-              {/* Drawer Bottom Profile Dock & Sound Toggle */}
-              <div className="relative z-10 pt-3 border-t border-white/[0.08] space-y-2">
-                {/* UI Sound FX Toggle */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    toggleSound();
-                    triggerSound('click');
-                  }}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] text-xs text-white/70 hover:text-white transition-all cursor-pointer"
-                >
-                  <span className="flex items-center gap-2">
-                    {soundEnabled ? (
-                      <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
-                    ) : (
-                      <VolumeX className="w-3.5 h-3.5 text-white/40" />
-                    )}
-                    <span>Arayüz Sesleri</span>
-                  </span>
-                  <span
-                    className={`text-[10px] font-mono px-2 py-0.5 rounded-md ${
-                      soundEnabled
-                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/25'
-                        : 'bg-white/[0.05] text-white/40 border border-white/[0.08]'
-                    }`}
-                  >
-                    {soundEnabled ? 'Açık' : 'Kapalı'}
-                  </span>
-                </button>
+              {/* Drawer Bottom Profile Dock */}
+              <div className="relative z-10 pt-3 border-t border-white/[0.08]">
 
                 {user ? (
                   <div className="p-2.5 rounded-2xl bg-white/[0.04] border border-white/[0.08] space-y-2">
