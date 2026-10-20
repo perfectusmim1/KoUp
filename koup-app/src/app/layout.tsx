@@ -5,6 +5,7 @@ import { KoUpProvider } from '@/context/KoUpContext';
 import Navbar from '@/components/Navbar';
 import CookieConsentBanner from '@/components/CookieConsentBanner';
 import ScrollRestoration from '@/components/ScrollRestoration';
+import BenchmarkRunner from '@/components/BenchmarkRunner';
 import Link from 'next/link';
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -80,6 +81,7 @@ export default function RootLayout({
           <main className="flex-1 w-full max-w-full overflow-x-hidden">{children}</main>
           <Footer />
           <CookieConsentBanner />
+          <BenchmarkRunner />
         </KoUpProvider>
       </body>
     </html>

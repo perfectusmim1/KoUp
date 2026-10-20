@@ -14,7 +14,7 @@ import {
   FolderHeart,
   Sparkles,
 } from 'lucide-react';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 import { supabase, MediaItem, getProxiedImageUrl } from '@/lib/supabase';
 
 interface AddToListModalProps {
@@ -39,7 +39,10 @@ export default function AddToListModal({
   onClose,
   media,
 }: AddToListModalProps) {
-  const { user, pushNotification, triggerSound, openAuthModal } = useKoUp();
+  const user = useKoUpSelector((s) => s.user);
+  const pushNotification = useKoUpSelector((s) => s.pushNotification);
+  const triggerSound = useKoUpSelector((s) => s.triggerSound);
+  const openAuthModal = useKoUpSelector((s) => s.openAuthModal);
   const [mounted, setMounted] = useState(false);
   const [lists, setLists] = useState<CustomListRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -247,7 +250,7 @@ export default function AddToListModal({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             onClick={onClose}
-            className="fixed inset-0 bg-black/80 backdrop-blur-md cursor-pointer"
+            className="fixed inset-0 bg-black/80 cursor-pointer"
           />
 
           {/* Modal Window */}
@@ -256,7 +259,7 @@ export default function AddToListModal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.94, y: 16 }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="relative z-10 w-full max-w-md rounded-3xl bg-[#121216]/95 border border-white/10 p-6 sm:p-7 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.2)] backdrop-blur-2xl text-white"
+            className="relative z-10 w-full max-w-md rounded-3xl bg-[#121216]/95 border border-white/10 p-6 sm:p-7 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.2)] backdrop-blur-sm text-white"
           >
           {/* Close Button */}
           <button
@@ -274,6 +277,8 @@ export default function AddToListModal({
               <img
                 src={posterSrc}
                 alt={media.title}
+                loading="lazy"
+                decoding="async"
                 className="w-full h-full object-cover"
               />
             </div>
@@ -313,7 +318,7 @@ export default function AddToListModal({
                     type="button"
                     onClick={() => handleToggle(l)}
                     disabled={isThisToggling}
-                    className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all text-left cursor-pointer group ${
+                    className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-colors text-left cursor-pointer group ${
                       isAdded
                         ? 'bg-sky-500/15 border-sky-400/40 text-white shadow-[0_0_15px_rgba(41,151,255,0.15)]'
                         : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/[0.07] hover:border-white/20 text-white/90'
@@ -321,7 +326,7 @@ export default function AddToListModal({
                   >
                     <div className="flex items-center gap-3 min-w-0 pr-3">
                       <div
-                        className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border transition-all ${
+                        className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border transition-colors ${
                           isAdded
                             ? 'bg-sky-500 text-white border-sky-400 shadow-[0_0_10px_rgba(41,151,255,0.5)]'
                             : 'bg-white/5 text-white/50 border-white/10 group-hover:border-white/25'
@@ -356,7 +361,7 @@ export default function AddToListModal({
                     </div>
 
                     <div
-                      className={`px-3 py-1 rounded-full text-xs font-semibold shrink-0 transition-all ${
+                      className={`px-3 py-1 rounded-full text-xs font-semibold shrink-0 transition-colors ${
                         isAdded
                           ? 'bg-sky-400 text-black'
                           : 'bg-white/5 text-white/60 group-hover:bg-white/10 group-hover:text-white border border-white/10'
@@ -379,7 +384,7 @@ export default function AddToListModal({
                   setShowCreateForm(true);
                   triggerSound('click');
                 }}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl apple-glass-pill hover:bg-white/15 text-xs font-bold text-white border border-white/15 transition-all cursor-pointer shadow-sm"
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl apple-glass-pill hover:bg-white/15 text-xs font-bold text-white border border-white/15 transition-colors cursor-pointer shadow-sm"
               >
                 <Plus className="w-4 h-4 text-sky-400" />
                 <span>Yeni Liste Oluştur</span>
@@ -466,7 +471,7 @@ export default function AddToListModal({
                   <button
                     type="submit"
                     disabled={isCreating || !newTitle.trim()}
-                    className="flex-1 py-2 px-4 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white font-bold text-xs transition-all shadow-[0_0_18px_rgba(41,151,255,0.4)] disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5"
+                    className="flex-1 py-2 px-4 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white font-bold text-xs transition-colors shadow-[0_0_18px_rgba(41,151,255,0.4)] disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5"
                   >
                     {isCreating ? (
                       <>

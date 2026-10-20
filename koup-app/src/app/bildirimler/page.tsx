@@ -14,10 +14,9 @@ import {
   RotateCcw,
   ChevronRight,
   ArrowRight,
-  AlertTriangle,
   Megaphone,
 } from 'lucide-react';
-import { useKoUp, ToastNotification } from '@/context/KoUpContext';
+import { useKoUpSelector, ToastNotification } from '@/context/KoUpContext';
 import { getProxiedImageUrl } from '@/lib/supabase';
 
 type CategoryFilter = 'all' | 'episode' | 'actor' | 'reply' | 'system';
@@ -142,17 +141,15 @@ function formatNotificationDate(dateStr?: string): string {
 
 export default function NotificationsPage() {
   const router = useRouter();
-  const {
-    user,
-    setIsAuthModalOpen,
-    notifications,
-    markNotificationRead,
-    markNotificationUnread,
-    markAllNotificationsRead,
-    deleteNotification,
-    clearAllNotifications,
-    confirmDialog,
-  } = useKoUp();
+  const user = useKoUpSelector((s) => s.user);
+  const setIsAuthModalOpen = useKoUpSelector((s) => s.setIsAuthModalOpen);
+  const notifications = useKoUpSelector((s) => s.notifications);
+  const markNotificationRead = useKoUpSelector((s) => s.markNotificationRead);
+  const markNotificationUnread = useKoUpSelector((s) => s.markNotificationUnread);
+  const markAllNotificationsRead = useKoUpSelector((s) => s.markAllNotificationsRead);
+  const deleteNotification = useKoUpSelector((s) => s.deleteNotification);
+  const clearAllNotifications = useKoUpSelector((s) => s.clearAllNotifications);
+  const confirmDialog = useKoUpSelector((s) => s.confirmDialog);
 
   const [selectedFilter, setSelectedFilter] = useState<CategoryFilter>('all');
   const [unreadOnly, setUnreadOnly] = useState<boolean>(false);
@@ -273,7 +270,7 @@ export default function NotificationsPage() {
 
         <div className="max-w-5xl mx-auto">
           <nav className="flex items-center gap-2 text-xs text-white/50 mb-6 font-medium">
-            <Link href="/" prefetch={true} className="hover:text-white transition-colors">
+            <Link href="/" className="hover:text-white transition-colors">
               Ana Sayfa
             </Link>
             <ChevronRight className="w-3.5 h-3.5 text-white/30" />
@@ -292,7 +289,7 @@ export default function NotificationsPage() {
             </p>
             <button
               onClick={() => setIsAuthModalOpen(true)}
-              className="px-6 py-3 rounded-2xl bg-white text-black text-sm font-bold hover:bg-white/90 active:scale-95 transition-all shadow-xl shadow-white/10 cursor-pointer"
+              className="px-6 py-3 rounded-2xl bg-white text-black text-sm font-bold hover:bg-white/90 active:scale-95 transition-colors shadow-xl shadow-white/10 cursor-pointer"
             >
               Giriş Yap
             </button>
@@ -313,7 +310,7 @@ export default function NotificationsPage() {
       <div className="max-w-5xl mx-auto">
         {/* Breadcrumb Navigation */}
         <nav className="flex items-center gap-2 text-xs text-white/50 mb-6 font-medium">
-          <Link href="/" prefetch={true} className="hover:text-white transition-colors">
+          <Link href="/" className="hover:text-white transition-colors">
             Ana Sayfa
           </Link>
           <ChevronRight className="w-3.5 h-3.5 text-white/30" />
@@ -342,7 +339,7 @@ export default function NotificationsPage() {
             {unreadCount > 0 && (
               <button
                 onClick={() => markAllNotificationsRead()}
-                className="px-4 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer border border-white/10 shadow-lg active:scale-95"
+                className="px-4 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer border border-white/10 shadow-lg active:scale-95"
               >
                 <CheckCheck className="w-4 h-4 text-emerald-400" />
                 <span>Tümünü Okundu Say</span>
@@ -364,7 +361,7 @@ export default function NotificationsPage() {
                     clearAllNotifications();
                   }
                 }}
-                className="px-3.5 py-2.5 rounded-2xl bg-white/[0.04] hover:bg-red-500/20 hover:text-red-300 text-white/60 text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer border border-white/[0.06] hover:border-red-500/30 active:scale-95"
+                className="px-3.5 py-2.5 rounded-2xl bg-white/[0.04] hover:bg-red-500/20 hover:text-red-300 text-white/60 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer border border-white/[0.06] hover:border-red-500/30 active:scale-95"
                 aria-label="Tüm Bildirimleri Temizle"
               >
                 <Trash2 className="w-4 h-4" />
@@ -380,7 +377,7 @@ export default function NotificationsPage() {
           <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2 md:pb-0">
             <button
               onClick={() => setSelectedFilter('all')}
-              className={`px-4 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-2 ${
+              className={`px-4 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
                 selectedFilter === 'all'
                   ? 'bg-white text-black shadow-lg shadow-white/10'
                   : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
@@ -398,7 +395,7 @@ export default function NotificationsPage() {
 
             <button
               onClick={() => setSelectedFilter('episode')}
-              className={`px-4 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-2 ${
+              className={`px-4 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
                 selectedFilter === 'episode'
                   ? 'bg-amber-400 text-black shadow-lg shadow-amber-400/20'
                   : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
@@ -421,7 +418,7 @@ export default function NotificationsPage() {
 
             <button
               onClick={() => setSelectedFilter('actor')}
-              className={`px-4 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-2 ${
+              className={`px-4 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
                 selectedFilter === 'actor'
                   ? 'bg-emerald-500 text-black glow-emerald'
                   : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
@@ -444,7 +441,7 @@ export default function NotificationsPage() {
 
             <button
               onClick={() => setSelectedFilter('reply')}
-              className={`px-4 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-2 ${
+              className={`px-4 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
                 selectedFilter === 'reply'
                   ? 'bg-sky-400 text-black glow-sky'
                   : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
@@ -467,7 +464,7 @@ export default function NotificationsPage() {
 
             <button
               onClick={() => setSelectedFilter('system')}
-              className={`px-4 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-2 ${
+              className={`px-4 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
                 selectedFilter === 'system'
                   ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/25'
                   : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
@@ -492,7 +489,7 @@ export default function NotificationsPage() {
           {/* Unread Only Toggle */}
           <button
             onClick={() => setUnreadOnly((prev) => !prev)}
-            className={`px-3.5 py-2 rounded-2xl text-xs font-medium transition-all cursor-pointer flex items-center gap-2 self-start md:self-auto shrink-0 border ${
+            className={`px-3.5 py-2 rounded-2xl text-xs font-medium transition-colors cursor-pointer flex items-center gap-2 self-start md:self-auto shrink-0 border ${
               unreadOnly
                 ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 shadow-[0_0_15px_rgba(244,63,94,0.2)]'
                 : 'bg-white/[0.04] text-white/60 hover:text-white border-white/10'
@@ -544,10 +541,10 @@ export default function NotificationsPage() {
               return (
                 <div
                   key={n.id}
-                  className={`group relative rounded-3xl border transition-all duration-300 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer ${
+                  className={`group relative rounded-3xl border transition-colors duration-150 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer [content-visibility:auto] [contain-intrinsic-size:auto_90px] ${
                     isUnread
-                      ? 'bg-[#121217]/90 hover:bg-[#16161e]/95 border-white/20 shadow-[0_16px_40px_rgba(0,0,0,0.7),0_0_24px_rgba(255,255,255,0.03)] backdrop-blur-2xl'
-                      : 'bg-[#0c0c0f]/75 hover:bg-[#111116]/85 border-white/[0.08] hover:border-white/15 opacity-85 hover:opacity-100 backdrop-blur-xl'
+                      ? 'bg-[#14141a] hover:bg-[#181822] border-white/20 shadow-[0_12px_32px_rgba(0,0,0,0.6)]'
+                      : 'bg-[#0e0e12] hover:bg-[#131318] border-white/[0.08] hover:border-white/15 opacity-85 hover:opacity-100'
                   }`}
                   onClick={() => {
                     if (isUnread) markNotificationRead(n.id);
@@ -572,7 +569,7 @@ export default function NotificationsPage() {
                         {/* Unread Accent Pill */}
                         {isUnread && (
                           <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-[10px] font-bold text-rose-300">
-                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,1)] animate-ping" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,1)] motion-safe:animate-ping" />
                             YENİ
                           </span>
                         )}
@@ -610,7 +607,7 @@ export default function NotificationsPage() {
                       onClick={() =>
                         isUnread ? markNotificationRead(n.id) : markNotificationUnread(n.id)
                       }
-                      className={`p-2.5 rounded-xl border text-xs font-medium transition-all cursor-pointer ${
+                      className={`p-2.5 rounded-xl border text-xs font-medium transition-colors cursor-pointer ${
                         isUnread
                           ? 'bg-white/10 hover:bg-emerald-500/20 text-white/70 hover:text-emerald-300 border-white/10 hover:border-emerald-500/30'
                           : 'bg-white/[0.04] hover:bg-white/10 text-white/40 hover:text-white border-white/[0.05]'
@@ -623,7 +620,7 @@ export default function NotificationsPage() {
                     {/* Delete Item */}
                     <button
                       onClick={() => deleteNotification(n.id)}
-                      className="p-2.5 rounded-xl bg-white/[0.04] hover:bg-red-500/20 text-white/40 hover:text-red-300 border border-white/[0.05] hover:border-red-500/30 text-xs font-medium transition-all cursor-pointer"
+                      className="p-2.5 rounded-xl bg-white/[0.04] hover:bg-red-500/20 text-white/40 hover:text-red-300 border border-white/[0.05] hover:border-red-500/30 text-xs font-medium transition-colors cursor-pointer"
                       aria-label="Bildirimi Sil"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -633,12 +630,11 @@ export default function NotificationsPage() {
                     {link && (
                       <Link
                         href={link}
-                        prefetch={true}
                         onClick={(e) => {
                           e.stopPropagation();
                           if (isUnread) markNotificationRead(n.id);
                         }}
-                        className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-white/90 text-black text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-lg group/link"
+                        className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-white/90 text-black text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-lg group/link"
                       >
                         <span className="hidden sm:inline">İncele</span>
                         <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover/link:translate-x-0.5" />

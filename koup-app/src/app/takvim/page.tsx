@@ -5,14 +5,8 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Calendar,
-  Clock,
   Bell,
   Play,
-  Star,
-  Tv,
-  Film,
-  Sparkles,
-  ExternalLink,
   ShieldCheck,
 } from 'lucide-react';
 import {
@@ -22,7 +16,7 @@ import {
   formatContentTypeTR,
   cleanMediaTitle,
 } from '@/lib/supabase';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 import { cachedQuery, getCache } from '@/lib/cache';
 
 interface CalendarScheduleItem {
@@ -105,8 +99,9 @@ function getScheduleDayLabel(item: CalendarScheduleItem): string {
 }
 
 export default function CalendarPage() {
-  const { followedMediaIds, toggleMediaFollow, triggerSound, pushNotification } =
-    useKoUp();
+  const followedMediaIds = useKoUpSelector((s) => s.followedMediaIds);
+  const toggleMediaFollow = useKoUpSelector((s) => s.toggleMediaFollow);
+  const triggerSound = useKoUpSelector((s) => s.triggerSound);
 
   const todayDay = ((new Date().getDay() + 6) % 7) + 1;
   const initialData = getCache<{ success: boolean; schedules: CalendarScheduleItem[]; enabledScrapers: string[] }>(
@@ -290,7 +285,7 @@ export default function CalendarPage() {
               return (
                 <div
                   key={`${item.source_site}-${item.id}`}
-                  className="group rounded-2xl apple-glass cv-card overflow-hidden border border-white/10 hover:border-white/30 transition-all flex flex-col"
+                  className="group rounded-2xl apple-glass cv-card overflow-hidden border border-white/10 hover:border-white/30 transition-[border-color] duration-200 flex flex-col [content-visibility:auto] [contain-intrinsic-size:auto_380px]"
                 >
                   {/* Poster Thumbnail */}
                   <Link
@@ -336,7 +331,7 @@ export default function CalendarPage() {
                     </span>
 
                     {/* Day Badge - Replaced Episode Count as Requested */}
-                    <span className="absolute bottom-2.5 left-2.5 right-2.5 text-[11px] font-mono font-bold px-2 py-1 rounded-xl bg-black/90 backdrop-blur-md text-white border border-white/25 truncate text-center shadow-md flex items-center justify-center gap-1.5">
+                    <span className="absolute bottom-2.5 left-2.5 right-2.5 text-[11px] font-mono font-bold px-2 py-1 rounded-xl bg-black/90 text-white border border-white/25 truncate text-center shadow-md flex items-center justify-center gap-1.5">
                       <Calendar className="w-3 h-3 text-sky-400 shrink-0" />
                       <span>{dayLabel}</span>
                     </span>
@@ -363,7 +358,7 @@ export default function CalendarPage() {
                     <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between gap-1.5">
                       <Link
                         href={`/seri/${targetSlug}`}
-                        className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl bg-white/10 hover:bg-white text-white hover:text-black text-xs font-mono font-semibold transition-all"
+                        className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl bg-white/10 hover:bg-white text-white hover:text-black text-xs font-mono font-semibold transition-colors"
                       >
                         <Play className="w-3 h-3 fill-current" />
                         <span>İzle</span>
@@ -375,7 +370,7 @@ export default function CalendarPage() {
                             if (item.media) toggleMediaFollow(item.media);
                           }}
                           aria-label={isFollowed ? 'Takibi Bırak' : 'Yeni Bölüm Bildirimi Aç'}
-                          className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all cursor-pointer border ${
+                          className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors cursor-pointer border ${
                             isFollowed
                               ? 'bg-white text-black border-white'
                               : 'bg-white/[0.04] border-white/10 text-white/60 hover:text-white'

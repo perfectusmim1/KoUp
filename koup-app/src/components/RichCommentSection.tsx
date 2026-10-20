@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import { supabase, getProxiedImageUrl } from '@/lib/supabase';
 import { invalidateCache } from '@/lib/cache';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 
 interface CommentProfile {
   id: string;
@@ -288,16 +288,14 @@ export default function RichCommentSection({
   magazineId,
   targetTitle,
 }: RichCommentSectionProps) {
-  const {
-    user,
-    setIsAuthModalOpen,
-    openAuthModal,
-    pushNotification,
-    isSoftBanned,
-    isUserBlocked,
-    isBlockedBy,
-    confirmDialog,
-  } = useKoUp();
+  const user = useKoUpSelector((s) => s.user);
+  const setIsAuthModalOpen = useKoUpSelector((s) => s.setIsAuthModalOpen);
+  const openAuthModal = useKoUpSelector((s) => s.openAuthModal);
+  const pushNotification = useKoUpSelector((s) => s.pushNotification);
+  const isSoftBanned = useKoUpSelector((s) => s.isSoftBanned);
+  const isUserBlocked = useKoUpSelector((s) => s.isUserBlocked);
+  const isBlockedBy = useKoUpSelector((s) => s.isBlockedBy);
+  const confirmDialog = useKoUpSelector((s) => s.confirmDialog);
 
   const [comments, setComments] = useState<CommentRow[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
@@ -1583,7 +1581,7 @@ export default function RichCommentSection({
       <div
         key={c.id}
         id={`comment-${c.id}`}
-        className={`rounded-2xl border transition-all max-w-full overflow-hidden break-words ${
+        className={`rounded-2xl border transition-[border-color,background-color] max-w-full overflow-hidden break-words ${
           isReply
             ? 'p-3 sm:p-4 bg-white/[0.02] border-white/[0.06] hover:border-white/[0.12]'
             : 'p-3.5 sm:p-5 bg-white/[0.03] border-white/[0.08] hover:border-white/[0.14]'
@@ -1615,13 +1613,13 @@ export default function RichCommentSection({
                 decoding="async"
                 className={`${
                   isReply ? 'w-8 h-8' : 'w-10 h-10'
-                } rounded-full object-cover border border-white/15 group-hover:border-sky-400 transition-all shadow-md`}
+                } rounded-full object-cover border border-white/15 group-hover:border-sky-400 transition-colors shadow-md`}
               />
             ) : (
               <div
                 className={`${
                   isReply ? 'w-8 h-8' : 'w-10 h-10'
-                } rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-white/75 group-hover:border-sky-400 transition-all shadow-md`}
+                } rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-white/75 group-hover:border-sky-400 transition-colors shadow-md`}
               >
                 <User className={isReply ? 'w-4 h-4' : 'w-5 h-5'} />
               </div>
@@ -1660,7 +1658,7 @@ export default function RichCommentSection({
                 <button
                   type="button"
                   onClick={() => handleSeekScene(c.timestamp_sec!)}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-500/20 hover:bg-sky-500/35 text-sky-300 border border-sky-400/35 font-mono text-[10px] cursor-pointer transition-all hover:border-sky-400/60"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-500/20 hover:bg-sky-500/35 text-sky-300 border border-sky-400/35 font-mono text-[10px] cursor-pointer transition-colors hover:border-sky-400/60"
                   aria-label="Tıklayarak doğrudan bu sahneye atla"
                 >
                   <Clock className="w-2.5 h-2.5 text-sky-400" />
@@ -1706,7 +1704,7 @@ export default function RichCommentSection({
                     onClick={() =>
                       setRevealedSpoilers((prev) => ({ ...prev, [c.id]: true }))
                     }
-                    className="w-full py-2.5 px-4 rounded-xl bg-rose-950/30 border border-rose-400/30 text-xs text-rose-200 flex items-center justify-center gap-2 cursor-pointer hover:bg-rose-950/50 transition-all"
+                    className="w-full py-2.5 px-4 rounded-xl bg-rose-950/30 border border-rose-400/30 text-xs text-rose-200 flex items-center justify-center gap-2 cursor-pointer hover:bg-rose-950/50 transition-colors"
                   >
                     <EyeOff className="w-4 h-4" />
                     <span>Bu yorum Spoiler içeriyor · Görmek için tıkla</span>
@@ -1864,7 +1862,7 @@ export default function RichCommentSection({
 
                 {/* Right: Textarea container, spoiler checkbox, Send button */}
                 <div className="flex-1 space-y-2.5">
-                  <div className="bg-[#0b0b0e]/90 backdrop-blur-xl border border-white/12 hover:border-white/25 rounded-2xl p-3.5 focus-within:border-sky-400/60 focus-within:ring-2 focus-within:ring-sky-400/20 focus-within:shadow-[0_0_16px_rgba(56,189,248,0.20)] transition-all">
+                  <div className="bg-[#0b0b0e] border border-white/12 hover:border-white/25 rounded-2xl p-3.5 focus-within:border-sky-400/60 focus-within:ring-2 focus-within:ring-sky-400/20 focus-within:shadow-[0_0_16px_rgba(56,189,248,0.20)] transition-[border-color,box-shadow]">
                     <textarea
                       rows={2}
                       value={inlineReplyText}
@@ -1892,7 +1890,7 @@ export default function RichCommentSection({
                       type="button"
                       disabled={isSubmittingInline || !inlineReplyText.trim()}
                       onClick={() => handleSubmitInlineReply(c)}
-                      className={`inline-flex items-center gap-2 px-5 py-2 rounded-2xl text-xs font-bold transition-all shadow-md cursor-pointer ${
+                      className={`inline-flex items-center gap-2 px-5 py-2 rounded-2xl text-xs font-bold transition-colors shadow-md cursor-pointer ${
                         isSubmittingInline || !inlineReplyText.trim()
                           ? 'bg-white/10 text-white/40 cursor-not-allowed'
                           : 'bg-[#2997ff] hover:bg-sky-400 text-white glow-blue'
@@ -1960,7 +1958,7 @@ export default function RichCommentSection({
           <button
             type="button"
             onClick={() => openAuthModal('İşlem yapabilmek için lütfen giriş yapın.')}
-            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white font-bold text-xs shadow-[0_0_20px_rgba(41,151,255,0.4)] transition-all cursor-pointer"
+            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white font-bold text-xs shadow-[0_0_20px_rgba(41,151,255,0.4)] transition-[background-color,box-shadow] cursor-pointer"
           >
             <User className="w-3.5 h-3.5" />
             <span>Giriş Yap / Ücretsiz Kayıt Ol</span>
@@ -2139,7 +2137,7 @@ export default function RichCommentSection({
 
               <div
                 title="Sahne Dakikası (Örn: 14:20)"
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#121217] hover:bg-[#181820] border border-white/15 hover:border-white/25 focus-within:border-sky-400/60 focus-within:ring-2 focus-within:ring-sky-400/20 focus-within:shadow-[0_0_12px_rgba(56,189,248,0.25)] transition-all cursor-text group shrink-0"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#121217] hover:bg-[#181820] border border-white/15 hover:border-white/25 focus-within:border-sky-400/60 focus-within:ring-2 focus-within:ring-sky-400/20 focus-within:shadow-[0_0_12px_rgba(56,189,248,0.25)] transition-[border-color,box-shadow] cursor-text group shrink-0"
               >
                 <Clock className="w-3.5 h-3.5 text-sky-400 shrink-0 group-focus-within:scale-110 transition-transform" />
                 <input
@@ -2295,7 +2293,7 @@ export default function RichCommentSection({
             {/* Timestamp / Scene Duration Pill Input */}
             <div
               title="Sahne Dakikası (Örn: 14:20)"
-              className="flex items-center gap-1.5 ml-auto px-3 py-1.5 rounded-full bg-[#121217] hover:bg-[#181820] border border-white/15 hover:border-white/25 focus-within:border-sky-400/60 focus-within:ring-2 focus-within:ring-sky-400/20 focus-within:shadow-[0_0_12px_rgba(56,189,248,0.25)] transition-all cursor-text group"
+              className="flex items-center gap-1.5 ml-auto px-3 py-1.5 rounded-full bg-[#121217] hover:bg-[#181820] border border-white/15 hover:border-white/25 focus-within:border-sky-400/60 focus-within:ring-2 focus-within:ring-sky-400/20 focus-within:shadow-[0_0_12px_rgba(56,189,248,0.25)] transition-[border-color,box-shadow] cursor-text group"
             >
               <Clock className="w-3.5 h-3.5 text-sky-400 shrink-0 group-focus-within:scale-110 transition-transform" />
               <input
@@ -2311,7 +2309,7 @@ export default function RichCommentSection({
 
                     {/* GIF Picker Drawer with Dynamic Search */}
           {showGifPicker && (
-            <div className="space-y-3 p-3.5 rounded-2xl bg-[#0b0b0f]/95 border border-white/12 backdrop-blur-xl shadow-2xl">
+            <div className="space-y-3 p-3.5 rounded-2xl bg-[#0b0b0f]/98 border border-white/12 backdrop-blur-sm shadow-2xl">
               {/* Search Bar + Quick Category Pills */}
               <div className="flex flex-col gap-2.5">
                 <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full bg-[#121217] border border-white/12 hover:border-white/25 focus-within:border-sky-400/60 focus-within:ring-2 focus-within:ring-sky-400/20 transition-colors duration-120 shadow-xs">
@@ -2437,12 +2435,12 @@ export default function RichCommentSection({
               value={imageUrlInput}
               onChange={(e) => setImageUrlInput(e.target.value)}
               placeholder="https://... (Görsel URL'si yapıştırın — Cloudflare Proxy ile güvenle gösterilir)"
-              className="w-full px-4 py-2.5 rounded-full bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-all font-medium"
+              className="w-full px-4 py-2.5 rounded-full bg-[#0e0e12]/95 border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-[border-color,box-shadow] font-medium"
             />
           )}
 
           {/* Main Rich ContentEditable Editor */}
-          <div className="relative min-h-[110px] w-full rounded-2xl bg-[#0b0b0e]/90 backdrop-blur-xl border border-white/12 hover:border-white/25 focus-within:border-sky-400/60 focus-within:ring-2 focus-within:ring-sky-400/20 focus-within:shadow-[0_0_20px_rgba(56,189,248,0.20)] transition-all">
+          <div className="relative min-h-[110px] w-full rounded-2xl bg-[#0b0b0e] border border-white/12 hover:border-white/25 focus-within:border-sky-400/60 focus-within:ring-2 focus-within:ring-sky-400/20 focus-within:shadow-[0_0_20px_rgba(56,189,248,0.20)] transition-[border-color,box-shadow]">
             {!hasText && (
               <div
                 onClick={() => editorRef.current?.focus()}
@@ -2525,7 +2523,7 @@ export default function RichCommentSection({
             <button
               type="submit"
               disabled={isSubmitting || cooldownSec > 0}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition-all ${
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition-[background-color,box-shadow] ${
                 isSubmitting || cooldownSec > 0
                   ? 'bg-white/20 text-white/50 cursor-not-allowed'
                   : 'bg-[#2997ff] hover:bg-sky-400 text-white shadow-[0_0_20px_rgba(41,151,255,0.45)] hover:shadow-[0_0_28px_rgba(41,151,255,0.7)] cursor-pointer'
@@ -2558,7 +2556,7 @@ export default function RichCommentSection({
           rootComments.map((root) => {
             const replies = repliesByRoot[root.id] || [];
             return (
-              <div key={root.id} className="space-y-2.5">
+              <div key={root.id} className="space-y-2.5 [content-visibility:auto] [contain-intrinsic-size:auto_140px]">
                 {renderCommentCard(root, false)}
                 {replies.length > 0 && (
                   <div className="ml-4 sm:ml-10 pl-3 sm:pl-5 border-l-2 border-white/10 space-y-2.5 mt-2">
@@ -2577,7 +2575,7 @@ export default function RichCommentSection({
               type="button"
               disabled={isLoadingMore}
               onClick={() => loadComments(currentPage + 1)}
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-white/[0.08] hover:bg-white/[0.15] border border-white/15 text-xs font-semibold text-white transition-all cursor-pointer"
+              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-white/[0.08] hover:bg-white/[0.15] border border-white/15 text-xs font-semibold text-white transition-colors cursor-pointer"
             >
               <ChevronDown className={`w-3.5 h-3.5 ${isLoadingMore ? 'animate-spin' : ''}`} />
               <span>{isLoadingMore ? 'Yükleniyor...' : 'Daha Fazla Yorum Göster'}</span>
@@ -2588,7 +2586,7 @@ export default function RichCommentSection({
 
       {/* Custom Comment Report Modal (Replaces window.prompt) */}
       {reportingComment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 animate-in fade-in duration-200">
           <div className="relative w-full max-w-md bg-[#0e0e14] border border-white/15 rounded-3xl p-6 shadow-2xl space-y-4">
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-3 border-b border-white/10">
@@ -2599,7 +2597,7 @@ export default function RichCommentSection({
               <button
                 type="button"
                 onClick={() => setReportingComment(null)}
-                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 text-white/60 hover:text-white flex items-center justify-center transition-all cursor-pointer"
+                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 text-white/60 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2630,7 +2628,7 @@ export default function RichCommentSection({
                     key={cat}
                     type="button"
                     onClick={() => setReportCategory(cat)}
-                    className={`p-2.5 rounded-xl text-xs text-left transition-all cursor-pointer border ${
+                    className={`p-2.5 rounded-xl text-xs text-left transition-colors cursor-pointer border ${
                       reportCategory === cat
                         ? 'bg-rose-500/20 border-rose-400/50 text-rose-300 font-semibold shadow-sm'
                         : 'bg-white/[0.03] border-white/[0.08] text-white/70 hover:bg-white/[0.06] hover:text-white'
@@ -2669,7 +2667,7 @@ export default function RichCommentSection({
               <button
                 type="button"
                 onClick={() => setReportingComment(null)}
-                className="px-4 py-2 rounded-xl text-xs text-white/60 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+                className="px-4 py-2 rounded-xl text-xs text-white/60 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
               >
                 Vazgeç
               </button>
@@ -2677,7 +2675,7 @@ export default function RichCommentSection({
                 type="button"
                 disabled={isSubmittingReport || reportCooldownSec > 0}
                 onClick={handleSubmitReport}
-                className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs glow-rose transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs glow-rose transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Flag className="w-3.5 h-3.5" />
                 <span>

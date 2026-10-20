@@ -4,9 +4,9 @@ import React from 'react';
 import Link from 'next/link';
 import { ShieldCheck, Mail, Sparkles, ExternalLink, Scale, Heart } from 'lucide-react';
 
-export default function Footer() {
+function Footer() {
   return (
-    <footer className="mt-28 border-t border-white/[0.06] bg-[#070708] py-14 px-4 sm:px-6 lg:px-14 w-full max-w-full overflow-x-hidden text-xs text-white/55">
+    <footer className="mt-28 border-t border-white/[0.06] bg-[#070708] py-14 px-4 sm:px-6 lg:px-14 w-full max-w-full overflow-x-hidden text-xs text-white/55 [content-visibility:auto] [contain-intrinsic-size:auto_450px]">
       <div className="max-w-[1680px] mx-auto space-y-12">
         {/* Main Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 lg:gap-8">
@@ -16,6 +16,8 @@ export default function Footer() {
               <img
                 src="/logo-dark.png"
                 alt="KoUp Cinema"
+                loading="lazy"
+                decoding="async"
                 className="h-9 w-auto object-contain transition-transform duration-300 group-hover:scale-105"
               />
               <div>
@@ -155,3 +157,5 @@ export default function Footer() {
     </footer>
   );
 }
+
+export default React.memo(Footer);

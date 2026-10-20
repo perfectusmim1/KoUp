@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import {
   Library,
   Sparkles,
@@ -12,19 +12,12 @@ import {
   PauseCircle,
   XCircle,
   Search,
-  Filter,
   Compass,
   LogIn,
-  Tv,
-  Film,
-  Layers,
-  BarChart2,
-  ChevronRight,
-  ChevronDown,
   Trash2,
   X,
 } from 'lucide-react';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 import { supabase, MediaItem, cleanMediaTitle } from '@/lib/supabase';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 import CustomSelect, { SelectOption } from '@/components/CustomSelect';
@@ -62,15 +55,13 @@ type LibraryStatus = 'ALL' | 'watching' | 'completed' | 'plan_to_watch' | 'on_ho
 type ContentTypeFilter = 'ALL' | 'drama' | 'anime' | 'movie';
 
 export default function KutuphanePage() {
-  const {
-    user,
-    progressMap,
-    setIsAuthModalOpen,
-    triggerSound,
-    setLibraryStatus,
-    removeFromLibrary,
-    confirmDialog,
-  } = useKoUp();
+  const user = useKoUpSelector((s) => s.user);
+  const progressMap = useKoUpSelector((s) => s.progressMap);
+  const setIsAuthModalOpen = useKoUpSelector((s) => s.setIsAuthModalOpen);
+  const triggerSound = useKoUpSelector((s) => s.triggerSound);
+  const setLibraryStatus = useKoUpSelector((s) => s.setLibraryStatus);
+  const removeFromLibrary = useKoUpSelector((s) => s.removeFromLibrary);
+  const confirmDialog = useKoUpSelector((s) => s.confirmDialog);
 
   const [activeStatus, setActiveStatus] = useState<LibraryStatus>('ALL');
   const [activeType, setActiveType] = useState<ContentTypeFilter>('ALL');
@@ -79,6 +70,10 @@ export default function KutuphanePage() {
   const PAGE_SIZE = 36;
   const [libraryMedia, setLibraryMedia] = useState<MediaItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page);
+  }, []);
 
   // Load user's media items from progressMap
   useEffect(() => {
@@ -189,7 +184,7 @@ export default function KutuphanePage() {
   if (!user) {
     return (
       <div className="min-h-[80vh] flex items-center justify-center pt-28 pb-20 px-5">
-        <div className="max-w-md w-full rounded-3xl bg-[#0f0f12]/95 border border-white/10 p-8 sm:p-10 text-center space-y-6 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.15)] backdrop-blur-2xl">
+        <div className="max-w-md w-full rounded-3xl bg-[#0f0f12]/95 border border-white/10 p-8 sm:p-10 text-center space-y-6 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.15)] backdrop-blur-sm">
           <div className="w-20 h-20 mx-auto rounded-3xl bg-sky-500/10 border border-sky-400/30 flex items-center justify-center shadow-[0_0_30px_rgba(41,151,255,0.25)]">
             <Library className="w-10 h-10 text-sky-400" />
           </div>
@@ -208,7 +203,7 @@ export default function KutuphanePage() {
               triggerSound('click');
               setIsAuthModalOpen(true);
             }}
-            className="w-full py-3 px-6 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all cursor-pointer shadow-lg flex items-center justify-center gap-2"
+            className="w-full py-3 px-6 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-colors cursor-pointer shadow-lg flex items-center justify-center gap-2"
           >
             <LogIn className="w-4 h-4" />
             <span>Giriş Yap veya Kayıt Ol</span>
@@ -232,7 +227,7 @@ export default function KutuphanePage() {
         <Link
           href="/kesfet"
           onClick={() => triggerSound('click')}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-bold text-white transition-all self-start md:self-auto cursor-pointer"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-bold text-white transition-colors self-start md:self-auto cursor-pointer"
         >
           <Compass className="w-4 h-4 text-sky-400" />
           <span>Katalogdan Yapım Keşfet</span>
@@ -259,7 +254,7 @@ export default function KutuphanePage() {
                 setActiveStatus(item.id);
                 setCurrentPage(1);
               }}
-              className={`p-4 rounded-3xl border transition-all cursor-pointer text-left ${
+              className={`p-4 rounded-3xl border transition-colors cursor-pointer text-left ${
                 isSelected
                   ? 'bg-white/[0.1] border-sky-400/60 shadow-[0_0_20px_rgba(41,151,255,0.2)]'
                   : 'bg-[#0f0f12]/90 border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04]'
@@ -317,7 +312,7 @@ export default function KutuphanePage() {
         </div>
 
         {/* Search Input */}
-        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] min-w-[200px]">
+        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-colors duration-200 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] min-w-[200px]">
           <Search className="w-3.5 h-3.5 text-white/60 shrink-0" />
           <input
             type="text"
@@ -372,7 +367,7 @@ export default function KutuphanePage() {
           <Link
             href="/kesfet"
             onClick={() => triggerSound('click')}
-            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all cursor-pointer shadow-md"
+            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-colors cursor-pointer shadow-md"
           >
             <Compass className="w-4 h-4" />
             <span>Katalogdan Yapım Ekle</span>
@@ -389,7 +384,7 @@ export default function KutuphanePage() {
             return (
               <div
                 key={m.id}
-                className="group relative flex flex-col rounded-2xl bg-[#0f0f12] border border-white/10 hover:border-white/25 overflow-hidden transition-all shadow-lg hover:shadow-2xl"
+                className="group relative flex flex-col rounded-2xl bg-[#0f0f12] border border-white/10 hover:border-white/25 overflow-hidden transition-[border-color,box-shadow] duration-200 shadow-lg hover:shadow-2xl [content-visibility:auto] [contain-intrinsic-size:auto_400px]"
               >
                 {/* Poster & Direct Play */}
                 <div className="relative aspect-[2/3] w-full overflow-hidden bg-black/60">
@@ -435,7 +430,7 @@ export default function KutuphanePage() {
                           await removeFromLibrary(m.id);
                         }
                       }}
-                      className="p-2 rounded-xl bg-white/[0.05] hover:bg-rose-500/20 text-white/40 hover:text-rose-300 border border-white/10 hover:border-rose-400/30 transition-all cursor-pointer shrink-0"
+                      className="p-2 rounded-xl bg-white/[0.05] hover:bg-rose-500/20 text-white/40 hover:text-rose-300 border border-white/10 hover:border-rose-400/30 transition-colors cursor-pointer shrink-0"
                       aria-label="Kütüphaneden Kaldır"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -464,7 +459,7 @@ export default function KutuphanePage() {
           currentPage={currentPage}
           totalCount={filteredMedia.length}
           pageSize={PAGE_SIZE}
-          onPageChange={setCurrentPage}
+          onPageChange={handlePageChange}
           itemLabel="yapımdan"
           scrollToOffset={300}
         />

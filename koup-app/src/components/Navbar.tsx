@@ -42,7 +42,7 @@ import {
   formatContentTypeTR,
   cleanMediaTitle,
 } from '@/lib/supabase';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 import AuthModal from '@/components/AuthModal';
 import { cachedQuery, registerMediaItems } from '@/lib/cache';
 import { normalizeSearchQuery } from '@/lib/search';
@@ -72,20 +72,18 @@ function getNavTypeBadgeClass(contentType?: string, countryCode?: string): strin
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const {
-    user,
-    profile,
-    notifications,
-    unreadCount,
-    markNotificationsRead,
-    markAllNotificationsRead,
-    markNotificationRead,
-    triggerSound,
-    setIsAuthModalOpen,
-    logout,
-    navbarBehavior,
-    floatingNavbarEnabled,
-  } = useKoUp();
+  const user = useKoUpSelector((s) => s.user);
+  const profile = useKoUpSelector((s) => s.profile);
+  const notifications = useKoUpSelector((s) => s.notifications);
+  const unreadCount = useKoUpSelector((s) => s.unreadCount);
+  const markNotificationsRead = useKoUpSelector((s) => s.markNotificationsRead);
+  const markAllNotificationsRead = useKoUpSelector((s) => s.markAllNotificationsRead);
+  const markNotificationRead = useKoUpSelector((s) => s.markNotificationRead);
+  const triggerSound = useKoUpSelector((s) => s.triggerSound);
+  const setIsAuthModalOpen = useKoUpSelector((s) => s.setIsAuthModalOpen);
+  const logout = useKoUpSelector((s) => s.logout);
+  const navbarBehavior = useKoUpSelector((s) => s.navbarBehavior);
+  const floatingNavbarEnabled = useKoUpSelector((s) => s.floatingNavbarEnabled);
 
   const dedupedNotifications = React.useMemo(() => {
     const seenIds = new Set<string>();
@@ -127,10 +125,16 @@ export default function Navbar() {
   const notifContainerRef = useRef<HTMLDivElement>(null);
   const profileContainerRef = useRef<HTMLDivElement>(null);
 
-  // Scroll listener for dynamic floating glass island navbar
+  const isScrolledRef = useRef(false);
+
+  // Scroll listener for dynamic floating glass island navbar (throttled to avoid layout thrashing)
   useEffect(() => {
     const handleScroll = () => {
-      setIsScrolled(window.scrollY > 20);
+      const scrolled = window.scrollY > 20;
+      if (scrolled !== isScrolledRef.current) {
+        isScrolledRef.current = scrolled;
+        setIsScrolled(scrolled);
+      }
     };
     handleScroll();
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -312,11 +316,11 @@ export default function Navbar() {
           className={`pointer-events-auto flex items-center justify-between transition-all duration-300 ease-out will-change-[width,transform,background-color,border-radius] ${
             navbarBehavior === 'floating'
               ? isScrolled
-                ? 'mt-2 sm:mt-3.5 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-full bg-[#08080a]/92 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.9),0_0_30px_-5px_rgba(41,151,255,0.08)] py-2 sm:py-2.5 px-4 sm:px-6'
+                ? 'mt-2 sm:mt-3.5 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-full bg-[#08080a]/96 backdrop-blur-md shadow-[0_20px_50px_rgba(0,0,0,0.9),0_0_30px_-5px_rgba(41,151,255,0.08)] py-2 sm:py-2.5 px-4 sm:px-6'
                 : 'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
               : navbarBehavior === 'sticky'
               ? isScrolled
-                ? 'mt-0 w-full max-w-full rounded-none bg-[#08080a]/95 backdrop-blur-2xl border-b border-white/10 shadow-[0_12px_32px_rgba(0,0,0,0.8)] py-3 sm:py-4 px-4 sm:px-8 lg:px-14'
+                ? 'mt-0 w-full max-w-full rounded-none bg-[#08080a]/96 backdrop-blur-md border-b border-white/10 shadow-[0_12px_32px_rgba(0,0,0,0.8)] py-3 sm:py-4 px-4 sm:px-8 lg:px-14'
                 : 'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
               : /* static: sitenin üstünde kalır, sayfa kayınca bizle gelmez */
                 'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
@@ -460,7 +464,7 @@ export default function Navbar() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 6, scale: 0.97 }}
                 transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="absolute right-0 mt-3 w-[calc(100vw-2.5rem)] sm:w-[440px] max-w-[440px] rounded-3xl bg-[#0f0f12]/95 backdrop-blur-2xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.12)] border border-white/15 z-50"
+                className="absolute right-0 mt-3 w-[calc(100vw-2.5rem)] sm:w-[440px] max-w-[440px] rounded-3xl bg-[#0f0f12]/98 backdrop-blur-md p-4 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.12)] border border-white/15 z-50"
               >
                 <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-white/10">
                   <span className="text-[11px] font-bold uppercase tracking-widest text-white/50">
@@ -630,7 +634,7 @@ export default function Navbar() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 6, scale: 0.96 }}
                 transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="fixed left-3 right-3 top-20 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-3 sm:w-[410px] sm:max-w-[410px] rounded-3xl bg-[#0f0f12]/95 backdrop-blur-2xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.12)] border border-white/15 z-50 flex flex-col gap-3"
+                className="fixed left-3 right-3 top-20 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-3 sm:w-[410px] sm:max-w-[410px] rounded-3xl bg-[#0f0f12]/98 backdrop-blur-md p-4 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.12)] border border-white/15 z-50 flex flex-col gap-3"
               >
                 {/* Header */}
                 <div className="flex items-center justify-between pb-2.5 border-b border-white/10">
@@ -844,7 +848,7 @@ export default function Navbar() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 6, scale: 0.96 }}
                   transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                  className="fixed right-3 top-20 sm:absolute sm:right-0 sm:top-full sm:mt-3 w-64 rounded-3xl bg-[#0f0f12]/95 backdrop-blur-2xl p-3 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.15)] border border-white/15 z-50 flex flex-col gap-1"
+                  className="fixed right-3 top-20 sm:absolute sm:right-0 sm:top-full sm:mt-3 w-64 rounded-3xl bg-[#0f0f12]/98 backdrop-blur-md p-3 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.15)] border border-white/15 z-50 flex flex-col gap-1"
                 >
                   {/* User Header */}
                   <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/[0.06] flex items-center gap-3 mb-1">
@@ -1191,7 +1195,7 @@ export default function Navbar() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="pointer-events-auto md:hidden fixed inset-0 z-50 bg-[#0a0a0c]/98 backdrop-blur-3xl p-4 flex flex-col"
+            className="pointer-events-auto md:hidden fixed inset-0 z-50 bg-[#0a0a0c]/98 p-4 flex flex-col"
           >
             {/* Top Search Input Bar */}
             <div className="flex items-center gap-2.5 pb-3 border-b border-white/10">

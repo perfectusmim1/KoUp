@@ -56,7 +56,7 @@ export default function ConfirmModal({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-md"
+            className="fixed inset-0 bg-black/80"
             onClick={() => {
               if (!isLoading) onClose();
             }}
@@ -68,7 +68,7 @@ export default function ConfirmModal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.94, y: 8 }}
             transition={{ type: 'spring', damping: 26, stiffness: 320 }}
-            className="relative w-full max-w-sm sm:max-w-md rounded-3xl bg-[#111116]/95 border border-white/15 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.9),0_0_50px_rgba(244,63,94,0.12)] backdrop-blur-2xl text-center flex flex-col items-center z-10"
+            className="relative w-full max-w-sm sm:max-w-md rounded-3xl bg-[#111116]/95 border border-white/15 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.9),0_0_50px_rgba(244,63,94,0.12)] backdrop-blur-sm text-center flex flex-col items-center z-10"
             onClick={(e) => e.stopPropagation()}
             role="alertdialog"
             aria-modal="true"
@@ -125,7 +125,7 @@ export default function ConfirmModal({
                 type="button"
                 disabled={isLoading}
                 onClick={onClose}
-                className="flex-1 py-3 px-4 rounded-xl bg-white/[0.07] hover:bg-white/12 text-white/80 hover:text-white text-xs sm:text-sm font-semibold transition-all border border-white/10 cursor-pointer disabled:opacity-50"
+                className="flex-1 py-3 px-4 rounded-xl bg-white/[0.07] hover:bg-white/12 text-white/80 hover:text-white text-xs sm:text-sm font-semibold transition-colors border border-white/10 cursor-pointer disabled:opacity-50"
               >
                 {cancelText}
               </button>
@@ -134,7 +134,7 @@ export default function ConfirmModal({
                 type="button"
                 disabled={isLoading}
                 onClick={onConfirm}
-                className={`flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 ${
+                className={`flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-bold transition-colors cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 ${
                   isDestructive
                     ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-[0_0_24px_rgba(244,63,94,0.4)] hover:shadow-[0_0_30px_rgba(244,63,94,0.6)]'
                     : 'bg-[#2997ff] hover:bg-sky-400 text-white shadow-[0_0_24px_rgba(41,151,255,0.4)]'

@@ -97,20 +97,16 @@ function ScrollRestorationInner() {
       }
     };
 
+    let saveTimeout: NodeJS.Timeout | null = null;
+
     const handleScroll = () => {
       if (isRestoringRef.current || isNavigatingRef.current) return;
       const y = Math.round(window.scrollY);
       if (y > 0) {
         lastScrollYRef.current = y;
-        if (rafScrollSaveRef.current) cancelAnimationFrame(rafScrollSaveRef.current);
-        rafScrollSaveRef.current = requestAnimationFrame(() => {
-          if (isRestoringRef.current || isNavigatingRef.current) return;
-          try {
-            sessionStorage.setItem(storageKey, String(lastScrollYRef.current));
-            const st = window.history.state || {};
-            window.history.replaceState({ ...st, __koup_scrollY: lastScrollYRef.current }, '');
-          } catch {}
-        });
+        // Debounce storage & history writes so scrolling maintains 60-120 FPS without synchronous serialization jank
+        if (saveTimeout) clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(saveScrollNow, 200);
       }
     };
 
@@ -124,11 +120,8 @@ function ScrollRestorationInner() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      if (lastScrollYRef.current > 0) {
-        try {
-          sessionStorage.setItem(storageKey, String(lastScrollYRef.current));
-        } catch {}
-      }
+      if (saveTimeout) clearTimeout(saveTimeout);
+      saveScrollNow();
       window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('beforeunload', saveScrollNow);
       window.removeEventListener('pagehide', saveScrollNow);

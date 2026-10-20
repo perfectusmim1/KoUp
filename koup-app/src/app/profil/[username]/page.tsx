@@ -49,7 +49,7 @@ import {
   getEpisodeProgressStats,
   cleanMediaTitle,
 } from '@/lib/supabase';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 import AccordionMediaCard, { requestAccordionHover } from '@/components/AccordionMediaCard';
 import CountryFlag from '@/components/CountryFlag';
 import Pagination from '@/components/Pagination';
@@ -69,25 +69,23 @@ const AVATAR_PRESETS = [
 function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const {
-    user,
-    progressMap,
-    continueWatchingList,
-    personFavorites,
-    soundEnabled,
-    toggleSound,
-    triggerSound,
-    logout,
-    setIsAuthModalOpen,
-    updateProfileSettings,
-    blockedUsers,
-    blockUser,
-    unblockUser,
-    isUserBlocked,
-    isBlockedBy,
-    pushNotification,
-    refreshUserLibrary,
-  } = useKoUp();
+  const user = useKoUpSelector((s) => s.user);
+  const progressMap = useKoUpSelector((s) => s.progressMap);
+  const continueWatchingList = useKoUpSelector((s) => s.continueWatchingList);
+  const personFavorites = useKoUpSelector((s) => s.personFavorites);
+  const soundEnabled = useKoUpSelector((s) => s.soundEnabled);
+  const toggleSound = useKoUpSelector((s) => s.toggleSound);
+  const triggerSound = useKoUpSelector((s) => s.triggerSound);
+  const logout = useKoUpSelector((s) => s.logout);
+  const setIsAuthModalOpen = useKoUpSelector((s) => s.setIsAuthModalOpen);
+  const updateProfileSettings = useKoUpSelector((s) => s.updateProfileSettings);
+  const blockedUsers = useKoUpSelector((s) => s.blockedUsers);
+  const blockUser = useKoUpSelector((s) => s.blockUser);
+  const unblockUser = useKoUpSelector((s) => s.unblockUser);
+  const isUserBlocked = useKoUpSelector((s) => s.isUserBlocked);
+  const isBlockedBy = useKoUpSelector((s) => s.isBlockedBy);
+  const pushNotification = useKoUpSelector((s) => s.pushNotification);
+  const refreshUserLibrary = useKoUpSelector((s) => s.refreshUserLibrary);
 
   const [profileData, setProfileData] = useState<UserProfile | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
@@ -699,7 +697,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
           <div className="pt-3">
             <Link
               href="/"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all shadow-lg"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-colors shadow-lg"
             >
               <span>Ana Sayfaya Dön</span>
             </Link>
@@ -730,7 +728,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
           <div className="pt-3">
             <Link
               href="/"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all shadow-lg"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-colors shadow-lg"
             >
               <span>Ana Sayfaya Dön</span>
             </Link>
@@ -761,14 +759,14 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
               src={bannerSrc}
               alt=""
               aria-hidden="true"
-              className="absolute inset-0 w-full h-full object-cover object-center blur-[80px] scale-125 opacity-70 saturate-150 transform-gpu"
+              className="absolute inset-0 w-full h-full object-cover object-center blur-3xl scale-110 opacity-70 saturate-150"
             />
             {/* Layer 2: Full-Bleed Sharp Cover Image across the entire top banner */}
             <img
               src={bannerSrc}
               alt=""
               aria-hidden="true"
-              className="absolute inset-0 w-full h-full object-cover object-center opacity-65 transform-gpu"
+              className="absolute inset-0 w-full h-full object-cover object-center opacity-65"
             />
           </>
         ) : (
@@ -816,21 +814,21 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                     </h1>
 
                     {currentDisplayProfile?.role === 'admin' ? (
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-400/20 backdrop-blur-md text-amber-300 border border-amber-400/35 flex items-center gap-1 shadow-[0_0_15px_rgba(251,191,36,0.2)]">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-400/25 text-amber-300 border border-amber-400/35 flex items-center gap-1 shadow-[0_0_15px_rgba(251,191,36,0.2)]">
                         <ShieldCheck className="w-3 h-3 text-amber-400" />
                         <span>YÖNETİCİ (ADMIN)</span>
                       </span>
                     ) : (
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-black/45 backdrop-blur-md text-white/75 border border-white/15">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-black/75 text-white/75 border border-white/15">
                         {(currentDisplayProfile?.role || 'ÜYE').toUpperCase()}
                       </span>
                     )}
 
                     <span
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold backdrop-blur-md border ${
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
                         isPrivate
-                          ? 'bg-amber-400/15 text-amber-300 border-amber-400/35 shadow-[0_0_12px_rgba(251,191,36,0.15)]'
-                          : 'bg-black/45 text-white/80 border-white/15'
+                          ? 'bg-amber-400/20 text-amber-300 border-amber-400/35 shadow-[0_0_12px_rgba(251,191,36,0.15)]'
+                          : 'bg-black/75 text-white/80 border-white/15'
                       }`}
                     >
                       {isPrivate ? (
@@ -849,7 +847,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
 
                   {/* Username Tag Directly Under Display Name */}
                   <div>
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-black/45 backdrop-blur-md text-white/75 border border-white/15">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-black/75 text-white/75 border border-white/15">
                       @{currentDisplayProfile?.username || targetUsername}
                     </span>
                   </div>
@@ -866,7 +864,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
               {isOwner ? null : !user ? (
                 <button
                   onClick={() => setIsAuthModalOpen(true)}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 cursor-pointer shadow-lg transition-all"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 cursor-pointer shadow-lg transition-colors"
                 >
                   <LogIn className="w-3.5 h-3.5" />
                   <span>Giriş Yap / Takip Et</span>
@@ -887,10 +885,10 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                       );
                     }
                   }}
-                  className={`flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold cursor-pointer transition-all backdrop-blur-md ${
+                  className={`flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold cursor-pointer transition-colors ${
                     isUserBlocked(profileData?.id)
-                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30'
-                      : 'bg-black/45 text-white/75 border border-white/15 hover:bg-rose-500/15 hover:text-rose-300 hover:border-rose-500/30'
+                      ? 'bg-rose-500/25 text-rose-300 border border-rose-500/40 hover:bg-rose-500/35'
+                      : 'bg-black/75 text-white/75 border border-white/15 hover:bg-rose-500/15 hover:text-rose-300 hover:border-rose-500/30'
                   }`}
                 >
                   <UserX className="w-3.5 h-3.5" />
@@ -911,7 +909,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                     key={t.id}
                     onClick={() => switchTab(t.id)}
                     className={`relative flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
-                      active ? 'text-black' : 'bg-black/40 backdrop-blur-md border border-white/10 text-white/80 hover:text-white hover:bg-white/10'
+                      active ? 'text-black' : 'bg-white/[0.08] border border-white/10 text-white/80 hover:text-white hover:bg-white/12'
                     }`}
                   >
                     {active && (
@@ -935,7 +933,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
         <motion.div
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-3xl bg-[#0f0f11]/90 backdrop-blur-2xl p-12 sm:p-16 text-center border border-white/[0.08] space-y-4 shadow-2xl relative overflow-hidden"
+          className="rounded-3xl bg-[#0f0f11]/95 p-12 sm:p-16 text-center border border-white/[0.08] space-y-4 shadow-2xl relative overflow-hidden"
         >
           <div className="absolute top-0 right-1/2 translate-x-1/2 w-48 h-48 bg-amber-400/10 rounded-full blur-3xl pointer-events-none" />
           <div className="w-16 h-16 rounded-2xl bg-amber-400/10 border border-amber-400/30 flex items-center justify-center mx-auto text-amber-400 shadow-[0_0_24px_rgba(251,191,36,0.2)] relative z-10">
@@ -1202,7 +1200,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                             triggerSound('click');
                             setLibraryFilter(st.id);
                           }}
-                          className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold cursor-pointer transition-all active:scale-[0.98] ${
+                          className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold cursor-pointer transition-colors active:scale-[0.98] ${
                             active ? st.activeClass : st.inactiveClass
                           }`}
                         >
@@ -1221,7 +1219,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                       {isOwner && (
                         <Link
                           href="/kesfet"
-                          className="inline-block mt-2 px-6 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all"
+                          className="inline-block mt-2 px-6 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-colors"
                         >
                           Katalogdan Yapım Ekle
                         </Link>
@@ -1295,7 +1293,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                   {isOwner && (
                     <Link
                       href="/kesfet"
-                      className="inline-block mt-3 px-6 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all"
+                      className="inline-block mt-3 px-6 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-colors"
                     >
                       Dizi & Anime Keşfet
                     </Link>
@@ -1322,7 +1320,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                     return (
                       <div
                         key={`profile-history-${item.media_id}-${stats.season}-${stats.nextEpisode}-${idx}`}
-                        className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-4 sm:p-5 flex gap-4 hover:border-white/20 transition-all group relative overflow-hidden shadow-xl"
+                        className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-4 sm:p-5 flex gap-4 hover:border-white/20 transition-colors group relative overflow-hidden shadow-xl [content-visibility:auto] [contain-intrinsic-size:auto_160px]"
                       >
                         {/* Poster image (NO zoom or scale on hover/focus) */}
                         <Link
@@ -1334,7 +1332,9 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                             <img
                               src={getProxiedImageUrl(media.cover_image, media.title)}
                               alt={media.title || 'Kapak'}
-                              className="w-full h-full object-cover transition-transform duration-200 ease-out transform-gpu will-change-transform backface-hidden"
+                              loading="lazy"
+                              decoding="async"
+                              className="w-full h-full object-cover transition-transform duration-200 ease-out"
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center text-white/30">
@@ -1342,7 +1342,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                             </div>
                           )}
                           <div className="absolute inset-0 bg-black/35 flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200 ease-out pointer-events-none">
-                            <div className="w-10 h-10 rounded-full bg-black/75 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-xl transition-all duration-200 ease-out">
+                            <div className="w-10 h-10 rounded-full bg-black/85 border border-white/20 flex items-center justify-center text-white shadow-xl transition-colors duration-200 ease-out">
                               <Play className="w-4 h-4 fill-white text-white ml-0.5" />
                             </div>
                           </div>
@@ -1424,7 +1424,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                             <Link
                               href={playUrl}
                               onClick={() => triggerSound?.('click')}
-                              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all w-fit glow-white cursor-pointer"
+                              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-colors w-fit glow-white cursor-pointer"
                             >
                               <Play className="w-3 h-3 fill-black" />
                               <span>
@@ -1468,7 +1468,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                   <Link
                     href="/listelerim"
                     onClick={() => triggerSound('click')}
-                    className="px-4 py-1.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all shrink-0 text-center shadow-sm"
+                    className="px-4 py-1.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-colors shrink-0 text-center shadow-sm"
                   >
                     Özel Listelerimi Yönet →
                   </Link>
@@ -1489,18 +1489,18 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                     value={newListTitle}
                     onChange={(e) => setNewListTitle(e.target.value)}
                     placeholder="Örn: En İyi Wuxia & Fantastik Seçkim"
-                    className="w-full px-4 py-2.5 rounded-full bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-all font-medium"
+                    className="w-full px-4 py-2.5 rounded-full bg-[#0e0e12] border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-colors font-medium"
                   />
                   <textarea
                     value={newListDesc}
                     onChange={(e) => setNewListDesc(e.target.value)}
                     rows={3}
                     placeholder="Koleksiyon açıklaması..."
-                    className="w-full px-4 py-2.5 rounded-2xl bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-all resize-none font-medium"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-[#0e0e12] border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-colors resize-none font-medium"
                   />
                   <button
                     type="submit"
-                    className="w-full py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all cursor-pointer shadow-md"
+                    className="w-full py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-colors cursor-pointer shadow-md"
                   >
                     Koleksiyonu Kaydet
                   </button>
@@ -1527,7 +1527,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                       key={lst.id}
                       href={`/listeler/${lst.id}`}
                       onClick={() => triggerSound('click')}
-                      className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-6 flex flex-col justify-between hover:border-sky-400/40 hover:bg-white/[0.03] transition-all group cursor-pointer"
+                      className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-6 flex flex-col justify-between hover:border-sky-400/40 hover:bg-white/[0.03] transition-colors group cursor-pointer [content-visibility:auto] [contain-intrinsic-size:auto_160px]"
                     >
                       <div>
                         <span className="text-[10px] font-mono text-sky-400 uppercase tracking-wider font-semibold">
@@ -1652,7 +1652,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                         return (
                           <div
                             key={comment.id}
-                            className="rounded-3xl bg-[#0e0e13]/90 backdrop-blur-xl border border-white/[0.08] hover:border-white/20 p-4 sm:p-5 transition-colors duration-120 flex items-start gap-4 sm:gap-5 shadow-lg"
+                            className="rounded-3xl bg-[#0e0e13] border border-white/[0.08] hover:border-white/20 p-4 sm:p-5 transition-colors duration-120 flex items-start gap-4 sm:gap-5 shadow-lg [content-visibility:auto] [contain-intrinsic-size:auto_120px]"
                           >
                             {/* Left: Fixed-size Larger Poster Thumbnail (Zero scale/zoom on hover or focus) */}
                             <Link

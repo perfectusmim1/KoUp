@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Lock, Mail, User, ArrowRight, Eye, EyeOff, RotateCw, CheckCircle2, ShieldAlert } from 'lucide-react';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 import { supabase } from '@/lib/supabase';
 
 function translateAuthError(err: string): string {
@@ -37,14 +37,12 @@ function translateAuthError(err: string): string {
 }
 
 export default function AuthModal() {
-  const {
-    isAuthModalOpen,
-    setIsAuthModalOpen,
-    authModalMessage,
-    setAuthModalMessage,
-    loginWithEmail,
-    registerWithEmail,
-  } = useKoUp();
+  const isAuthModalOpen = useKoUpSelector((s) => s.isAuthModalOpen);
+  const setIsAuthModalOpen = useKoUpSelector((s) => s.setIsAuthModalOpen);
+  const authModalMessage = useKoUpSelector((s) => s.authModalMessage);
+  const setAuthModalMessage = useKoUpSelector((s) => s.setAuthModalMessage);
+  const loginWithEmail = useKoUpSelector((s) => s.loginWithEmail);
+  const registerWithEmail = useKoUpSelector((s) => s.registerWithEmail);
 
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -253,7 +251,7 @@ export default function AuthModal() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
-            className="fixed inset-0 bg-black/85 backdrop-blur-md pointer-events-none -z-10"
+            className="fixed inset-0 bg-black/85 pointer-events-none -z-10"
           />
 
           {/* Modal Window with e.stopPropagation() and pointer-events-auto */}
@@ -269,7 +267,7 @@ export default function AuthModal() {
             <button
               type="button"
               onClick={handleClose}
-              className="absolute top-5 right-5 p-2 rounded-full bg-white/10 text-white/70 hover:text-white hover:bg-white/20 transition-all cursor-pointer pointer-events-auto z-30"
+              className="absolute top-5 right-5 p-2 rounded-full bg-white/10 text-white/70 hover:text-white hover:bg-white/20 transition-colors cursor-pointer pointer-events-auto z-30"
               aria-label="Kapat"
             >
               <X className="w-4 h-4" />
@@ -381,7 +379,7 @@ export default function AuthModal() {
                       type="button"
                       onClick={handleResendActivation}
                       disabled={resending || resendCooldown > 0}
-                      className="w-full py-2 px-3 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-white font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                      className="w-full py-2 px-3 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-white font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                     >
                       <RotateCw className={`w-3.5 h-3.5 ${resending ? 'animate-spin' : ''}`} />
                       <span>
@@ -402,7 +400,7 @@ export default function AuthModal() {
               {mode === 'register' && (
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-medium text-white/70">Kullanıcı Adı</label>
-                  <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 focus-within:shadow-[0_0_18px_rgba(41,151,255,0.28)] transition-all duration-300">
+                  <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-[#0e0e12] border border-white/12 hover:border-white/25 focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 focus-within:shadow-[0_0_18px_rgba(41,151,255,0.28)] transition-colors duration-200">
                     <User className="w-4 h-4 text-white/45 shrink-0 pointer-events-none" />
                     <input
                       type="text"
@@ -421,7 +419,7 @@ export default function AuthModal() {
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-medium text-white/70">E-posta Adresi</label>
-                <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 focus-within:shadow-[0_0_18px_rgba(41,151,255,0.28)] transition-all duration-300">
+                <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-[#0e0e12] border border-white/12 hover:border-white/25 focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 focus-within:shadow-[0_0_18px_rgba(41,151,255,0.28)] transition-colors duration-200">
                   <Mail className="w-4 h-4 text-white/45 shrink-0 pointer-events-none" />
                   <input
                     type="email"
@@ -437,7 +435,7 @@ export default function AuthModal() {
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-medium text-white/70">Şifre</label>
-                <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 focus-within:shadow-[0_0_18px_rgba(41,151,255,0.28)] transition-all duration-300">
+                <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-[#0e0e12] border border-white/12 hover:border-white/25 focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 focus-within:shadow-[0_0_18px_rgba(41,151,255,0.28)] transition-colors duration-200">
                   <Lock className="w-4 h-4 text-white/45 shrink-0 pointer-events-none" />
                   <input
                     type={showPassword ? 'text' : 'password'}
@@ -462,7 +460,7 @@ export default function AuthModal() {
               <button
                 type="submit"
                 disabled={loading || lockoutSec > 0}
-                className="w-full mt-2 py-3 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 transition-all flex items-center justify-center gap-2 cursor-pointer pointer-events-auto disabled:opacity-50 shadow-lg"
+                className="w-full mt-2 py-3 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 transition-colors flex items-center justify-center gap-2 cursor-pointer pointer-events-auto disabled:opacity-50 shadow-lg"
               >
                 <span>
                   {loading

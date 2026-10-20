@@ -45,12 +45,14 @@ import { trackMediaView } from '@/lib/viewTracker';
 import { cachedQuery, getCache, getMediaFromCache, registerMediaItem, updateCachedMedia } from '@/lib/cache';
 import { recordTasteSignal } from '@/lib/tasteProfile';
 import { cleanFansubName, cleanSourceName } from '@/lib/cleanFansub';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 import NetflixPlayer from '@/components/NetflixPlayer';
 import CountryFlag from '@/components/CountryFlag';
 import RichCommentSection from '@/components/RichCommentSection';
 import CustomSelect from '@/components/CustomSelect';
 import EpisodeRail from '@/components/EpisodeRail';
+
+const EMPTY_WATCHED_ARRAY: number[] = [];
 
 export default function EpisodeWatchPage({
   params,
@@ -71,16 +73,14 @@ export default function EpisodeWatchPage({
     setActiveEpNum(currentEpNum);
   }, [currentEpNum]);
 
-  const {
-    user,
-    progressMap,
-    toggleEpisodeWatched,
-    updateEpisodeProgress,
-    pushNotification,
-    triggerSound,
-    openAuthModal,
-    isSoftBanned,
-  } = useKoUp();
+  const user = useKoUpSelector((s) => s.user);
+  const progressMap = useKoUpSelector((s) => s.progressMap);
+  const toggleEpisodeWatched = useKoUpSelector((s) => s.toggleEpisodeWatched);
+  const updateEpisodeProgress = useKoUpSelector((s) => s.updateEpisodeProgress);
+  const pushNotification = useKoUpSelector((s) => s.pushNotification);
+  const triggerSound = useKoUpSelector((s) => s.triggerSound);
+  const openAuthModal = useKoUpSelector((s) => s.openAuthModal);
+  const isSoftBanned = useKoUpSelector((s) => s.isSoftBanned);
 
   // Initialize deterministically on both SSR and Client initial pass to prevent Hydration Mismatch!
   const [media, setMedia] = useState<MediaItem | null>(null);
@@ -893,14 +893,14 @@ export default function EpisodeWatchPage({
   };
 
   return (
-    <div className="min-h-screen pb-32 text-white relative overflow-hidden bg-[#060608] pt-28 sm:pt-32 transition-all duration-300">
+    <div className="min-h-screen pb-32 text-white relative overflow-hidden bg-[#060608] pt-28 sm:pt-32 transition-[padding,background-color] duration-300">
       {/* Dynamic Ambient Lighting Diffused Across Site Background */}
       <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden">
         <img
           src={getProxiedImageUrl(media.backdrop_image || media.cover_image, media.title)}
           alt=""
           aria-hidden="true"
-          className="w-full h-full object-cover filter blur-[120px] scale-125 transform-gpu transition-all duration-700 opacity-35 brightness-105 saturate-140"
+          className="w-full h-full object-cover filter blur-[120px] scale-125 transition-opacity duration-700 opacity-35 brightness-105 saturate-140"
         />
         <div className="absolute inset-0 bg-gradient-to-b from-[#060608]/50 via-[#060608]/85 to-[#060608] transition-colors duration-700" />
       </div>
@@ -908,17 +908,17 @@ export default function EpisodeWatchPage({
       {/* Top Header Navigation & Source Selector Bar */}
       <div
         style={cinemaStageStyle}
-        className="relative z-40 mx-auto px-3 sm:px-6 mb-2 sm:mb-2.5 w-full transition-all duration-300"
+        className="relative z-40 mx-auto px-3 sm:px-6 mb-2 sm:mb-2.5 w-full transition-[max-width,padding] duration-300"
       >
-        <div className={`flex flex-wrap items-center justify-between gap-2.5 rounded-2xl sm:rounded-3xl border shadow-xl p-3 sm:px-5 sm:py-3 transition-all duration-300 ${
+        <div className={`flex flex-wrap items-center justify-between gap-2.5 rounded-2xl sm:rounded-3xl border shadow-xl p-3 sm:px-5 sm:py-3 transition-[background-color,border-color] duration-300 ${
           ambientLightingEnabled
-            ? 'bg-[#0b0b0f]/72 backdrop-blur-xl border-white/15'
+            ? 'bg-[#0b0b0f]/90 backdrop-blur-sm border-white/15'
             : 'bg-[#0e0e12] border-white/10'
         }`}>
           {/* Left: Back to series or film detail */}
           <Link
             href={`/seri/${media.slug}`}
-            className="inline-flex items-center gap-2 text-xs font-semibold text-white/80 hover:text-white transition-all group shrink-0"
+            className="inline-flex items-center gap-2 text-xs font-semibold text-white/80 hover:text-white transition-colors group shrink-0"
           >
             <ChevronLeft className="w-4 h-4 text-white/50 group-hover:-translate-x-1 transition-transform" />
             <span>{isFilm ? 'Film Detayına Dön' : 'Seri Sayfasına Dön'}</span>
@@ -999,8 +999,7 @@ export default function EpisodeWatchPage({
               href={`/kesfet?country=${encodeURIComponent(
                 ((media.country_code || media.country) || '').toUpperCase()
               )}`}
-              prefetch={true}
-              className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.06] border border-white/10 text-xs text-white/80 hover:bg-white/15 transition-all"
+              className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.06] border border-white/10 text-xs text-white/80 hover:bg-white/15 transition-colors"
             >
               <CountryFlag code={media.country_code || media.country} size="sm" />
               <span className="font-semibold text-[11px] uppercase">
@@ -1043,7 +1042,7 @@ export default function EpisodeWatchPage({
             <button
               type="button"
               onClick={handleToggleAmbientLighting}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors cursor-pointer ${
                 ambientLightingEnabled
                   ? 'bg-amber-400 text-black border-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.4)]'
                   : 'bg-white/[0.05] hover:bg-white/[0.12] text-white/80 border-white/10 hover:text-white'
@@ -1062,7 +1061,7 @@ export default function EpisodeWatchPage({
               <button
                 type="button"
                 onClick={handleToggleAutoNext}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors cursor-pointer ${
                   autoNextEnabled
                     ? 'bg-[#2997ff] text-white border-sky-400 shadow-[0_0_15px_rgba(41,151,255,0.4)]'
                     : 'bg-white/[0.05] hover:bg-white/[0.12] text-white/80 border-white/10 hover:text-white'
@@ -1083,9 +1082,9 @@ export default function EpisodeWatchPage({
       {/* Main Player + Vertical Episode Rail Stage */}
       <div
         style={cinemaStageStyle}
-        className="relative z-20 mx-auto px-3 sm:px-6 w-full transition-all duration-300"
+        className="relative z-20 mx-auto px-3 sm:px-6 w-full transition-[max-width,padding] duration-300"
       >
-        <div className={`grid gap-3 sm:gap-3.5 items-start ${isMovie ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-[1fr_310px] xl:grid-cols-[1fr_330px]'} transition-all duration-300`}>
+        <div className={`grid gap-3 sm:gap-3.5 items-start ${isMovie ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-[1fr_310px] xl:grid-cols-[1fr_330px]'} transition-[grid-template-columns] duration-300`}>
           {/* LEFT: Video Player Area */}
           <div className="space-y-2.5 sm:space-y-3 min-w-0">
             <div ref={playerContainerRef} className="relative">
@@ -1122,9 +1121,9 @@ export default function EpisodeWatchPage({
             </div>
 
             {/* Quick Navigation, Reactions & Report Under Player */}
-            <div className={`relative z-20 rounded-2xl sm:rounded-3xl border shadow-xl flex flex-wrap items-center justify-between gap-2 p-3 sm:p-4 transition-all duration-300 ${
+            <div className={`relative z-20 rounded-2xl sm:rounded-3xl border shadow-xl flex flex-wrap items-center justify-between gap-2 p-3 sm:p-4 transition-[background-color,border-color] duration-300 ${
               ambientLightingEnabled
-                ? 'bg-[#0b0b0f]/72 backdrop-blur-xl border-white/15'
+                ? 'bg-[#0b0b0f]/90 backdrop-blur-sm border-white/15'
                 : 'bg-[#0e0e12] border-white/10'
             }`}>
               {/* Previous / Next / Mark Watched buttons */}
@@ -1137,7 +1136,7 @@ export default function EpisodeWatchPage({
                         prevEp.episode_number
                       )
                     }
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-all cursor-pointer"
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-colors cursor-pointer"
                   >
                     <ChevronLeft className="w-3.5 h-3.5" />
                     <span>Önceki</span>
@@ -1156,7 +1155,7 @@ export default function EpisodeWatchPage({
                     <button
                       type="button"
                       onClick={() => toggleEpisodeWatched(media, activeEpNum)}
-                      className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold border transition-all cursor-pointer ${
+                      className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold border transition-colors cursor-pointer ${
                         isCurrentEpWatched
                           ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-300 hover:bg-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.25)]'
                           : 'bg-white/[0.06] hover:bg-white/15 border-white/15 text-white/90 hover:text-white'
@@ -1185,7 +1184,7 @@ export default function EpisodeWatchPage({
                         nextEp.episode_number
                       )
                     }
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white text-xs font-bold transition-all shadow-[0_0_15px_rgba(41,151,255,0.35)] cursor-pointer"
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white text-xs font-bold transition-[background-color,box-shadow] shadow-[0_0_15px_rgba(41,151,255,0.35)] cursor-pointer"
                   >
                     <span>Sonraki</span>
                     <ChevronRight className="w-3.5 h-3.5" />
@@ -1315,7 +1314,7 @@ export default function EpisodeWatchPage({
               currentEpNum={activeEpNum}
               seasons={seasons}
               playerHeight={playerHeight}
-              watchedEpisodes={progressMap[media.id]?.watched_episodes || []}
+              watchedEpisodes={progressMap[media.id]?.watched_episodes || EMPTY_WATCHED_ARRAY}
               userProgress={progressMap[media.id]}
               onSelectEpisode={(epNum, seasonNum) => {
                 handleSelectEpisode(seasonNum, epNum);
@@ -1354,7 +1353,7 @@ export default function EpisodeWatchPage({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowReport(false)}
-              className="absolute inset-0 bg-black/80 backdrop-blur-md cursor-pointer"
+              className="absolute inset-0 bg-black/80 cursor-pointer"
             />
             <motion.div
               initial={{ opacity: 0, scale: 0.94, y: 14 }}

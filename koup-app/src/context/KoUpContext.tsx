@@ -8,6 +8,8 @@ import React, {
   useCallback,
   useRef,
   useMemo,
+  useLayoutEffect,
+  useSyncExternalStore,
 } from 'react';
 import {
   supabase,
@@ -55,7 +57,7 @@ export interface ToastNotification {
 
 export type NavbarBehavior = 'floating' | 'sticky' | 'static';
 
-interface KoUpContextValue {
+export interface KoUpContextValue {
   user: UserProfile | null;
   profile: UserProfile | null;
   authLoading: boolean;
@@ -180,6 +182,42 @@ const DEFAULT_NOTIFICATION_SETTINGS = {
 };
 
 const KoUpContext = createContext<KoUpContextValue | null>(null);
+
+/**
+ * Fine-grained subscription store mirroring the context value.
+ * `useKoUp()` re-renders a consumer on EVERY context change (toasts, search open, progress ticks...).
+ * `useKoUpSelector()` re-renders only when the selected slice changes (Object.is), which keeps
+ * hundreds of media cards from re-rendering on unrelated global state updates.
+ */
+type KoUpStoreListener = () => void;
+interface KoUpStore {
+  get: () => KoUpContextValue;
+  set: (value: KoUpContextValue) => void;
+  subscribe: (listener: KoUpStoreListener) => () => void;
+}
+
+function createKoUpStore(initial: KoUpContextValue): KoUpStore {
+  let current = initial;
+  const listeners = new Set<KoUpStoreListener>();
+  return {
+    get: () => current,
+    set: (value) => {
+      if (value === current) return;
+      current = value;
+      listeners.forEach((listener) => listener());
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+}
+
+const KoUpStoreContext = createContext<KoUpStore | null>(null);
+
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 export function KoUpProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -629,48 +667,23 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    // Sanitize any existing elements on mount
+    // Sanitize any existing elements on mount (one-off, cheap)
     try {
       document.querySelectorAll('[title]:not(iframe)').forEach(sanitizeElement);
     } catch {}
 
-    // MutationObserver guarantees dynamic / hydrated nodes lose title immediately
-    let observer: MutationObserver | null = null;
-    try {
-      observer = new MutationObserver((mutations) => {
-        for (const m of mutations) {
-          if (m.type === 'attributes' && m.attributeName === 'title') {
-            if (m.target instanceof Element) sanitizeElement(m.target);
-          } else if (m.type === 'childList') {
-            m.addedNodes.forEach((node) => {
-              if (node instanceof Element) {
-                sanitizeElement(node);
-                node.querySelectorAll?.('[title]:not(iframe)').forEach(sanitizeElement);
-              }
-            });
-          }
-        }
-      });
-      observer.observe(document.documentElement, {
-        attributes: true,
-        attributeFilter: ['title'],
-        childList: true,
-        subtree: true,
-      });
-    } catch {}
-
+    // PERF: no document-wide subtree MutationObserver (it ran querySelectorAll on every DOM insertion,
+    // e.g. each card mount while scrolling). Native tooltips only appear after hovering ~500ms, so
+    // lazily stripping `title` on the first pointerover of an element is enough to suppress them.
     const handlePointer = (e: Event) => {
       const target = (e.target as HTMLElement)?.closest?.('[title]');
       if (target) sanitizeElement(target);
     };
 
     document.addEventListener('mouseover', handlePointer, { capture: true, passive: true });
-    document.addEventListener('pointerenter', handlePointer, { capture: true, passive: true });
 
     return () => {
-      observer?.disconnect();
       document.removeEventListener('mouseover', handlePointer, { capture: true });
-      document.removeEventListener('pointerenter', handlePointer, { capture: true });
     };
   }, []);
 
@@ -2482,7 +2495,14 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     confirmDialog,
   ]);
 
+  // Stable store instance; synced after commit so selector consumers re-render only on slice changes
+  const [koupStore] = useState(() => createKoUpStore(contextValue));
+  useIsomorphicLayoutEffect(() => {
+    koupStore.set(contextValue);
+  }, [koupStore, contextValue]);
+
   return (
+    <KoUpStoreContext.Provider value={koupStore}>
     <KoUpContext.Provider value={contextValue}>
       {isHardBanned ? (
         <div className="fixed inset-0 z-[9999999] bg-[#070709] text-white flex flex-col items-center justify-center p-6 text-center select-none overflow-y-auto">
@@ -2562,6 +2582,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         </>
       )}
     </KoUpContext.Provider>
+    </KoUpStoreContext.Provider>
   );
 }
 
@@ -2569,4 +2590,16 @@ export function useKoUp() {
   const ctx = useContext(KoUpContext);
   if (!ctx) throw new Error('useKoUp must be used inside KoUpProvider');
   return ctx;
+}
+
+/**
+ * Performance-oriented context reader: subscribes to a single slice of global state.
+ * The selector MUST return a primitive or a referentially stable value (state field,
+ * memoized callback, map entry) — never build new objects/arrays inside it.
+ */
+export function useKoUpSelector<T>(selector: (state: KoUpContextValue) => T): T {
+  const store = useContext(KoUpStoreContext);
+  if (!store) throw new Error('useKoUpSelector must be used inside KoUpProvider');
+  const getSnapshot = () => selector(store.get());
+  return useSyncExternalStore(store.subscribe, getSnapshot, getSnapshot);
 }

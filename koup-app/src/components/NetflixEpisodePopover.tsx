@@ -32,6 +32,321 @@ interface NetflixEpisodePopoverProps {
   episodePreviewCache: Map<string, string>;
 }
 
+interface NetflixEpisodeRowProps {
+  ep: EpisodeData;
+  media: MediaItem;
+  drawerSeason: number;
+  currentSeason: number;
+  currentEpisode: number;
+  isExpanded: boolean;
+  isEpWatched: boolean;
+  effectiveTime: number;
+  safeDuration: number;
+  progressMap: any;
+  capturedFrameUrl: string | null;
+  fallbackBackdropUrl: string;
+  episodePreviewCache: Map<string, string>;
+  onSelectEpisode: (season: number, ep: number) => void;
+  toggleEpisodeWatched: (media: MediaItem, epNum: number) => void;
+  onExpand: (epNum: number) => void;
+  flushCurrentProgress: (action?: 'completed' | 'playback' | 'pause' | 'exit', arg?: boolean) => void;
+  onClose: () => void;
+}
+
+const NetflixEpisodeRow = memo(function NetflixEpisodeRow({
+  ep,
+  media,
+  drawerSeason,
+  currentSeason,
+  currentEpisode,
+  isExpanded,
+  isEpWatched,
+  effectiveTime,
+  safeDuration,
+  progressMap,
+  capturedFrameUrl,
+  fallbackBackdropUrl,
+  episodePreviewCache,
+  onSelectEpisode,
+  toggleEpisodeWatched,
+  onExpand,
+  flushCurrentProgress,
+  onClose,
+}: NetflixEpisodeRowProps) {
+  const epSeason = ep.season_number || drawerSeason;
+  const isCurrent =
+    epSeason === currentSeason &&
+    ep.episode_number === currentEpisode;
+
+  let epSavedProg = getEpisodeProgress(
+    progressMap?.[media.id],
+    media.id,
+    epSeason,
+    ep.episode_number
+  );
+
+  if (epSavedProg.position <= 0 && typeof window !== 'undefined') {
+    try {
+      const rawLocal = localStorage.getItem(`koup_ep_pos_${media.id}_${epSeason}_${ep.episode_number}`);
+      if (rawLocal) {
+        const parsed = JSON.parse(rawLocal);
+        const pos = typeof parsed === 'number' ? parsed : parsed?.position || 0;
+        const dur = parsed?.duration || safeDuration || 3600;
+        if (pos > 0) {
+          const pct = Math.min(99, Math.max(5, Math.round((pos / dur) * 100)));
+          const remMin = Math.ceil(Math.max(0, dur - pos) / 60);
+          epSavedProg = {
+            position: pos,
+            duration: dur,
+            percent: pct,
+            isWatched: isEpWatched,
+            remainingMinutes: remMin,
+          };
+        }
+      }
+    } catch {}
+  }
+
+  let epProgressPct = 0;
+  let epRemainingLabel: string | null = null;
+
+  if (isCurrent) {
+    const currentRatio = safeDuration > 0 ? effectiveTime / safeDuration : 0;
+    epProgressPct = Math.min(100, Math.max(6, Math.round(currentRatio * 100)));
+    const remMin = Math.max(1, Math.ceil((safeDuration - effectiveTime) / 60));
+    epRemainingLabel = `${remMin} dk kaldı`;
+  } else if (isEpWatched) {
+    epProgressPct = 100;
+    epRemainingLabel = 'İzlendi';
+  } else if (epSavedProg.percent > 0 || epSavedProg.position > 5) {
+    epProgressPct = epSavedProg.percent;
+    epRemainingLabel = `${epSavedProg.remainingMinutes} dk kaldı`;
+  }
+
+  const epSubtitle = cleanEpisodeName(
+    ep.episode_name,
+    epSeason,
+    ep.episode_number
+  );
+  const hasSubtitle =
+    epSubtitle && epSubtitle !== `${ep.episode_number}. Bölüm`;
+  const epTitle = hasSubtitle
+    ? epSubtitle
+    : `${ep.episode_number}. Bölüm`;
+
+  const epCacheKey = `${media.id}_s${epSeason}_e${ep.episode_number}`;
+  const cachedEpImg = episodePreviewCache.get(epCacheKey);
+  const previewImg =
+    cachedEpImg ||
+    (isCurrent && capturedFrameUrl
+      ? capturedFrameUrl
+      : fallbackBackdropUrl);
+
+  if (isExpanded) {
+    return (
+      <div
+        key={ep.id || `${ep.season_number}-${ep.episode_number}`}
+        style={{ contain: 'content' }}
+        onClick={() => {
+          onClose();
+          if (!isCurrent) {
+            flushCurrentProgress('exit', false);
+            onSelectEpisode(
+              epSeason,
+              ep.episode_number
+            );
+          }
+        }}
+        className="bg-[#121212] hover:bg-[#1a1a1a] px-2.5 sm:px-4 py-2 sm:py-2.5 flex flex-col gap-2 border-l-4 border-l-white cursor-pointer select-none group transition-colors duration-150"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-xs sm:text-sm font-bold text-white font-mono shrink-0">
+              {ep.episode_number}
+            </span>
+            <span className="text-xs sm:text-sm font-bold text-white truncate">
+              {epTitle}
+            </span>
+            {(ep.pending || ep.status === 'pending_source') && (
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0">
+                Yakında
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            {epProgressPct > 0 && (
+              <div className="flex items-center gap-1.5">
+                {epRemainingLabel && !isEpWatched && (
+                  <span className="text-[10px] font-mono text-white/50 hidden sm:inline">
+                    {epRemainingLabel}
+                  </span>
+                )}
+                <div className="w-8 sm:w-12 h-1 bg-white/20 rounded-full overflow-hidden">
+                  <div
+                    style={{ width: `${epProgressPct}%` }}
+                    className={`h-full ${isEpWatched ? 'bg-emerald-400' : 'bg-[#E50914]'}`}
+                  />
+                </div>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleEpisodeWatched(media, ep.episode_number);
+              }}
+              aria-label={
+                isEpWatched
+                  ? 'İzlendi işaretini kaldır'
+                  : 'İzlendi olarak işaretle'
+              }
+              className={`w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center transition-colors cursor-pointer ${
+                isEpWatched
+                  ? 'bg-white text-black'
+                  : 'bg-white/10 text-white/40 hover:text-white'
+              }`}
+            >
+              <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          <div className="relative w-20 sm:w-28 aspect-video rounded overflow-hidden bg-black/90 border border-white/15 shrink-0">
+            {previewImg && (
+              <img
+                src={previewImg}
+                alt={epTitle}
+                loading="lazy"
+                decoding="async"
+                onError={(e) => {
+                  if (
+                    fallbackBackdropUrl &&
+                    e.currentTarget.src !== fallbackBackdropUrl
+                  ) {
+                    e.currentTarget.src = fallbackBackdropUrl;
+                  }
+                }}
+                className="w-full h-full object-cover"
+              />
+            )}
+            <div className="absolute inset-0 bg-black/35 group-hover:bg-black/50 flex items-center justify-center transition-colors">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-black/75 group-hover:bg-black/90 group-focus:bg-black/90 border border-white/35 group-hover:border-white/70 flex items-center justify-center text-white shadow-md transition-[background-color,border-color]">
+                <Play className="w-3.5 h-3.5 fill-white text-white translate-x-[1px]" />
+              </div>
+            </div>
+            {epProgressPct > 0 && (
+              <div className="absolute bottom-0 inset-x-0 h-1 bg-white/25">
+                <div
+                  style={{ width: `${epProgressPct}%` }}
+                  className={`h-full ${isEpWatched ? 'bg-emerald-400' : 'bg-[#E50914]'}`}
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="text-[10px] sm:text-xs font-semibold text-white/90 leading-tight line-clamp-1 sm:line-clamp-2">
+              {isCurrent
+                ? 'Şu anda bu bölümdesiniz'
+                : `${epSeason}. Sezon ${ep.episode_number}. Bölüm${hasSubtitle ? ` • ${epSubtitle}` : ''}`}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
+              <span className="inline-flex items-center gap-1 text-white/55">
+                <Eye className="w-3 h-3 text-sky-400 shrink-0" />
+                <span>{formatViewCount(ep.views_count || 0)}</span>
+              </span>
+              {epRemainingLabel && (
+                <span className={isEpWatched ? 'text-emerald-400 font-semibold' : 'text-white/60'}>
+                  • {isEpWatched ? '✓ İzlendi' : `⏱ ${epRemainingLabel}`}
+                </span>
+              )}
+            </div>
+            {ep.intro_start_sec != null && (
+              <div className="flex flex-wrap items-center gap-1.5 text-[9px] sm:text-[10px] font-mono text-amber-400 font-semibold">
+                <span>• İntro Atlama</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      key={ep.id || `${ep.season_number}-${ep.episode_number}`}
+      style={{ height: EP_ROW_COLLAPSED_H, contain: 'content' }}
+      onClick={() => {
+        onExpand(ep.episode_number);
+      }}
+      className="px-3.5 sm:px-5 flex items-center justify-between gap-3 bg-[#1b1b1b] hover:bg-[#262626] transition-colors duration-150 cursor-pointer select-none group"
+    >
+      <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+        <span
+          className={`text-xs sm:text-sm font-mono font-bold w-5 sm:w-6 shrink-0 ${
+            isCurrent ? 'text-white font-black' : 'text-white/65 group-hover:text-white'
+          }`}
+        >
+          {ep.episode_number}
+        </span>
+        <span
+          className={`text-xs sm:text-sm truncate ${
+            isCurrent
+              ? 'text-white font-bold'
+              : 'text-white/80 font-medium group-hover:text-white'
+          }`}
+        >
+          {epTitle}
+        </span>
+        {(ep.pending || ep.status === 'pending_source') && (
+          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0">
+            Yakında
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+        {epProgressPct > 0 && (
+          <div className="flex items-center gap-1.5">
+            {epRemainingLabel && !isEpWatched && (
+              <span className="text-[10px] font-mono text-white/50 hidden sm:inline">
+                {epRemainingLabel}
+              </span>
+            )}
+            <div className="w-10 sm:w-12 h-1 bg-white/20 rounded-full overflow-hidden">
+              <div
+                style={{ width: `${epProgressPct}%` }}
+                className={`h-full ${isEpWatched ? 'bg-emerald-400' : 'bg-[#E50914]'}`}
+              />
+            </div>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleEpisodeWatched(media, ep.episode_number);
+          }}
+          aria-label={
+            isEpWatched
+              ? 'İzlendi işaretini kaldır'
+              : 'İzlendi olarak işaretle'
+          }
+          className={`w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center transition-colors cursor-pointer ${
+            isEpWatched
+              ? 'bg-white text-black'
+              : 'bg-white/5 text-white/30 hover:text-white hover:bg-white/15'
+          }`}
+        >
+          <Check className="w-3 h-3" />
+        </button>
+      </div>
+    </div>
+  );
+});
+
 function NetflixEpisodePopoverComponent({
   media,
   episodes,
@@ -183,281 +498,29 @@ function NetflixEpisodePopoverComponent({
           <div style={{ height: topSpacerHeight }} aria-hidden="true" />
         )}
 
-        {visiblePopoverEpisodes.map((ep) => {
-          const epSeason = ep.season_number || drawerSeason;
-          const isCurrent =
-            epSeason === currentSeason &&
-            ep.episode_number === currentEpisode;
-          const isExpanded = expandedEpNum === ep.episode_number;
-          const isEpWatched = watchedSet.has(ep.episode_number);
-
-          let epSavedProg = getEpisodeProgress(
-            progressMap?.[media.id],
-            media.id,
-            epSeason,
-            ep.episode_number
-          );
-
-          if (epSavedProg.position <= 0 && typeof window !== 'undefined') {
-            try {
-              const rawLocal = localStorage.getItem(`koup_ep_pos_${media.id}_${epSeason}_${ep.episode_number}`);
-              if (rawLocal) {
-                const parsed = JSON.parse(rawLocal);
-                const pos = typeof parsed === 'number' ? parsed : parsed?.position || 0;
-                const dur = parsed?.duration || safeDuration || 3600;
-                if (pos > 0) {
-                  const pct = Math.min(99, Math.max(5, Math.round((pos / dur) * 100)));
-                  const remMin = Math.ceil(Math.max(0, dur - pos) / 60);
-                  epSavedProg = {
-                    position: pos,
-                    duration: dur,
-                    percent: pct,
-                    isWatched: isEpWatched,
-                    remainingMinutes: remMin,
-                  };
-                }
-              }
-            } catch {}
-          }
-
-          let epProgressPct = 0;
-          let epRemainingLabel: string | null = null;
-
-          if (isCurrent) {
-            const currentRatio = safeDuration > 0 ? effectiveTime / safeDuration : 0;
-            epProgressPct = Math.min(100, Math.max(6, Math.round(currentRatio * 100)));
-            const remMin = Math.max(1, Math.ceil((safeDuration - effectiveTime) / 60));
-            epRemainingLabel = `${remMin} dk kaldı`;
-          } else if (isEpWatched) {
-            epProgressPct = 100;
-            epRemainingLabel = 'İzlendi';
-          } else if (epSavedProg.percent > 0 || epSavedProg.position > 5) {
-            epProgressPct = epSavedProg.percent;
-            epRemainingLabel = `${epSavedProg.remainingMinutes} dk kaldı`;
-          }
-
-          const epSubtitle = cleanEpisodeName(
-            ep.episode_name,
-            epSeason,
-            ep.episode_number
-          );
-          const hasSubtitle =
-            epSubtitle && epSubtitle !== `${ep.episode_number}. Bölüm`;
-          const epTitle = hasSubtitle
-            ? epSubtitle
-            : `${ep.episode_number}. Bölüm`;
-
-          const epCacheKey = `${media.id}_s${epSeason}_e${ep.episode_number}`;
-          const cachedEpImg = episodePreviewCache.get(epCacheKey);
-          const previewImg =
-            cachedEpImg ||
-            (isCurrent && capturedFrameUrl
-              ? capturedFrameUrl
-              : fallbackBackdropUrl);
-
-          if (isExpanded) {
-            return (
-              <div
-                key={ep.id || `${ep.season_number}-${ep.episode_number}`}
-                style={{ contain: 'content' }}
-                onClick={() => {
-                  onClose();
-                  if (!isCurrent) {
-                    flushCurrentProgress('exit', false);
-                    onSelectEpisode(
-                      epSeason,
-                      ep.episode_number
-                    );
-                  }
-                }}
-                className="bg-[#121212] hover:bg-[#1a1a1a] px-2.5 sm:px-4 py-2 sm:py-2.5 flex flex-col gap-2 border-l-4 border-l-white cursor-pointer select-none group transition-colors duration-150"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-xs sm:text-sm font-bold text-white font-mono shrink-0">
-                      {ep.episode_number}
-                    </span>
-                    <span className="text-xs sm:text-sm font-bold text-white truncate">
-                      {epTitle}
-                    </span>
-                    {(ep.pending || ep.status === 'pending_source') && (
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0">
-                        Yakında
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {epProgressPct > 0 && (
-                      <div className="flex items-center gap-1.5">
-                        {epRemainingLabel && !isEpWatched && (
-                          <span className="text-[10px] font-mono text-white/50 hidden sm:inline">
-                            {epRemainingLabel}
-                          </span>
-                        )}
-                        <div className="w-8 sm:w-12 h-1 bg-white/20 rounded-full overflow-hidden">
-                          <div
-                            style={{ width: `${epProgressPct}%` }}
-                            className={`h-full ${isEpWatched ? 'bg-emerald-400' : 'bg-[#E50914]'}`}
-                          />
-                        </div>
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleEpisodeWatched(media, ep.episode_number);
-                      }}
-                      aria-label={
-                        isEpWatched
-                          ? 'İzlendi işaretini kaldır'
-                          : 'İzlendi olarak işaretle'
-                      }
-                      className={`w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center transition-colors cursor-pointer ${
-                        isEpWatched
-                          ? 'bg-white text-black'
-                          : 'bg-white/10 text-white/40 hover:text-white'
-                      }`}
-                    >
-                      <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2.5">
-                  <div className="relative w-20 sm:w-28 aspect-video rounded overflow-hidden bg-black/90 border border-white/15 shrink-0">
-                    {previewImg && (
-                      <img
-                        src={previewImg}
-                        alt={epTitle}
-                        loading="lazy"
-                        onError={(e) => {
-                          if (
-                            fallbackBackdropUrl &&
-                            e.currentTarget.src !== fallbackBackdropUrl
-                          ) {
-                            e.currentTarget.src = fallbackBackdropUrl;
-                          }
-                        }}
-                        className="w-full h-full object-cover"
-                      />
-                    )}
-                    <div className="absolute inset-0 bg-black/35 group-hover:bg-black/50 flex items-center justify-center transition-colors">
-                      <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-black/60 group-hover:bg-black/85 group-focus:bg-black/85 border border-white/35 group-hover:border-white/70 flex items-center justify-center text-white backdrop-blur-[2px] shadow-lg transition-all">
-                        <Play className="w-3.5 h-3.5 fill-white text-white translate-x-[1px]" />
-                      </div>
-                    </div>
-                    {epProgressPct > 0 && (
-                      <div className="absolute bottom-0 inset-x-0 h-1 bg-white/25">
-                        <div
-                          style={{ width: `${epProgressPct}%` }}
-                          className={`h-full ${isEpWatched ? 'bg-emerald-400' : 'bg-[#E50914]'}`}
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="text-[10px] sm:text-xs font-semibold text-white/90 leading-tight line-clamp-1 sm:line-clamp-2">
-                      {isCurrent
-                        ? 'Şu anda bu bölümdesiniz'
-                        : `${epSeason}. Sezon ${ep.episode_number}. Bölüm${hasSubtitle ? ` • ${epSubtitle}` : ''}`}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
-                      <span className="inline-flex items-center gap-1 text-white/55">
-                        <Eye className="w-3 h-3 text-sky-400 shrink-0" />
-                        <span>{formatViewCount(ep.views_count || 0)}</span>
-                      </span>
-                      {epRemainingLabel && (
-                        <span className={isEpWatched ? 'text-emerald-400 font-semibold' : 'text-white/60'}>
-                          • {isEpWatched ? '✓ İzlendi' : `⏱ ${epRemainingLabel}`}
-                        </span>
-                      )}
-                    </div>
-                    {ep.intro_start_sec != null && (
-                      <div className="flex flex-wrap items-center gap-1.5 text-[9px] sm:text-[10px] font-mono text-amber-400 font-semibold">
-                        <span>• İntro Atlama</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          }
-
-          return (
-            <div
-              key={ep.id || `${ep.season_number}-${ep.episode_number}`}
-              style={{ height: EP_ROW_COLLAPSED_H, contain: 'content' }}
-              onClick={() => {
-                setExpandedEpNum(ep.episode_number);
-              }}
-              className="px-3.5 sm:px-5 flex items-center justify-between gap-3 bg-[#1b1b1b] hover:bg-[#262626] transition-colors duration-150 cursor-pointer select-none group"
-            >
-              <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
-                <span
-                  className={`text-xs sm:text-sm font-mono font-bold w-5 sm:w-6 shrink-0 ${
-                    isCurrent ? 'text-white font-black' : 'text-white/65 group-hover:text-white'
-                  }`}
-                >
-                  {ep.episode_number}
-                </span>
-                <span
-                  className={`text-xs sm:text-sm truncate ${
-                    isCurrent
-                      ? 'text-white font-bold'
-                      : 'text-white/80 font-medium group-hover:text-white'
-                  }`}
-                >
-                  {epTitle}
-                </span>
-                {(ep.pending || ep.status === 'pending_source') && (
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0">
-                    Yakında
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-                {epProgressPct > 0 && (
-                  <div className="flex items-center gap-1.5">
-                    {epRemainingLabel && !isEpWatched && (
-                      <span className="text-[10px] font-mono text-white/50 hidden sm:inline">
-                        {epRemainingLabel}
-                      </span>
-                    )}
-                    <div className="w-10 sm:w-12 h-1 bg-white/20 rounded-full overflow-hidden">
-                      <div
-                        style={{ width: `${epProgressPct}%` }}
-                        className={`h-full ${isEpWatched ? 'bg-emerald-400' : 'bg-[#E50914]'}`}
-                      />
-                    </div>
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleEpisodeWatched(media, ep.episode_number);
-                  }}
-                  aria-label={
-                    isEpWatched
-                      ? 'İzlendi işaretini kaldır'
-                      : 'İzlendi olarak işaretle'
-                  }
-                  className={`w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center transition-colors cursor-pointer ${
-                    isEpWatched
-                      ? 'bg-white text-black'
-                      : 'bg-white/5 text-white/30 hover:text-white hover:bg-white/15'
-                  }`}
-                >
-                  <Check className="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-          );
-        })}
+        {visiblePopoverEpisodes.map((ep) => (
+          <NetflixEpisodeRow
+            key={ep.id || `${ep.season_number}-${ep.episode_number}`}
+            ep={ep}
+            media={media}
+            drawerSeason={drawerSeason}
+            currentSeason={currentSeason}
+            currentEpisode={currentEpisode}
+            isExpanded={expandedEpNum === ep.episode_number}
+            isEpWatched={watchedSet.has(ep.episode_number)}
+            effectiveTime={effectiveTime}
+            safeDuration={safeDuration}
+            progressMap={progressMap}
+            capturedFrameUrl={capturedFrameUrl}
+            fallbackBackdropUrl={fallbackBackdropUrl}
+            episodePreviewCache={episodePreviewCache}
+            onSelectEpisode={onSelectEpisode}
+            toggleEpisodeWatched={toggleEpisodeWatched}
+            onExpand={setExpandedEpNum}
+            flushCurrentProgress={flushCurrentProgress}
+            onClose={onClose}
+          />
+        ))}
 
         {bottomSpacerHeight > 0 && (
           <div style={{ height: bottomSpacerHeight }} aria-hidden="true" />

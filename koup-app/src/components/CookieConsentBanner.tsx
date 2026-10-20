@@ -79,7 +79,7 @@ export default function CookieConsentBanner() {
       aria-label="Çerez ve Kişiselleştirme Tercihleri"
       className="fixed bottom-4 left-4 right-4 md:left-auto md:right-6 md:bottom-6 z-[90] md:max-w-[490px] animate-in fade-in slide-in-from-bottom-4 duration-300"
     >
-      <div className="relative rounded-3xl bg-[#0c0c10]/95 backdrop-blur-xl border border-white/15 shadow-[0_24px_70px_rgba(0,0,0,0.95)] p-5 sm:p-6 overflow-hidden">
+      <div className="relative rounded-3xl bg-[#0c0c10]/95 backdrop-blur-sm border border-white/15 shadow-[0_24px_70px_rgba(0,0,0,0.95)] p-5 sm:p-6 overflow-hidden">
         {/* Subtle ambient accent */}
         <div className="pointer-events-none absolute -top-20 -right-20 w-44 h-44 rounded-full bg-sky-500/10 blur-2xl" />
 
@@ -196,7 +196,7 @@ export default function CookieConsentBanner() {
               <button
                 type="button"
                 onClick={handleAcceptAll}
-                className="flex-1 min-w-[180px] flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 transition-all cursor-pointer shadow-md"
+                className="flex-1 min-w-[180px] flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 transition-colors cursor-pointer shadow-md"
               >
                 <Check className="w-3.5 h-3.5 stroke-[2.5]" />
                 <span>Kabul Et ve Kişiselleştir</span>
@@ -205,7 +205,7 @@ export default function CookieConsentBanner() {
               <button
                 type="button"
                 onClick={() => setShowCustomize(true)}
-                className="px-3.5 py-2.5 rounded-full bg-white/[0.07] hover:bg-white/15 border border-white/10 text-white/85 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                className="px-3.5 py-2.5 rounded-full bg-white/[0.07] hover:bg-white/15 border border-white/10 text-white/85 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 <SlidersHorizontal className="w-3.5 h-3.5" />
                 <span>Özelleştir</span>
@@ -224,7 +224,7 @@ export default function CookieConsentBanner() {
               <button
                 type="button"
                 onClick={handleSaveCustom}
-                className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white font-bold text-xs transition-all cursor-pointer shadow-md"
+                className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white font-bold text-xs transition-colors cursor-pointer shadow-md"
               >
                 <Check className="w-3.5 h-3.5 stroke-[2.5]" />
                 <span>Seçimlerimi Kaydet</span>
@@ -233,7 +233,7 @@ export default function CookieConsentBanner() {
               <button
                 type="button"
                 onClick={handleAcceptAll}
-                className="px-4 py-2.5 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 transition-all cursor-pointer"
+                className="px-4 py-2.5 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 transition-colors cursor-pointer"
               >
                 Tümünü Aç
               </button>

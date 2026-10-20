@@ -14,7 +14,7 @@ export default function NotFound() {
       </p>
       <Link
         href="/"
-        className="px-6 py-3 rounded-full bg-sky-500 hover:bg-sky-400 text-black font-semibold text-sm transition-all shadow-lg shadow-sky-500/20"
+        className="px-6 py-3 rounded-full bg-sky-500 hover:bg-sky-400 text-black font-semibold text-sm transition-colors shadow-lg shadow-sky-500/20"
       >
         Ana Sayfaya Dön
       </Link>

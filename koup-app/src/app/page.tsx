@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, memo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
@@ -40,7 +40,7 @@ import {
   cleanMediaTitle,
   formatViewCount,
 } from '@/lib/supabase';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 import AccordionMediaCard, { requestAccordionHover, preloadMediaImages } from '@/components/AccordionMediaCard';
 import Top10Numeral from '@/components/Top10Numeral';
 import { cachedQuery, getCache, registerMediaItems } from '@/lib/cache';
@@ -104,18 +104,16 @@ function getTypeBadgeClass(contentType?: string, countryCode?: string): string {
 
 export default function HomePage() {
   const router = useRouter();
-  const {
-    user,
-    progressMap,
-    updateWatchStatus,
-    togglePersonFavorite,
-    personFavorites,
-    followedPersonIds,
-    togglePersonFollow,
-    triggerSound,
-    isTrailerMuted,
-    toggleTrailerMuted,
-  } = useKoUp();
+  const user = useKoUpSelector((s) => s.user);
+  const progressMap = useKoUpSelector((s) => s.progressMap);
+  const updateWatchStatus = useKoUpSelector((s) => s.updateWatchStatus);
+  const togglePersonFavorite = useKoUpSelector((s) => s.togglePersonFavorite);
+  const personFavorites = useKoUpSelector((s) => s.personFavorites);
+  const followedPersonIds = useKoUpSelector((s) => s.followedPersonIds);
+  const togglePersonFollow = useKoUpSelector((s) => s.togglePersonFollow);
+  const triggerSound = useKoUpSelector((s) => s.triggerSound);
+  const isTrailerMuted = useKoUpSelector((s) => s.isTrailerMuted);
+  const toggleTrailerMuted = useKoUpSelector((s) => s.toggleTrailerMuted);
 
   const [heroItems, setHeroItems] = useState<MediaItem[]>([]);
   const [heroIdx, setHeroIdx] = useState(0);
@@ -1133,7 +1131,7 @@ export default function HomePage() {
                               ? `/seri/${activeHero.slug}/${heroStats.nextEpisode}?season=${heroStats.season}`
                               : `/seri/${activeHero.slug}/1?season=1`
                           }
-                          prefetch={true}
+                         
                           onClick={() => triggerSound('click')}
                           className="flex-1 sm:flex-initial justify-center flex items-center gap-2 px-5 sm:px-8 py-3 sm:py-3.5 rounded-full bg-white text-black font-bold text-xs sm:text-[14px] hover:bg-white/90 active:scale-[0.98] transition-all duration-200 transform-gpu backface-hidden glow-white cursor-pointer whitespace-nowrap"
                         >
@@ -1172,7 +1170,7 @@ export default function HomePage() {
 
                     <Link
                       href={`/seri/${activeHero.slug}`}
-                      prefetch={true}
+                     
                       aria-label="Detaylar"
                       className="w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-full glass-pill hover:bg-white/15 flex items-center justify-center text-white/80 hover:text-white transition-all duration-300"
                     >
@@ -1269,7 +1267,7 @@ export default function HomePage() {
                 </span>
                 <Link
                   href="/gecmis"
-                  prefetch={true}
+                 
                   className="text-[11px] sm:text-[12px] tracking-wider uppercase font-semibold text-white/50 hover:text-white flex items-center gap-1 transition-colors"
                 >
                   <span>Tümünü Gör</span>
@@ -1281,7 +1279,7 @@ export default function HomePage() {
               </h2>
             </div>
 
-            <div className="flex md:grid md:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 overflow-x-auto md:overflow-visible pb-3 md:pb-0 no-scrollbar snap-x snap-mandatory [-webkit-overflow-scrolling:touch] max-w-full">
+            <div className="flex md:grid md:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 overflow-x-auto md:overflow-visible pb-3 md:pb-0 no-scrollbar snap-x snap-mandatory md:snap-none [-webkit-overflow-scrolling:touch] max-w-full">
               {continueWatchingItems.map((item) => {
                 const prog = progressMap[item.id];
                 const stats = getEpisodeProgressStats(prog, item);
@@ -1295,7 +1293,7 @@ export default function HomePage() {
                   <Link
                     key={item.id}
                     href={`/seri/${item.slug}/${stats.nextEpisode}?season=${stats.season}`}
-                    prefetch={true}
+                   
                     className="w-[78vw] sm:w-[82vw] max-w-[320px] sm:max-w-[340px] shrink-0 md:w-auto snap-start group relative rounded-2xl sm:rounded-3xl overflow-hidden aspect-[16/10] sm:aspect-[21/9] min-h-[160px] sm:min-h-[175px] bg-[#0c0c0e] border border-white/10 hover:border-white/30 transition-all duration-300 active:scale-[0.99] shadow-xl cursor-pointer block"
                   >
                     {/* Full Card Cover Image with gentle zoom on hover */}
@@ -1356,7 +1354,7 @@ export default function HomePage() {
             3A. TOP 10 DİZİLER WITH INTEGRATED STROKE OUTLINE NUMERALS
         ===================================================================== */}
         {top10SeriesItems.length > 0 && (
-          <section className="w-full px-4 sm:px-6 md:px-14 cv-auto max-w-full">
+          <section className="w-full px-4 sm:px-6 md:px-14 max-w-full">
             <div className="flex flex-col gap-1 mb-6 sm:mb-8">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase text-sky-400/80">
@@ -1390,13 +1388,13 @@ export default function HomePage() {
 
             <div
               ref={top10SeriesScrollRef}
-              className="flex items-end gap-4 sm:gap-8 md:gap-10 overflow-x-auto overflow-y-hidden overscroll-y-auto overscroll-x-contain pb-6 pt-3 no-scrollbar snap-x snap-mandatory [-webkit-overflow-scrolling:touch] h-[240px] sm:h-[320px] md:h-[380px] max-w-full"
+              className="flex items-end gap-4 sm:gap-8 md:gap-10 overflow-x-auto overflow-y-hidden overscroll-y-auto overscroll-x-contain pb-6 pt-3 no-scrollbar snap-x snap-mandatory md:snap-none [-webkit-overflow-scrolling:touch] h-[240px] sm:h-[320px] md:h-[380px] max-w-full"
             >
               {top10SeriesItems.map((item, idx) => (
                 <Link
                   key={item.id}
                   href={`/seri/${item.slug}`}
-                  prefetch={true}
+                 
                   className="shrink-0 flex items-end group cursor-pointer snap-start relative pl-2 sm:pl-4 md:pl-6"
                 >
                   {/* Netflix/Apple TV+ Top 10 Stroke Numeral (Vector Clean, Artifact-Free) */}
@@ -1434,7 +1432,7 @@ export default function HomePage() {
             3B. TOP 10 FİLMLER WITH INTEGRATED STROKE OUTLINE NUMERALS
         ===================================================================== */}
         {top10MoviesItems.length > 0 && (
-          <section className="w-full px-4 sm:px-6 md:px-14 cv-auto max-w-full">
+          <section className="w-full px-4 sm:px-6 md:px-14 max-w-full">
             <div className="flex flex-col gap-1 mb-6 sm:mb-8">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase text-amber-400/80">
@@ -1468,13 +1466,13 @@ export default function HomePage() {
 
             <div
               ref={top10MoviesScrollRef}
-              className="flex items-end gap-4 sm:gap-8 md:gap-10 overflow-x-auto overflow-y-hidden overscroll-y-auto overscroll-x-contain pb-6 pt-3 no-scrollbar snap-x snap-mandatory [-webkit-overflow-scrolling:touch] h-[240px] sm:h-[320px] md:h-[380px] max-w-full"
+              className="flex items-end gap-4 sm:gap-8 md:gap-10 overflow-x-auto overflow-y-hidden overscroll-y-auto overscroll-x-contain pb-6 pt-3 no-scrollbar snap-x snap-mandatory md:snap-none [-webkit-overflow-scrolling:touch] h-[240px] sm:h-[320px] md:h-[380px] max-w-full"
             >
               {top10MoviesItems.map((item, idx) => (
                 <Link
                   key={item.id}
                   href={`/seri/${item.slug}`}
-                  prefetch={true}
+                 
                   className="shrink-0 flex items-end group cursor-pointer snap-start relative pl-2 sm:pl-4 md:pl-6"
                 >
                   {/* Netflix/Apple TV+ Top 10 Stroke Numeral (Vector Clean, Artifact-Free) */}
@@ -1536,13 +1534,13 @@ export default function HomePage() {
             7. OYUNCULAR, ANİME KARAKTERLERİ & SEİYUU LİDERLİK TABLOSU (No Emojis)
         ===================================================================== */}
         {topPeople.length > 0 && (
-          <section className="w-full px-4 sm:px-6 md:px-14 cv-auto max-w-full">
+          <section className="w-full px-4 sm:px-6 md:px-14 max-w-full">
             <div className="rounded-2xl sm:rounded-3xl bg-[#0f0f11] p-4 sm:p-8 border border-white/[0.08]">
               <div className="flex flex-col gap-1.5 mb-6">
                 <div className="flex items-center justify-end">
                   <Link
                     href="/oyuncular"
-                    prefetch={true}
+                   
                     className="inline-flex items-center gap-1.5 px-3.5 sm:px-5 py-1.5 sm:py-2.5 rounded-full glass-pill text-[11px] sm:text-xs font-semibold text-white hover:bg-white/15 transition-all whitespace-nowrap"
                   >
                     <span>Tüm Sıralama (21.814)</span>
@@ -1606,7 +1604,7 @@ export default function HomePage() {
                         </button>
                       </div>
 
-                      <Link href={`/oyuncu/${person.slug}`} prefetch={true} className="flex flex-col items-center w-full">
+                      <Link href={`/oyuncu/${person.slug}`} className="flex flex-col items-center w-full">
                         <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden border border-white/15 group-hover:border-white/40 transition-all mb-2.5 sm:mb-3">
                           <img
                             src={getProxiedImageUrl(person.image_url, person.name, null, 'w500', 'person')}
@@ -1643,7 +1641,7 @@ export default function HomePage() {
             8. CANLI ASYAMAG MAGAZİN & DEDİKODU VİTRİNİ (In-Site Reader)
         ===================================================================== */}
         {magPosts.length > 0 && (
-          <section className="w-full px-4 sm:px-6 md:px-14 cv-auto max-w-full">
+          <section className="w-full px-4 sm:px-6 md:px-14 max-w-full">
             <div className="flex flex-col gap-1 mb-4 sm:mb-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-[10px] sm:text-[11px] font-semibold tracking-[0.2em] uppercase text-white/50">
@@ -1652,7 +1650,7 @@ export default function HomePage() {
                 </div>
                 <Link
                   href="/magazin"
-                  prefetch={true}
+                 
                   className="text-xs font-semibold text-white/60 hover:text-white flex items-center gap-1 transition-colors whitespace-nowrap"
                 >
                   <span>Tüm Haberler</span>
@@ -1669,7 +1667,7 @@ export default function HomePage() {
                 <Link
                   key={post.slug}
                   href={`/magazin/${post.slug}`}
-                  prefetch={true}
+                 
                   className="koup-projection-card rounded-2xl overflow-hidden flex flex-col justify-between group"
                 >
                   <div className="relative h-40 sm:h-44 overflow-hidden">
@@ -1733,7 +1731,7 @@ export default function HomePage() {
   );
 }
 
-function AccordionRow({
+const AccordionRow = memo(function AccordionRow({
   subtitle,
   title,
   href,
@@ -1751,7 +1749,7 @@ function AccordionRow({
   if (!items || items.length === 0) return null;
 
   return (
-    <section className="w-full px-4 sm:px-6 md:px-14 cv-auto max-w-full">
+    <section className="w-full px-4 sm:px-6 md:px-14 max-w-full">
       <div className="flex flex-col gap-1 mb-4 sm:mb-5">
         <div className="flex items-center justify-between min-h-[22px]">
           {subtitle ? (
@@ -1798,7 +1796,7 @@ function AccordionRow({
             </button>
             <Link
               href={href}
-              prefetch={true}
+             
               className="text-xs font-semibold text-white/55 hover:text-white flex items-center gap-1 transition-colors whitespace-nowrap"
             >
               <span>Tümünü Gör</span>
@@ -1826,4 +1824,4 @@ function AccordionRow({
       </div>
     </section>
   );
-}
+});

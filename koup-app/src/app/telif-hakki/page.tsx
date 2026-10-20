@@ -33,7 +33,7 @@ export default function TelifHakkiPage() {
         </div>
 
         {/* Primary Legal Box: 5651 Sayılı Kanun Uyarısı */}
-        <div className="bg-gradient-to-r from-amber-500/10 via-white/[0.03] to-transparent border border-amber-500/25 rounded-2xl p-6 sm:p-8 backdrop-blur-xl space-y-3">
+        <div className="bg-gradient-to-r from-amber-500/15 via-[#121216] to-transparent border border-amber-500/25 rounded-2xl p-6 sm:p-8 space-y-3">
           <div className="flex items-center gap-2.5 text-amber-400 font-bold text-base">
             <AlertTriangle className="w-5 h-5 shrink-0" />
             <h2>5651 Sayılı Kanun Madde 8 Uyarınca Yer Sağlayıcı Bildirimi</h2>

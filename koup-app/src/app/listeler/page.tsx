@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -9,7 +9,6 @@ import {
   Plus,
   Heart,
   Film,
-  Sparkles,
   ArrowRight,
   TrendingUp,
   Clock,
@@ -20,7 +19,7 @@ import {
   User,
 } from 'lucide-react';
 import { getProxiedImageUrl } from '@/lib/supabase';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 import Pagination from '@/components/Pagination';
 
 interface ListCreator {
@@ -53,7 +52,10 @@ interface CustomListRecord {
 }
 
 export default function PublicListsPage() {
-  const { user, triggerSound, pushNotification, setIsAuthModalOpen } = useKoUp();
+  const user = useKoUpSelector((s) => s.user);
+  const triggerSound = useKoUpSelector((s) => s.triggerSound);
+  const pushNotification = useKoUpSelector((s) => s.pushNotification);
+  const setIsAuthModalOpen = useKoUpSelector((s) => s.setIsAuthModalOpen);
 
   const [lists, setLists] = useState<CustomListRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -61,6 +63,10 @@ export default function PublicListsPage() {
   const [sortBy, setSortBy] = useState<'popular' | 'items' | 'newest'>('popular');
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 12;
+
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page);
+  }, []);
 
   // Create List Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -224,7 +230,7 @@ export default function PublicListsPage() {
             <Link
               href="/listelerim"
               onClick={() => triggerSound('click')}
-              className="flex items-center gap-2 px-5 py-3 rounded-full glass-pill text-white font-bold text-xs sm:text-sm hover:bg-white/15 cursor-pointer transition-all"
+              className="flex items-center gap-2 px-5 py-3 rounded-full glass-pill text-white font-bold text-xs sm:text-sm hover:bg-white/15 cursor-pointer transition-colors"
             >
               <ListOrdered className="w-4 h-4 text-sky-400" />
               <span>Listelerim</span>
@@ -244,7 +250,7 @@ export default function PublicListsPage() {
       {/* FILTER & SEARCH TOOLBAR */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
         {/* Search bar */}
-        <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] flex-1 max-w-md">
+        <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-colors duration-200 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] flex-1 max-w-md">
           <Search className="w-4 h-4 text-white/60 shrink-0" />
           <input
             type="text"
@@ -344,7 +350,7 @@ export default function PublicListsPage() {
           </p>
           <button
             onClick={handleOpenCreateModal}
-            className="px-6 py-2.5 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 transition-all cursor-pointer"
+            className="px-6 py-2.5 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 transition-colors cursor-pointer"
           >
             Liste Oluştur
           </button>
@@ -358,10 +364,10 @@ export default function PublicListsPage() {
                 key={list.id}
                 href={`/listeler/${list.id}`}
                 onClick={() => triggerSound('click')}
-                className="group relative rounded-3xl bg-[#0e0e13]/90 backdrop-blur-xl border border-white/[0.08] hover:border-sky-500/40 p-5 sm:p-6 transition-all duration-300 hover:shadow-[0_12px_40px_rgba(0,0,0,0.65),0_0_30px_rgba(56,189,248,0.12)] flex flex-col justify-between overflow-hidden"
+                className="group relative rounded-3xl bg-[#0e0e13] border border-white/[0.08] hover:border-sky-500/40 p-5 sm:p-6 transition-[border-color,box-shadow] duration-200 hover:shadow-[0_12px_40px_rgba(0,0,0,0.65),0_0_30px_rgba(56,189,248,0.12)] flex flex-col justify-between overflow-hidden [content-visibility:auto] [contain-intrinsic-size:auto_200px]"
               >
                 {/* Subtle Ambient Background Glow on Hover */}
-                <div className="absolute -right-20 -bottom-20 w-64 h-64 rounded-full bg-sky-500/5 group-hover:bg-sky-500/15 blur-3xl pointer-events-none transition-all duration-500" />
+                <div className="absolute -right-20 -bottom-20 w-64 h-64 rounded-full bg-sky-500/5 group-hover:bg-sky-500/15 blur-3xl pointer-events-none transition-opacity duration-300" />
 
                 <div className="flex items-center justify-between gap-4 relative z-10">
                   {/* Left Column: Creator & Title & Meta */}
@@ -373,6 +379,8 @@ export default function PublicListsPage() {
                           <img
                             src={getProxiedImageUrl(list.creator.avatar_url, list.creator.username)}
                             alt={list.creator.username}
+                            loading="lazy"
+                            decoding="async"
                             className="w-full h-full object-cover"
                           />
                         ) : (
@@ -426,6 +434,7 @@ export default function PublicListsPage() {
                               alt={item.title}
                               className="w-full h-full object-cover"
                               loading="lazy"
+                              decoding="async"
                             />
                           ) : (
                             <div className="w-full h-full flex flex-col items-center justify-center p-1 text-center bg-[#181820]">
@@ -475,7 +484,7 @@ export default function PublicListsPage() {
           currentPage={currentPage}
           totalCount={filteredLists.length}
           pageSize={PAGE_SIZE}
-          onPageChange={setCurrentPage}
+          onPageChange={handlePageChange}
           itemLabel="topluluk listesinden"
           scrollToOffset={260}
         />
@@ -490,7 +499,7 @@ export default function PublicListsPage() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsCreateModalOpen(false)}
-              className="fixed inset-0 bg-black/80 backdrop-blur-md"
+              className="fixed inset-0 bg-black/80"
             />
 
             <motion.div
@@ -528,7 +537,7 @@ export default function PublicListsPage() {
                     value={newListTitle}
                     onChange={(e) => setNewListTitle(e.target.value)}
                     placeholder=""
-                    className="w-full px-4 py-2.5 rounded-full bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/35 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-all font-medium"
+                    className="w-full px-4 py-2.5 rounded-full bg-[#141419] border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/35 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-colors font-medium"
                   />
                 </div>
 
@@ -542,7 +551,7 @@ export default function PublicListsPage() {
                     value={newListDesc}
                     onChange={(e) => setNewListDesc(e.target.value)}
                     placeholder=""
-                    className="w-full px-4 py-2.5 rounded-2xl bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/35 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-all resize-none font-medium"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-[#141419] border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/35 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-colors resize-none font-medium"
                   />
                 </div>
 
@@ -554,7 +563,7 @@ export default function PublicListsPage() {
                     <button
                       type="button"
                       onClick={() => setNewListVisibility('public')}
-                      className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                      className={`p-3 rounded-2xl border text-left transition-colors cursor-pointer ${
                         newListVisibility === 'public'
                           ? 'bg-sky-500/15 border-sky-400/50 text-white'
                           : 'bg-white/[0.02] border-white/10 text-white/60 hover:border-white/20'
@@ -569,7 +578,7 @@ export default function PublicListsPage() {
                     <button
                       type="button"
                       onClick={() => setNewListVisibility('private')}
-                      className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                      className={`p-3 rounded-2xl border text-left transition-colors cursor-pointer ${
                         newListVisibility === 'private'
                           ? 'bg-sky-500/15 border-sky-400/50 text-white'
                           : 'bg-white/[0.02] border-white/10 text-white/60 hover:border-white/20'
@@ -594,7 +603,7 @@ export default function PublicListsPage() {
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="px-6 py-2.5 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 disabled:opacity-50 cursor-pointer shadow-lg transition-all"
+                    className="px-6 py-2.5 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 disabled:opacity-50 cursor-pointer shadow-lg transition-colors"
                   >
                     {isSubmitting ? 'Kaydediliyor...' : 'Listeyi Oluştur'}
                   </button>

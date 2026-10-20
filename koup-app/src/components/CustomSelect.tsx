@@ -137,22 +137,40 @@ export default function CustomSelect({
   const updatePosition = useCallback(() => {
     const res = calculatePosition();
     if (res) {
-      setOpenUpwards(res.upwards);
-      setAlignRight(res.alignRight);
-      setPortalCoords(res.coords);
+      setOpenUpwards((prev) => (prev !== res.upwards ? res.upwards : prev));
+      setAlignRight((prev) => (prev !== res.alignRight ? res.alignRight : prev));
+      setPortalCoords((prev) => {
+        if (
+          prev &&
+          prev.top === res.coords.top &&
+          prev.bottom === res.coords.bottom &&
+          prev.left === res.coords.left &&
+          prev.right === res.coords.right &&
+          prev.width === res.coords.width
+        ) {
+          return prev;
+        }
+        return res.coords;
+      });
     }
   }, [calculatePosition]);
 
   useEffect(() => {
     if (isOpen) {
       updatePosition();
-      window.addEventListener('resize', updatePosition);
-      window.addEventListener('scroll', updatePosition, true);
+      let rafId = 0;
+      const handleScrollOrResize = () => {
+        if (rafId) cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(updatePosition);
+      };
+      window.addEventListener('resize', handleScrollOrResize, { passive: true });
+      window.addEventListener('scroll', handleScrollOrResize, { passive: true, capture: true });
+      return () => {
+        if (rafId) cancelAnimationFrame(rafId);
+        window.removeEventListener('resize', handleScrollOrResize);
+        window.removeEventListener('scroll', handleScrollOrResize, true);
+      };
     }
-    return () => {
-      window.removeEventListener('resize', updatePosition);
-      window.removeEventListener('scroll', updatePosition, true);
-    };
   }, [isOpen, updatePosition]);
 
   // Reset search and highlight ONLY when menu opens or closes
@@ -195,7 +213,7 @@ export default function CustomSelect({
 
     if (isOpen) {
       document.addEventListener('mousedown', handleOutsideInteraction);
-      document.addEventListener('touchstart', handleOutsideInteraction);
+      document.addEventListener('touchstart', handleOutsideInteraction, { passive: true });
     }
     return () => {
       document.removeEventListener('mousedown', handleOutsideInteraction);
@@ -348,7 +366,7 @@ export default function CustomSelect({
               : `absolute left-1/2 -translate-x-1/2 ${
                   openUpwards ? 'bottom-full mb-2' : 'top-full mt-2'
                 } z-[9999]`
-          } min-w-[210px] max-w-[340px] w-max p-1.5 rounded-2xl bg-[#141418]/95 backdrop-blur-3xl border border-white/20 shadow-[0_24px_60px_rgba(0,0,0,0.95),0_0_24px_-4px_rgba(41,151,255,0.18)] ring-1 ring-white/10 flex flex-col overflow-hidden ${menuClassName}`}
+          } min-w-[210px] max-w-[340px] w-max p-1.5 rounded-2xl bg-[#141418]/95 backdrop-blur-sm border border-white/20 shadow-[0_24px_60px_rgba(0,0,0,0.95),0_0_24px_-4px_rgba(41,151,255,0.18)] ring-1 ring-white/10 flex flex-col overflow-hidden ${menuClassName}`}
           onKeyDown={handleKeyDown}
         >
           {/* Optional Instant Search Filter */}
@@ -357,7 +375,7 @@ export default function CustomSelect({
               className="p-1.5 pb-2 border-b border-white/[0.08]"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.06] border border-white/10 focus-within:border-sky-400/60 focus-within:ring-1 focus-within:ring-sky-400/30 transition-all">
+              <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.06] border border-white/10 focus-within:border-sky-400/60 focus-within:ring-1 focus-within:ring-sky-400/30 transition-colors">
                 <Search className="w-3.5 h-3.5 text-white/50 shrink-0 pointer-events-none" />
                 <input
                   ref={searchInputRef}
@@ -445,7 +463,7 @@ export default function CustomSelect({
                       triggerRef.current?.focus();
                     }}
                     onMouseEnter={() => !opt.disabled && setHighlightedIndex(idx)}
-                    className={`w-full flex items-center justify-between px-3.5 py-2 text-xs text-left rounded-xl transition-all duration-150 cursor-pointer ${
+                    className={`w-full flex items-center justify-between px-3.5 py-2 text-xs text-left rounded-xl transition-colors duration-150 cursor-pointer ${
                       opt.disabled
                         ? 'opacity-35 cursor-not-allowed text-white/40'
                         : isSelected
@@ -509,7 +527,7 @@ export default function CustomSelect({
           }
         }}
         onKeyDown={handleKeyDown}
-        className={`flex items-center justify-between cursor-pointer transition-all duration-200 ease-out hover:brightness-110 active:scale-[0.98] transform-gpu backface-hidden select-none koup-focus-ring ${
+        className={`flex items-center justify-between cursor-pointer transition-colors duration-200 ease-out hover:brightness-110 active:scale-[0.98] select-none koup-focus-ring ${
           disabled ? 'opacity-40 cursor-not-allowed' : ''
         } ${getVariantStyles()} ${getSizeStyles()} ${triggerClassName}`}
         role="combobox"

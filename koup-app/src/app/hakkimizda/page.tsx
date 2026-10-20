@@ -33,7 +33,7 @@ export default function HakkimizdaPage() {
         </div>
 
         {/* Hero Card */}
-        <div className="relative overflow-hidden bg-gradient-to-br from-white/[0.04] via-white/[0.02] to-transparent border border-white/[0.08] rounded-3xl p-8 sm:p-10 backdrop-blur-2xl">
+        <div className="relative overflow-hidden bg-gradient-to-br from-white/[0.06] via-white/[0.03] to-transparent border border-white/[0.08] rounded-3xl p-8 sm:p-10">
           <div className="space-y-4 max-w-2xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.06] border border-white/10 text-xs font-semibold text-white/80">
               <Compass className="w-3.5 h-3.5 text-sky-400" />

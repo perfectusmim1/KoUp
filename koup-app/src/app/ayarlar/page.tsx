@@ -37,7 +37,7 @@ import {
   MessageSquare,
   ShieldAlert,
 } from 'lucide-react';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 import { supabase } from '@/lib/supabase';
 import { getProxiedImageUrl } from '@/lib/supabase';
 import {
@@ -50,25 +50,23 @@ import {
 
 export default function SettingsPage() {
   const router = useRouter();
-  const {
-    user,
-    soundEnabled,
-    toggleSound,
-    triggerSound,
-    logout,
-    setIsAuthModalOpen,
-    updateProfileSettings,
-    blockedUsers,
-    unblockUser,
-    refreshUserLibrary,
-    deviceFingerprint,
-    navbarBehavior,
-    setNavbarBehavior,
-    floatingNavbarEnabled,
-    setFloatingNavbarEnabled,
-    autoCardTrailerEnabled,
-    setAutoCardTrailerEnabled,
-  } = useKoUp();
+  const user = useKoUpSelector((s) => s.user);
+  const soundEnabled = useKoUpSelector((s) => s.soundEnabled);
+  const toggleSound = useKoUpSelector((s) => s.toggleSound);
+  const triggerSound = useKoUpSelector((s) => s.triggerSound);
+  const logout = useKoUpSelector((s) => s.logout);
+  const setIsAuthModalOpen = useKoUpSelector((s) => s.setIsAuthModalOpen);
+  const updateProfileSettings = useKoUpSelector((s) => s.updateProfileSettings);
+  const blockedUsers = useKoUpSelector((s) => s.blockedUsers);
+  const unblockUser = useKoUpSelector((s) => s.unblockUser);
+  const refreshUserLibrary = useKoUpSelector((s) => s.refreshUserLibrary);
+  const deviceFingerprint = useKoUpSelector((s) => s.deviceFingerprint);
+  const navbarBehavior = useKoUpSelector((s) => s.navbarBehavior);
+  const setNavbarBehavior = useKoUpSelector((s) => s.setNavbarBehavior);
+  const floatingNavbarEnabled = useKoUpSelector((s) => s.floatingNavbarEnabled);
+  const setFloatingNavbarEnabled = useKoUpSelector((s) => s.setFloatingNavbarEnabled);
+  const autoCardTrailerEnabled = useKoUpSelector((s) => s.autoCardTrailerEnabled);
+  const setAutoCardTrailerEnabled = useKoUpSelector((s) => s.setAutoCardTrailerEnabled);
 
   // Settings form states
   const [editDisplayName, setEditDisplayName] = useState('');
@@ -271,7 +269,7 @@ export default function SettingsPage() {
   if (!user) {
     return (
       <div className="pt-28 pb-24 max-w-4xl mx-auto px-5 sm:px-8 space-y-8">
-        <div className="rounded-3xl bg-[#0f0f12]/95 border border-white/10 p-6 sm:p-8 text-center space-y-4 shadow-xl backdrop-blur-2xl">
+        <div className="rounded-3xl bg-[#0f0f12]/95 border border-white/10 p-6 sm:p-8 text-center space-y-4 shadow-xl backdrop-blur-sm">
           <div className="w-16 h-16 mx-auto rounded-3xl bg-sky-500/10 border border-sky-400/30 flex items-center justify-center shadow-[0_0_30px_rgba(41,151,255,0.25)]">
             <Settings className="w-8 h-8 text-sky-400" />
           </div>
@@ -291,7 +289,7 @@ export default function SettingsPage() {
               triggerSound('click');
               setIsAuthModalOpen(true);
             }}
-            className="w-full sm:w-auto mx-auto py-2.5 px-6 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all cursor-pointer shadow-lg flex items-center justify-center gap-2"
+            className="w-full sm:w-auto mx-auto py-2.5 px-6 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-colors cursor-pointer shadow-lg flex items-center justify-center gap-2"
           >
             <LogIn className="w-4 h-4" />
             <span>Giriş Yap veya Kayıt Ol</span>
@@ -523,7 +521,7 @@ export default function SettingsPage() {
                 value={editDisplayName}
                 onChange={(e) => setEditDisplayName(e.target.value)}
                 placeholder="Örn: Sinema Sever"
-                className="w-full px-4 py-2.5 rounded-full bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-all font-medium"
+                className="w-full px-4 py-2.5 rounded-full bg-[#0e0e12] border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-colors font-medium"
               />
             </div>
 
@@ -536,7 +534,7 @@ export default function SettingsPage() {
                 onChange={(e) => setEditBio(e.target.value)}
                 rows={3}
                 placeholder="Favori türleriniz, izleme hedefleriniz, sinema tutkunuz..."
-                className="w-full px-4 py-2.5 rounded-2xl bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-all resize-none font-medium"
+                className="w-full px-4 py-2.5 rounded-2xl bg-[#0e0e12] border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-colors resize-none font-medium"
               />
             </div>
 
@@ -550,7 +548,7 @@ export default function SettingsPage() {
                 value={editAvatarUrl}
                 onChange={(e) => setEditAvatarUrl(e.target.value)}
                 placeholder="https://..."
-                className="w-full px-4 py-2.5 rounded-full bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-all font-medium"
+                className="w-full px-4 py-2.5 rounded-full bg-[#0e0e12] border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-colors font-medium"
               />
             </div>
 
@@ -565,7 +563,7 @@ export default function SettingsPage() {
                 value={editBannerUrl}
                 onChange={(e) => setEditBannerUrl(e.target.value)}
                 placeholder="https://... (Kare veya istediğiniz boyutta görsel linki)"
-                className="w-full px-4 py-2.5 rounded-full bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-all font-medium"
+                className="w-full px-4 py-2.5 rounded-full bg-[#0e0e12] border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-colors font-medium"
               />
               <p className="text-[11px] text-white/45">
                 Görsel zorla genişletilip pikselleştirilmeden doğal boyutunda merkeze yerleşir; kenarlarından tüm arka plana yumuşak ışık halesi yayılır.
@@ -577,13 +575,13 @@ export default function SettingsPage() {
                     src={getProxiedImageUrl(editBannerUrl.trim(), 'banner-preview', null, 'original', 'banner')}
                     alt=""
                     aria-hidden="true"
-                    className="absolute inset-0 w-full h-full object-cover object-center blur-[50px] scale-125 opacity-70 saturate-150 transform-gpu pointer-events-none"
+                    className="absolute inset-0 w-full h-full object-cover object-center blur-3xl scale-110 opacity-70 saturate-150 pointer-events-none"
                   />
                   {/* Layer 2: Full-Bleed Sharp Cover Artwork */}
                   <img
                     src={getProxiedImageUrl(editBannerUrl.trim(), 'banner-preview', null, 'original', 'banner')}
                     alt="Kapak Önizleme"
-                    className="absolute inset-0 w-full h-full object-cover object-center opacity-65 transform-gpu pointer-events-none"
+                    className="absolute inset-0 w-full h-full object-cover object-center opacity-65 pointer-events-none"
                     onError={(e) => {
                       (e.target as HTMLElement).style.display = 'none';
                     }}
@@ -611,14 +609,14 @@ export default function SettingsPage() {
                           {editDisplayName.trim() || user.display_name || user.username}
                         </div>
                         <div>
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono bg-black/45 backdrop-blur-md text-white/75 border border-white/15">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono bg-black/75 text-white/75 border border-white/15">
                             @{user.username}
                           </span>
                         </div>
                       </div>
                     </div>
 
-                    <span className="text-[10px] font-mono text-white/85 bg-black/55 backdrop-blur-md px-3 py-1 rounded-full border border-white/15 shrink-0">
+                    <span className="text-[10px] font-mono text-white/85 bg-black/75 px-3 py-1 rounded-full border border-white/15 shrink-0">
                       Canlı Kapak Önizlemesi
                     </span>
                   </div>
@@ -712,13 +710,13 @@ export default function SettingsPage() {
                     value={mdlUsername}
                     onChange={(e) => setMdlUsername(e.target.value)}
                     placeholder="MDL kullanıcı adı veya linki..."
-                    className="flex-1 px-4 py-2.5 rounded-full bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-amber-400/60 focus:ring-2 focus:ring-amber-400/20 focus:shadow-[0_0_16px_rgba(251,191,36,0.25)] transition-all font-medium"
+                    className="flex-1 px-4 py-2.5 rounded-full bg-[#0e0e12] border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-amber-400/60 focus:ring-2 focus:ring-amber-400/20 focus:shadow-[0_0_16px_rgba(251,191,36,0.25)] transition-colors font-medium"
                   />
                   <button
                     type="button"
                     onClick={() => handleImport('mdl')}
                     disabled={isImporting}
-                    className="px-4 py-2.5 rounded-full bg-amber-400 text-black font-bold text-xs hover:bg-amber-300 transition-all cursor-pointer shrink-0 disabled:opacity-50 flex items-center gap-1.5 shadow-md"
+                    className="px-4 py-2.5 rounded-full bg-amber-400 text-black font-bold text-xs hover:bg-amber-300 transition-colors cursor-pointer shrink-0 disabled:opacity-50 flex items-center gap-1.5 shadow-md"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>{isImporting ? '...' : 'Aktar'}</span>
@@ -746,13 +744,13 @@ export default function SettingsPage() {
                     value={anilistUsername}
                     onChange={(e) => setAnilistUsername(e.target.value)}
                     placeholder="AniList kullanıcı adı..."
-                    className="flex-1 px-4 py-2.5 rounded-full bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-all font-medium"
+                    className="flex-1 px-4 py-2.5 rounded-full bg-[#0e0e12] border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/40 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-colors font-medium"
                   />
                   <button
                     type="button"
                     onClick={() => handleImport('anilist')}
                     disabled={isImporting}
-                    className="px-4 py-2.5 rounded-full bg-sky-400 text-black font-bold text-xs hover:bg-sky-300 transition-all cursor-pointer shrink-0 disabled:opacity-50 flex items-center gap-1.5 shadow-md"
+                    className="px-4 py-2.5 rounded-full bg-sky-400 text-black font-bold text-xs hover:bg-sky-300 transition-colors cursor-pointer shrink-0 disabled:opacity-50 flex items-center gap-1.5 shadow-md"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>{isImporting ? '...' : 'Aktar'}</span>
@@ -779,14 +777,14 @@ export default function SettingsPage() {
                 onChange={(e) => setCustomTextTitles(e.target.value)}
                 rows={5}
                 placeholder="Örnek:&#10;Guardian: The Lonely and Great God&#10;Reply 1988&#10;Goblin&#10;Crash Landing on You&#10;Alchemy of Souls"
-                className="w-full px-4 py-3 rounded-2xl bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/30 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] font-mono transition-all resize-none"
+                className="w-full px-4 py-3 rounded-2xl bg-[#0e0e12] border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/30 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] font-mono transition-colors resize-none"
               />
               <div className="flex justify-end">
                 <button
                   type="button"
                   onClick={() => handleImport('text')}
                   disabled={isImporting || !customTextTitles.trim()}
-                  className="px-6 py-2.5 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 transition-all cursor-pointer disabled:opacity-50 flex items-center gap-2 shadow-lg"
+                  className="px-6 py-2.5 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-2 shadow-lg"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>{isImporting ? 'Yapımlar Eşleştiriliyor...' : 'Listeyi Kütüphaneme Aktar'}</span>
@@ -817,7 +815,7 @@ export default function SettingsPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* 1. Gizli Profil Modu */}
-            <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all flex flex-col justify-between gap-4">
+            <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-colors flex flex-col justify-between gap-4">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-bold text-white flex items-center gap-2">
@@ -855,7 +853,7 @@ export default function SettingsPage() {
             </div>
 
             {/* 2. İzleme Geçmişini Gizle */}
-            <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all flex flex-col justify-between gap-4">
+            <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-colors flex flex-col justify-between gap-4">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-bold text-white flex items-center gap-2">
@@ -893,7 +891,7 @@ export default function SettingsPage() {
             </div>
 
             {/* 3. Kütüphanemi Gizle */}
-            <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all flex flex-col justify-between gap-4">
+            <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-colors flex flex-col justify-between gap-4">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-bold text-white flex items-center gap-2">
@@ -931,7 +929,7 @@ export default function SettingsPage() {
             </div>
 
             {/* 4. Yorumlarımı Gizle */}
-            <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all flex flex-col justify-between gap-4">
+            <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-colors flex flex-col justify-between gap-4">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-bold text-white flex items-center gap-2">
@@ -1132,7 +1130,7 @@ export default function SettingsPage() {
             </p>
           </div>
 
-          <label className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.03] border border-white/10 cursor-pointer hover:border-white/20 transition-all">
+          <label className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.03] border border-white/10 cursor-pointer hover:border-white/20 transition-colors">
             <div>
               <div className="text-sm font-bold text-white flex items-center gap-2">
                 <Volume2 className="w-4 h-4 text-sky-400" />
@@ -1165,7 +1163,7 @@ export default function SettingsPage() {
             </div>
 
             {blockedUsers.length > 0 && (
-              <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] w-full sm:w-60">
+              <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-colors duration-200 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] w-full sm:w-60">
                 <Search className="w-3.5 h-3.5 text-white/60 shrink-0" />
                 <input
                   type="text"
@@ -1203,7 +1201,7 @@ export default function SettingsPage() {
                 .map((u) => (
                   <div
                     key={u.id}
-                    className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.04] border border-white/10 hover:border-white/20 transition-all"
+                    className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.04] border border-white/10 hover:border-white/20 transition-colors"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="w-9 h-9 rounded-full overflow-hidden bg-white/10 border border-white/15 flex items-center justify-center shrink-0">
@@ -1211,6 +1209,8 @@ export default function SettingsPage() {
                           <img
                             src={getProxiedImageUrl(u.avatar_url, u.username)}
                             alt={u.username}
+                            loading="lazy"
+                            decoding="async"
                             className="w-full h-full object-cover"
                           />
                         ) : (
@@ -1233,7 +1233,7 @@ export default function SettingsPage() {
                         triggerSound('click');
                         unblockUser(u.id);
                       }}
-                      className="px-3.5 py-1.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 text-xs font-semibold cursor-pointer transition-all shrink-0 ml-2"
+                      className="px-3.5 py-1.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 text-xs font-semibold cursor-pointer transition-colors shrink-0 ml-2"
                     >
                       Engeli Kaldır
                     </button>
@@ -1266,7 +1266,7 @@ export default function SettingsPage() {
                 loadDevices();
               }}
               disabled={isLoadingDevices}
-              className="p-2.5 rounded-full bg-white/[0.04] border border-white/10 hover:border-white/20 text-white/70 hover:text-white transition-all cursor-pointer disabled:opacity-50"
+              className="p-2.5 rounded-full bg-white/[0.04] border border-white/10 hover:border-white/20 text-white/70 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
               title="Yenile"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoadingDevices ? 'animate-spin text-sky-400' : ''}`} />
@@ -1276,7 +1276,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={handleTerminateAllOthers}
-                className="px-4 py-2 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 text-xs font-semibold cursor-pointer transition-all flex items-center gap-1.5 shadow-sm"
+                className="px-4 py-2 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5 shadow-sm"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Diğer Cihazları Kapat</span>
@@ -1311,7 +1311,7 @@ export default function SettingsPage() {
               return (
                 <div
                   key={d.id || d.device_id}
-                  className={`flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl transition-all gap-4 border ${
+                  className={`flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl transition-colors gap-4 border ${
                     isCurrent
                       ? 'bg-sky-500/[0.04] border-sky-500/30 shadow-[0_0_20px_rgba(14,165,233,0.06)]'
                       : 'bg-white/[0.03] border-white/10 hover:border-white/20'
@@ -1373,7 +1373,7 @@ export default function SettingsPage() {
                       <button
                         type="button"
                         onClick={() => handleTerminateDevice(d.device_id)}
-                        className="px-3.5 py-1.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 text-xs font-semibold cursor-pointer transition-all"
+                        className="px-3.5 py-1.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 text-xs font-semibold cursor-pointer transition-colors"
                       >
                         Oturumu Kapat
                       </button>
@@ -1401,7 +1401,7 @@ export default function SettingsPage() {
             logout();
             router.push('/');
           }}
-          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-300 hover:bg-rose-500/20 text-xs font-semibold cursor-pointer transition-all self-start sm:self-auto"
+          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-300 hover:bg-rose-500/20 text-xs font-semibold cursor-pointer transition-colors self-start sm:self-auto"
         >
           <LogOut className="w-3.5 h-3.5" />
           <span>Çıkış Yap</span>
@@ -1418,7 +1418,7 @@ export default function SettingsPage() {
             transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
             className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[92vw] sm:max-w-xl w-auto pointer-events-auto"
           >
-            <div className="flex items-center gap-3 sm:gap-4 px-4 sm:px-6 py-3 rounded-full bg-[#121216]/95 backdrop-blur-2xl border border-white/20 shadow-[0_16px_50px_rgba(0,0,0,0.85)]">
+            <div className="flex items-center gap-3 sm:gap-4 px-4 sm:px-6 py-3 rounded-full bg-[#121216]/95 backdrop-blur-sm border border-white/20 shadow-[0_16px_50px_rgba(0,0,0,0.85)]">
               {settingsStatus ? (
                 <div className="flex items-center gap-2 text-xs font-mono text-emerald-400">
                   <Check className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -1447,7 +1447,7 @@ export default function SettingsPage() {
                     type="button"
                     onClick={() => handleSaveSettings()}
                     disabled={isSavingSettings}
-                    className="px-5 py-2 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 transition-all cursor-pointer shadow-lg disabled:opacity-50 flex items-center gap-2 shrink-0"
+                    className="px-5 py-2 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 transition-colors cursor-pointer shadow-lg disabled:opacity-50 flex items-center gap-2 shrink-0"
                   >
                     {isSavingSettings ? (
                       <>

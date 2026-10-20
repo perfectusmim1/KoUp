@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Search,
@@ -11,11 +11,6 @@ import {
   Mic,
   Globe,
   Layers,
-  MapPin,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   Check,
   X,
 } from 'lucide-react';
@@ -24,7 +19,7 @@ import { supabase, MediaItem, getCountryFlag } from '@/lib/supabase';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 import CountryFlag from '@/components/CountryFlag';
 import Pagination from '@/components/Pagination';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 import CustomSelect from '@/components/CustomSelect';
 import { cachedQuery, getCache, registerMediaItems } from '@/lib/cache';
 import { normalizeSearchQuery } from '@/lib/search';
@@ -121,7 +116,7 @@ function applyYearFilter(query: any, yearFilter: string) {
 function DiscoverContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { triggerSound } = useKoUp();
+  const triggerSound = useKoUpSelector((s) => s.triggerSound);
   const typeRowRef = useDragScroll<HTMLDivElement>();
   const genreRowRef = useDragScroll<HTMLDivElement>();
 
@@ -361,33 +356,27 @@ function DiscoverContent() {
 
   const totalPages = Math.max(1, Math.ceil(totalCount / ITEMS_PER_PAGE));
 
-  const goToPage = (page: number) => {
-    if (page < 1 || page > totalPages || page === currentPage) return;
-    triggerSound('click');
-    setCurrentPage(page);
-    if (typeof window !== 'undefined') {
-      window.scrollTo({ top: 180, behavior: 'smooth' });
-    }
-  };
+  const goToPage = useCallback(
+    (page: number) => {
+      if (page < 1 || page > totalPages || page === currentPage) return;
+      triggerSound?.('click');
+      setCurrentPage(page);
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 180, behavior: 'smooth' });
+      }
+    },
+    [totalPages, currentPage, triggerSound]
+  );
 
-  const getPageNumbers = () => {
-    if (totalPages <= 7) {
-      return Array.from({ length: totalPages }, (_, i) => i + 1);
-    }
-    if (currentPage <= 4) {
-      return [1, 2, 3, 4, 5, '...', totalPages];
-    }
-    if (currentPage >= totalPages - 3) {
-      return [1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
-    }
-    return [1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages];
-  };
-
-  const countryOptions = COUNTRIES.map((c) => ({
-    value: c.id,
-    label: c.label,
-    icon: c.code ? <CountryFlag code={c.code} size="sm" /> : <Globe className="w-3.5 h-3.5 text-sky-400" />,
-  }));
+  const countryOptions = useMemo(
+    () =>
+      COUNTRIES.map((c) => ({
+        value: c.id,
+        label: c.label,
+        icon: c.code ? <CountryFlag code={c.code} size="sm" /> : <Globe className="w-3.5 h-3.5 text-sky-400" />,
+      })),
+    []
+  );
 
   return (
     <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 space-y-8">
@@ -409,7 +398,7 @@ function DiscoverContent() {
           </div>
 
           <div className="flex flex-col sm:flex-row items-center sm:items-center gap-3 w-full sm:w-auto">
-            <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] w-full sm:w-auto justify-between sm:justify-start">
+            <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-colors duration-200 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] w-full sm:w-auto justify-between sm:justify-start">
               <Search className="w-4 h-4 text-white/60 shrink-0" />
               <input
                 type="text"
@@ -561,7 +550,7 @@ function DiscoverContent() {
                       : [...prev, g]
                   );
                 }}
-                className={`relative shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-all duration-200 cursor-pointer ${
+                className={`relative shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-colors duration-200 cursor-pointer ${
                   active
                     ? 'bg-white text-black font-bold shadow-[0_0_16px_rgba(255,255,255,0.35)]'
                     : 'bg-white/[0.04] text-white/65 border border-white/10 hover:text-white'
@@ -593,7 +582,9 @@ function DiscoverContent() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3.5 sm:gap-4 pt-2.5 pb-6">
           {items.map((item) => (
-            <AccordionMediaCard key={item.id} item={item} fluidWidth={true} />
+            <div key={item.id} className="[content-visibility:auto] [contain-intrinsic-size:auto_340px]">
+              <AccordionMediaCard item={item} fluidWidth={true} />
+            </div>
           ))}
         </div>
       )}

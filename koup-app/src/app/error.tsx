@@ -28,13 +28,13 @@ export default function GlobalError({
       <div className="flex gap-4 items-center">
         <button
           onClick={() => reset()}
-          className="px-6 py-3 rounded-full bg-white/10 hover:bg-white/20 text-white font-medium text-sm transition-all border border-white/15"
+          className="px-6 py-3 rounded-full bg-white/10 hover:bg-white/20 text-white font-medium text-sm transition-colors border border-white/15"
         >
           Tekrar Dene
         </button>
         <Link
           href="/"
-          className="px-6 py-3 rounded-full bg-sky-500 hover:bg-sky-400 text-black font-semibold text-sm transition-all shadow-lg shadow-sky-500/20"
+          className="px-6 py-3 rounded-full bg-sky-500 hover:bg-sky-400 text-black font-semibold text-sm transition-colors shadow-lg shadow-sky-500/20"
         >
           Ana Sayfa
         </Link>

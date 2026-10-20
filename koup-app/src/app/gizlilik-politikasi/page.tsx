@@ -34,7 +34,7 @@ export default function GizlilikPolitikasiPage() {
         </div>
 
         {/* Highlight Card */}
-        <div className="bg-gradient-to-r from-rose-500/10 via-white/[0.03] to-transparent border border-rose-500/20 rounded-2xl p-6 backdrop-blur-xl">
+        <div className="bg-gradient-to-r from-rose-500/15 via-[#121216] to-transparent border border-rose-500/20 rounded-2xl p-6">
           <div className="flex items-start gap-3.5">
             <Lock className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
             <div className="space-y-1.5 text-xs sm:text-sm text-white/80 leading-relaxed">

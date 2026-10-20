@@ -22,7 +22,7 @@ import {
 import RichCommentSection from '@/components/RichCommentSection';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 import { cachedQuery, invalidateCache } from '@/lib/cache';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 
 function getMagCategoryColor(cat: string): string {
   switch (cat) {
@@ -53,14 +53,12 @@ export default function MagazineArticlePage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = use(params);
-  const {
-    user,
-    authLoading,
-    likedMagazinePostIds,
-    toggleMagazineLike,
-    openAuthModal,
-    triggerSound,
-  } = useKoUp();
+  const user = useKoUpSelector((s) => s.user);
+  const authLoading = useKoUpSelector((s) => s.authLoading);
+  const likedMagazinePostIds = useKoUpSelector((s) => s.likedMagazinePostIds);
+  const toggleMagazineLike = useKoUpSelector((s) => s.toggleMagazineLike);
+  const openAuthModal = useKoUpSelector((s) => s.openAuthModal);
+  const triggerSound = useKoUpSelector((s) => s.triggerSound);
 
   const [post, setPost] = useState<MagazinePost | null>(null);
   const [linkedMedia, setLinkedMedia] = useState<MediaItem[]>([]);
@@ -304,7 +302,7 @@ export default function MagazineArticlePage({
         <div className="flex flex-wrap items-center gap-2">
           {/* Source Badge */}
           <span
-            className={`px-3 py-1 rounded-full text-xs font-mono font-bold border backdrop-blur-md shadow-sm shadow-black/30 ${
+            className={`px-3 py-1 rounded-full text-xs font-mono font-bold border shadow-sm shadow-black/30 ${
               isKoreZin
                 ? 'bg-rose-600/85 text-white border-rose-400/50'
                 : 'bg-sky-600/85 text-white border-sky-400/50'
@@ -316,7 +314,7 @@ export default function MagazineArticlePage({
           {(post.categories || ['Magazin']).map((cat) => (
             <span
               key={cat}
-              className={`px-3 py-1 rounded-full text-xs font-mono font-bold border backdrop-blur-md ${getMagCategoryColor(cat)}`}
+              className={`px-3 py-1 rounded-full text-xs font-mono font-bold border ${getMagCategoryColor(cat)}`}
             >
               {cat}
             </span>
@@ -417,7 +415,7 @@ export default function MagazineArticlePage({
                 setIsLiking(false);
               }
             }}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold border transition-all cursor-pointer active:scale-95 ${
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold border transition-colors cursor-pointer active:scale-95 ${
               isCurrentlyLiked
                 ? 'bg-pink-500 border-pink-300 text-white shadow-[0_0_15px_rgba(236,72,153,0.35)]'
                 : 'apple-glass-pill text-white hover:bg-white/15'
@@ -492,7 +490,7 @@ export default function MagazineArticlePage({
                 <Link
                   key={mp.slug}
                   href={`/magazin/${mp.slug}`}
-                  className="p-4 rounded-2xl bg-[#121216] border border-white/10 hover:border-amber-400/40 transition-all flex items-center gap-3.5"
+                  className="p-4 rounded-2xl bg-[#121216] border border-white/10 hover:border-amber-400/40 transition-colors flex items-center gap-3.5"
                 >
                   <img
                     src={getProxiedImageUrl(mp.featured_image)}

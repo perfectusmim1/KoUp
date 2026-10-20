@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -9,18 +9,14 @@ import {
   Globe,
   Lock,
   Trash2,
-  Edit3,
-  ExternalLink,
   LogIn,
   Search,
-  Sparkles,
   Layers,
   ChevronRight,
   X,
-  Check,
   Compass,
 } from 'lucide-react';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 import { supabase, getProxiedImageUrl } from '@/lib/supabase';
 import Pagination from '@/components/Pagination';
 
@@ -37,13 +33,20 @@ interface UserCustomList {
 }
 
 export default function MyListsPage() {
-  const { user, setIsAuthModalOpen, triggerSound, pushNotification } = useKoUp();
+  const user = useKoUpSelector((s) => s.user);
+  const setIsAuthModalOpen = useKoUpSelector((s) => s.setIsAuthModalOpen);
+  const triggerSound = useKoUpSelector((s) => s.triggerSound);
+  const pushNotification = useKoUpSelector((s) => s.pushNotification);
 
   const [lists, setLists] = useState<UserCustomList[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 12;
+
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page);
+  }, []);
 
   // Create Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -222,7 +225,7 @@ export default function MyListsPage() {
   if (!user) {
     return (
       <div className="min-h-[80vh] flex items-center justify-center pt-28 pb-20 px-5">
-        <div className="max-w-md w-full rounded-3xl bg-[#0f0f12]/95 border border-white/10 p-8 sm:p-10 text-center space-y-6 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.15)] backdrop-blur-2xl">
+        <div className="max-w-md w-full rounded-3xl bg-[#0f0f12]/95 border border-white/10 p-8 sm:p-10 text-center space-y-6 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.15)] backdrop-blur-sm">
           <div className="w-20 h-20 mx-auto rounded-3xl bg-sky-500/10 border border-sky-400/30 flex items-center justify-center shadow-[0_0_30px_rgba(41,151,255,0.25)]">
             <FolderHeart className="w-10 h-10 text-sky-400" />
           </div>
@@ -241,7 +244,7 @@ export default function MyListsPage() {
               triggerSound('click');
               setIsAuthModalOpen(true);
             }}
-            className="w-full py-3 px-6 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all cursor-pointer shadow-lg flex items-center justify-center gap-2"
+            className="w-full py-3 px-6 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-colors cursor-pointer shadow-lg flex items-center justify-center gap-2"
           >
             <LogIn className="w-4 h-4" />
             <span>Giriş Yap veya Kayıt Ol</span>
@@ -265,7 +268,7 @@ export default function MyListsPage() {
           <Link
             href="/listeler"
             onClick={() => triggerSound('click')}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-bold text-white transition-all cursor-pointer"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-bold text-white transition-colors cursor-pointer"
           >
             <Compass className="w-3.5 h-3.5 text-sky-400" />
             <span>Topluluk Listelerini Keşfet</span>
@@ -276,7 +279,7 @@ export default function MyListsPage() {
               triggerSound('click');
               setIsModalOpen(true);
             }}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all cursor-pointer shadow-lg"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-colors cursor-pointer shadow-lg"
           >
             <Plus className="w-4 h-4" />
             <span>Yeni Liste Oluştur</span>
@@ -290,7 +293,7 @@ export default function MyListsPage() {
           Toplam <strong className="text-white font-bold">{lists.length}</strong> özel koleksiyon
         </div>
 
-        <div className="flex items-center gap-2 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/50 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 w-full sm:w-64 lg:w-72 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.25)]">
+        <div className="flex items-center gap-2 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/50 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-colors duration-200 w-full sm:w-64 lg:w-72 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.25)]">
           <Search className="w-4 h-4 text-white/60 shrink-0" />
           <input
             type="text"
@@ -347,7 +350,7 @@ export default function MyListsPage() {
               triggerSound('click');
               setIsModalOpen(true);
             }}
-            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all cursor-pointer shadow-md"
+            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-colors cursor-pointer shadow-md"
           >
             <Plus className="w-4 h-4" />
             <span>Yeni Liste Oluştur</span>
@@ -362,7 +365,7 @@ export default function MyListsPage() {
             return (
               <div
                 key={l.id}
-                className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-5 flex flex-col justify-between hover:border-white/20 hover:bg-white/[0.02] transition-all group relative overflow-hidden shadow-xl"
+                className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-5 flex flex-col justify-between hover:border-white/20 hover:bg-white/[0.02] transition-[border-color,background-color] duration-200 group relative overflow-hidden shadow-xl [content-visibility:auto] [contain-intrinsic-size:auto_280px]"
               >
                 <div>
                   {/* Top Bar: Privacy Badge and Action Menu */}
@@ -386,7 +389,7 @@ export default function MyListsPage() {
 
                     <button
                       onClick={() => setDeletingId(l.id)}
-                      className="w-7 h-7 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 flex items-center justify-center transition-all cursor-pointer opacity-70 hover:opacity-100"
+                      className="w-7 h-7 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 flex items-center justify-center transition-colors cursor-pointer opacity-70 hover:opacity-100"
                       aria-label="Listeyi Sil"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -406,6 +409,8 @@ export default function MyListsPage() {
                             <img
                               src={getProxiedImageUrl(poster, l.title)}
                               alt=""
+                              loading="lazy"
+                              decoding="async"
                               className="w-full h-full object-cover"
                             />
                           </div>
@@ -462,7 +467,7 @@ export default function MyListsPage() {
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      className="absolute inset-0 bg-[#0d0d10]/95 backdrop-blur-md p-6 flex flex-col justify-center items-center text-center space-y-3 z-20"
+                      className="absolute inset-0 bg-[#0d0d10] p-6 flex flex-col justify-center items-center text-center space-y-3 z-20"
                     >
                       <div className="w-10 h-10 rounded-full bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400">
                         <Trash2 className="w-5 h-5" />
@@ -473,13 +478,13 @@ export default function MyListsPage() {
                       <div className="flex items-center gap-2 pt-1">
                         <button
                           onClick={() => setDeletingId(null)}
-                          className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-xs text-white font-medium cursor-pointer transition-all"
+                          className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-xs text-white font-medium cursor-pointer transition-colors"
                         >
                           Vazgeç
                         </button>
                         <button
                           onClick={() => handleDeleteList(l.id)}
-                          className="px-4 py-1.5 rounded-full bg-rose-500 text-white text-xs font-bold hover:bg-rose-600 cursor-pointer shadow-md transition-all"
+                          className="px-4 py-1.5 rounded-full bg-rose-500 text-white text-xs font-bold hover:bg-rose-600 cursor-pointer shadow-md transition-colors"
                         >
                           Evet, Sil
                         </button>
@@ -499,7 +504,7 @@ export default function MyListsPage() {
           currentPage={currentPage}
           totalCount={filteredLists.length}
           pageSize={PAGE_SIZE}
-          onPageChange={setCurrentPage}
+          onPageChange={handlePageChange}
           itemLabel="özel listeden"
           scrollToOffset={240}
         />
@@ -520,7 +525,7 @@ export default function MyListsPage() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsModalOpen(false)}
-              className="absolute inset-0 bg-black/80 backdrop-blur-md cursor-pointer"
+              className="absolute inset-0 bg-black/80 cursor-pointer"
             />
 
             <motion.div
@@ -590,7 +595,7 @@ export default function MyListsPage() {
                         triggerSound('click');
                         setModalVisibility('public');
                       }}
-                      className={`p-3.5 rounded-2xl border text-left cursor-pointer transition-all ${
+                      className={`p-3.5 rounded-2xl border text-left cursor-pointer transition-colors ${
                         modalVisibility === 'public'
                           ? 'bg-sky-500/15 border-sky-400 text-white shadow-[0_0_18px_rgba(41,151,255,0.22)]'
                           : 'bg-white/[0.04] border-white/10 text-white/60 hover:border-white/25 hover:text-white'
@@ -608,7 +613,7 @@ export default function MyListsPage() {
                         triggerSound('click');
                         setModalVisibility('private');
                       }}
-                      className={`p-3.5 rounded-2xl border text-left cursor-pointer transition-all ${
+                      className={`p-3.5 rounded-2xl border text-left cursor-pointer transition-colors ${
                         modalVisibility === 'private'
                           ? 'bg-amber-500/15 border-amber-400 text-white shadow-[0_0_18px_rgba(245,158,11,0.22)]'
                           : 'bg-white/[0.04] border-white/10 text-white/60 hover:border-white/25 hover:text-white'
@@ -632,14 +637,14 @@ export default function MyListsPage() {
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}
-                    className="px-5 py-2.5 rounded-full glass-pill text-xs text-white/80 hover:text-white font-medium cursor-pointer transition-all"
+                    className="px-5 py-2.5 rounded-full glass-pill text-xs text-white/80 hover:text-white font-medium cursor-pointer transition-colors"
                   >
                     İptal
                   </button>
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="px-6 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 cursor-pointer shadow-lg disabled:opacity-50 transition-all flex items-center gap-1.5"
+                    className="px-6 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 cursor-pointer shadow-lg disabled:opacity-50 transition-colors flex items-center gap-1.5"
                   >
                     {isSubmitting ? 'Oluşturuluyor...' : 'Listeyi Oluştur'}
                   </button>

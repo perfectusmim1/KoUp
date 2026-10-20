@@ -18,7 +18,7 @@ import {
   PersonItem,
   getProxiedImageUrl,
 } from '@/lib/supabase';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 import CustomSelect from '@/components/CustomSelect';
 import Pagination from '@/components/Pagination';
 // KoUp Actors Pagination
@@ -32,13 +32,11 @@ const PERSON_TABS = [
 ] as const;
 
 export default function ActorsLeaderboardPage() {
-  const {
-    favPersonIds,
-    followedPersonIds,
-    togglePersonFavorite,
-    togglePersonFollow,
-    triggerSound,
-  } = useKoUp();
+  const favPersonIds = useKoUpSelector((s) => s.favPersonIds);
+  const followedPersonIds = useKoUpSelector((s) => s.followedPersonIds);
+  const togglePersonFavorite = useKoUpSelector((s) => s.togglePersonFavorite);
+  const togglePersonFollow = useKoUpSelector((s) => s.togglePersonFollow);
+  const triggerSound = useKoUpSelector((s) => s.triggerSound);
 
   const [people, setPeople] = useState<PersonItem[]>([]);
   const [filterType, setFilterType] = useState<'all' | 'actor' | 'character' | 'seiyuu'>('all');
@@ -98,7 +96,7 @@ export default function ActorsLeaderboardPage() {
 
         {/* Search & Sort Controls */}
         <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
-          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] mx-auto sm:mx-0">
+          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-colors duration-200 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] mx-auto sm:mx-0">
             <Search className="w-4 h-4 text-white/60 shrink-0" />
             <input
               type="text"
@@ -189,10 +187,10 @@ export default function ActorsLeaderboardPage() {
             return (
               <div
                 key={person.id}
-                className="cv-card rounded-3xl p-4 flex flex-col justify-between group bg-[#0f0f11] border border-white/[0.08] hover:border-white/30 hover:shadow-[0_0_24px_-4px_rgba(41,151,255,0.25),0_10px_24px_rgba(0,0,0,0.7)] transition-all duration-300"
+                className="cv-card rounded-3xl p-4 flex flex-col justify-between group bg-[#0f0f11] border border-white/[0.08] hover:border-white/30 hover:shadow-[0_0_24px_-4px_rgba(41,151,255,0.25),0_10px_24px_rgba(0,0,0,0.7)] transition-colors duration-200 [content-visibility:auto] [contain-intrinsic-size:auto_280px]"
               >
                 <div>
-                  <div className="relative aspect-square rounded-2xl overflow-hidden mb-3 bg-black/50 border border-white/10 group-hover:border-white/30 transition-all">
+                  <div className="relative aspect-square rounded-2xl overflow-hidden mb-3 bg-black/50 border border-white/10 group-hover:border-white/30 transition-colors">
                     <Link href={`/oyuncu/${person.slug}`}>
                       <img
                         src={getProxiedImageUrl(person.image_url, person.name, null, 'w500', 'person')}
@@ -253,7 +251,7 @@ export default function ActorsLeaderboardPage() {
                       await togglePersonFavorite(person.id, person.name);
                     }}
                     title={isFav ? 'Favorilerimde' : 'Favorilere Ekle (Beğen)'}
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-full text-xs font-mono font-bold border transition-all cursor-pointer ${
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-full text-xs font-mono font-bold border transition-colors cursor-pointer ${
                       isFav
                         ? 'bg-rose-500 border-rose-400 text-white shadow-[0_0_12px_rgba(244,63,94,0.35)]'
                         : 'bg-white/[0.05] border-white/10 text-white/85 hover:bg-white/10'
@@ -267,7 +265,7 @@ export default function ActorsLeaderboardPage() {
                     onClick={() => togglePersonFollow(person.id, person.name)}
                     aria-label={isFol ? 'Takibi Bırak' : 'Takip Et (Yeni Seri Bildirimi)'}
                     title={isFol ? 'Takip Ediliyor (Yeni seriler bildirilecek)' : 'Takip Et (Yeni serilerinde bildirim al)'}
-                    className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
+                    className={`w-8 h-8 rounded-full flex items-center justify-center border transition-colors cursor-pointer ${
                       isFol
                         ? 'bg-sky-400 text-slate-950 border-sky-300 shadow-[0_0_12px_rgba(56,189,248,0.35)]'
                         : 'bg-white/[0.05] border-white/10 text-white/65 hover:text-white'

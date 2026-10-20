@@ -1,26 +1,21 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import {
   Clock,
   Play,
-  Trash2,
   Search,
   Compass,
   LogIn,
   CheckCircle2,
   Film,
-  Sparkles,
-  ArrowRight,
-  RotateCcw,
   X,
 } from 'lucide-react';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 import {
   getProxiedImageUrl,
-  UserMediaProgress,
   getEpisodeProgressStats,
   cleanMediaTitle,
 } from '@/lib/supabase';
@@ -29,18 +24,19 @@ import Pagination from '@/components/Pagination';
 type HistoryFilter = 'ALL' | 'in_progress' | 'completed';
 
 export default function WatchHistoryPage() {
-  const {
-    user,
-    progressMap,
-    continueWatchingList,
-    setIsAuthModalOpen,
-    triggerSound,
-  } = useKoUp();
+  const user = useKoUpSelector((s) => s.user);
+  const progressMap = useKoUpSelector((s) => s.progressMap);
+  const setIsAuthModalOpen = useKoUpSelector((s) => s.setIsAuthModalOpen);
+  const triggerSound = useKoUpSelector((s) => s.triggerSound);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<HistoryFilter>('ALL');
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 24;
+
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page);
+  }, []);
 
   // Collect all history items from progressMap that have media or progress
   const allHistoryItems = useMemo(() => {
@@ -90,7 +86,7 @@ export default function WatchHistoryPage() {
   if (!user) {
     return (
       <div className="min-h-[80vh] flex items-center justify-center pt-28 pb-20 px-5">
-        <div className="max-w-md w-full rounded-3xl bg-[#0f0f12]/95 border border-white/10 p-8 sm:p-10 text-center space-y-6 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.15)] backdrop-blur-2xl">
+        <div className="max-w-md w-full rounded-3xl bg-[#0f0f12]/95 border border-white/10 p-8 sm:p-10 text-center space-y-6 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.15)] backdrop-blur-sm">
           <div className="w-20 h-20 mx-auto rounded-3xl bg-sky-500/10 border border-sky-400/30 flex items-center justify-center shadow-[0_0_30px_rgba(41,151,255,0.25)]">
             <Clock className="w-10 h-10 text-sky-400" />
           </div>
@@ -109,7 +105,7 @@ export default function WatchHistoryPage() {
               triggerSound('click');
               setIsAuthModalOpen(true);
             }}
-            className="w-full py-3 px-6 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all cursor-pointer shadow-lg flex items-center justify-center gap-2"
+            className="w-full py-3 px-6 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-colors cursor-pointer shadow-lg flex items-center justify-center gap-2"
           >
             <LogIn className="w-4 h-4" />
             <span>Giriş Yap veya Kayıt Ol</span>
@@ -133,7 +129,7 @@ export default function WatchHistoryPage() {
           <Link
             href="/kesfet"
             onClick={() => triggerSound('click')}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-bold text-white transition-all cursor-pointer"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-bold text-white transition-colors cursor-pointer"
           >
             <Compass className="w-4 h-4 text-sky-400" />
             <span>Yeni İçerik Keşfet</span>
@@ -178,7 +174,7 @@ export default function WatchHistoryPage() {
           })}
         </div>
 
-        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] min-w-[220px]">
+        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-colors duration-200 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] min-w-[220px]">
           <Search className="w-3.5 h-3.5 text-white/60 shrink-0" />
           <input
             type="text"
@@ -224,7 +220,7 @@ export default function WatchHistoryPage() {
           <Link
             href="/kesfet"
             onClick={() => triggerSound('click')}
-            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all cursor-pointer shadow-md"
+            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-colors cursor-pointer shadow-md"
           >
             <Compass className="w-4 h-4" />
             <span>Dizi & Anime Keşfet</span>
@@ -248,7 +244,7 @@ export default function WatchHistoryPage() {
             return (
               <div
                 key={`history-${item.media_id}-${stats.season}-${stats.nextEpisode}-${idx}`}
-                className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-4 sm:p-5 flex gap-4 hover:border-white/20 transition-all group relative overflow-hidden shadow-xl"
+                className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-4 sm:p-5 flex gap-4 hover:border-white/20 transition-[border-color] duration-200 group relative overflow-hidden shadow-xl [content-visibility:auto] [contain-intrinsic-size:auto_180px]"
               >
                 {/* Poster image */}
                 <Link
@@ -260,7 +256,9 @@ export default function WatchHistoryPage() {
                     <img
                       src={getProxiedImageUrl(media.cover_image, media.title)}
                       alt={media.title || 'Kapak'}
-                      className="w-full h-full object-cover transition-transform duration-200 ease-out transform-gpu will-change-transform backface-hidden"
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-full object-cover transition-transform duration-200 ease-out"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-white/30">
@@ -268,7 +266,7 @@ export default function WatchHistoryPage() {
                     </div>
                   )}
                   <div className="absolute inset-0 bg-black/35 flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200 ease-out pointer-events-none">
-                    <div className="w-10 h-10 rounded-full bg-black/75 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-xl transition-all duration-200 ease-out">
+                    <div className="w-10 h-10 rounded-full bg-black/85 border border-white/20 flex items-center justify-center text-white shadow-xl transition-transform duration-200 ease-out">
                       <Play className="w-4 h-4 fill-white text-white ml-0.5" />
                     </div>
                   </div>
@@ -335,7 +333,7 @@ export default function WatchHistoryPage() {
                       </div>
                       <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
                         <div
-                          className="h-full bg-sky-400 rounded-full transition-all duration-300"
+                          className="h-full bg-sky-400 rounded-full transition-[width] duration-300"
                           style={{ width: `${barPct}%` }}
                         />
                       </div>
@@ -345,7 +343,7 @@ export default function WatchHistoryPage() {
                     <Link
                       href={playUrl}
                       onClick={() => triggerSound('click')}
-                      className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all w-fit glow-white cursor-pointer"
+                      className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-colors w-fit glow-white cursor-pointer"
                     >
                       <Play className="w-3 h-3 fill-black" />
                       <span>
@@ -370,7 +368,7 @@ export default function WatchHistoryPage() {
           currentPage={currentPage}
           totalCount={filteredHistory.length}
           pageSize={PAGE_SIZE}
-          onPageChange={setCurrentPage}
+          onPageChange={handlePageChange}
           itemLabel="izleme kaydından"
           scrollToOffset={240}
         />

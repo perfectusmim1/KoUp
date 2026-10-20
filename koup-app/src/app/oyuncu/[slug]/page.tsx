@@ -26,7 +26,7 @@ import {
   getProxiedImageUrl,
 } from '@/lib/supabase';
 import { cachedQuery, setCache, invalidateCache } from '@/lib/cache';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 import AccordionMediaCard, { requestAccordionHover, preloadMediaImages } from '@/components/AccordionMediaCard';
 import { useDragScroll } from '@/hooks/useDragScroll';
 import RichCommentSection from '@/components/RichCommentSection';
@@ -206,12 +206,10 @@ export default function PersonDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = use(params);
-  const {
-    favPersonIds,
-    followedPersonIds,
-    togglePersonFavorite,
-    togglePersonFollow,
-  } = useKoUp();
+  const favPersonIds = useKoUpSelector((s) => s.favPersonIds);
+  const followedPersonIds = useKoUpSelector((s) => s.followedPersonIds);
+  const togglePersonFavorite = useKoUpSelector((s) => s.togglePersonFavorite);
+  const togglePersonFollow = useKoUpSelector((s) => s.togglePersonFollow);
 
   const [person, setPerson] = useState<PersonItem | null>(null);
   const [credits, setCredits] = useState<CastMember[]>([]);
@@ -593,10 +591,10 @@ export default function PersonDetailPage({
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 pt-2">
             <button
               onClick={handleToggleFavorite}
-              className={`flex items-center gap-2 px-6 py-3 rounded-full text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-2 px-6 py-3 rounded-full text-xs font-bold transition-colors cursor-pointer ${
                 isFav
                   ? 'bg-pink-500 hover:bg-pink-400 text-white shadow-[0_0_20px_rgba(236,72,153,0.45)] hover:shadow-[0_0_30px_rgba(236,72,153,0.7)] active:scale-[0.98]'
-                  : 'bg-white text-black hover:bg-white/90 active:scale-[0.98] transform-gpu backface-hidden'
+                  : 'bg-white text-black hover:bg-white/90 active:scale-[0.98]'
               }`}
             >
               <Heart className={`w-4 h-4 ${isFav ? 'fill-white' : 'fill-black'}`} />
@@ -605,7 +603,7 @@ export default function PersonDetailPage({
 
             <button
               onClick={() => togglePersonFollow(person.id, person.name)}
-              className={`flex items-center gap-2 px-5 py-3 rounded-full text-xs font-bold border transition-all cursor-pointer ${
+              className={`flex items-center gap-2 px-5 py-3 rounded-full text-xs font-bold border transition-colors cursor-pointer ${
                 isFollowed
                   ? 'bg-sky-400/20 hover:bg-sky-400/35 border-sky-400 hover:border-sky-300 text-sky-300 hover:text-sky-200 shadow-[0_0_15px_rgba(56,189,248,0.3)] hover:shadow-[0_0_25px_rgba(56,189,248,0.5)]'
                   : 'apple-glass-pill text-white hover:bg-white/15'
@@ -641,7 +639,7 @@ export default function PersonDetailPage({
                   creditsScrollRef.current?.scrollBy({ left: -560, behavior: 'smooth' })
                 }
                 aria-label="Sola Kaydır"
-                className="w-9 h-9 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+                className="w-9 h-9 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-colors cursor-pointer"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
@@ -651,7 +649,7 @@ export default function PersonDetailPage({
                   creditsScrollRef.current?.scrollBy({ left: 560, behavior: 'smooth' })
                 }
                 aria-label="Sağa Kaydır"
-                className="w-9 h-9 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+                className="w-9 h-9 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-colors cursor-pointer"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -693,13 +691,14 @@ export default function PersonDetailPage({
               <Link
                 key={peer.id}
                 href={`/oyuncu/${peer.slug}`}
-                className="p-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/20 transition-all flex flex-col items-center text-center group relative cursor-pointer"
+                className="p-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/20 transition-colors flex flex-col items-center text-center group relative cursor-pointer [content-visibility:auto] [contain-intrinsic-size:auto_140px]"
               >
                 <div className="w-16 h-16 rounded-full overflow-hidden border border-white/15 group-hover:border-white/30 transition-colors mb-2 shadow-md shrink-0">
                   <img
                     src={getProxiedImageUrl(peer.image_url, peer.name, null, 'w500', 'person')}
                     alt={peer.name}
                     loading="lazy"
+                    decoding="async"
                     className="w-full h-full object-cover"
                   />
                 </div>
@@ -748,7 +747,7 @@ export default function PersonDetailPage({
               <Link
                 key={post.slug || post.id}
                 href={`/magazin/${post.slug}`}
-                className="group rounded-2xl overflow-hidden bg-[#121216] border border-white/10 hover:border-white/30 transition-all flex flex-col justify-between shadow-xl cursor-pointer"
+                className="group rounded-2xl overflow-hidden bg-[#121216] border border-white/10 hover:border-white/30 transition-colors flex flex-col justify-between shadow-xl cursor-pointer [content-visibility:auto] [contain-intrinsic-size:auto_260px]"
               >
                 <div className="relative aspect-[16/9] w-full overflow-hidden bg-black/40">
                   {post.featured_image ? (
@@ -756,6 +755,7 @@ export default function PersonDetailPage({
                       src={getProxiedImageUrl(post.featured_image)}
                       alt={post.title}
                       loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover"
                     />
                   ) : (

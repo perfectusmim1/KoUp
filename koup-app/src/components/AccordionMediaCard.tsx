@@ -13,7 +13,7 @@ import {
   cleanMediaTitle,
   formatViewCount,
 } from '@/lib/supabase';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 import CountryFlag from '@/components/CountryFlag';
 import Top10Numeral from '@/components/Top10Numeral';
 import { registerMediaItem, cachedQuery } from '@/lib/cache';
@@ -36,32 +36,6 @@ let dragLockTimer: NodeJS.Timeout | null = null;
 let activeCardId: number | string | null = null;
 let activeCardCloseFn: (() => void) | null = null;
 let hoverIntentTimer: NodeJS.Timeout | null = null;
-
-// High-performance shared IntersectionObserver for predictive windowing & preloading:
-// 350px vertical buffer (loads row ahead of scroll), 550px horizontal buffer (loads ~3 cards ahead)
-// Cards outside this window stay as 0-cost empty shells, freeing GPU texture memory!
-const cardWindowCallbacks = new WeakMap<Element, (inWindow: boolean) => void>();
-let sharedCardWindowObserver: IntersectionObserver | null = null;
-
-function getSharedCardWindowObserver(): IntersectionObserver | null {
-  if (typeof window === 'undefined' || typeof IntersectionObserver === 'undefined') {
-    return null;
-  }
-  if (!sharedCardWindowObserver) {
-    sharedCardWindowObserver = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          const cb = cardWindowCallbacks.get(entry.target);
-          if (cb) {
-            cb(entry.isIntersecting);
-          }
-        }
-      },
-      { rootMargin: '350px 550px' }
-    );
-  }
-  return sharedCardWindowObserver;
-}
 
 export function broadcastAccordionHover(
   id: number | string | null,
@@ -211,18 +185,16 @@ function AccordionMediaCardComponent({
   fluidWidth = false,
 }: AccordionMediaCardProps) {
   const router = useRouter();
-  const {
-    user,
-    authLoading,
-    progressMap,
-    toggleMediaFavorite,
-    toggleMediaFollow,
-    followedMediaIds,
-    triggerSound,
-    isTrailerMuted,
-    toggleTrailerMuted,
-    autoCardTrailerEnabled,
-  } = useKoUp();
+  const user = useKoUpSelector((s) => s.user);
+  const authLoading = useKoUpSelector((s) => s.authLoading);
+  const userProg = useKoUpSelector((s) => (s.user || s.authLoading ? s.progressMap[item.id] : undefined));
+  const isFollowed = useKoUpSelector((s) => Boolean((s.user || s.authLoading) && s.followedMediaIds.includes(item.id)));
+  const toggleMediaFavorite = useKoUpSelector((s) => s.toggleMediaFavorite);
+  const toggleMediaFollow = useKoUpSelector((s) => s.toggleMediaFollow);
+  const triggerSound = useKoUpSelector((s) => s.triggerSound);
+  const isTrailerMuted = useKoUpSelector((s) => s.isTrailerMuted);
+  const toggleTrailerMuted = useKoUpSelector((s) => s.toggleTrailerMuted);
+  const autoCardTrailerEnabled = useKoUpSelector((s) => s.autoCardTrailerEnabled);
 
   const [isHovered, setIsHovered] = useState(false);
   const [mountBackdrop, setMountBackdrop] = useState(false);
@@ -246,8 +218,6 @@ function AccordionMediaCardComponent({
   );
   const [showTrailerVideo, setShowTrailerVideo] = useState(false);
   const [isTrailerReady, setIsTrailerReady] = useState(false);
-  // Priority cards start in-window immediately for 0ms initial paint
-  const [isInWindow, setIsInWindow] = useState(() => priority);
 
   const cardRef = useRef<HTMLDivElement>(null);
   const trailerIframeRef = useRef<HTMLIFrameElement>(null);
@@ -259,9 +229,7 @@ function AccordionMediaCardComponent({
   const cardKey = useId();
 
   const isUserActive = Boolean(user || authLoading);
-  const userProg = isUserActive ? progressMap[item.id] : undefined;
   const isFavorited = Boolean(isUserActive && (userProg?.is_favorite || userProg?.is_favorited));
-  const isFollowed = Boolean(isUserActive && followedMediaIds.includes(item.id));
   const displayTitle = cleanMediaTitle(item.title);
 
   // Always retain authentic scraped cover if present, never overwrite with TMDB fuzzy matches
@@ -398,73 +366,6 @@ function AccordionMediaCardComponent({
       return null;
     }
   }, [item.id, item.slug, item.title, hasRealCover, item.backdrop_image]);
-
-  // 1. Predictive window observer: mounts cards 550px horizontally ahead and 350px vertically ahead.
-  // When scrolled away by >550px, unmounts heavy children to keep DOM & GPU textures tiny!
-  useEffect(() => {
-    if (priority) {
-      setIsInWindow(true);
-      return;
-    }
-    const el = cardRef.current;
-    if (!el) return;
-    const obs = getSharedCardWindowObserver();
-    if (!obs) {
-      setIsInWindow(true);
-      return;
-    }
-
-    cardWindowCallbacks.set(el, (inWindow: boolean) => {
-      setIsInWindow(inWindow);
-    });
-    obs.observe(el);
-
-    return () => {
-      cardWindowCallbacks.delete(el);
-      obs.unobserve(el);
-    };
-  }, [priority]);
-
-  // 2. Pre-decode & pre-mount the 16:9 backdrop & missing rating once card enters window
-  useEffect(() => {
-    if (!isInWindow) return;
-
-    const hasRating = Boolean(
-      (item.site_rating_count && item.site_rating_count >= 50 && item.site_rating) ||
-      (item.imdb_rating && Number(item.imdb_rating) > 0) ||
-      (item.mdl_rating && Number(item.mdl_rating) > 0) ||
-      (item.anilist_rating && Number(item.anilist_rating) > 0)
-    );
-
-    const idleTimer = setTimeout(() => {
-      if (!fluidWidth && hasDistinctBackdrop && !mountBackdrop) {
-        preloadImage(backdropSrc, () => {
-          setMountBackdrop(true);
-        });
-      }
-      if (!hasRealCover || !item.backdrop_image || !hasRating) {
-        fetchTrailerAndUpgradeImages();
-      }
-    }, 150);
-
-    return () => {
-      clearTimeout(idleTimer);
-    };
-  }, [
-    isInWindow,
-    fluidWidth,
-    hasDistinctBackdrop,
-    mountBackdrop,
-    backdropSrc,
-    hasRealCover,
-    item.backdrop_image,
-    item.site_rating,
-    item.site_rating_count,
-    item.imdb_rating,
-    item.mdl_rating,
-    item.anilist_rating,
-    fetchTrailerAndUpgradeImages,
-  ]);
 
   // Clean up active hover state if this card unmounts while open
   useEffect(() => {
@@ -695,9 +596,7 @@ function AccordionMediaCardComponent({
             : 'w-[165px] sm:w-[185px] md:w-[200px] h-[250px] sm:h-[280px] md:h-[300px] shrink-0 z-10 border-white/10 hover:border-white/25 shadow-md'
       }`}
     >
-      {isInWindow ? (
-        <>
-          {/* Background Instant Navigation Link */}
+      {/* Background Instant Navigation Link */}
           <Link
             href={`/seri/${item.slug}`}
             prefetch={false}
@@ -780,7 +679,7 @@ function AccordionMediaCardComponent({
 
       {/* Unified GPU-Friendly Vignette Gradient */}
       <div
-        className={`absolute inset-0 pointer-events-none transition-all duration-500 ${
+        className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${
           isAccordionExpanded
             ? isTrailerActive
               ? 'bg-gradient-to-t from-[#08080a]/90 via-[#08080a]/25 to-transparent'
@@ -793,8 +692,8 @@ function AccordionMediaCardComponent({
       <div className="absolute top-2.5 left-2.5 right-2.5 z-20 flex items-center justify-between gap-1.5 pointer-events-none">
         <div className="flex items-center gap-1.5">
           {countryCode ? (
-            <span className="inline-flex items-center justify-center filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] select-none">
-              <CountryFlag code={countryCode} size="md" className="rounded-[3px] drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]" />
+            <span className="inline-flex items-center justify-center select-none">
+              <CountryFlag code={countryCode} size="md" className="rounded-[3px] drop-shadow-sm" />
             </span>
           ) : null}
 
@@ -829,18 +728,18 @@ function AccordionMediaCardComponent({
           )}
 
           {ratingInfo && (
-            <div className="inline-flex items-center gap-1 filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] select-none">
+            <div className="inline-flex items-center gap-1 select-none">
               {ratingInfo.isKoUp ? (
                 <>
                   <span className="text-[9px] font-black tracking-wider uppercase text-sky-400 bg-sky-500/20 px-1 py-0.5 rounded border border-sky-400/30">
                     KoUp
                   </span>
-                  <Star className="w-3.5 h-3.5 fill-sky-400 text-sky-400 shrink-0 drop-shadow-[0_0_6px_rgba(56,189,248,0.8)]" />
+                  <Star className="w-3.5 h-3.5 fill-sky-400 text-sky-400 shrink-0" />
                 </>
               ) : (
-                <Star className="w-3.5 h-3.5 fill-[#f5c518] text-[#f5c518] shrink-0 drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]" />
+                <Star className="w-3.5 h-3.5 fill-[#f5c518] text-[#f5c518] shrink-0" />
               )}
-              <span className="font-extrabold text-[12px] sm:text-[13px] text-white tracking-tight drop-shadow-[0_1px_3px_rgba(0,0,0,0.95)] leading-none">
+              <span className="font-extrabold text-[12px] sm:text-[13px] text-white tracking-tight [text-shadow:0_1px_3px_rgba(0,0,0,0.95)] leading-none">
                 {ratingInfo.score}
               </span>
             </div>
@@ -1019,8 +918,6 @@ function AccordionMediaCardComponent({
           </div>
         </div>
       </div>
-        </>
-      ) : null}
     </div>
   );
 }

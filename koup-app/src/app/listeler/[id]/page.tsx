@@ -9,21 +9,18 @@ import {
   Heart,
   Trash2,
   Plus,
-  Play,
   Film,
   User,
   Globe,
   Lock,
   Search,
   X,
-  Sparkles,
   ArrowLeft,
-  Star,
   Check,
   CheckSquare,
 } from 'lucide-react';
 import { MediaItem, getProxiedImageUrl, formatContentTypeTR, supabase } from '@/lib/supabase';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 import { rankSearchResults } from '@/lib/searchRanking';
 
@@ -54,7 +51,12 @@ export default function ListDetailPage({
 }) {
   const unwrappedParams = use(params);
   const router = useRouter();
-  const { user, authLoading, triggerSound, pushNotification, setIsAuthModalOpen, confirmDialog } = useKoUp();
+  const user = useKoUpSelector((s) => s.user);
+  const authLoading = useKoUpSelector((s) => s.authLoading);
+  const triggerSound = useKoUpSelector((s) => s.triggerSound);
+  const pushNotification = useKoUpSelector((s) => s.pushNotification);
+  const setIsAuthModalOpen = useKoUpSelector((s) => s.setIsAuthModalOpen);
+  const confirmDialog = useKoUpSelector((s) => s.confirmDialog);
 
   const [list, setList] = useState<ListDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -581,13 +583,15 @@ export default function ListDetailPage({
             <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 pt-2">
               <Link
                 href={`/profil/${encodeURIComponent(list.creator?.username || '')}`}
-                className="inline-flex items-center gap-2.5 p-1.5 pr-4 rounded-full bg-white/[0.04] border border-white/10 hover:border-white/20 transition-all group"
+                className="inline-flex items-center gap-2.5 p-1.5 pr-4 rounded-full bg-white/[0.04] border border-white/10 hover:border-white/20 transition-colors group"
               >
                 <div className="w-7 h-7 rounded-full overflow-hidden bg-white/10 border border-white/15 flex items-center justify-center shrink-0">
                   {list.creator?.avatar_url ? (
                     <img
                       src={getProxiedImageUrl(list.creator.avatar_url, list.creator.username)}
                       alt={list.creator.username}
+                      loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover"
                     />
                   ) : (
@@ -626,7 +630,7 @@ export default function ListDetailPage({
           <div className="flex flex-col md:flex-row items-center gap-2.5 relative z-10 shrink-0 w-full md:w-auto">
             <button
               onClick={handleToggleLike}
-              className={`flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-bold cursor-pointer transition-all w-full md:w-auto ${
+              className={`flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-bold cursor-pointer transition-[color,background-color,box-shadow] w-full md:w-auto ${
                 isLiked
                   ? 'bg-rose-500 text-white shadow-[0_0_20px_rgba(244,63,94,0.35)]'
                   : 'glass-pill text-white/80 hover:text-white'
@@ -642,7 +646,7 @@ export default function ListDetailPage({
                 <div className="flex items-center justify-center gap-2 w-full md:w-auto">
                   <button
                     onClick={() => setIsAddModalOpen(true)}
-                    className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 cursor-pointer shadow-lg transition-all"
+                    className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 cursor-pointer shadow-lg transition-colors"
                   >
                     <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                     <span>Dizi Ekle</span>
@@ -660,7 +664,7 @@ export default function ListDetailPage({
                 <div className="flex items-center justify-center w-full md:w-auto">
                   <button
                     onClick={handleDeleteList}
-                    className="flex items-center justify-center gap-1.5 px-4 md:px-3 py-2 md:py-2.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold hover:bg-rose-500/25 cursor-pointer transition-all"
+                    className="flex items-center justify-center gap-1.5 px-4 md:px-3 py-2 md:py-2.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold hover:bg-rose-500/25 cursor-pointer transition-colors"
                     aria-label="Listeyi Sil"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -693,7 +697,7 @@ export default function ListDetailPage({
                     setSelectedItemIds([]);
                     triggerSound('click');
                   }}
-                  className="px-3.5 py-1.5 rounded-full glass-pill hover:bg-white/15 text-xs font-semibold text-white/80 hover:text-white transition-all cursor-pointer flex items-center gap-1.5"
+                  className="px-3.5 py-1.5 rounded-full glass-pill hover:bg-white/15 text-xs font-semibold text-white/80 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5"
                 >
                   <CheckSquare className="w-3.5 h-3.5 text-sky-400" />
                   <span>Çoklu Seçim</span>
@@ -703,7 +707,7 @@ export default function ListDetailPage({
                   <button
                     type="button"
                     onClick={handleSelectAll}
-                    className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-all cursor-pointer"
+                    className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-colors cursor-pointer"
                   >
                     {selectedItemIds.length === list.items.length
                       ? 'Seçimi Kaldır'
@@ -715,7 +719,7 @@ export default function ListDetailPage({
                       type="button"
                       onClick={handleDeleteSelected}
                       disabled={isDeletingSelected}
-                      className="px-3.5 py-1.5 rounded-full bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                      className="px-3.5 py-1.5 rounded-full bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold transition-colors shadow-md cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>Seçilenleri Sil ({selectedItemIds.length})</span>
@@ -750,7 +754,7 @@ export default function ListDetailPage({
                 </p>
                 <button
                   onClick={() => setIsAddModalOpen(true)}
-                  className="px-5 py-2.5 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90"
+                  className="px-5 py-2.5 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 transition-colors"
                 >
                   + Dizi Ekle
                 </button>
@@ -773,7 +777,7 @@ export default function ListDetailPage({
                       toggleSelectItem(item.id);
                     }
                   }}
-                  className={`relative group ${isSelectMode ? 'cursor-pointer select-none' : ''}`}
+                  className={`relative group ${isSelectMode ? 'cursor-pointer select-none' : ''} [content-visibility:auto] [contain-intrinsic-size:auto_340px]`}
                 >
                   <div
                     className={`relative transition-all duration-200 rounded-2xl overflow-hidden ${
@@ -819,7 +823,7 @@ export default function ListDetailPage({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsAddModalOpen(false)}
-              className="fixed inset-0 bg-black/80 backdrop-blur-md"
+              className="fixed inset-0 bg-black/80"
             />
 
             <motion.div
@@ -866,7 +870,7 @@ export default function ListDetailPage({
                     return (
                       <div
                         key={item.id}
-                        className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/20 transition-all"
+                        className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/20 transition-colors"
                       >
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-14 rounded-lg overflow-hidden bg-black/40 shrink-0">
@@ -874,6 +878,8 @@ export default function ListDetailPage({
                               <img
                                 src={getProxiedImageUrl(item.cover_image, item.title)}
                                 alt={item.title}
+                                loading="lazy"
+                                decoding="async"
                                 className="w-full h-full object-cover"
                               />
                             ) : null}
@@ -894,7 +900,7 @@ export default function ListDetailPage({
                         ) : (
                           <button
                             onClick={() => handleAddMedia(item)}
-                            className="px-3.5 py-1.5 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 cursor-pointer transition-all"
+                            className="px-3.5 py-1.5 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 cursor-pointer transition-colors"
                           >
                             + Ekle
                           </button>
@@ -932,7 +938,7 @@ export default function ListDetailPage({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsEditModalOpen(false)}
-              className="absolute inset-0 bg-black/80 backdrop-blur-md cursor-pointer"
+              className="absolute inset-0 bg-black/80 cursor-pointer"
             />
 
             <motion.div
@@ -999,7 +1005,7 @@ export default function ListDetailPage({
                         triggerSound?.('click');
                         setEditVisibility('public');
                       }}
-                      className={`p-3.5 rounded-2xl border text-left cursor-pointer transition-all ${
+                      className={`p-3.5 rounded-2xl border text-left cursor-pointer transition-colors ${
                         editVisibility === 'public'
                           ? 'bg-sky-500/15 border-sky-400 text-white shadow-[0_0_18px_rgba(41,151,255,0.22)]'
                           : 'bg-white/[0.04] border-white/10 text-white/60 hover:border-white/25 hover:text-white'
@@ -1020,7 +1026,7 @@ export default function ListDetailPage({
                         triggerSound?.('click');
                         setEditVisibility('private');
                       }}
-                      className={`p-3.5 rounded-2xl border text-left cursor-pointer transition-all ${
+                      className={`p-3.5 rounded-2xl border text-left cursor-pointer transition-colors ${
                         editVisibility === 'private'
                           ? 'bg-amber-500/15 border-amber-400 text-white shadow-[0_0_18px_rgba(245,158,11,0.22)]'
                           : 'bg-white/[0.04] border-white/10 text-white/60 hover:border-white/25 hover:text-white'
@@ -1041,13 +1047,13 @@ export default function ListDetailPage({
                   <button
                     type="button"
                     onClick={() => setIsEditModalOpen(false)}
-                    className="px-5 py-2.5 rounded-full glass-pill text-xs text-white/80 hover:text-white font-medium cursor-pointer transition-all"
+                    className="px-5 py-2.5 rounded-full glass-pill text-xs text-white/80 hover:text-white font-medium cursor-pointer transition-colors"
                   >
                     Vazgeç
                   </button>
                   <button
                     type="submit"
-                    className="px-6 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 cursor-pointer shadow-lg transition-all"
+                    className="px-6 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 cursor-pointer shadow-lg transition-colors"
                   >
                     Kaydet
                   </button>

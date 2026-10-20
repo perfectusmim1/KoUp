@@ -50,7 +50,7 @@ import {
 import { trackMediaView } from '@/lib/viewTracker';
 import { cachedQuery, getMediaFromCache, getCache, registerMediaItem, setCache, invalidateCache, invalidateMediaCache, updateCachedMedia } from '@/lib/cache';
 import { recordTasteSignal, rankRelatedMedia } from '@/lib/tasteProfile';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 import CountryFlag from '@/components/CountryFlag';
 import RichCommentSection from '@/components/RichCommentSection';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
@@ -69,24 +69,22 @@ export default function SeriesDetailPage({
   const { slug } = use(params);
   const searchParams = useSearchParams();
 
-  const {
-    user,
-    authLoading,
-    progressMap,
-    followedMediaIds,
-    setLibraryStatus,
-    setMediaScore,
-    toggleMediaFavorite,
-    toggleMediaFollow,
-    toggleEpisodeWatched,
-    pushNotification,
-    openAuthModal,
-    isSoftBanned,
-    favPersonIds,
-    followedPersonIds,
-    togglePersonFavorite,
-    togglePersonFollow,
-  } = useKoUp();
+  const user = useKoUpSelector((s) => s.user);
+  const authLoading = useKoUpSelector((s) => s.authLoading);
+  const progressMap = useKoUpSelector((s) => s.progressMap);
+  const followedMediaIds = useKoUpSelector((s) => s.followedMediaIds);
+  const setLibraryStatus = useKoUpSelector((s) => s.setLibraryStatus);
+  const setMediaScore = useKoUpSelector((s) => s.setMediaScore);
+  const toggleMediaFavorite = useKoUpSelector((s) => s.toggleMediaFavorite);
+  const toggleMediaFollow = useKoUpSelector((s) => s.toggleMediaFollow);
+  const toggleEpisodeWatched = useKoUpSelector((s) => s.toggleEpisodeWatched);
+  const pushNotification = useKoUpSelector((s) => s.pushNotification);
+  const openAuthModal = useKoUpSelector((s) => s.openAuthModal);
+  const isSoftBanned = useKoUpSelector((s) => s.isSoftBanned);
+  const favPersonIds = useKoUpSelector((s) => s.favPersonIds);
+  const followedPersonIds = useKoUpSelector((s) => s.followedPersonIds);
+  const togglePersonFavorite = useKoUpSelector((s) => s.togglePersonFavorite);
+  const togglePersonFollow = useKoUpSelector((s) => s.togglePersonFollow);
 
   // Initialize deterministically on both SSR and Client initial pass to prevent Hydration Mismatch!
   const [media, setMedia] = useState<MediaItem | null>(null);
@@ -752,7 +750,7 @@ export default function SeriesDetailPage({
           <img
             src={backdropSrc}
             alt={media.title}
-            className="w-full h-full object-cover filter blur-2xl scale-110 opacity-75 transform-gpu"
+            className="w-full h-full object-cover filter blur-2xl scale-110 opacity-75"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-[#080808]/50 to-black/20" />
           <div className="absolute inset-0 bg-gradient-to-r from-[#080808]/75 via-transparent to-transparent hidden md:block" />
@@ -791,8 +789,7 @@ export default function SeriesDetailPage({
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
                 <Link
                   href={`/kesfet?country=${encodeURIComponent(((media.country_code || media.country) || '').toUpperCase())}`}
-                  prefetch={true}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/80 backdrop-blur-md border border-white/15 text-xs text-white font-bold hover:bg-white/20 hover:border-white/35 transition-all cursor-pointer shadow-sm"
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/85 border border-white/15 text-xs text-white font-bold hover:bg-white/20 hover:border-white/35 transition-colors cursor-pointer shadow-sm"
                   aria-label={`${COUNTRY_LABELS[((media.country_code || media.country) || '').toUpperCase()] || 'Ülke'} yapımlarını keşfet`}
                 >
                   <CountryFlag code={media.country_code || media.country} size="sm" />
@@ -806,8 +803,7 @@ export default function SeriesDetailPage({
 
                 <Link
                   href={`/kesfet?type=${encodeURIComponent(media.content_type || 'dizi')}${media.country_code || media.country ? `&country=${encodeURIComponent(((media.country_code || media.country) || '').toUpperCase())}` : ''}`}
-                  prefetch={true}
-                  className="px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-xs font-bold uppercase tracking-wider text-white/90 hover:bg-white/20 hover:border-white/35 transition-all cursor-pointer shadow-sm"
+                  className="px-3 py-1 rounded-full bg-white/15 border border-white/15 text-xs font-bold uppercase tracking-wider text-white/90 hover:bg-white/20 hover:border-white/35 transition-colors cursor-pointer shadow-sm"
                 >
                   {formatContentTypeTR(media.content_type, media.country_code || media.country)}
                 </Link>
@@ -964,8 +960,7 @@ export default function SeriesDetailPage({
                     <Link
                       key={cat}
                       href={`/kesfet?category=${encodeURIComponent(cat)}`}
-                      prefetch={true}
-                      className="text-xs px-2.5 py-1 rounded-lg bg-white/[0.06] text-white/80 border border-white/10 hover:bg-white/15 hover:text-white hover:border-white/30 transition-all cursor-pointer"
+                      className="text-xs px-2.5 py-1 rounded-lg bg-white/[0.06] text-white/80 border border-white/10 hover:bg-white/15 hover:text-white hover:border-white/30 transition-colors cursor-pointer"
                       aria-label={`${cat} kategorisindeki yapımları keşfet`}
                     >
                       {cat}
@@ -983,7 +978,7 @@ export default function SeriesDetailPage({
                 {/* Primary Watch Button */}
                 <Link
                   href={`/seri/${media.slug}/${resumeEp}?season=${resumeSeason}`}
-                  className="flex-1 sm:flex-initial sm:w-auto shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white font-bold text-xs transition-all glow-blue active:scale-[0.98] cursor-pointer"
+                  className="flex-1 sm:flex-initial sm:w-auto shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white font-bold text-xs transition-[background-color,transform] glow-blue active:scale-[0.98] cursor-pointer"
                 >
                   <Play className="w-4 h-4 fill-white shrink-0" />
                   <span className="truncate">
@@ -997,7 +992,7 @@ export default function SeriesDetailPage({
                 <button
                   type="button"
                   onClick={() => setShowTrailerModal(true)}
-                  className="flex-1 sm:flex-initial sm:w-auto shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 hover:border-sky-400/50 text-white font-bold text-xs transition-all hover:shadow-[0_0_18px_rgba(56,189,248,0.3)] active:scale-[0.98] cursor-pointer"
+                  className="flex-1 sm:flex-initial sm:w-auto shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 hover:border-sky-400/50 text-white font-bold text-xs transition-[background-color,border-color,box-shadow,transform] hover:shadow-[0_0_18px_rgba(56,189,248,0.3)] active:scale-[0.98] cursor-pointer"
                 >
                   <Film className="w-4 h-4 text-sky-400 shrink-0" />
                   <span className="truncate">Fragmanı İzle</span>
@@ -1098,7 +1093,7 @@ export default function SeriesDetailPage({
                   }
                   toggleMediaFavorite(media);
                 }}
-                className={`col-span-1 sm:w-auto shrink-0 whitespace-nowrap w-full flex items-center justify-center gap-1.5 px-3.5 sm:px-4 py-2.5 rounded-full text-xs font-semibold border transition-all cursor-pointer active:scale-[0.98] transform-gpu backface-hidden ${
+                className={`col-span-1 sm:w-auto shrink-0 whitespace-nowrap w-full flex items-center justify-center gap-1.5 px-3.5 sm:px-4 py-2.5 rounded-full text-xs font-semibold border transition-[background-color,border-color,box-shadow,transform] cursor-pointer active:scale-[0.98] ${
                   isFavorited
                     ? 'bg-rose-500/20 hover:bg-rose-500/35 border-rose-400 hover:border-rose-300 text-rose-300 hover:text-rose-200 shadow-[0_0_15px_rgba(244,63,94,0.3)] hover:shadow-[0_0_24px_rgba(244,63,94,0.55)]'
                     : 'apple-glass-pill text-white hover:bg-white/15'
@@ -1121,7 +1116,7 @@ export default function SeriesDetailPage({
                     }
                     setShowRatingPicker((v) => !v);
                   }}
-                  className={`whitespace-nowrap w-full flex items-center justify-center gap-1.5 px-3.5 sm:px-4 py-2.5 rounded-full text-xs font-semibold border transition-all cursor-pointer active:scale-[0.98] transform-gpu backface-hidden ${
+                  className={`whitespace-nowrap w-full flex items-center justify-center gap-1.5 px-3.5 sm:px-4 py-2.5 rounded-full text-xs font-semibold border transition-[background-color,border-color,box-shadow,transform] cursor-pointer active:scale-[0.98] ${
                     userProg?.user_score
                       ? 'bg-amber-400/20 hover:bg-amber-400/35 border-amber-400 hover:border-amber-300 text-amber-300 hover:text-amber-200 shadow-[0_0_15px_rgba(251,191,36,0.3)] hover:shadow-[0_0_24px_rgba(251,191,36,0.55)]'
                       : 'apple-glass-pill text-white hover:bg-white/15'
@@ -1145,7 +1140,7 @@ export default function SeriesDetailPage({
                         left: ratingCoords.left,
                         zIndex: 99999,
                       }}
-                      className="p-3.5 rounded-2xl bg-[#141416]/98 backdrop-blur-2xl border border-white/20 shadow-[0_24px_60px_rgba(0,0,0,0.95),0_0_25px_rgba(251,191,36,0.18)] flex flex-col items-center gap-2 min-w-[280px]"
+                      className="p-3.5 rounded-2xl bg-[#141416]/98 backdrop-blur-sm border border-white/20 shadow-[0_24px_60px_rgba(0,0,0,0.95),0_0_25px_rgba(251,191,36,0.18)] flex flex-col items-center gap-2 min-w-[280px]"
                     >
                       <div className="flex items-center justify-between w-full px-1 text-[11px] font-semibold text-white/70">
                         <span>Bu yapımı puanla:</span>
@@ -1204,7 +1199,7 @@ export default function SeriesDetailPage({
                               <Star
                                 className={`w-5 h-5 transition-colors ${
                                   isFilled
-                                    ? 'fill-amber-400 text-amber-400 drop-shadow-[0_0_6px_rgba(245,197,24,0.6)]'
+                                    ? 'fill-amber-400 text-amber-400'
                                     : 'text-white/25 hover:text-white/60'
                                 }`}
                               />
@@ -1271,7 +1266,7 @@ export default function SeriesDetailPage({
                   }
                   toggleMediaFollow(media);
                 }}
-                className={`col-span-1 sm:w-auto shrink-0 whitespace-nowrap w-full flex items-center justify-center gap-1.5 px-3.5 sm:px-4 py-2.5 rounded-full text-xs font-semibold border transition-all cursor-pointer active:scale-[0.98] transform-gpu backface-hidden ${
+                className={`col-span-1 sm:w-auto shrink-0 whitespace-nowrap w-full flex items-center justify-center gap-1.5 px-3.5 sm:px-4 py-2.5 rounded-full text-xs font-semibold border transition-[background-color,border-color,box-shadow,transform] cursor-pointer active:scale-[0.98] ${
                   isFollowed
                     ? 'bg-amber-400 hover:bg-amber-300 text-black border-amber-300 hover:border-amber-200 shadow-[0_0_15px_rgba(251,191,36,0.35)] hover:shadow-[0_0_24px_rgba(251,191,36,0.6)]'
                     : 'apple-glass-pill text-white hover:bg-white/15'
@@ -1299,7 +1294,7 @@ export default function SeriesDetailPage({
                   }
                   setShowAddToListModal(true);
                 }}
-                className="col-span-1 sm:w-auto shrink-0 whitespace-nowrap w-full flex items-center justify-center gap-1.5 px-3.5 sm:px-4 py-2.5 rounded-full text-xs font-semibold border apple-glass-pill text-sky-300 hover:bg-sky-500/15 border-sky-400/30 transition-all cursor-pointer active:scale-[0.98] transform-gpu backface-hidden"
+                className="col-span-1 sm:w-auto shrink-0 whitespace-nowrap w-full flex items-center justify-center gap-1.5 px-3.5 sm:px-4 py-2.5 rounded-full text-xs font-semibold border apple-glass-pill text-sky-300 hover:bg-sky-500/15 border-sky-400/30 transition-[background-color,border-color,transform] cursor-pointer active:scale-[0.98]"
               >
                 <ListPlus className="w-4 h-4 text-sky-400" />
                 <span>Listeye Ekle</span>
@@ -1310,7 +1305,7 @@ export default function SeriesDetailPage({
                 type="button"
                 onClick={() => setShowSeriesReport(true)}
                 aria-label="Sorun Bildir"
-                className="w-full sm:w-10 h-10 px-4 sm:px-0 rounded-full apple-glass-pill text-amber-300 hover:bg-amber-400/20 hover:text-amber-200 border border-amber-400/30 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md active:scale-95 shrink-0 text-xs font-semibold"
+                className="w-full sm:w-10 h-10 px-4 sm:px-0 rounded-full apple-glass-pill text-amber-300 hover:bg-amber-400/20 hover:text-amber-200 border border-amber-400/30 flex items-center justify-center gap-2 transition-[background-color,border-color,color,transform] cursor-pointer shadow-md active:scale-95 shrink-0 text-xs font-semibold"
               >
                 <AlertTriangle className="w-4 h-4 shrink-0" />
                 <span className="sm:hidden">Sorun Bildir</span>
@@ -1351,13 +1346,14 @@ export default function SeriesDetailPage({
                   <Link
                     key={`${c.person_id}-${c.character_name || ''}`}
                     href={`/oyuncu/${p.slug}`}
-                    className="p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/20 transition-all flex flex-col items-center text-center group relative cursor-pointer"
+                    className="p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/20 transition-[background-color,border-color] flex flex-col items-center text-center group relative cursor-pointer"
                   >
                     <div className="w-20 h-20 rounded-full overflow-hidden border border-white/15 group-hover:border-white/30 transition-colors mb-3 shadow-md">
                       <img
                         src={getProxiedImageUrl(p.image_url, p.name, null, 'w500', 'person')}
                         alt={p.name}
                         loading="lazy"
+                        decoding="async"
                         className="w-full h-full object-cover"
                       />
                     </div>
@@ -1397,13 +1393,14 @@ export default function SeriesDetailPage({
                           <Link
                             key={`${c.person_id}-${c.character_name || ''}`}
                             href={`/oyuncu/${p.slug}`}
-                            className="p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/20 transition-all flex flex-col items-center text-center group relative cursor-pointer"
+                            className="p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/20 transition-[background-color,border-color] flex flex-col items-center text-center group relative cursor-pointer"
                           >
                             <div className="w-20 h-20 rounded-full overflow-hidden border border-white/15 group-hover:border-white/30 transition-colors mb-3 shadow-md">
                               <img
                                 src={getProxiedImageUrl(p.image_url, p.name, null, 'w500', 'person')}
                                 alt={p.name}
                                 loading="lazy"
+                                decoding="async"
                                 className="w-full h-full object-cover"
                               />
                             </div>
@@ -1432,7 +1429,7 @@ export default function SeriesDetailPage({
                 <button
                   type="button"
                   onClick={() => setShowAllCast((prev) => !prev)}
-                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full apple-glass-pill hover:bg-white/15 text-xs font-semibold text-white/90 hover:text-white border border-white/15 transition-all cursor-pointer shadow-sm active:scale-95"
+                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full apple-glass-pill hover:bg-white/15 text-xs font-semibold text-white/90 hover:text-white border border-white/15 transition-[background-color,color,transform] cursor-pointer shadow-sm active:scale-95"
                 >
                   <span>
                     {showAllCast
@@ -1545,7 +1542,7 @@ export default function SeriesDetailPage({
                   aria-label={epTitle}
                   title={`${epTitle}${epWatched ? ' (İzlendi)' : ''}`}
                   style={{ contain: 'content' }}
-                  className={`p-3 sm:p-3.5 rounded-2xl border transition-colors duration-150 cursor-pointer flex items-center justify-between gap-3 group select-none ${
+                  className={`p-3 sm:p-3.5 rounded-2xl border transition-colors duration-150 cursor-pointer flex items-center justify-between gap-3 group select-none [content-visibility:auto] [contain-intrinsic-size:auto_72px] ${
                     epWatched
                       ? 'bg-emerald-500/[0.05] hover:bg-emerald-500/[0.09] border-emerald-500/35 hover:border-emerald-400/65 shadow-[0_0_8px_rgba(16,185,129,0.12)] hover:shadow-[0_0_14px_rgba(16,185,129,0.22)]'
                       : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/[0.06] hover:border-sky-400/60 hover:shadow-[0_0_12px_rgba(56,189,248,0.18)]'
@@ -1636,7 +1633,7 @@ export default function SeriesDetailPage({
                       }`}
                     >
                       <div
-                        className={`w-5 h-5 rounded-full bg-white shadow-md flex items-center justify-center transition-transform duration-200 transform-gpu ${
+                        className={`w-5 h-5 rounded-full bg-white shadow-md flex items-center justify-center transition-transform duration-200 ${
                           epWatched ? 'translate-x-5' : 'translate-x-0'
                         }`}
                       >
@@ -1682,7 +1679,7 @@ export default function SeriesDetailPage({
                   <button
                     type="button"
                     onClick={() => setShowAllEpisodes((prev) => !prev)}
-                    className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full apple-glass-pill hover:bg-white/15 text-xs font-semibold text-white/90 hover:text-white border border-white/15 transition-all cursor-pointer shadow-sm active:scale-95"
+                    className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full apple-glass-pill hover:bg-white/15 text-xs font-semibold text-white/90 hover:text-white border border-white/15 transition-[background-color,color,transform] cursor-pointer shadow-sm active:scale-95"
                   >
                     <span>
                       {showAllEpisodes
@@ -1735,7 +1732,7 @@ export default function SeriesDetailPage({
                     relatedScrollRef.current?.scrollBy({ left: -560, behavior: 'smooth' })
                   }
                   aria-label="Sola Kaydır"
-                  className="w-9 h-9 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+                  className="w-9 h-9 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-colors cursor-pointer"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
@@ -1745,7 +1742,7 @@ export default function SeriesDetailPage({
                     relatedScrollRef.current?.scrollBy({ left: 560, behavior: 'smooth' })
                   }
                   aria-label="Sağa Kaydır"
-                  className="w-9 h-9 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+                  className="w-9 h-9 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-colors cursor-pointer"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
@@ -1786,7 +1783,7 @@ export default function SeriesDetailPage({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center p-3 sm:p-6 md:p-8 pointer-events-auto"
+            className="fixed inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center p-3 sm:p-6 md:p-8 pointer-events-auto"
             onClick={() => setShowTrailerModal(false)}
           >
             {/* Top Bar with Title and Close Button */}
@@ -1806,7 +1803,7 @@ export default function SeriesDetailPage({
                 type="button"
                 onClick={() => setShowTrailerModal(false)}
                 aria-label="Fragmanı Kapat"
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/25 text-white font-bold text-xs transition-all cursor-pointer border border-white/15 hover:border-white/40 hover:shadow-[0_0_14px_rgba(255,255,255,0.15)]"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/25 text-white font-bold text-xs transition-[background-color,border-color,box-shadow] cursor-pointer border border-white/15 hover:border-white/40 hover:shadow-[0_0_14px_rgba(255,255,255,0.15)]"
               >
                 <X className="w-4 h-4" />
                 <span>Kapat (Esc)</span>
@@ -1862,7 +1859,7 @@ export default function SeriesDetailPage({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowSeriesReport(false)}
-              className="absolute inset-0 bg-black/80 backdrop-blur-md cursor-pointer"
+              className="absolute inset-0 bg-black/80 cursor-pointer"
             />
             <motion.div
               initial={{ opacity: 0, scale: 0.94, y: 16 }}
@@ -1880,7 +1877,7 @@ export default function SeriesDetailPage({
                 <button
                   type="button"
                   onClick={() => setShowSeriesReport(false)}
-                  className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 text-white/60 hover:text-white flex items-center justify-center transition-all cursor-pointer"
+                  className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 text-white/60 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1909,7 +1906,7 @@ export default function SeriesDetailPage({
                         key={cat}
                         type="button"
                         onClick={() => setSeriesReportCategory(cat)}
-                        className={`p-2.5 rounded-xl text-xs text-left transition-all cursor-pointer border ${
+                        className={`p-2.5 rounded-xl text-xs text-left transition-colors cursor-pointer border ${
                           seriesReportCategory === cat
                             ? 'bg-amber-400/20 border-amber-400/50 text-amber-200 font-semibold shadow-sm'
                             : 'bg-white/[0.03] border-white/[0.08] text-white/70 hover:bg-white/[0.06] hover:text-white'
@@ -1955,7 +1952,7 @@ export default function SeriesDetailPage({
                   <button
                     type="submit"
                     disabled={isSubmittingReport || reportCooldownSec > 0}
-                    className="px-5 py-2 rounded-full bg-amber-400 text-black font-bold text-xs hover:bg-amber-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
+                    className="px-5 py-2 rounded-full bg-amber-400 text-black font-bold text-xs hover:bg-amber-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
                   >
                     {isSubmittingReport
                       ? 'İletiliyor...'

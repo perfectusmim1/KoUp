@@ -119,6 +119,29 @@ body {
   scrollbar-width: none;
 }
 
+/* High-performance drag scrolling & hardware-composited horizontal rails */
+.overflow-x-auto {
+  will-change: scroll-position;
+  -webkit-overflow-scrolling: touch;
+}
+
+.is-dragging {
+  cursor: grabbing !important;
+  user-select: none !important;
+  scroll-snap-type: none !important;
+  scroll-behavior: auto !important;
+}
+
+.is-dragging * {
+  pointer-events: none !important;
+  user-select: none !important;
+}
+
+body.is-dragging-rail {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
 .custom-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
@@ -155,22 +178,8 @@ img {
 }
 
 /* Prevent jagged aliased pixels on small rounded avatars and cinema thumbnails */
-.avatar-smooth,
-img.rounded-full,
-.rounded-full > img,
-.rounded-2xl > img,
-.rounded-xl > img {
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-  transform: translateZ(0);
-  -webkit-transform: translateZ(0);
+.avatar-smooth {
   image-rendering: auto;
-}
-
-/* Fix Chromium/WebKit subpixel border-radius overflow clip leakage */
-.rounded-full.overflow-hidden {
-  -webkit-mask-image: -webkit-radial-gradient(white, black);
-  isolation: isolate;
 }
 
 /* Exact ui/code.html Glass & Surface Primitives */
@@ -182,9 +191,7 @@ img.rounded-full,
 
 /* Universal Interactive Glass Pill with Crisp Snappy Highlight */
 .glass-pill {
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(28px);
-  -webkit-backdrop-filter: blur(28px);
+  background: rgba(255, 255, 255, 0.09);
   border: 1px solid rgba(255, 255, 255, 0.13);
   transition:
     background-color 120ms ease,
@@ -279,9 +286,7 @@ a.glass-pill:focus-visible,
 }
 
 .glass-pill-dark {
-  background: rgba(14, 14, 16, 0.76);
-  backdrop-filter: blur(32px);
-  -webkit-backdrop-filter: blur(32px);
+  background: rgba(14, 14, 16, 0.90);
   border: 1px solid rgba(255, 255, 255, 0.10);
   transition:
     background-color 120ms ease,
@@ -290,9 +295,7 @@ a.glass-pill:focus-visible,
 }
 
 .apple-glass-pill {
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  background: rgba(255, 255, 255, 0.09);
   border: 1px solid rgba(255, 255, 255, 0.13);
   transition:
     background-color 120ms ease,
@@ -356,15 +359,13 @@ a[class~="bg-white"]:focus-visible {
 .koup-input {
   width: 100%;
   border-radius: 9999px;
-  background: rgba(14, 14, 18, 0.85);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  background: rgba(14, 14, 18, 0.94);
   border: 1px solid rgba(255, 255, 255, 0.12);
   padding: 0.6rem 1.1rem;
   font-size: 0.8125rem;
   color: #ffffff;
   outline: none;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
@@ -457,10 +458,10 @@ textarea.koup-input {
     box-shadow 420ms var(--spring-apple),
     border-color 320ms var(--spring-apple),
     background-color 320ms ease;
-  will-change: transform;
 }
 
 .koup-projection-card:hover {
+  will-change: transform;
   transform: translateY(-4px) scale(1.015);
   background-color: #16161a;
   border-color: rgba(255, 255, 255, 0.26);
@@ -474,14 +475,16 @@ textarea.koup-input {
   flex: 0 0 auto;
   background-color: #0f0f11;
   border: 1px solid rgba(255, 255, 255, 0.09);
-  will-change: width;
   transition:
     width 260ms cubic-bezier(0.22, 1, 0.36, 1),
     border-color 180ms ease;
   contain: layout paint style;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 .koup-accordion-card:hover {
+  will-change: width;
   border-color: rgba(255, 255, 255, 0.32);
 }
 
@@ -502,9 +505,7 @@ textarea.koup-input {
   text-transform: uppercase;
   padding: 0.15rem 0.5rem;
   border-radius: 9999px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  transition: all 200ms ease;
+  transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease;
   line-height: 1.2;
 }
 

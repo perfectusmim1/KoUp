@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 
 export interface PaginationProps {
   currentPage: number;
@@ -15,7 +15,7 @@ export interface PaginationProps {
   className?: string;
 }
 
-export default function Pagination({
+function Pagination({
   currentPage,
   totalCount,
   pageSize,
@@ -25,7 +25,7 @@ export default function Pagination({
   scrollToOffset = 180,
   className = '',
 }: PaginationProps) {
-  const { triggerSound } = useKoUp();
+  const triggerSound = useKoUpSelector((s) => s.triggerSound);
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   if (totalPages <= 1) return null;
@@ -73,7 +73,7 @@ export default function Pagination({
           <button
             onClick={() => goToPage(1)}
             aria-label="İlk Sayfa"
-            className="w-9 h-9 rounded-xl bg-white/[0.04] border border-white/10 hover:border-white/35 hover:bg-white/[0.14] text-white/70 hover:text-white flex items-center justify-center transition-all cursor-pointer hidden md:flex shadow-xs hover:shadow-[0_0_14px_rgba(255,255,255,0.12)]"
+            className="w-9 h-9 rounded-xl bg-white/[0.04] border border-white/10 hover:border-white/35 hover:bg-white/[0.14] text-white/70 hover:text-white flex items-center justify-center transition-colors cursor-pointer hidden md:flex shadow-xs hover:shadow-[0_0_14px_rgba(255,255,255,0.12)]"
           >
             <ChevronsLeft className="w-4 h-4" />
           </button>
@@ -83,7 +83,7 @@ export default function Pagination({
         <button
           onClick={() => goToPage(currentPage - 1)}
           disabled={currentPage <= 1}
-          className={`px-3.5 h-9 rounded-xl border flex items-center gap-1.5 text-xs font-semibold transition-all ${
+          className={`px-3.5 h-9 rounded-xl border flex items-center gap-1.5 text-xs font-semibold transition-colors ${
             currentPage <= 1
               ? 'bg-white/[0.02] border-white/5 text-white/20 cursor-not-allowed'
               : 'bg-white/[0.04] border-white/10 hover:border-white/35 hover:bg-white/[0.14] text-white/80 hover:text-white cursor-pointer hover:shadow-[0_0_14px_rgba(255,255,255,0.12)]'
@@ -112,7 +112,7 @@ export default function Pagination({
               <button
                 key={pageNum}
                 onClick={() => goToPage(pageNum)}
-                className={`w-9 h-9 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                className={`w-9 h-9 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
                   isActive
                     ? 'bg-[#2997ff] text-white glow-blue'
                     : 'bg-white/[0.04] border border-white/10 hover:border-white/35 text-white/70 hover:text-white hover:bg-white/[0.14] hover:shadow-[0_0_14px_rgba(255,255,255,0.12)]'
@@ -128,7 +128,7 @@ export default function Pagination({
         <button
           onClick={() => goToPage(currentPage + 1)}
           disabled={currentPage >= totalPages}
-          className={`px-3.5 h-9 rounded-xl border flex items-center gap-1.5 text-xs font-semibold transition-all ${
+          className={`px-3.5 h-9 rounded-xl border flex items-center gap-1.5 text-xs font-semibold transition-colors ${
             currentPage >= totalPages
               ? 'bg-white/[0.02] border-white/5 text-white/20 cursor-not-allowed'
               : 'bg-white/[0.04] border-white/10 hover:border-white/35 hover:bg-white/[0.14] text-white/80 hover:text-white cursor-pointer hover:shadow-[0_0_14px_rgba(255,255,255,0.12)]'
@@ -143,7 +143,7 @@ export default function Pagination({
           <button
             onClick={() => goToPage(totalPages)}
             aria-label="Son Sayfa"
-            className="w-9 h-9 rounded-xl bg-white/[0.04] border border-white/10 hover:border-white/35 hover:bg-white/[0.14] text-white/70 hover:text-white flex items-center justify-center transition-all cursor-pointer hidden md:flex shadow-xs hover:shadow-[0_0_14px_rgba(255,255,255,0.12)]"
+            className="w-9 h-9 rounded-xl bg-white/[0.04] border border-white/10 hover:border-white/35 hover:bg-white/[0.14] text-white/70 hover:text-white flex items-center justify-center transition-colors cursor-pointer hidden md:flex shadow-xs hover:shadow-[0_0_14px_rgba(255,255,255,0.12)]"
           >
             <ChevronsRight className="w-4 h-4" />
           </button>
@@ -152,3 +152,5 @@ export default function Pagination({
     </div>
   );
 }
+
+export default React.memo(Pagination);

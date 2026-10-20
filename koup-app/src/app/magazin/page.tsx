@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import {
   Flame,
@@ -124,40 +124,42 @@ export default function MagazineHubPage() {
     loadMagazine(false);
   }, [loadMagazine]);
 
-  const filteredPosts = allPosts.filter((p) => {
-    // Kaynak Filtresi (KoreZin / AsyaMag / Tümü)
-    if (activeSource !== 'Tümü') {
-      const isKZ =
-        p.source_site === 'KoreZin' ||
-        p.slug.startsWith('kz-') ||
-        p.author_name?.includes('KoreZin') ||
-        p.source_url?.includes('korezin.com');
+  const filteredPosts = useMemo(() => {
+    return allPosts.filter((p) => {
+      // Kaynak Filtresi (KoreZin / AsyaMag / Tümü)
+      if (activeSource !== 'Tümü') {
+        const isKZ =
+          p.source_site === 'KoreZin' ||
+          p.slug.startsWith('kz-') ||
+          p.author_name?.includes('KoreZin') ||
+          p.source_url?.includes('korezin.com');
 
-      if (activeSource === 'KoreZin' && !isKZ) return false;
-      if (activeSource === 'AsyaMag' && isKZ) return false;
-    }
-
-    // Kategori Filtresi
-    if (activeCategory !== 'Tümü') {
-      const cats = p.categories || [];
-      if (
-        !cats.includes(activeCategory) &&
-        !(activeCategory === 'Dedikodu' && p.is_gossip)
-      ) {
-        return false;
+        if (activeSource === 'KoreZin' && !isKZ) return false;
+        if (activeSource === 'AsyaMag' && isKZ) return false;
       }
-    }
 
-    // Arama Filtresi
-    if (searchQuery.trim().length >= 2) {
-      const q = searchQuery.trim().toLowerCase();
-      return (
-        p.title.toLowerCase().includes(q) ||
-        (p.excerpt || '').toLowerCase().includes(q)
-      );
-    }
-    return true;
-  });
+      // Kategori Filtresi
+      if (activeCategory !== 'Tümü') {
+        const cats = p.categories || [];
+        if (
+          !cats.includes(activeCategory) &&
+          !(activeCategory === 'Dedikodu' && p.is_gossip)
+        ) {
+          return false;
+        }
+      }
+
+      // Arama Filtresi
+      if (searchQuery.trim().length >= 2) {
+        const q = searchQuery.trim().toLowerCase();
+        return (
+          p.title.toLowerCase().includes(q) ||
+          (p.excerpt || '').toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [allPosts, activeSource, activeCategory, searchQuery]);
 
   const featuredPost = filteredPosts[0];
   const restPosts = filteredPosts.slice(1);
@@ -182,7 +184,7 @@ export default function MagazineHubPage() {
             <span>{isRefreshing ? 'Canlı Çekiliyor...' : 'Canlı Akışı Yenile'}</span>
           </button>
 
-          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] mx-auto sm:mx-0">
+          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-colors duration-200 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] mx-auto sm:mx-0">
             <Search className="w-4 h-4 text-white/60 shrink-0" />
             <input
               type="text"
@@ -298,7 +300,7 @@ export default function MagazineHubPage() {
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <span
-                      className={`px-3 py-1 rounded-full text-xs font-mono font-bold border backdrop-blur-md shadow-sm shadow-black/30 ${
+                      className={`px-3 py-1 rounded-full text-xs font-mono font-bold border shadow-sm shadow-black/30 ${
                         featuredPost.source_site === 'KoreZin' || featuredPost.slug.startsWith('kz-')
                           ? 'bg-rose-600/85 text-white border-rose-400/50'
                           : 'bg-sky-600/85 text-white border-sky-400/50'
@@ -311,7 +313,7 @@ export default function MagazineHubPage() {
                     {(featuredPost.categories || ['Magazin']).map((c) => (
                       <span
                         key={c}
-                        className={`px-3 py-1 rounded-full text-xs font-mono font-bold border backdrop-blur-md ${getMagCategoryColor(c)}`}
+                        className={`px-3 py-1 rounded-full text-xs font-mono font-bold border ${getMagCategoryColor(c)}`}
                       >
                         {c}
                       </span>
@@ -353,7 +355,7 @@ export default function MagazineHubPage() {
                 <Link
                   key={post.slug}
                   href={`/magazin/${post.slug}`}
-                  className="koup-projection-card cv-card rounded-3xl overflow-hidden bg-[#121216] border border-white/10 flex flex-col group"
+                  className="koup-projection-card cv-card rounded-3xl overflow-hidden bg-[#121216] border border-white/10 flex flex-col group [content-visibility:auto] [contain-intrinsic-size:auto_380px]"
                 >
                   <div className="relative h-52 overflow-hidden">
                     <img
@@ -366,7 +368,7 @@ export default function MagazineHubPage() {
                     <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-transparent to-transparent pointer-events-none" />
                     <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 z-10">
                       <span
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border backdrop-blur-md shadow-sm shadow-black/30 ${
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border shadow-sm shadow-black/30 ${
                           isKoreZin
                             ? 'bg-rose-600/85 text-white border-rose-400/50'
                             : 'bg-sky-600/85 text-white border-sky-400/50'
@@ -377,7 +379,7 @@ export default function MagazineHubPage() {
                       {(post.categories || ['Magazin']).slice(0, 2).map((cat) => (
                         <span
                           key={cat}
-                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border backdrop-blur-md ${getMagCategoryColor(cat)}`}
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border ${getMagCategoryColor(cat)}`}
                         >
                           {cat}
                         </span>

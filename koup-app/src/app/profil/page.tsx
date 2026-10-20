@@ -4,10 +4,12 @@ import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { User, LogIn, Sparkles, Compass } from 'lucide-react';
-import { useKoUp } from '@/context/KoUpContext';
+import { useKoUpSelector } from '@/context/KoUpContext';
 
 export default function ProfileRootPage() {
-  const { user, setIsAuthModalOpen, triggerSound } = useKoUp();
+  const user = useKoUpSelector((s) => s.user);
+  const setIsAuthModalOpen = useKoUpSelector((s) => s.setIsAuthModalOpen);
+  const triggerSound = useKoUpSelector((s) => s.triggerSound);
   const router = useRouter();
 
   useEffect(() => {
@@ -29,7 +31,7 @@ export default function ProfileRootPage() {
 
   return (
     <div className="min-h-[80vh] flex items-center justify-center pt-28 pb-20 px-5">
-      <div className="max-w-md w-full rounded-3xl bg-[#0f0f12]/95 border border-white/10 p-8 sm:p-10 text-center space-y-6 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.15)] backdrop-blur-2xl">
+      <div className="max-w-md w-full rounded-3xl bg-[#0f0f12]/95 border border-white/10 p-8 sm:p-10 text-center space-y-6 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.15)] backdrop-blur-sm">
         <div className="w-20 h-20 mx-auto rounded-3xl bg-sky-500/10 border border-sky-400/30 flex items-center justify-center shadow-[0_0_30px_rgba(41,151,255,0.25)]">
           <User className="w-10 h-10 text-sky-400" />
         </div>
@@ -49,7 +51,7 @@ export default function ProfileRootPage() {
               triggerSound('click');
               setIsAuthModalOpen(true);
             }}
-            className="w-full py-3 px-6 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-all cursor-pointer shadow-lg flex items-center justify-center gap-2"
+            className="w-full py-3 px-6 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 transition-colors cursor-pointer shadow-lg flex items-center justify-center gap-2"
           >
             <LogIn className="w-4 h-4" />
             <span>Giriş Yap veya Kayıt Ol</span>
@@ -58,7 +60,7 @@ export default function ProfileRootPage() {
           <Link
             href="/kesfet"
             onClick={() => triggerSound('click')}
-            className="w-full py-3 px-6 rounded-full glass-pill text-xs font-semibold text-white/80 hover:text-white transition-all flex items-center justify-center gap-2"
+            className="w-full py-3 px-6 rounded-full glass-pill text-xs font-semibold text-white/80 hover:text-white transition-colors flex items-center justify-center gap-2"
           >
             <Compass className="w-4 h-4 text-sky-400" />
             <span>Katalogda Dizi & Anime Keşfet</span>
