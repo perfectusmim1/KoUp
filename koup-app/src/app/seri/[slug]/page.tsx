@@ -786,13 +786,13 @@ export default function SeriesDetailPage({
     media.backdrop_image || media.cover_image,
     media.cover_image,
     media.title,
-    'w780'
+    'original'
   );
   const posterSrc = getProxiedImageUrl(
     media.cover_image,
     media.poster_fallback_url || null,
     media.title,
-    'w500',
+    'original',
     'poster',
     media.tmdb_id,
     media.content_type === 'film' ? 'movie' : 'tv',
@@ -1844,13 +1844,11 @@ export default function SeriesDetailPage({
       </div>
 
       {/* Add To List Modal */}
-      {showAddToListModal && (
-        <AddToListModal
-          isOpen={showAddToListModal}
-          onClose={() => setShowAddToListModal(false)}
-          media={media}
-        />
-      )}
+      <AddToListModal
+        isOpen={showAddToListModal}
+        onClose={() => setShowAddToListModal(false)}
+        media={media}
+      />
 
       {/* Official Native YouTube Cinema Trailer Modal */}
       <AnimatePresence>

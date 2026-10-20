@@ -260,12 +260,12 @@ function AccordionMediaCardComponent({
       ? 0
       : Math.max(Number(item.episode_count || 0), Number(item.episodes_available || 0));
 
-  // Request w500 for 2:3 vertical poster and w780 for 16:9 card backdrop (24x smaller GPU texture than 4K original!)
+  // Request w342 for 2:3 vertical poster (~480p resolution) and w780 for 16:9 card backdrop
   const posterSrc = getProxiedImageUrl(
     effectiveCover,
     item.poster_fallback_url || null,
     item.title,
-    'w500',
+    'w342',
     'poster',
     item.tmdb_id,
     mediaType
@@ -652,7 +652,7 @@ function AccordionMediaCardComponent({
               const target = e.currentTarget;
               if (!target.dataset.triedFallback && item.poster_fallback_url && item.poster_fallback_url !== effectiveCover) {
                 target.dataset.triedFallback = 'true';
-                target.src = getProxiedImageUrl(item.poster_fallback_url, null, item.title, 'w500', 'poster', item.tmdb_id, mediaType);
+                target.src = getProxiedImageUrl(item.poster_fallback_url, null, item.title, 'w342', 'poster', item.tmdb_id, mediaType);
               } else if (!target.dataset.triedTmdb && item.title) {
                 target.dataset.triedTmdb = 'true';
                 target.src = `/api/image-proxy?title=${encodeURIComponent(item.title)}&type=media`;

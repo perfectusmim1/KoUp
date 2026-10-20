@@ -469,16 +469,14 @@ export function getProxiedImageUrl(
 
     if (type === 'person') {
       effectiveSize = tmdbSize === 'w500' ? 'w185' : tmdbSize;
+    } else if (effectiveSize === 'original') {
+      // Keep uncompressed original resolution on series page
+      effectiveSize = 'original';
     } else if (isMobileClient) {
-      // Mobile screens never need > 720p (w780 is TMDB's 720p tier, w342 for posters)
-      if (effectiveSize === 'original' || effectiveSize === 'w1280') {
-        effectiveSize = 'w780';
-      } else if (type === 'poster' && (effectiveSize === 'w500' || effectiveSize === 'w780')) {
+      if (type === 'poster') {
         effectiveSize = 'w342';
-      }
-    } else {
-      if (effectiveSize === 'original') {
-        effectiveSize = 'w1280';
+      } else if (effectiveSize === 'w1280') {
+        effectiveSize = 'w780';
       }
     }
 
@@ -497,6 +495,12 @@ export function getProxiedImageUrl(
   }
 
   if (url.includes('s4.anilist.co')) {
+    if (tmdbSize === 'original') {
+      return url.replace('/cover/medium/', '/cover/extraLarge/').replace('/cover/large/', '/cover/extraLarge/');
+    }
+    if (tmdbSize === 'w342') {
+      return url.replace('/cover/extraLarge/', '/cover/large/').replace('/cover/medium/', '/cover/large/');
+    }
     return url;
   }
 
