@@ -112,9 +112,11 @@ function isDeadSource(provider?: string | null, directUrl?: string | null, sourc
     p === 'dead' ||
     p === 'sibnet' ||
     p === 'sendvid' ||
+    p === 'pixeldrain' ||
     n.includes('sibnet') ||
     u.includes('sibnet.ru') ||
     u.includes('sendvid') ||
+    u.includes('pixeldrain.com') ||
     p.includes('gdrive') ||
     p.includes('google') ||
     u.includes('drive.google.com') ||
@@ -129,6 +131,72 @@ function isDeadSource(provider?: string | null, directUrl?: string | null, sourc
     return true;
   }
   return false;
+}
+
+function getDisplaySourceName(
+  provider?: string | null,
+  rawSourceName?: string | null,
+  directUrl?: string | null,
+  site?: string | null
+): string {
+  const p = (provider || '').toLowerCase();
+  const u = (directUrl || '').toLowerCase();
+  const s = (site || '').toLowerCase();
+  const raw = cleanSourceName(rawSourceName);
+
+  // 1. AsyaWatch primary native streams
+  if (p === 'asyawatch' || s === 'asyawatch' || u.includes('pichive') || u.includes('molystream')) {
+    return 'Orijinal';
+  }
+  // 2. Dizilla / Dizibox
+  if (p === 'dizilla' || s === 'dizilla' || u.includes('dplayer') || u.includes('hotlinger')) {
+    return 'Dizilla';
+  }
+  // 3. Scraped native site streams
+  if (p.includes('diziyou') || u.includes('diziyou') || p.includes('dizikorea') || u.includes('dizikorea') || p.includes('hdfilm')) {
+    return 'Orijinal';
+  }
+  // 4. Tau Video
+  if (p === 'tau-video' || u.includes('tau-video')) {
+    return 'Tau Video';
+  }
+  // 5. Specific video hosts: keep their recognizable honest provider name
+  if (p === 'vk' || u.includes('vk.com')) return 'VK';
+  if (p === 'mail.ru' || p === 'mail' || u.includes('mail.ru')) return 'Mail.ru';
+  if (p === 'uqload' || u.includes('uqload')) return 'Uqload';
+  if (p === 'voe' || u.includes('voe.sx') || u.includes('voe.')) return 'VOE';
+  if (p === 'ok.ru' || p === 'odnoklassniki' || u.includes('ok.ru')) return 'OK.ru';
+  if (p === 'filemoon' || u.includes('bysesukior') || u.includes('filemoon')) return 'Filemoon';
+  if (p === 'streamwish' || u.includes('ghbrisk') || u.includes('streamwish')) return 'Streamwish';
+  if (p === 'yourupload' || u.includes('yourupload')) return 'YourUpload';
+  if (p === 'vidmoly' || u.includes('vidmoly')) return 'Vidmoly';
+  if (p === 'dailymotion' || u.includes('dailymotion')) return 'Dailymotion';
+  if (p === 'mp4upload' || u.includes('mp4upload')) return 'Mp4Upload';
+  if (p === 'mega' || u.includes('mega.nz')) return 'Mega';
+
+  // 6. If original raw name is already descriptive
+  if (raw && !['kaynak', 'other', 'default', 'varsayılan', 'vip', 'vi̇p'].includes(raw.toLowerCase())) {
+    return raw;
+  }
+
+  return p && p !== 'other' ? p.toUpperCase() : 'Kaynak';
+}
+
+function applySourceNumbering<T extends { source_name: string }>(sources: T[]): T[] {
+  const counts: Record<string, number> = {};
+  for (const s of sources) {
+    counts[s.source_name] = (counts[s.source_name] || 0) + 1;
+  }
+  const seen: Record<string, number> = {};
+  return sources.map((s) => {
+    const base = s.source_name;
+    seen[base] = (seen[base] || 0) + 1;
+    const finalName = counts[base] > 1 && seen[base] > 1 ? `${base} ${seen[base]}` : base;
+    return {
+      ...s,
+      source_name: finalName,
+    };
+  });
 }
 
 function getProviderPriority(provider: string, directUrl: string, contentType: string): number {
@@ -311,23 +379,19 @@ export async function GET(
             getProviderPriority(b.provider, b.direct_url, cType)
         );
 
-        let orijinalIdx = 0;
-        const normalized = sorted.map((s) => {
+        const mappedSources = sorted.map((s) => {
           const stype = classifyStreamType(s.provider, s.direct_url);
           const isNative = stype === 'hls' || stype === 'tau' || stype === 'mp4';
-          let cleanName = cleanSourceName(s.source_name);
-          if (isNative) {
-            orijinalIdx++;
-            cleanName = orijinalIdx === 1 ? 'Orijinal' : `Orijinal ${orijinalIdx}`;
-          }
+          const displayName = getDisplaySourceName(s.provider, s.source_name, s.direct_url, s.site);
           return {
             ...s,
-            source_name: cleanName,
+            source_name: displayName,
             fansub: cleanFansubName(s.fansub),
             stream_type: stype,
             quality_label: isNative ? '1080p' : s.quality_label || 'HD Embed',
           };
         });
+        const normalized = applySourceNumbering(mappedSources);
         const isPending = Boolean((ep as any).pending) || ep.status === 'pending_source';
         return {
           ...ep,
@@ -436,21 +500,10 @@ export async function GET(
             const stype = classifyStreamType(s.provider, s.direct_url);
             const prio = getProviderPriority(s.provider, s.direct_url, contentType);
 
-            let cleanName = cleanSourceName(s.source_name || s.provider || 'Kaynak');
             const isNative = stype === 'hls' || stype === 'tau' || stype === 'mp4' || s.provider === 'diziyou-hls' || s.provider === 'hdfilm-hls' || s.provider === 'asyawatch' || s.direct_url.includes('pichive');
-            let cleanFansub = cleanFansubName(s.fansub);
-
-            if (s.provider === 'asyawatch' || s.site === 'asyawatch' || s.direct_url.includes('pichive')) {
-              cleanName = 'Orijinal';
-              cleanFansub = null;
-            } else if (s.provider === 'dizilla' || s.site === 'dizilla' || s.direct_url.includes('dplayer') || s.direct_url.includes('hotlinger')) {
-              cleanName = 'Dizilla';
-              cleanFansub = null;
-            } else if (isNative) {
-              cleanName = 'Orijinal';
-            } else if (cleanName.toLowerCase().includes('dizikorea') || cleanName.toLowerCase().includes('diziyou')) {
-              cleanName = 'Orijinal';
-            }
+            const cleanName = getDisplaySourceName(s.provider, s.source_name, s.direct_url, s.site);
+            const isOriginalSite = s.provider === 'asyawatch' || s.site === 'asyawatch' || s.direct_url.includes('pichive');
+            const cleanFansub = isOriginalSite ? null : cleanFansubName(s.fansub);
 
             return {
               source_name: cleanName,
@@ -469,17 +522,12 @@ export async function GET(
           })
           .sort((a, b) => a._prio - b._prio)
           .slice(0, 18)
-          .map((s, idx, arr) => {
+          .map((s) => {
             const { _prio, ...rest } = s;
-            // If multiple 'Orijinal' sources exist, differentiate with Orijinal, Orijinal 2, etc.
-            if (rest.source_name === 'Orijinal') {
-              const previousOrijinalCount = arr.slice(0, idx).filter((x) => x.source_name.startsWith('Orijinal')).length;
-              if (previousOrijinalCount > 0) {
-                rest.source_name = `Orijinal ${previousOrijinalCount + 1}`;
-              }
-            }
             return rest;
           });
+
+        const numberedSources = applySourceNumbering(processed);
 
         return {
           id: ep.id,
@@ -499,7 +547,7 @@ export async function GET(
           react_shock: 0,
           react_angry: 0,
           views_count: 0,
-          sources: processed,
+          sources: numberedSources,
         };
       });
     }

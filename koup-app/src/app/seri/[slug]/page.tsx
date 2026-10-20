@@ -1339,10 +1339,8 @@ export default function SeriesDetailPage({
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
                 <Users className="w-5 h-5 text-sky-400" />
-                <span>Oyuncu Kadrosu & Karakterler ({cast.length})</span>
-              </h2>
-              <span className="text-xs text-white/50">Profil ve filmografi için oyuncuya tıklayın</span>
-            </div>
+                <span>Kadro ({cast.length})</span>
+              </h2></div>
 
             {/* Initial 6 Cast Members */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -1472,9 +1470,7 @@ export default function SeriesDetailPage({
                   />
                 )}
               </div>
-              <p className="text-xs text-white/50 mt-1">
-                İzlemek istediğiniz bölüme tıklayarak doğrudan video oynatıcı sayfasına geçebilirsiniz.
-              </p>
+              
             </div>
 
             <div className="flex items-center justify-between sm:justify-end gap-3">
@@ -1728,7 +1724,7 @@ export default function SeriesDetailPage({
                   </span>
                 </div>
                 <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight mt-0.5">
-                  Benzer Yapımlar & Önerilenler
+                  Benzer Yapımlar
                 </h2>
               </div>
               {/* Arrow navigation buttons just like home page */}

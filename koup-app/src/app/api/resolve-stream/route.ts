@@ -1472,10 +1472,13 @@ export async function GET(req: NextRequest) {
           );
         }
 
-        // Direct HLS
-        const hlsMatch = unescaped.match(/"hls"\s*:\s*"([^"]+)"/);
+        // Direct HLS (.m3u8 via hls_ondemand, hls_live, hls, or generic m3u8 url)
+        const hlsMatch =
+          unescaped.match(/"(?:hls_ondemand|hls_live|hls)"\s*:\s*"([^"]+)"/) ||
+          unescaped.match(/(https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)/);
         if (hlsMatch?.[1]) {
-          const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(hlsMatch[1])}&ref=${encodeURIComponent('https://vk.com/')}`;
+          const rawM3u8 = hlsMatch[1].replace(/\\\//g, '/');
+          const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(rawM3u8)}&ref=${encodeURIComponent('https://vk.com/')}`;
           const result = {
             mode: 'native_hls',
             streamUrl: proxiedUrl,
@@ -1493,7 +1496,7 @@ export async function GET(req: NextRequest) {
           if (m?.[1]) {
             qualities.push({
               label: `${q}p`,
-              url: `/api/stream-proxy?url=${encodeURIComponent(m[1])}&ref=${encodeURIComponent('https://vk.com/')}`,
+              url: `/api/stream-proxy?url=${encodeURIComponent(m[1].replace(/\\\//g, '/'))}&ref=${encodeURIComponent('https://vk.com/')}`,
             });
           }
         }
@@ -1508,6 +1511,14 @@ export async function GET(req: NextRequest) {
           setCachedStream(url, result);
           return NextResponse.json(result, { headers: CACHE_HEADERS });
         }
+
+        // If neither HLS nor MP4 could be extracted, return clean iframe shell with VK embed
+        const iframeResult = {
+          mode: 'iframe',
+          iframeUrl: url,
+        };
+        setCachedStream(url, iframeResult, 30 * 60 * 1000);
+        return NextResponse.json(iframeResult, { headers: CACHE_HEADERS });
       }
     } catch {
       return NextResponse.json(

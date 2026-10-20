@@ -462,15 +462,26 @@ export function getProxiedImageUrl(
 
   if (url.startsWith('/') || url.startsWith('data:')) return url;
 
-  // TMDB resolution: ensure correct size is requested without huge 4K downloads
+  // TMDB resolution: ensure correct size is requested without huge downloads, optimized for mobile
   if (url.includes('image.tmdb.org')) {
-    // If person and default w500 was passed, use w185 for clean avatar/card rendering without aliasing
-    const effectiveSize =
-      type === 'person' && tmdbSize === 'w500'
-        ? 'w185'
-        : tmdbSize === 'original'
-          ? 'w1280'
-          : tmdbSize;
+    const isMobileClient = typeof window !== 'undefined' && window.innerWidth > 0 && window.innerWidth < 768;
+    let effectiveSize = tmdbSize;
+
+    if (type === 'person') {
+      effectiveSize = tmdbSize === 'w500' ? 'w185' : tmdbSize;
+    } else if (isMobileClient) {
+      // Mobile screens never need > 720p (w780 is TMDB's 720p tier, w342 for posters)
+      if (effectiveSize === 'original' || effectiveSize === 'w1280') {
+        effectiveSize = 'w780';
+      } else if (type === 'poster' && (effectiveSize === 'w500' || effectiveSize === 'w780')) {
+        effectiveSize = 'w342';
+      }
+    } else {
+      if (effectiveSize === 'original') {
+        effectiveSize = 'w1280';
+      }
+    }
+
     return url.replace(
       /\/t\/p\/(original|w1280|w780|w500|w342|w185|w154|w92|h632)\//,
       `/t/p/${effectiveSize}/`

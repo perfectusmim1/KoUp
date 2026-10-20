@@ -4195,40 +4195,40 @@ export default function NetflixPlayer({
 
                   if (isCurrentYouTube && !forceEmbedYouTube) {
                     return (
-                      <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-b from-zinc-950 via-[#140608] to-black p-6 text-center select-none overflow-hidden">
+                      <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-b from-zinc-950 via-[#140608] to-black p-3 sm:p-6 text-center select-none overflow-y-auto overflow-x-hidden no-scrollbar">
                         {/* Soft Ambient Aura */}
                         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-600/20 via-transparent to-transparent pointer-events-none" />
 
-                        <div className="relative z-10 max-w-lg mx-auto flex flex-col items-center gap-5">
-                          <div className="w-20 h-20 rounded-2xl bg-red-600/15 border border-red-500/30 flex items-center justify-center shadow-[0_0_50px_rgba(239,68,68,0.25)]">
-                            <svg className="w-10 h-10 fill-[#FF0000]" viewBox="0 0 24 24">
+                        <div className="relative z-10 max-w-lg mx-auto flex flex-col items-center gap-2.5 sm:gap-5 my-auto py-2">
+                          <div className="w-12 h-12 sm:w-20 sm:h-20 rounded-xl sm:rounded-2xl bg-red-600/15 border border-red-500/30 flex items-center justify-center shadow-[0_0_50px_rgba(239,68,68,0.25)] shrink-0">
+                            <svg className="w-6 h-6 sm:w-10 sm:h-10 fill-[#FF0000]" viewBox="0 0 24 24">
                               <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
                             </svg>
                           </div>
 
-                          <div className="space-y-2">
-                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 text-[11px] font-bold tracking-wider uppercase">
+                          <div className="space-y-1 sm:space-y-2">
+                            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 text-[10px] sm:text-[11px] font-bold tracking-wider uppercase">
                               YouTube Resmi Yayını
                             </div>
-                            <h2 className="text-xl md:text-2xl font-extrabold text-white tracking-tight">
+                            <h2 className="text-base sm:text-xl md:text-2xl font-extrabold text-white tracking-tight leading-snug">
                               {media?.title} · {currentSeason}. Sezon {currentEpisode}. Bölüm
                             </h2>
-                            <p className="text-xs md:text-sm text-zinc-400 max-w-md leading-relaxed">
+                            <p className="text-[11px] sm:text-xs md:text-sm text-zinc-400 max-w-md leading-relaxed px-2 sm:px-0">
                               Bu bölümün yayıncısı harici sitelerde gömülü oynatmayı kısıtladığı için doğrudan YouTube üzerinden yüksek kalitede izleyebilirsiniz.
                             </p>
                           </div>
 
-                          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 pt-1 sm:pt-2">
                             {ytWatchUrl && (
                               <a
                                 href={ytWatchUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-2.5 px-7 py-3.5 rounded-full bg-[#E50914] hover:bg-[#b80710] text-white font-bold text-sm tracking-wide shadow-[0_0_35px_rgba(229,9,20,0.45)] hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                                className="flex items-center gap-2 px-5 py-2.5 sm:px-7 sm:py-3.5 rounded-full bg-[#E50914] hover:bg-[#b80710] text-white font-bold text-xs sm:text-sm tracking-wide shadow-[0_0_35px_rgba(229,9,20,0.45)] hover:scale-105 active:scale-95 transition-all cursor-pointer"
                               >
-                                <Play className="w-4 h-4 fill-white" />
+                                <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-white" />
                                 <span>YouTube'da İzle</span>
-                                <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                                <ExternalLink className="w-3 h-3 sm:w-3.5 sm:h-3.5 opacity-80" />
                               </a>
                             )}
 
@@ -4239,7 +4239,7 @@ export default function NetflixPlayer({
                                   const nextIdx = filteredSources.findIndex((s) => nonYtSources.includes(s));
                                   if (nextIdx !== -1) setSelectedSourceIdx(nextIdx);
                                 }}
-                                className="flex items-center gap-2 px-5 py-3 rounded-full bg-white/10 hover:bg-white/20 text-white font-medium text-xs backdrop-blur-md border border-white/10 transition-all cursor-pointer"
+                                className="flex items-center gap-1.5 px-3.5 py-2 sm:px-5 sm:py-3 rounded-full bg-white/10 hover:bg-white/20 text-white font-medium text-[11px] sm:text-xs backdrop-blur-md border border-white/10 transition-all cursor-pointer"
                               >
                                 <span>Alternatif Siteden İzle ({nonYtSources.length} Kaynak)</span>
                               </button>
@@ -4249,7 +4249,7 @@ export default function NetflixPlayer({
                           <button
                             type="button"
                             onClick={() => setForceEmbedYouTube(true)}
-                            className="text-[11px] text-zinc-500 hover:text-zinc-300 underline underline-offset-4 transition-colors pt-2 cursor-pointer"
+                            className="text-[10px] sm:text-[11px] text-zinc-500 hover:text-zinc-300 underline underline-offset-4 transition-colors pt-0.5 sm:pt-1 cursor-pointer"
                           >
                             Gömülü oynatıcıyı yine de açmayı dene
                           </button>

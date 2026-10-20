@@ -15,6 +15,7 @@ import {
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
 import CountryFlag from '@/components/CountryFlag';
+import Top10Numeral from '@/components/Top10Numeral';
 import { registerMediaItem, cachedQuery } from '@/lib/cache';
 import { recordTasteSignal } from '@/lib/tasteProfile';
 import { buildCleanTrailerEmbedUrl, watchYouTubeIframe, postYouTubeCommand } from '@/lib/youtubeTrailer';
@@ -707,25 +708,23 @@ function AccordionMediaCardComponent({
             tabIndex={-1}
           />
 
-          {/* Rank Numeral Overlay if part of a Ranked Row */}
+          {/* Rank Numeral Overlay if part of a Ranked Row (Vector Clean, Artifact-Free) */}
           {rank !== undefined && (
             <div
               className={`absolute -left-1.5 bottom-1.5 z-20 pointer-events-none transition-opacity duration-200 ${
                 isAccordionExpanded ? 'opacity-15' : 'opacity-100'
               }`}
             >
-              <span className="text-6xl sm:text-7xl font-black text-stroke-numeral leading-none">
-                {rank}
-              </span>
+              <Top10Numeral rank={rank} className="h-12 sm:h-16 w-auto" />
             </div>
           )}
 
-          {/* LAYER 1: Base Poster Image (Rock-solid single DOM node: zero flicker, eagerly loaded within 550px predictive window) */}
+          {/* LAYER 1: Base Poster Image (Rock-solid single DOM node: zero flicker, priority-aware lazy loading) */}
           <img
             src={posterSrc}
             alt={item.title}
             draggable={false}
-            loading="eager"
+            loading={priority ? 'eager' : 'lazy'}
             fetchPriority={priority ? 'high' : 'auto'}
             decoding="async"
             onError={(e) => {

@@ -90,6 +90,7 @@ export default function EpisodeWatchPage({
 
   const [selectedSourceIdx, setSelectedSourceIdx] = useState(0);
   const [selectedFansub, setSelectedFansub] = useState('all');
+  const preferredSourceRef = useRef<{ provider?: string; source_name?: string; fansub?: string | null }>({});
   const [liveEpisodeViews, setLiveEpisodeViews] = useState<Record<string, number>>({});
 
   const handleSelectSourceIdx = useCallback((idx: number) => {
@@ -147,20 +148,69 @@ export default function EpisodeWatchPage({
     });
   };
 
-  // Seamless episode switching: in-player state update + URL history sync (keeps Fullscreen intact)
+  // Seamless episode switching: preserves identical video source & fansub across episodes if available
   const handleSelectEpisode = useCallback(
     (s: number, e: number) => {
-      setActiveEpNum(e);
-      if (s) setCurrentSeason(s);
-      setSelectedSourceIdx(0);
-      setSelectedFansub('all');
-
       const targetSeason = s || currentSeason || 1;
+      const targetEpNum = e;
+      setActiveEpNum(targetEpNum);
+      if (s) setCurrentSeason(targetSeason);
+
+      // Smart source persistence: match previous active source or fansub in target episode
+      const targetEp = episodes.find(
+        (ep) => (ep.season_number || 1) === targetSeason && ep.episode_number === targetEpNum
+      );
+
+      const pref = preferredSourceRef.current;
+      if (targetEp && Array.isArray(targetEp.sources) && targetEp.sources.length > 0) {
+        // 1. Fansub preservation
+        let nextFansub = 'all';
+        if (pref.fansub && pref.fansub !== 'all') {
+          const hasFansub = targetEp.sources.some(
+            (src) => cleanFansubName(src.fansub) === pref.fansub
+          );
+          if (hasFansub) nextFansub = pref.fansub;
+        }
+        setSelectedFansub(nextFansub);
+
+        // 2. Candidate sources filtered by fansub
+        const candidates =
+          nextFansub === 'all'
+            ? targetEp.sources
+            : targetEp.sources.filter(
+                (src) => cleanFansubName(src.fansub) === nextFansub
+              );
+
+        // 3. Find matching source index (exact provider + source_name, then same provider, then same source_name)
+        let matchIdx = candidates.findIndex((src) => {
+          const pMatch = pref.provider && src.provider && src.provider.toLowerCase() === pref.provider.toLowerCase();
+          const nMatch = pref.source_name && src.source_name && cleanSourceName(src.source_name).toLowerCase() === pref.source_name.toLowerCase();
+          return pMatch && nMatch;
+        });
+
+        if (matchIdx < 0 && pref.provider) {
+          matchIdx = candidates.findIndex(
+            (src) => src.provider && src.provider.toLowerCase() === pref.provider!.toLowerCase()
+          );
+        }
+
+        if (matchIdx < 0 && pref.source_name) {
+          matchIdx = candidates.findIndex(
+            (src) => src.source_name && cleanSourceName(src.source_name).toLowerCase() === pref.source_name!.toLowerCase()
+          );
+        }
+
+        setSelectedSourceIdx(matchIdx >= 0 ? matchIdx : 0);
+      } else {
+        setSelectedSourceIdx(0);
+        setSelectedFansub('all');
+      }
+
       const targetSlug = media?.slug || slug;
       const newUrl = `/seri/${targetSlug}/${e}?season=${targetSeason}`;
       window.history.pushState(null, '', newUrl);
     },
-    [media?.slug, slug, currentSeason]
+    [media?.slug, slug, currentSeason, episodes]
   );
 
   // Sync state if user clicks browser Back / Forward buttons
@@ -822,6 +872,17 @@ export default function EpisodeWatchPage({
   const activeSource: EpisodeSource | undefined =
     filteredSources[selectedSourceIdx] || availableSources[0];
 
+  // Track active source preference for seamless cross-episode playback continuity
+  useEffect(() => {
+    if (activeSource) {
+      preferredSourceRef.current = {
+        provider: activeSource.provider,
+        source_name: activeSource.source_name,
+        fansub: activeSource.fansub || selectedFansub,
+      };
+    }
+  }, [activeSource?.provider, activeSource?.source_name, activeSource?.fansub, selectedFansub]);
+
 
 
   const cinemaStageStyle: React.CSSProperties = {
@@ -1134,9 +1195,9 @@ export default function EpisodeWatchPage({
               </div>
 
               {/* Reaction Badges + Sorun Bildir */}
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-2.5 w-full sm:w-auto">
                 {/* Flame, Tear, Zap, Angry reactions with fixed dimensions, tabular counts & crisp hover */}
-                <div className="flex items-center gap-1 bg-white/[0.04] p-1 rounded-full border border-white/10 flex-wrap">
+                <div className="flex items-center justify-center gap-1 bg-white/[0.04] p-1 rounded-2xl sm:rounded-full border border-white/10 flex-wrap max-w-full">
                   <button
                     type="button"
                     onClick={() => handleReaction('fire')}
@@ -1226,7 +1287,7 @@ export default function EpisodeWatchPage({
                 <button
                   type="button"
                   onClick={() => setShowReport(true)}
-                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-semibold transition-colors duration-120 ease-out cursor-pointer select-none ${
+                  className={`flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-semibold transition-colors duration-120 ease-out cursor-pointer select-none mx-auto sm:mx-0 ${
                     showReport
                       ? 'bg-amber-400 hover:bg-amber-300 text-black border-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.35)]'
                       : 'bg-white/[0.05] hover:bg-amber-400/20 text-amber-300 hover:text-amber-200 border-white/10 hover:border-amber-400/40'

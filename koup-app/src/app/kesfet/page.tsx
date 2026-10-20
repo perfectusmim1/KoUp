@@ -547,20 +547,6 @@ function DiscoverContent() {
             <span className="relative z-10">Tümü</span>
           </button>
 
-          {selectedGenres.length > 0 && (
-            <button
-              onClick={() => {
-                triggerSound('click');
-                setSelectedGenres([]);
-                setCurrentPage(1);
-              }}
-              className="relative shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30 hover:bg-rose-500/25 transition-colors cursor-pointer"
-            >
-              <X className="w-3 h-3" />
-              <span>Temizle ({selectedGenres.length})</span>
-            </button>
-          )}
-
           {GENRES.map((g) => {
             const active = selectedGenres.includes(g);
             return (

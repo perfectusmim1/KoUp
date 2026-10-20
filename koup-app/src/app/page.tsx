@@ -42,6 +42,7 @@ import {
 } from '@/lib/supabase';
 import { useKoUp } from '@/context/KoUpContext';
 import AccordionMediaCard, { requestAccordionHover, preloadMediaImages } from '@/components/AccordionMediaCard';
+import Top10Numeral from '@/components/Top10Numeral';
 import { cachedQuery, getCache, registerMediaItems } from '@/lib/cache';
 import {
   buildPersonalizedFeed,
@@ -930,24 +931,21 @@ export default function HomePage() {
       {
         key: 'kdrama',
         score: (profile.countries['KR'] || 0) + (profile.types['dizi'] || 0) * 0.5,
-        subtitle: 'MyDramaList Yüksek Puanlı',
-        title: 'Kore Dizileri',
+                title: 'Kore Dizileri',
         href: '/kesfet?country=KR',
         items: kdramaItems,
       },
       {
         key: 'anime',
         score: (profile.types['anime'] || 0) * 1.4 + (profile.countries['JP'] || 0) * 0.8,
-        subtitle: 'AniList Sezonun Zirvesi',
-        title: 'Animeler',
+                title: 'Animeler',
         href: '/kesfet?type=anime',
         items: animeItems,
       },
       {
         key: 'cdrama',
         score: (profile.countries['CN'] || 0) * 1.3,
-        subtitle: 'Wuxia, Xianxia & Modern Romantik',
-        title: 'Çin Dizileri',
+                title: 'Çin Dizileri',
         href: '/kesfet?country=CN',
         items: cdramaItems,
       },
@@ -1401,14 +1399,15 @@ export default function HomePage() {
                   prefetch={true}
                   className="shrink-0 flex items-end group cursor-pointer snap-start relative pl-2 sm:pl-4 md:pl-6"
                 >
-                  {/* Netflix/Apple TV+ Top 10 Stroke Numeral */}
-                  <span className="text-[72px] sm:text-[110px] md:text-[145px] font-black leading-[0.78] tracking-tighter text-stroke-numeral select-none pointer-events-none drop-shadow-[0_12px_24px_rgba(0,0,0,0.95)] -translate-x-2 sm:-translate-x-4 md:-translate-x-6 -mr-4 sm:-mr-6 md:-mr-8 z-0">
-                    {idx + 1}
-                  </span>
+                  {/* Netflix/Apple TV+ Top 10 Stroke Numeral (Vector Clean, Artifact-Free) */}
+                  <Top10Numeral
+                    rank={idx + 1}
+                    className="h-[76px] sm:h-[110px] md:h-[145px] w-auto select-none pointer-events-none drop-shadow-[0_12px_24px_rgba(0,0,0,0.95)] -translate-x-2 sm:-translate-x-4 md:-translate-x-6 -mr-4 sm:-mr-6 md:-mr-8 z-0 shrink-0"
+                  />
 
                   <div className="relative z-10 w-28 sm:w-40 md:w-52 min-w-[112px] sm:min-w-[160px] aspect-[2/3] rounded-xl sm:rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 group-hover:border-white/30 shadow-[0_20px_45px_rgba(0,0,0,0.85)] group-hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-end p-2.5 sm:p-4">
                     <img
-                      src={getProxiedImageUrl(item.cover_image, item.title)}
+                      src={getProxiedImageUrl(item.cover_image, item.title, null, 'w342', 'poster')}
                       alt={item.title}
                       loading="lazy"
                       decoding="async"
@@ -1478,14 +1477,15 @@ export default function HomePage() {
                   prefetch={true}
                   className="shrink-0 flex items-end group cursor-pointer snap-start relative pl-2 sm:pl-4 md:pl-6"
                 >
-                  {/* Netflix/Apple TV+ Top 10 Stroke Numeral */}
-                  <span className="text-[72px] sm:text-[110px] md:text-[145px] font-black leading-[0.78] tracking-tighter text-stroke-numeral select-none pointer-events-none drop-shadow-[0_12px_24px_rgba(0,0,0,0.95)] -translate-x-2 sm:-translate-x-4 md:-translate-x-6 -mr-4 sm:-mr-6 md:-mr-8 z-0">
-                    {idx + 1}
-                  </span>
+                  {/* Netflix/Apple TV+ Top 10 Stroke Numeral (Vector Clean, Artifact-Free) */}
+                  <Top10Numeral
+                    rank={idx + 1}
+                    className="h-[76px] sm:h-[110px] md:h-[145px] w-auto select-none pointer-events-none drop-shadow-[0_12px_24px_rgba(0,0,0,0.95)] -translate-x-2 sm:-translate-x-4 md:-translate-x-6 -mr-4 sm:-mr-6 md:-mr-8 z-0 shrink-0"
+                  />
 
                   <div className="relative z-10 w-28 sm:w-40 md:w-52 min-w-[112px] sm:min-w-[160px] aspect-[2/3] rounded-xl sm:rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 group-hover:border-white/30 shadow-[0_20px_45px_rgba(0,0,0,0.85)] group-hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-end p-2.5 sm:p-4">
                     <img
-                      src={getProxiedImageUrl(item.cover_image, item.title)}
+                      src={getProxiedImageUrl(item.cover_image, item.title, null, 'w342', 'poster')}
                       alt={item.title}
                       loading="lazy"
                       decoding="async"
@@ -1540,10 +1540,7 @@ export default function HomePage() {
           <section className="w-full px-4 sm:px-6 md:px-14 cv-auto max-w-full">
             <div className="rounded-2xl sm:rounded-3xl bg-[#0f0f11] p-4 sm:p-8 border border-white/[0.08]">
               <div className="flex flex-col gap-1.5 mb-6">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase text-white/40">
-                    Topluluk Favori Sıralaması
-                  </span>
+                <div className="flex items-center justify-end">
                   <Link
                     href="/oyuncular"
                     prefetch={true}
@@ -1554,7 +1551,7 @@ export default function HomePage() {
                   </Link>
                 </div>
                 <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-white tracking-tight mt-0.5">
-                  En Çok Favorilenen Oyuncular & Anime Karakterleri
+                  En Çok Favorilenen Oyuncular
                 </h2>
               </div>
 

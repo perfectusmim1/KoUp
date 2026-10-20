@@ -267,17 +267,21 @@ export default function Navbar() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  // Lock body scroll and dynamic viewport rubber-banding when mobile drawer is open
+  // Lock body scroll and dynamic viewport rubber-banding with rAF to prevent animation hitching on mobile
   useEffect(() => {
     if (!mobileMenuOpen) return;
 
     const originalOverflow = document.body.style.overflow;
     const originalTouchAction = document.body.style.touchAction;
 
-    document.body.style.overflow = 'hidden';
-    document.body.style.touchAction = 'none';
+    // Microtask/rAF prevents synchronous forced layout reflow during drawer slide-in transition
+    const timer = setTimeout(() => {
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+    }, 16);
 
     return () => {
+      clearTimeout(timer);
       document.body.style.overflow = originalOverflow;
       document.body.style.touchAction = originalTouchAction;
     };
@@ -1001,14 +1005,14 @@ export default function Navbar() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
               onClick={() => setMobileMenuOpen(false)}
-              className="pointer-events-auto fixed inset-0 z-40 bg-black/80 touch-none overscroll-none lg:hidden"
+              className="pointer-events-auto fixed inset-0 z-40 bg-black/75 touch-none overscroll-none lg:hidden transform-gpu will-change-[opacity]"
             />
             <motion.div
               initial={{ x: '-100%' }}
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className="pointer-events-auto lg:hidden fixed top-0 left-0 w-[290px] max-w-[85vw] h-[100dvh] bg-[#0c0d12] p-6 border-r border-white/15 shadow-2xl z-50 flex flex-col justify-between overscroll-contain touch-pan-y will-change-transform"
+              className="pointer-events-auto lg:hidden fixed top-0 left-0 w-[290px] max-w-[85vw] h-[100dvh] bg-[#0c0d12] p-6 border-r border-white/15 shadow-2xl z-50 flex flex-col justify-between overscroll-contain touch-pan-y transform-gpu will-change-transform"
             >
               {/* Drawer Top Header */}
               <div>

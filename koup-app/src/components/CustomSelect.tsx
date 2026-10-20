@@ -117,17 +117,20 @@ export default function CustomSelect({
       upwards = spaceBelow < 280 && spaceAbove > 180;
     }
 
-    const isRightAligned = rect.right + 220 > window.innerWidth;
+    const menuWidth = Math.round(Math.max(rect.width, 210));
+    const triggerCenter = rect.left + rect.width / 2;
+    const idealLeft = triggerCenter - menuWidth / 2;
+    const clampedLeft = Math.round(Math.max(12, Math.min(idealLeft, window.innerWidth - menuWidth - 12)));
 
     const coords = {
       top: upwards ? undefined : Math.round(rect.bottom + 6),
       bottom: upwards ? Math.round(window.innerHeight - rect.top + 6) : undefined,
-      left: isRightAligned ? undefined : Math.round(Math.max(12, Math.min(rect.left, window.innerWidth - 320))),
-      right: isRightAligned ? Math.round(Math.max(12, window.innerWidth - rect.right)) : undefined,
-      width: Math.round(Math.max(rect.width, 210)),
+      left: clampedLeft,
+      right: undefined,
+      width: menuWidth,
     };
 
-    return { upwards, alignRight: isRightAligned, coords };
+    return { upwards, alignRight: false, coords };
   }, [direction]);
 
   // Recalculate position on scroll or resize
@@ -342,7 +345,7 @@ export default function CustomSelect({
           className={`${
             portal
               ? 'fixed z-[999999]'
-              : `absolute ${alignRight ? 'right-0' : 'left-0'} ${
+              : `absolute left-1/2 -translate-x-1/2 ${
                   openUpwards ? 'bottom-full mb-2' : 'top-full mt-2'
                 } z-[9999]`
           } min-w-[210px] max-w-[340px] w-max p-1.5 rounded-2xl bg-[#141418]/95 backdrop-blur-3xl border border-white/20 shadow-[0_24px_60px_rgba(0,0,0,0.95),0_0_24px_-4px_rgba(41,151,255,0.18)] ring-1 ring-white/10 flex flex-col overflow-hidden ${menuClassName}`}
