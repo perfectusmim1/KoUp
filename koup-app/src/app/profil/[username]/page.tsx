@@ -361,13 +361,26 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
             setCommentsPage(1);
           }
         } else {
-          const { data: commentRows } = await supabase
+          let { data: commentRows, error: commentErr } = await supabase
             .from('comments')
             .select('id, user_id, target_type, media_id, season_number, episode_number, person_id, magazine_id, parent_id, timestamp_sec, gif_url, sticker_id, image_url, content_html, has_spoiler, likes_count, dislikes_count, created_at, media:media_id (id, slug, title, cover_image, content_type), people:person_id (id, slug, name, image_url), magazine_posts:magazine_id (id, slug, title, featured_image)')
             .eq('user_id', targetId)
             .eq('is_hidden', false)
             .order('created_at', { ascending: false })
             .limit(1000);
+
+          if (commentErr && (!commentRows || commentRows.length === 0)) {
+            const fallbackRes = await supabase
+              .from('comments')
+              .select('id, user_id, target_type, media_id, season_number, episode_number, person_id, magazine_id, parent_id, timestamp_sec, gif_url, sticker_id, image_url, content_html, has_spoiler, likes_count, dislikes_count, created_at, media:media_id (id, slug, title, cover_image, content_type), people:person_id (id, slug, name, image_url)')
+              .eq('user_id', targetId)
+              .eq('is_hidden', false)
+              .order('created_at', { ascending: false })
+              .limit(1000);
+            if (fallbackRes.data) {
+              commentRows = fallbackRes.data as any;
+            }
+          }
 
           if (isMounted) {
             setProfileComments((commentRows as any[]) || []);
