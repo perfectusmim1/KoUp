@@ -260,12 +260,12 @@ function AccordionMediaCardComponent({
       ? 0
       : Math.max(Number(item.episode_count || 0), Number(item.episodes_available || 0));
 
-  // Balanced compact resolution: w342 for 2:3 vertical posters, w300 for widescreen backdrops
+  // Compact low-res tier: w154 for posters, w300 for widescreen backdrops
   const posterSrc = getProxiedImageUrl(
     effectiveCover,
     item.poster_fallback_url || null,
     item.title,
-    'w342',
+    'w154',
     'poster',
     item.tmdb_id,
     mediaType

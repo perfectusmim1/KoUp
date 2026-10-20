@@ -311,7 +311,7 @@ export default function HomePage() {
             )
             .eq('status', 'published')
             .order('id', { ascending: false })
-            .limit(40),
+            .limit(250),
           supabase
             .from('people')
             .select('*')
@@ -382,10 +382,11 @@ export default function HomePage() {
               uniqueEps.push(ep);
             }
           }
-          const mIds = Array.from(seenMedia);
+          const targetEps = uniqueEps.slice(0, 24);
+          const mIds = targetEps.map((e: any) => e.media_id);
           const { data: mRows } = await supabase.from('media').select('*').in('id', mIds);
           const mMap = new Map(((mRows as MediaItem[]) || []).map((m) => [m.id, m]));
-          processedEps = uniqueEps
+          processedEps = targetEps
             .map((e: any) => ({ ...e, media: mMap.get(e.media_id) }))
             .filter((e: any) => e.media);
         }

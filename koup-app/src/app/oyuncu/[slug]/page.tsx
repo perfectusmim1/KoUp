@@ -461,7 +461,7 @@ export default function PersonDetailPage({
       <div className="rounded-3xl apple-glass p-6 sm:p-10 border border-white/15 flex flex-col md:flex-row gap-8 items-center md:items-start">
         <div className="w-44 h-44 sm:w-56 sm:h-56 rounded-3xl overflow-hidden border-2 border-white/15 shadow-2xl shrink-0">
           <img
-            src={getProxiedImageUrl(person.image_url, person.name, null, 'w500', 'person')}
+            src={getProxiedImageUrl(person.image_url, person.name, null, 'original', 'person', person.tmdb_id)}
             alt={person.name}
             className="w-full h-full object-cover"
           />

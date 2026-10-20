@@ -472,14 +472,14 @@ export function getProxiedImageUrl(
     let effectiveSize: string;
 
     if (tmdbSize === 'original') {
-      // Vitrin / Series Detail: uncompressed original
+      // Vitrin / Series Detail / Actor Detail: uncompressed original
       effectiveSize = 'original';
     } else if (type === 'banner') {
-      // Kart sinematik geniş arka planı: hafif ama net w300
+      // Kart sinematik geniş arka planı: hafif w300
       effectiveSize = 'w300';
     } else {
-      // Seri kartları, oyuncular, listeler, takvim afişleri: net ve hafif w342 (veya belirtilen boyut)
-      effectiveSize = tmdbSize && tmdbSize !== 'w92' ? tmdbSize : 'w342';
+      // Seri kartları, oyuncular, listeler, takvim afişleri: belirgin düşük çözünürlük w154
+      effectiveSize = tmdbSize && tmdbSize !== 'w342' ? tmdbSize : 'w154';
     }
 
     return url.replace(
@@ -496,14 +496,16 @@ export function getProxiedImageUrl(
     return `${url}=s192-c`;
   }
 
-  // AniList images: vitrin ve seri sayfasında orijinal kaliteli hali, kartlarda optimize ve net large (230px)
+  // AniList images: vitrin, seri ve oyuncu sayfasında orijinal kaliteli hali, kartlarda düşük çözünürlüklü medium (100x150px)
   if (url.includes('s4.anilist.co')) {
     if (tmdbSize === 'original') {
       return url;
     }
-    // Kapak görseli ise kartlarda aşırı pikselli 64x90 yerine net ve hafif (~20KB) large versiyonunu kullan
+    // Kapak görseli ise kartlarda belirgin düşük çözünürlüklü medium (100x150px) versiyonunu kullan
     if (url.includes('/cover/')) {
-      return url.replace('/cover/extraLarge/', '/cover/large/');
+      return url
+        .replace('/cover/extraLarge/', '/cover/medium/')
+        .replace('/cover/large/', '/cover/medium/');
     }
     // AniList banner görseli ise (/banner/), CDN'de küçük versiyon bulunmadığı için
     // aşağıya düşerek /api/image-proxy üzerinden sharp ile w300 genişliğine küçültülmesini sağla.
