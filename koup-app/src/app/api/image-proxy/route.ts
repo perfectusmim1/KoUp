@@ -366,27 +366,47 @@ async function fetchTmdbPosterById(
 
   for (const ep of endpoints) {
     try {
-      const url = `https://api.themoviedb.org/3/${ep}/${idStr}?api_key=${TMDB_API_KEY}&language=tr-TR`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
-      if (res.ok) {
-        const d = await res.json();
-        // Strict safety: NEVER serve adult/18+ content under any circumstances
-        if (d.adult === true) continue;
+      // 1. Try tr-TR first, fallback to en-US / untranslated for posters/backdrops
+      for (const lang of ['tr-TR', 'en-US']) {
+        const url = `https://api.themoviedb.org/3/${ep}/${idStr}?api_key=${TMDB_API_KEY}&language=${lang}`;
+        const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
+        if (res.ok) {
+          const d = await res.json();
+          if (d.adult === true) continue;
 
-        if (isBanner && d.backdrop_path) {
-          const backdropUrl = `https://image.tmdb.org/t/p/w1280${d.backdrop_path}`;
-          titlePosterCache.set(cacheKey, backdropUrl);
-          return backdropUrl;
-        }
-
-        if (d.poster_path) {
-          const posterUrl = `https://image.tmdb.org/t/p/w500${d.poster_path}`;
-          titlePosterCache.set(cacheKey, posterUrl);
-          return posterUrl;
+          if (isBanner) {
+            if (d.backdrop_path) {
+              const backdropUrl = `https://image.tmdb.org/t/p/w1280${d.backdrop_path}`;
+              titlePosterCache.set(cacheKey, backdropUrl);
+              return backdropUrl;
+            }
+            if (d.poster_path) {
+              const posterAsBanner = `https://image.tmdb.org/t/p/w780${d.poster_path}`;
+              titlePosterCache.set(cacheKey, posterAsBanner);
+              return posterAsBanner;
+            }
+          } else {
+            if (d.poster_path) {
+              const posterUrl = `https://image.tmdb.org/t/p/w500${d.poster_path}`;
+              titlePosterCache.set(cacheKey, posterUrl);
+              return posterUrl;
+            }
+            if (d.backdrop_path) {
+              const backdropAsPoster = `https://image.tmdb.org/t/p/w500${d.backdrop_path}`;
+              titlePosterCache.set(cacheKey, backdropAsPoster);
+              return backdropAsPoster;
+            }
+          }
         }
       }
     } catch {}
   }
+
+  // Fallback to title search if ID didn't give images
+  if (titleHint) {
+    return fetchTmdbPosterForTitle(titleHint, null, mediaType);
+  }
+
   return null;
 }
 
@@ -575,17 +595,17 @@ async function processImageBuffer(
         : sizeParam === 'w300'
         ? 300
         : sizeParam === 'w342'
-        ? 342
+        ? 290
         : sizeParam === 'w480'
-        ? 480
+        ? 400
         : sizeParam === 'w500'
-        ? 500
+        ? 450
         : sizeParam === 'w780'
-        ? 780
-        : 480;
+        ? 650
+        : 290;
     const resized = await sharp(inputBuf)
       .resize({ width: targetWidth, withoutEnlargement: true })
-      .webp({ quality: 80 })
+      .webp({ quality: 68 })
       .toBuffer();
     return { buf: new Uint8Array(resized), contentType: 'image/webp' };
   } catch {

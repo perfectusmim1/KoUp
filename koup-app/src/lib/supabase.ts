@@ -475,11 +475,11 @@ export function getProxiedImageUrl(
       // Vitrin / Series Detail / Actor Detail: uncompressed original
       effectiveSize = 'original';
     } else if (type === 'banner') {
-      // Kart sinematik 16:9 geniş arka planı: 480p standart genişlik w780 (780x439)
-      effectiveSize = tmdbSize === 'w300' ? 'w300' : 'w780';
+      // Kart sinematik 16:9 geniş arka planı: optimize w300 (300x169)
+      effectiveSize = tmdbSize === 'w780' ? 'w780' : 'w300';
     } else {
-      // Seri kartları, oyuncular, listeler, takvim afişleri: 480p dikey standart w342 (342x513)
-      effectiveSize = tmdbSize && tmdbSize !== 'w154' && tmdbSize !== 'w92' && tmdbSize !== 'w480' ? tmdbSize : 'w342';
+      // Seri kartları, oyuncular, listeler, takvim afişleri: 480p'den %15 daha hafif w185 (185x278)
+      effectiveSize = tmdbSize && tmdbSize !== 'w342' && tmdbSize !== 'w480' ? tmdbSize : 'w185';
     }
 
     return url.replace(

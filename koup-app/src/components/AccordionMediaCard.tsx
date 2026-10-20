@@ -166,7 +166,7 @@ export function preloadMediaImages(items?: (MediaItem | null | undefined)[]) {
       item.backdrop_image,
       item.cover_image,
       item.title,
-      'w780',
+      'w300',
       'banner',
       item.tmdb_id,
       mediaType
@@ -260,12 +260,12 @@ function AccordionMediaCardComponent({
       ? 0
       : Math.max(Number(item.episode_count || 0), Number(item.episodes_available || 0));
 
-  // 480p resolution tier: w342 (342x513) for vertical posters, w780 (780x439) for widescreen backdrops
+  // Optimized tier (-15% from 480p): w185 (185x278) for vertical posters, w300 for widescreen backdrops
   const posterSrc = getProxiedImageUrl(
     effectiveCover,
     item.poster_fallback_url || null,
     item.title,
-    'w342',
+    'w185',
     'poster',
     item.tmdb_id,
     mediaType
@@ -276,7 +276,7 @@ function AccordionMediaCardComponent({
       effectiveBackdrop !== effectiveCover
   );
   const backdropSrc = hasDistinctBackdrop
-    ? getProxiedImageUrl(effectiveBackdrop, effectiveCover, item.title, 'w780', 'banner', item.tmdb_id, mediaType)
+    ? getProxiedImageUrl(effectiveBackdrop, effectiveCover, item.title, 'w300', 'banner', item.tmdb_id, mediaType)
     : posterSrc;
 
   const countryCode = item.country_code || item.country;
@@ -656,9 +656,11 @@ function AccordionMediaCardComponent({
               if (!target.dataset.triedFallback && item.poster_fallback_url && item.poster_fallback_url !== effectiveCover) {
                 target.dataset.triedFallback = 'true';
                 target.src = getProxiedImageUrl(item.poster_fallback_url, null, item.title, 'w342', 'poster', item.tmdb_id, mediaType);
-              } else if (!target.dataset.triedTmdb && item.title) {
-                target.dataset.triedTmdb = 'true';
-                target.src = `/api/image-proxy?title=${encodeURIComponent(item.title)}&type=media`;
+              } else if (!target.dataset.triedProxy && item.title) {
+                target.dataset.triedProxy = 'true';
+                target.src = `/api/image-proxy?tmdbId=${encodeURIComponent(String(item.tmdb_id || ''))}&title=${encodeURIComponent(item.title)}&mediaType=${mediaType}&type=poster`;
+              } else {
+                target.src = '/logo-dark.png';
               }
             }}
             className={`absolute inset-0 w-full h-full object-cover pointer-events-none select-none transition-opacity duration-250 ${
@@ -678,6 +680,16 @@ function AccordionMediaCardComponent({
           aria-hidden="true"
           draggable={false}
           decoding="async"
+          onError={(e) => {
+            const target = e.currentTarget;
+            if (!target.dataset.triedPoster && posterSrc) {
+              target.dataset.triedPoster = 'true';
+              target.src = posterSrc;
+            } else if (!target.dataset.triedProxy && item.title) {
+              target.dataset.triedProxy = 'true';
+              target.src = `/api/image-proxy?tmdbId=${encodeURIComponent(String(item.tmdb_id || ''))}&title=${encodeURIComponent(item.title)}&mediaType=${mediaType}&type=banner`;
+            }
+          }}
           className={`absolute inset-0 w-full h-full object-cover object-center pointer-events-none select-none transition-opacity duration-250 ${
             isAccordionExpanded && !isTrailerReady ? 'opacity-100' : 'opacity-0'
           }`}
