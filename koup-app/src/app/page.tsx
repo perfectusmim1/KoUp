@@ -52,6 +52,7 @@ import {
   openCookiePreferencesModal,
 } from '@/lib/tasteProfile';
 import { useDragScroll } from '@/hooks/useDragScroll';
+import { useDeferredMount } from '@/hooks/useDeferredMount';
 
 // Vitrin Trailer Reveal & Seamless Loop Timing
 const HERO_TRAILER_FIRST_REVEAL_SEC = 3.9;
@@ -961,6 +962,19 @@ export default function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kdramaItems, animeItems, cdramaItems, globalItems, heroItems, progressMap, tasteVersion]);
 
+  // Progressive below-the-fold rail mounting orders:
+  // - Hero + first content rail mount immediately (order: 0).
+  // - All rails below it get sequential orders released via idle callback or IntersectionObserver.
+  const hasContinueWatching = continueWatchingItems.length > 0;
+  let runningOrder = hasContinueWatching ? 1 : 0;
+  const top10SeriesOrder = runningOrder++;
+  const top10MoviesOrder = runningOrder++;
+  const personalizedOrder = runningOrder++;
+  const categoryBaseOrder = runningOrder;
+  runningOrder += orderedCategoryRows.length;
+  const topPeopleOrder = runningOrder++;
+  const magPostsOrder = runningOrder++;
+
   return (
     <div className="min-h-screen pb-28 bg-[#080808] w-full max-w-full overflow-x-hidden">
       {/* =====================================================================
@@ -1326,7 +1340,7 @@ export default function HomePage() {
                               : `S${stats.season} • ${stats.nextEpisode}. Bölümden Devam Et`}
                           </span>
                         </div>
-                        <span className="text-[10px] sm:text-[11px] font-mono text-white/80 shrink-0 px-2 py-0.5 rounded-lg bg-black/60 backdrop-blur-md border border-white/15 shadow-sm">
+                        <span className="text-[10px] sm:text-[11px] font-mono text-white/80 shrink-0 px-2 py-0.5 rounded-lg bg-black/80 border border-white/15 shadow-sm">
                           {isFilmItem
                             ? stats.resumePos > 60
                               ? `${Math.floor(stats.resumePos / 60)}/${Math.max(1, Math.floor(stats.resumeDur / 60))} Dk`
@@ -1336,7 +1350,7 @@ export default function HomePage() {
                       </div>
 
                       {/* Floating Inset Progress Bar (Kenarlara yapışık değil, yüzer vaziyette) */}
-                      <div className="w-full h-1.5 rounded-full bg-white/25 backdrop-blur-md overflow-hidden">
+                      <div className="w-full h-1.5 rounded-full bg-white/30 overflow-hidden">
                         <div
                           className="h-full rounded-full bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.95)] transition-all duration-500"
                           style={{ width: `${barPct}%` }}
@@ -1354,38 +1368,45 @@ export default function HomePage() {
             3A. TOP 10 DİZİLER WITH INTEGRATED STROKE OUTLINE NUMERALS
         ===================================================================== */}
         {top10SeriesItems.length > 0 && (
-          <section className="w-full px-4 sm:px-6 md:px-14 max-w-full">
-            <div className="flex flex-col gap-1 mb-6 sm:mb-8">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase text-sky-400/80">
-                  Trend Diziler
-                </span>
-                <div className="flex items-center gap-1.5 sm:gap-2">
-                  <button
-                    onClick={() =>
-                      top10SeriesScrollRef.current?.scrollBy({ left: -320, behavior: 'smooth' })
-                    }
-                    aria-label="Geri"
-                    className="w-8 h-8 sm:w-10 sm:h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
-                  >
-                    <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
-                  </button>
-                  <button
-                    onClick={() =>
-                      top10SeriesScrollRef.current?.scrollBy({ left: 320, behavior: 'smooth' })
-                    }
-                    aria-label="İleri"
-                    className="w-8 h-8 sm:w-10 sm:h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
-                  >
-                    <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
-                  </button>
+          <DeferredSection
+            order={top10SeriesOrder}
+            className="w-full px-4 sm:px-6 md:px-14 max-w-full"
+            header={
+              <div className="flex flex-col gap-1 mb-6 sm:mb-8">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase text-sky-400/80">
+                    Trend Diziler
+                  </span>
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <button
+                      onClick={() =>
+                        top10SeriesScrollRef.current?.scrollBy({ left: -320, behavior: 'smooth' })
+                      }
+                      aria-label="Geri"
+                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+                    >
+                      <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </button>
+                    <button
+                      onClick={() =>
+                        top10SeriesScrollRef.current?.scrollBy({ left: 320, behavior: 'smooth' })
+                      }
+                      aria-label="İleri"
+                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+                    >
+                      <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </button>
+                  </div>
                 </div>
+                <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white mt-0.5">
+                  Bugün Türkiye&apos;de En Popüler 10 Dizi
+                </h2>
               </div>
-              <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white mt-0.5">
-                Bugün Türkiye&apos;de En Popüler 10 Dizi
-              </h2>
-            </div>
-
+            }
+            placeholder={
+              <div className="w-full h-[240px] sm:h-[320px] md:h-[380px] my-3 rounded-2xl sm:rounded-3xl bg-white/[0.03] border border-white/[0.06]" />
+            }
+          >
             <div
               ref={top10SeriesScrollRef}
               className="flex items-end gap-4 sm:gap-8 md:gap-10 overflow-x-auto overflow-y-hidden overscroll-y-auto overscroll-x-contain pb-6 pt-3 no-scrollbar [-webkit-overflow-scrolling:touch] h-[240px] sm:h-[320px] md:h-[380px] max-w-full"
@@ -1400,7 +1421,7 @@ export default function HomePage() {
                   {/* Netflix/Apple TV+ Top 10 Stroke Numeral (Vector Clean, Artifact-Free) */}
                   <Top10Numeral
                     rank={idx + 1}
-                    className="h-[76px] sm:h-[110px] md:h-[145px] w-auto select-none pointer-events-none drop-shadow-[0_12px_24px_rgba(0,0,0,0.95)] -translate-x-2 sm:-translate-x-4 md:-translate-x-6 -mr-4 sm:-mr-6 md:-mr-8 z-0 shrink-0"
+                    className="h-[128px] sm:h-[185px] md:h-[240px] w-auto select-none pointer-events-none drop-shadow-[0_8px_20px_rgba(0,0,0,0.9)] -mr-4 sm:-mr-7 md:-mr-10 z-0 shrink-0"
                   />
 
                   <div className="relative z-10 w-28 sm:w-40 md:w-52 min-w-[112px] sm:min-w-[160px] aspect-[2/3] rounded-xl sm:rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 group-hover:border-white/30 shadow-[0_20px_45px_rgba(0,0,0,0.85)] group-hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-end p-2.5 sm:p-4">
@@ -1425,45 +1446,52 @@ export default function HomePage() {
                 </Link>
               ))}
             </div>
-          </section>
+          </DeferredSection>
         )}
 
         {/* =====================================================================
             3B. TOP 10 FİLMLER WITH INTEGRATED STROKE OUTLINE NUMERALS
         ===================================================================== */}
         {top10MoviesItems.length > 0 && (
-          <section className="w-full px-4 sm:px-6 md:px-14 max-w-full">
-            <div className="flex flex-col gap-1 mb-6 sm:mb-8">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase text-amber-400/80">
-                  Trend Filmler
-                </span>
-                <div className="flex items-center gap-1.5 sm:gap-2">
-                  <button
-                    onClick={() =>
-                      top10MoviesScrollRef.current?.scrollBy({ left: -320, behavior: 'smooth' })
-                    }
-                    aria-label="Geri"
-                    className="w-8 h-8 sm:w-10 sm:h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
-                  >
-                    <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
-                  </button>
-                  <button
-                    onClick={() =>
-                      top10MoviesScrollRef.current?.scrollBy({ left: 320, behavior: 'smooth' })
-                    }
-                    aria-label="İleri"
-                    className="w-8 h-8 sm:w-10 sm:h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
-                  >
-                    <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
-                  </button>
+          <DeferredSection
+            order={top10MoviesOrder}
+            className="w-full px-4 sm:px-6 md:px-14 max-w-full"
+            header={
+              <div className="flex flex-col gap-1 mb-6 sm:mb-8">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase text-amber-400/80">
+                    Trend Filmler
+                  </span>
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <button
+                      onClick={() =>
+                        top10MoviesScrollRef.current?.scrollBy({ left: -320, behavior: 'smooth' })
+                      }
+                      aria-label="Geri"
+                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+                    >
+                      <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </button>
+                    <button
+                      onClick={() =>
+                        top10MoviesScrollRef.current?.scrollBy({ left: 320, behavior: 'smooth' })
+                      }
+                      aria-label="İleri"
+                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+                    >
+                      <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </button>
+                  </div>
                 </div>
+                <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white mt-0.5">
+                  Bugün Türkiye&apos;de En Popüler 10 Film
+                </h2>
               </div>
-              <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white mt-0.5">
-                Bugün Türkiye&apos;de En Popüler 10 Film
-              </h2>
-            </div>
-
+            }
+            placeholder={
+              <div className="w-full h-[240px] sm:h-[320px] md:h-[380px] my-3 rounded-2xl sm:rounded-3xl bg-white/[0.03] border border-white/[0.06]" />
+            }
+          >
             <div
               ref={top10MoviesScrollRef}
               className="flex items-end gap-4 sm:gap-8 md:gap-10 overflow-x-auto overflow-y-hidden overscroll-y-auto overscroll-x-contain pb-6 pt-3 no-scrollbar [-webkit-overflow-scrolling:touch] h-[240px] sm:h-[320px] md:h-[380px] max-w-full"
@@ -1478,7 +1506,7 @@ export default function HomePage() {
                   {/* Netflix/Apple TV+ Top 10 Stroke Numeral (Vector Clean, Artifact-Free) */}
                   <Top10Numeral
                     rank={idx + 1}
-                    className="h-[76px] sm:h-[110px] md:h-[145px] w-auto select-none pointer-events-none drop-shadow-[0_12px_24px_rgba(0,0,0,0.95)] -translate-x-2 sm:-translate-x-4 md:-translate-x-6 -mr-4 sm:-mr-6 md:-mr-8 z-0 shrink-0"
+                    className="h-[128px] sm:h-[185px] md:h-[240px] w-auto select-none pointer-events-none drop-shadow-[0_8px_20px_rgba(0,0,0,0.9)] -mr-4 sm:-mr-7 md:-mr-10 z-0 shrink-0"
                   />
 
                   <div className="relative z-10 w-28 sm:w-40 md:w-52 min-w-[112px] sm:min-w-[160px] aspect-[2/3] rounded-xl sm:rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 group-hover:border-white/30 shadow-[0_20px_45px_rgba(0,0,0,0.85)] group-hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-end p-2.5 sm:p-4">
@@ -1503,7 +1531,7 @@ export default function HomePage() {
                 </Link>
               ))}
             </div>
-          </section>
+          </DeferredSection>
         )}
 
         {/* =====================================================================
@@ -1515,18 +1543,22 @@ export default function HomePage() {
             href="/kesfet"
             items={personalizedItems}
             onConfigureTaste={openCookiePreferencesModal}
+            priority={true}
+            order={personalizedOrder}
           />
         )}
 
         {/* =====================================================================
             5. K-DRAMA, ANIME & C-DRAMA ACCORDION ROWS (Kullanıcı Zevkine Göre Dinamik Sıralı)
         ===================================================================== */}
-        {orderedCategoryRows.map((row) => (
+        {orderedCategoryRows.map((row, idx) => (
           <AccordionRow
             key={row.key}
             title={row.title}
             href={row.href}
             items={row.items}
+            priority={personalizedItems.length === 0 && idx === 0}
+            order={categoryBaseOrder + idx}
           />
         ))}
 
@@ -1534,134 +1566,150 @@ export default function HomePage() {
             7. OYUNCULAR, ANİME KARAKTERLERİ & SEİYUU LİDERLİK TABLOSU (No Emojis)
         ===================================================================== */}
         {topPeople.length > 0 && (
-          <section className="w-full px-4 sm:px-6 md:px-14 max-w-full">
-            <div className="rounded-2xl sm:rounded-3xl bg-[#0f0f11] p-4 sm:p-8 border border-white/[0.08]">
-              <div className="flex flex-col gap-1.5 mb-6">
-                <div className="flex items-center justify-end">
-                  <Link
-                    href="/oyuncular"
-                   
-                    className="inline-flex items-center gap-1.5 px-3.5 sm:px-5 py-1.5 sm:py-2.5 rounded-full glass-pill text-[11px] sm:text-xs font-semibold text-white hover:bg-white/15 transition-all whitespace-nowrap"
-                  >
-                    <span>Tüm Sıralama (21.814)</span>
-                    <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  </Link>
-                </div>
-                <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-white tracking-tight mt-0.5">
-                  En Çok Favorilenen Oyuncular
-                </h2>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
-                {topPeople.slice(0, 12).map((person, idx) => {
-                  const isFav = personFavorites.includes(person.id);
-                  const isFollowed = followedPersonIds.includes(person.id);
-                  return (
-                    <div
-                      key={person.id}
-                      className="rounded-2xl p-3 sm:p-3.5 flex flex-col items-center text-center group relative bg-[#0f0f11] border border-white/[0.08] hover:border-white/30 hover:shadow-[0_0_24px_-4px_rgba(41,151,255,0.25),0_10px_24px_rgba(0,0,0,0.7)] transition-all duration-300"
+          <DeferredSection
+            order={topPeopleOrder}
+            className="w-full px-4 sm:px-6 md:px-14 max-w-full"
+          >
+            {(isMounted) => (
+              <div className="rounded-2xl sm:rounded-3xl bg-[#0f0f11] p-4 sm:p-8 border border-white/[0.08]">
+                <div className="flex flex-col gap-1.5 mb-6">
+                  <div className="flex items-center justify-end">
+                    <Link
+                      href="/oyuncular"
+                     
+                      className="inline-flex items-center gap-1.5 px-3.5 sm:px-5 py-1.5 sm:py-2.5 rounded-full glass-pill text-[11px] sm:text-xs font-semibold text-white hover:bg-white/15 transition-all whitespace-nowrap"
                     >
-                      <span className="absolute top-2 left-2 sm:top-2.5 sm:left-2.5 w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-black/75 border border-white/15 text-[9px] sm:text-[10px] font-mono font-bold text-white flex items-center justify-center">
-                        #{idx + 1}
-                      </span>
+                      <span>Tüm Sıralama (21.814)</span>
+                      <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    </Link>
+                  </div>
+                  <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-white tracking-tight mt-0.5">
+                    En Çok Favorilenen Oyuncular
+                  </h2>
+                </div>
 
-                      {/* Favorite (Like) & Follow (New Series Alert) Buttons */}
-                      <div className="absolute top-2 right-2 sm:top-2.5 sm:right-2.5 flex items-center gap-1.5 z-10">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            togglePersonFavorite(person.id, person.name);
-                          }}
-                          aria-label={isFav ? "Favorilerden Çıkar" : "Favorilere Ekle (Beğen)"}
-                          title={isFav ? "Favorilerimde" : "Favorilere Ekle (Beğen)"}
-                          className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
-                            isFav
-                              ? 'bg-rose-500 border-rose-300 text-white shadow-[0_0_10px_rgba(244,63,94,0.4)]'
-                              : 'bg-black/60 border-white/15 text-white/70 hover:text-white hover:border-white/40'
-                          }`}
+                {!isMounted ? (
+                  <div className="w-full min-h-[320px] sm:min-h-[360px] rounded-2xl bg-white/[0.03] border border-white/[0.06]" />
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
+                    {topPeople.slice(0, 12).map((person, idx) => {
+                      const isFav = personFavorites.includes(person.id);
+                      const isFollowed = followedPersonIds.includes(person.id);
+                      return (
+                        <div
+                          key={person.id}
+                          className="rounded-2xl p-3 sm:p-3.5 flex flex-col items-center text-center group relative bg-[#0f0f11] border border-white/[0.08] hover:border-white/30 hover:shadow-[0_0_24px_-4px_rgba(41,151,255,0.25),0_10px_24px_rgba(0,0,0,0.7)] transition-all duration-300"
                         >
-                          <Heart className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${isFav ? 'fill-white' : ''}`} />
-                        </button>
+                          <span className="absolute top-2 left-2 sm:top-2.5 sm:left-2.5 w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-black/75 border border-white/15 text-[9px] sm:text-[10px] font-mono font-bold text-white flex items-center justify-center">
+                            #{idx + 1}
+                          </span>
 
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            togglePersonFollow(person.id, person.name);
-                          }}
-                          aria-label={isFollowed ? "Takibi Bırak" : "Takip Et (Yeni Seri Bildirimi)"}
-                          title={isFollowed ? "Takip Ediliyor (Yeni seriler bildirilecek)" : "Takip Et (Yeni serilerinde bildirim al)"}
-                          className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
-                            isFollowed
-                              ? 'bg-sky-400 border-sky-300 text-slate-950 shadow-[0_0_10px_rgba(56,189,248,0.4)]'
-                              : 'bg-black/60 border-white/15 text-white/70 hover:text-white hover:border-white/40'
-                          }`}
-                        >
-                          <Bell className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${isFollowed ? 'fill-slate-950' : ''}`} />
-                        </button>
-                      </div>
+                          {/* Favorite (Like) & Follow (New Series Alert) Buttons */}
+                          <div className="absolute top-2 right-2 sm:top-2.5 sm:right-2.5 flex items-center gap-1.5 z-10">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                togglePersonFavorite(person.id, person.name);
+                              }}
+                              aria-label={isFav ? "Favorilerden Çıkar" : "Favorilere Ekle (Beğen)"}
+                              title={isFav ? "Favorilerimde" : "Favorilere Ekle (Beğen)"}
+                              className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
+                                isFav
+                                  ? 'bg-rose-500 border-rose-300 text-white shadow-[0_0_10px_rgba(244,63,94,0.4)]'
+                                  : 'bg-black/60 border-white/15 text-white/70 hover:text-white hover:border-white/40'
+                              }`}
+                            >
+                              <Heart className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${isFav ? 'fill-white' : ''}`} />
+                            </button>
 
-                      <Link href={`/oyuncu/${person.slug}`} className="flex flex-col items-center w-full">
-                        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden border border-white/15 group-hover:border-white/40 transition-all mb-2.5 sm:mb-3">
-                          <img
-                            src={getProxiedImageUrl(person.image_url, person.name, null, 'w500', 'person')}
-                            alt={person.name}
-                            loading="lazy"
-                            decoding="async"
-                            className="w-full h-full object-cover"
-                          />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                togglePersonFollow(person.id, person.name);
+                              }}
+                              aria-label={isFollowed ? "Takibi Bırak" : "Takip Et (Yeni Seri Bildirimi)"}
+                              title={isFollowed ? "Takip Ediliyor (Yeni seriler bildirilecek)" : "Takip Et (Yeni serilerinde bildirim al)"}
+                              className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
+                                isFollowed
+                                  ? 'bg-sky-400 border-sky-300 text-slate-950 shadow-[0_0_10px_rgba(56,189,248,0.4)]'
+                                  : 'bg-black/60 border-white/15 text-white/70 hover:text-white hover:border-white/40'
+                              }`}
+                            >
+                              <Bell className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${isFollowed ? 'fill-slate-950' : ''}`} />
+                            </button>
+                          </div>
+
+                          <Link href={`/oyuncu/${person.slug}`} className="flex flex-col items-center w-full">
+                            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden border border-white/15 group-hover:border-white/40 transition-all mb-2.5 sm:mb-3">
+                              <img
+                                src={getProxiedImageUrl(person.image_url, person.name, null, 'w500', 'person')}
+                                alt={person.name}
+                                loading="lazy"
+                                decoding="async"
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                            <div className="text-xs font-bold text-white line-clamp-1 w-full">
+                              {person.name}
+                            </div>
+                            <div className="text-[10px] text-white/45 mt-0.5 truncate w-full">
+                              {person.person_type === 'character'
+                                ? 'Anime Karakteri'
+                                : person.person_type === 'seiyuu'
+                                  ? 'Seiyuu'
+                                  : 'Oyuncu'}
+                            </div>
+                            <div className="mt-2 inline-flex items-center gap-1 px-2 sm:px-2.5 py-0.5 rounded-full bg-white/[0.06] border border-white/10 text-[9px] sm:text-[10px] font-mono text-white/80">
+                              <Heart className="w-2.5 h-2.5 fill-rose-400 text-rose-400" />
+                              <span>{person.favorites_count || 0}</span>
+                            </div>
+                          </Link>
                         </div>
-                        <div className="text-xs font-bold text-white line-clamp-1 w-full">
-                          {person.name}
-                        </div>
-                        <div className="text-[10px] text-white/45 mt-0.5 truncate w-full">
-                          {person.person_type === 'character'
-                            ? 'Anime Karakteri'
-                            : person.person_type === 'seiyuu'
-                              ? 'Seiyuu'
-                              : 'Oyuncu'}
-                        </div>
-                        <div className="mt-2 inline-flex items-center gap-1 px-2 sm:px-2.5 py-0.5 rounded-full bg-white/[0.06] border border-white/10 text-[9px] sm:text-[10px] font-mono text-white/80">
-                          <Heart className="w-2.5 h-2.5 fill-rose-400 text-rose-400" />
-                          <span>{person.favorites_count || 0}</span>
-                        </div>
-                      </Link>
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            </div>
-          </section>
+            )}
+          </DeferredSection>
         )}
 
         {/* =====================================================================
             8. CANLI ASYAMAG MAGAZİN & DEDİKODU VİTRİNİ (In-Site Reader)
         ===================================================================== */}
         {magPosts.length > 0 && (
-          <section className="w-full px-4 sm:px-6 md:px-14 max-w-full">
-            <div className="flex flex-col gap-1 mb-4 sm:mb-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-[10px] sm:text-[11px] font-semibold tracking-[0.2em] uppercase text-white/50">
-                  <Newspaper className="w-3.5 h-3.5 text-white/60" />
-                  <span>Magazin & Gündem</span>
+          <DeferredSection
+            order={magPostsOrder}
+            className="w-full px-4 sm:px-6 md:px-14 max-w-full"
+            header={
+              <div className="flex flex-col gap-1 mb-4 sm:mb-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-[10px] sm:text-[11px] font-semibold tracking-[0.2em] uppercase text-white/50">
+                    <Newspaper className="w-3.5 h-3.5 text-white/60" />
+                    <span>Magazin & Gündem</span>
+                  </div>
+                  <Link
+                    href="/magazin"
+                   
+                    className="text-xs font-semibold text-white/60 hover:text-white flex items-center gap-1 transition-colors whitespace-nowrap"
+                  >
+                    <span>Tüm Haberler</span>
+                    <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  </Link>
                 </div>
-                <Link
-                  href="/magazin"
-                 
-                  className="text-xs font-semibold text-white/60 hover:text-white flex items-center gap-1 transition-colors whitespace-nowrap"
-                >
-                  <span>Tüm Haberler</span>
-                  <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </Link>
+                <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-white tracking-tight mt-0.5">
+                  Son Dakika
+                </h2>
               </div>
-              <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-white tracking-tight mt-0.5">
-                Son Dakika
-              </h2>
-            </div>
-
+            }
+            placeholder={
+              <div className="w-full min-h-[260px] sm:min-h-[280px] rounded-2xl sm:rounded-3xl bg-white/[0.03] border border-white/[0.06]" />
+            }
+          >
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
               {magPosts.slice(0, 4).map((post) => (
                 <Link
@@ -1724,12 +1772,41 @@ export default function HomePage() {
                 </Link>
               ))}
             </div>
-          </section>
+          </DeferredSection>
         )}
       </div>
     </div>
   );
 }
+
+const DeferredSection = memo(function DeferredSection({
+  order,
+  header,
+  placeholder,
+  className = 'w-full px-4 sm:px-6 md:px-14 max-w-full',
+  children,
+}: {
+  order: number;
+  header?: React.ReactNode;
+  placeholder?: React.ReactNode;
+  className?: string;
+  children: React.ReactNode | ((isMounted: boolean) => React.ReactNode);
+}) {
+  const { isMounted, ref } = useDeferredMount(order);
+
+  return (
+    <section ref={ref} className={className}>
+      {typeof children === 'function' ? (
+        children(isMounted)
+      ) : (
+        <>
+          {header}
+          {isMounted ? children : placeholder}
+        </>
+      )}
+    </section>
+  );
+});
 
 const AccordionRow = memo(function AccordionRow({
   subtitle,
@@ -1737,19 +1814,24 @@ const AccordionRow = memo(function AccordionRow({
   href,
   items,
   onConfigureTaste,
+  priority = false,
+  order = 0,
 }: {
   subtitle?: string;
   title: string;
   href: string;
   items: MediaItem[];
   onConfigureTaste?: () => void;
+  priority?: boolean;
+  order?: number;
 }) {
   const scrollRef = useDragScroll<HTMLDivElement>();
+  const { isMounted, ref: deferredRef } = useDeferredMount(order);
 
   if (!items || items.length === 0) return null;
 
   return (
-    <section className="w-full px-4 sm:px-6 md:px-14 max-w-full">
+    <section ref={deferredRef} className="w-full px-4 sm:px-6 md:px-14 max-w-full">
       <div className="flex flex-col gap-1 mb-4 sm:mb-5">
         <div className="flex items-center justify-between min-h-[22px]">
           {subtitle ? (
@@ -1810,18 +1892,22 @@ const AccordionRow = memo(function AccordionRow({
         </h2>
       </div>
 
-      <div
-        ref={scrollRef}
-        onMouseEnter={() => {
-          preloadMediaImages(items);
-        }}
-        onMouseLeave={() => requestAccordionHover(null)}
-        className="flex items-center gap-3 sm:gap-4 overflow-x-auto min-h-[300px] sm:min-h-[330px] py-2 sm:py-3 no-scrollbar [-webkit-overflow-scrolling:touch] max-w-full"
-      >
-        {items.map((item, idx) => (
-          <AccordionMediaCard key={item.id} item={item} priority={idx < 4} />
-        ))}
-      </div>
+      {!isMounted ? (
+        <div className="w-full min-h-[300px] sm:min-h-[330px] my-2 sm:my-3 rounded-3xl bg-white/[0.03] border border-white/[0.06]" />
+      ) : (
+        <div
+          ref={scrollRef}
+          onMouseEnter={() => {
+            preloadMediaImages(items);
+          }}
+          onMouseLeave={() => requestAccordionHover(null)}
+          className="flex items-center gap-3 sm:gap-4 overflow-x-auto min-h-[300px] sm:min-h-[330px] py-2 sm:py-3 no-scrollbar [-webkit-overflow-scrolling:touch] max-w-full"
+        >
+          {items.map((item, idx) => (
+            <AccordionMediaCard key={item.id} item={item} priority={priority && idx < 4} />
+          ))}
+        </div>
+      )}
     </section>
   );
 });

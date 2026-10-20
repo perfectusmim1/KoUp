@@ -2600,6 +2600,19 @@ export function useKoUp() {
 export function useKoUpSelector<T>(selector: (state: KoUpContextValue) => T): T {
   const store = useContext(KoUpStoreContext);
   if (!store) throw new Error('useKoUpSelector must be used inside KoUpProvider');
-  const getSnapshot = () => selector(store.get());
+  const selectorRef = useRef(selector);
+  selectorRef.current = selector;
+  const getSnapshot = useCallback(() => selectorRef.current(store.get()), [store]);
   return useSyncExternalStore(store.subscribe, getSnapshot, getSnapshot);
+}
+
+/**
+ * Returns a stable getter for the current KoUpContextValue without subscribing to store updates.
+ * Ideal for calling actions (triggerSound, toggleMediaFavorite, etc.) inside event handlers
+ * without creating per-component store subscriptions.
+ */
+export function useKoUpStoreGet(): () => KoUpContextValue {
+  const store = useContext(KoUpStoreContext);
+  if (!store) throw new Error('useKoUpStoreGet must be used inside KoUpProvider');
+  return store.get;
 }

@@ -837,7 +837,7 @@ Toplam İşlenen Kare: ${results.totalFrames.toLocaleString()} kare
             aria-label="Benchmark Testini Aç"
             className="flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-[#121217]/95 hover:bg-[#1a1a22] border border-white/20 hover:border-sky-400/50 shadow-[0_8px_30px_rgba(0,0,0,0.85)] text-white text-xs font-bold transition-colors cursor-pointer group backdrop-blur-sm"
           >
-            <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+            <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
             <Gauge className="w-4 h-4 text-sky-400 group-hover:rotate-12 transition-transform" />
             <span>⚡ Benchmark Testi</span>
           </button>

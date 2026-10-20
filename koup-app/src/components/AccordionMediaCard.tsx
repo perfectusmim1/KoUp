@@ -13,7 +13,7 @@ import {
   cleanMediaTitle,
   formatViewCount,
 } from '@/lib/supabase';
-import { useKoUpSelector } from '@/context/KoUpContext';
+import { useKoUpSelector, useKoUpStoreGet } from '@/context/KoUpContext';
 import CountryFlag from '@/components/CountryFlag';
 import Top10Numeral from '@/components/Top10Numeral';
 import { registerMediaItem, cachedQuery } from '@/lib/cache';
@@ -185,15 +185,11 @@ function AccordionMediaCardComponent({
   fluidWidth = false,
 }: AccordionMediaCardProps) {
   const router = useRouter();
-  const user = useKoUpSelector((s) => s.user);
-  const authLoading = useKoUpSelector((s) => s.authLoading);
+  const getStore = useKoUpStoreGet();
+  const isUserActive = useKoUpSelector((s) => Boolean(s.user || s.authLoading));
   const userProg = useKoUpSelector((s) => (s.user || s.authLoading ? s.progressMap[item.id] : undefined));
   const isFollowed = useKoUpSelector((s) => Boolean((s.user || s.authLoading) && s.followedMediaIds.includes(item.id)));
-  const toggleMediaFavorite = useKoUpSelector((s) => s.toggleMediaFavorite);
-  const toggleMediaFollow = useKoUpSelector((s) => s.toggleMediaFollow);
-  const triggerSound = useKoUpSelector((s) => s.triggerSound);
   const isTrailerMuted = useKoUpSelector((s) => s.isTrailerMuted);
-  const toggleTrailerMuted = useKoUpSelector((s) => s.toggleTrailerMuted);
   const autoCardTrailerEnabled = useKoUpSelector((s) => s.autoCardTrailerEnabled);
 
   const [isHovered, setIsHovered] = useState(false);
@@ -228,7 +224,6 @@ function AccordionMediaCardComponent({
   // Unique per-card-instance ID so the same MediaItem rendered in "Sana Özel" AND "K-Drama" rows never collides!
   const cardKey = useId();
 
-  const isUserActive = Boolean(user || authLoading);
   const isFavorited = Boolean(isUserActive && (userProg?.is_favorite || userProg?.is_favorited));
   const displayTitle = cleanMediaTitle(item.title);
 
@@ -491,10 +486,11 @@ function AccordionMediaCardComponent({
     (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      triggerSound?.('click');
-      toggleTrailerMuted();
+      const st = getStore();
+      st.triggerSound?.('click');
+      st.toggleTrailerMuted();
     },
-    [toggleTrailerMuted, triggerSound]
+    [getStore]
   );
 
   // Synchronize YouTube iframe volume & mute state whenever global isTrailerMuted changes
@@ -554,11 +550,11 @@ function AccordionMediaCardComponent({
       if (e.target !== e.currentTarget) return;
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        triggerSound?.('click');
+        getStore().triggerSound?.('click');
         router.push(`/seri/${item.slug}`);
       }
     },
-    [item.slug, router, triggerSound]
+    [item.slug, router, getStore]
   );
 
   const isAccordionExpanded = !fluidWidth && isHovered;
@@ -622,6 +618,8 @@ function AccordionMediaCardComponent({
           <img
             src={posterSrc}
             alt={item.title}
+            width={200}
+            height={300}
             draggable={false}
             loading={priority ? 'eager' : 'lazy'}
             fetchPriority={priority ? 'high' : 'auto'}
@@ -826,12 +824,12 @@ function AccordionMediaCardComponent({
         >
           <div className="flex items-center gap-1.5 pt-2">
             {(() => {
-              const nextEpNum = user
+              const nextEpNum = isUserActive
                 ? getNextEpisodeNumber(userProg, item.episode_count || 1)
                 : 1;
-              const nextSeasonNum = (user && userProg?.last_season_num) || 1;
+              const nextSeasonNum = (isUserActive && userProg?.last_season_num) || 1;
               const hasProgress = Boolean(
-                user &&
+                isUserActive &&
                   ((userProg?.watched_episodes && userProg.watched_episodes.length > 0) ||
                     (userProg?.last_episode_num && userProg.last_episode_num > 1))
               );
@@ -844,7 +842,7 @@ function AccordionMediaCardComponent({
                   prefetch={false}
                   onClick={(e) => {
                     e.stopPropagation();
-                    triggerSound?.('click');
+                    getStore().triggerSound?.('click');
                   }}
                   aria-label={`${displayTitle} hemen izle`}
                   className="flex-1 py-1.5 px-3 rounded-full bg-white text-black font-bold text-[11px] flex items-center justify-center gap-1.5 hover:bg-white/90 active:scale-[0.98] transition-transform cursor-pointer"
@@ -875,8 +873,9 @@ function AccordionMediaCardComponent({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                triggerSound?.('click');
-                toggleMediaFavorite(item);
+                const st = getStore();
+                st.triggerSound?.('click');
+                st.toggleMediaFavorite(item);
               }}
               aria-label="Favorilere Ekle"
               className={`w-7 h-7 rounded-full bg-white/12 border border-white/15 hover:bg-white/25 flex items-center justify-center transition-colors cursor-pointer ${
@@ -890,8 +889,9 @@ function AccordionMediaCardComponent({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                triggerSound?.('click');
-                toggleMediaFollow(item);
+                const st = getStore();
+                st.triggerSound?.('click');
+                st.toggleMediaFollow(item);
               }}
               aria-label="Yeni Bölümleri Takip Et"
               className={`w-7 h-7 rounded-full bg-white/12 border border-white/15 hover:bg-white/25 flex items-center justify-center transition-colors cursor-pointer ${
@@ -907,7 +907,7 @@ function AccordionMediaCardComponent({
                 prefetch={false}
                 onClick={(e) => {
                   e.stopPropagation();
-                  triggerSound?.('click');
+                  getStore().triggerSound?.('click');
                 }}
                 aria-label={`${item.title} detaylar`}
                 className="w-7 h-7 rounded-full bg-white/12 border border-white/15 hover:bg-white/25 flex items-center justify-center text-white/85 hover:text-white transition-colors cursor-pointer"

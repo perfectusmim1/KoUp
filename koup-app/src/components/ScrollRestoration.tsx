@@ -104,9 +104,13 @@ function ScrollRestorationInner() {
       const y = Math.round(window.scrollY);
       if (y > 0) {
         lastScrollYRef.current = y;
-        // Debounce storage & history writes so scrolling maintains 60-120 FPS without synchronous serialization jank
-        if (saveTimeout) clearTimeout(saveTimeout);
-        saveTimeout = setTimeout(saveScrollNow, 200);
+        // Throttle storage & history writes so scrolling maintains 60-120 FPS without timer churn on every scroll tick
+        if (!saveTimeout) {
+          saveTimeout = setTimeout(() => {
+            saveTimeout = null;
+            saveScrollNow();
+          }, 250);
+        }
       }
     };
 

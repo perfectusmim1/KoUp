@@ -121,7 +121,8 @@ body {
 
 /* High-performance drag scrolling & hardware-composited horizontal rails */
 .overflow-x-auto {
-  will-change: scroll-position;
+  /* Scrollers are composited natively by the browser; an explicit will-change on every
+     rail only forces extra GPU backing stores on mobile. */
   -webkit-overflow-scrolling: touch;
 }
 
@@ -478,13 +479,12 @@ textarea.koup-input {
   transition:
     width 260ms cubic-bezier(0.22, 1, 0.36, 1),
     border-color 180ms ease;
+  /* Paint/layout containment keeps width animations local to the card.
+     No forced GPU layer per card: ~50 promoted layers exhaust mobile GPU memory during scroll. */
   contain: layout paint style;
-  transform: translateZ(0);
-  backface-visibility: hidden;
 }
 
 .koup-accordion-card:hover {
-  will-change: width;
   border-color: rgba(255, 255, 255, 0.32);
 }
 
