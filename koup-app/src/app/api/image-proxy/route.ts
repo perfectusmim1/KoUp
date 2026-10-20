@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import sharp from 'sharp';
 
 const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB max to prevent memory exhaustion
 
@@ -349,11 +350,12 @@ function isTitleMatch(expectedTitle?: string | null, candidateTitle?: string | n
 async function fetchTmdbPosterById(
   tmdbId: number | string,
   mediaType?: 'tv' | 'movie' | null,
-  titleHint?: string | null
+  titleHint?: string | null,
+  isBanner = false
 ): Promise<string | null> {
   const idStr = String(tmdbId).trim();
   if (!idStr || idStr === '0' || idStr === 'null') return null;
-  const cacheKey = `tmdb_id_${idStr}_${mediaType || 'any'}`;
+  const cacheKey = `tmdb_id_${idStr}_${mediaType || 'any'}_${isBanner ? 'banner' : 'poster'}`;
   if (titlePosterCache.has(cacheKey)) {
     return titlePosterCache.get(cacheKey) || null;
   }
@@ -371,10 +373,10 @@ async function fetchTmdbPosterById(
         // Strict safety: NEVER serve adult/18+ content under any circumstances
         if (d.adult === true) continue;
 
-        // Verify title match if title hint is provided to prevent cross-type ID collisions
-        const resultTitle = d.title || d.name || d.original_title || d.original_name;
-        if (titleHint && !isTitleMatch(titleHint, resultTitle)) {
-          continue;
+        if (isBanner && d.backdrop_path) {
+          const backdropUrl = `https://image.tmdb.org/t/p/w1280${d.backdrop_path}`;
+          titlePosterCache.set(cacheKey, backdropUrl);
+          return backdropUrl;
         }
 
         if (d.poster_path) {
@@ -385,6 +387,30 @@ async function fetchTmdbPosterById(
       }
     } catch {}
   }
+  return null;
+}
+
+async function fetchTmdbPersonById(personId: number | string): Promise<string | null> {
+  const idStr = String(personId).trim();
+  if (!idStr || idStr === '0' || idStr === 'null') return null;
+  const cacheKey = `tmdb_person_id_${idStr}`;
+  if (titlePosterCache.has(cacheKey)) {
+    return titlePosterCache.get(cacheKey) || null;
+  }
+
+  try {
+    const url = `https://api.themoviedb.org/3/person/${idStr}?api_key=${TMDB_API_KEY}&language=tr-TR`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
+    if (res.ok) {
+      const d = await res.json();
+      if (d.adult === true) return null;
+      if (d.profile_path) {
+        const profileUrl = `https://image.tmdb.org/t/p/w500${d.profile_path}`;
+        titlePosterCache.set(cacheKey, profileUrl);
+        return profileUrl;
+      }
+    }
+  } catch {}
   return null;
 }
 
@@ -524,7 +550,45 @@ async function fetchTmdbPosterForTitle(
   return null;
 }
 
-async function fetchAndStreamImage(resolvedUrl: string): Promise<NextResponse | null> {
+async function processImageBuffer(
+  rawBuf: ArrayBuffer | Buffer,
+  rawContentType: string,
+  sizeParam?: string | null
+): Promise<{ buf: BodyInit; contentType: string }> {
+  const isSvg = rawContentType === 'image/svg+xml' || rawContentType.includes('svg');
+  if (isSvg || sizeParam === 'original') {
+    return {
+      buf: new Uint8Array(Buffer.isBuffer(rawBuf) ? rawBuf : Buffer.from(rawBuf)),
+      contentType: rawContentType.startsWith('image/') ? rawContentType : 'image/jpeg',
+    };
+  }
+
+  try {
+    const inputBuf = Buffer.isBuffer(rawBuf) ? rawBuf : Buffer.from(rawBuf);
+    const targetWidth =
+      sizeParam === 'w92'
+        ? 92
+        : sizeParam === 'w154'
+        ? 154
+        : sizeParam === 'w185'
+        ? 185
+        : sizeParam === 'w342'
+        ? 342
+        : 92;
+    const resized = await sharp(inputBuf)
+      .resize({ width: targetWidth, withoutEnlargement: true })
+      .webp({ quality: 60 })
+      .toBuffer();
+    return { buf: new Uint8Array(resized), contentType: 'image/webp' };
+  } catch {
+    return {
+      buf: new Uint8Array(Buffer.isBuffer(rawBuf) ? rawBuf : Buffer.from(rawBuf)),
+      contentType: rawContentType.startsWith('image/') ? rawContentType : 'image/jpeg',
+    };
+  }
+}
+
+async function fetchAndStreamImage(resolvedUrl: string, sizeParam?: string | null): Promise<NextResponse | null> {
   try {
     const posterResp = await fetch(resolvedUrl, {
       headers: {
@@ -535,9 +599,10 @@ async function fetchAndStreamImage(resolvedUrl: string): Promise<NextResponse | 
     });
 
     if (posterResp.ok) {
-      const contentType = posterResp.headers.get('content-type') || 'image/jpeg';
-      const buf = await posterResp.arrayBuffer();
-      if (buf.byteLength > 100) {
+      const rawContentType = posterResp.headers.get('content-type') || 'image/jpeg';
+      const rawBuf = await posterResp.arrayBuffer();
+      if (rawBuf.byteLength > 100) {
+        const { buf, contentType } = await processImageBuffer(rawBuf, rawContentType, sizeParam);
         return new NextResponse(buf, {
           status: 200,
           headers: {
@@ -566,6 +631,7 @@ export async function GET(req: NextRequest) {
     const typeParam = searchParams.get('type'); // 'person' | 'character' | 'media' | null
     const yearParam = searchParams.get('year') || searchParams.get('release_year');
     const nativeTitleParam = searchParams.get('nativeTitle') || searchParams.get('native_title');
+    const sizeParam = searchParams.get('size') || 'w92';
 
     const isPerson = typeParam === 'person' || typeParam === 'character';
 
@@ -627,17 +693,19 @@ export async function GET(req: NextRequest) {
         const isAllowedType = ALLOWED_CONTENT_TYPES.has(rawContentType) || rawContentType.startsWith('image/');
         if (!isAllowedType) continue;
 
-        const buf = await resp.arrayBuffer();
-        if (buf.byteLength < 100 || buf.byteLength > MAX_IMAGE_SIZE_BYTES) continue;
+        const rawBuf = await resp.arrayBuffer();
+        if (rawBuf.byteLength < 100 || rawBuf.byteLength > MAX_IMAGE_SIZE_BYTES) continue;
+
+        const { buf, contentType } = await processImageBuffer(rawBuf, rawContentType, sizeParam);
 
         const headers: Record<string, string> = {
-          'Content-Type': rawContentType.startsWith('image/') ? rawContentType : 'image/jpeg',
+          'Content-Type': contentType,
           'Cache-Control': 'public, max-age=2592000, stale-while-revalidate=86400, immutable',
           'X-Content-Type-Options': 'nosniff',
           'Access-Control-Allow-Origin': '*',
         };
 
-        if (rawContentType === 'image/svg+xml') {
+        if (contentType === 'image/svg+xml') {
           headers['Content-Security-Policy'] = "default-src 'none'; sandbox";
         }
 
@@ -650,21 +718,39 @@ export async function GET(req: NextRequest) {
 
     // 2. High-priority TMDB ID lookup if direct URL was missing or unreachable
     if (tmdbIdParam) {
-      const tmdbPoster = await fetchTmdbPosterById(tmdbIdParam, mediaTypeParam, titleParam);
-      if (tmdbPoster) {
-        const streamed = await fetchAndStreamImage(tmdbPoster);
-        if (streamed) return streamed;
+      if (isPerson) {
+        const personPhoto = await fetchTmdbPersonById(tmdbIdParam);
+        if (personPhoto) {
+          const streamed = await fetchAndStreamImage(personPhoto, sizeParam);
+          if (streamed) return streamed;
+        }
+      } else {
+        const isBanner = typeParam === 'banner' || typeParam === 'backdrop';
+        const tmdbPoster = await fetchTmdbPosterById(tmdbIdParam, mediaTypeParam, titleParam, isBanner);
+        if (tmdbPoster) {
+          const streamed = await fetchAndStreamImage(tmdbPoster, sizeParam);
+          if (streamed) return streamed;
+        }
       }
     }
 
     // 3. Person / Actor branch
-    if (isPerson && titleParam) {
-      const personPhotoUrl = await fetchTmdbPersonForTitle(titleParam);
-      if (personPhotoUrl) {
-        const streamed = await fetchAndStreamImage(personPhotoUrl);
-        if (streamed) return streamed;
+    if (isPerson) {
+      if (tmdbIdParam) {
+        const personPhoto = await fetchTmdbPersonById(tmdbIdParam);
+        if (personPhoto) {
+          const streamed = await fetchAndStreamImage(personPhoto, sizeParam);
+          if (streamed) return streamed;
+        }
       }
-      return new NextResponse(buildPersonFallbackSvg(titleParam), {
+      if (titleParam) {
+        const personPhotoUrl = await fetchTmdbPersonForTitle(titleParam);
+        if (personPhotoUrl) {
+          const streamed = await fetchAndStreamImage(personPhotoUrl, sizeParam);
+          if (streamed) return streamed;
+        }
+      }
+      return new NextResponse(buildPersonFallbackSvg(titleParam || 'Oyuncu'), {
         status: 200,
         headers: {
           'Content-Type': 'image/svg+xml',
@@ -684,7 +770,7 @@ export async function GET(req: NextRequest) {
         nativeTitleParam
       );
       if (posterUrl) {
-        const streamed = await fetchAndStreamImage(posterUrl);
+        const streamed = await fetchAndStreamImage(posterUrl, sizeParam);
         if (streamed) return streamed;
       }
 
@@ -692,7 +778,7 @@ export async function GET(req: NextRequest) {
       if (titleParam) {
         const personPhotoUrl = await fetchTmdbPersonForTitle(titleParam);
         if (personPhotoUrl) {
-          const streamed = await fetchAndStreamImage(personPhotoUrl);
+          const streamed = await fetchAndStreamImage(personPhotoUrl, sizeParam);
           if (streamed) return streamed;
         }
       }

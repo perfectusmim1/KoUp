@@ -488,16 +488,25 @@ export function getProxiedImageUrl(
     return `${url}=s192-c`;
   }
 
-  // AniList images: vitrinde extraLarge, kartlarda bariz düşük çözünürlüklü medium (100x140px)
+  // AniList images: vitrinde extraLarge, kartlarda bariz dusuk cozunurluklu small (64x90px)
   if (url.includes('s4.anilist.co')) {
     if (tmdbSize === 'original') {
-      return url.replace('/cover/medium/', '/cover/extraLarge/').replace('/cover/large/', '/cover/extraLarge/').replace('/cover/small/', '/cover/extraLarge/');
+      return url
+        .replace('/cover/medium/', '/cover/extraLarge/')
+        .replace('/cover/large/', '/cover/extraLarge/')
+        .replace('/cover/small/', '/cover/extraLarge/');
     } else {
-      return url.replace('/cover/extraLarge/', '/cover/medium/').replace('/cover/large/', '/cover/medium/');
+      return url
+        .replace('/cover/extraLarge/', '/cover/small/')
+        .replace('/cover/large/', '/cover/small/')
+        .replace('/cover/medium/', '/cover/small/');
     }
   }
 
   const params = new URLSearchParams({ url });
+  if (tmdbSize) {
+    params.set('size', tmdbSize);
+  }
   if (isFallbackUrl && fallbackOrTitle) {
     params.set('fallback', fallbackOrTitle);
   }

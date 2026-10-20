@@ -35,6 +35,127 @@ function setCachedStream(key: string, data: any, ttlMs: number = 2 * 60 * 60 * 1
   streamResolutionCache.set(key, { data, expiresAt: Date.now() + ttlMs });
 }
 
+function unpackDeanEdwards(packedJs: string): string {
+  const match = packedJs.match(/\}\s*\(\s*['"](.*?)['"]\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*['"](.*?)['"]\.split\(['"]\|['"]\)/s);
+  if (!match) return packedJs;
+  let [, p, aStr, cStr, kStr] = match;
+  const a = parseInt(aStr, 10);
+  let c = parseInt(cStr, 10);
+  const k = kStr.split('|');
+  const baseN = (num: number, b: number) => {
+    const digits = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    let res = '';
+    while (num > 0) {
+      res = digits[num % b] + res;
+      num = Math.floor(num / b);
+    }
+    return res || '0';
+  };
+  while (c--) {
+    if (k[c]) {
+      const regex = new RegExp('\\b' + baseN(c, a) + '\\b', 'g');
+      p = p.replace(regex, k[c]);
+    }
+  }
+  return p;
+}
+
+function resolveGDrivePlayer(html: string): string | null {
+  const match = html.match(/var\s+k\s*=\s*["']([^"']+)["']\s*,\s*b\s*=\s*atob\s*\(\s*["']([^"']+)["']\s*\)/);
+  if (!match) return null;
+  const [, k, bB64] = match;
+  try {
+    const b = Buffer.from(bB64, 'base64').toString('binary');
+    let o = '';
+    for (let i = 0; i < b.length; i++) {
+      o += String.fromCharCode(b.charCodeAt(i) ^ k.charCodeAt(i % k.length));
+    }
+    const hlsMatch = o.match(/HLS\s*=\s*["']([^"']+)["']/);
+    if (!hlsMatch) return null;
+    return hlsMatch[1].startsWith('http') ? hlsMatch[1] : `https://gdriveplayer.to/${hlsMatch[1]}`;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveFilemoonByse(fileCode: string, domain: string = 'filemoon.sx'): Promise<string | null> {
+  try {
+    const apiUrl = `https://${domain}/api/videos/${encodeURIComponent(fileCode)}/`;
+    const resp = await fetch(apiUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Referer': `https://${domain}/e/${fileCode}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const playback = data.playback;
+    if (!playback?.key_parts || !playback?.iv || !playback?.payload) return null;
+
+    const base64UrlDecode = (str: string) => {
+      let b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4 !== 0) b64 += '=';
+      return Buffer.from(b64, 'base64');
+    };
+
+    const v = parseInt(playback.version, 10);
+    const part1 = playback.key_parts[v - 1];
+    const part2 = playback.key_parts[31 - v - 1];
+    if (!part1 || !part2) return null;
+
+    const key = Buffer.concat([base64UrlDecode(part1), base64UrlDecode(part2)]);
+    const iv = base64UrlDecode(playback.iv);
+    const payloadBuf = base64UrlDecode(playback.payload);
+    const ciphertext = payloadBuf.subarray(0, payloadBuf.length - 16);
+    const authTag = payloadBuf.subarray(payloadBuf.length - 16);
+
+    const crypto = await import('crypto');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(authTag);
+    let dec = decipher.update(ciphertext, undefined, 'utf8');
+    dec += decipher.final('utf8');
+    const parsed = JSON.parse(dec);
+    return parsed.sources?.[0]?.url || null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveUPNS(hashId: string, domain: string = 'webdrama.upns.online'): Promise<string | null> {
+  try {
+    const resp = await fetch(`https://${domain}/api/v1/video?id=${encodeURIComponent(hashId)}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Referer': `https://${domain}/#${hashId}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!resp.ok) return null;
+    const hex = (await resp.text()).trim();
+    const ct = Buffer.from(hex, 'hex');
+    const crypto = await import('crypto');
+    const key = Buffer.from('kiemtienmua911ca', 'utf8');
+    const iv = Buffer.from('1234567890oiuytr', 'utf8');
+    const decipher = crypto.createDecipheriv('aes-128-cbc', key, iv);
+    let dec = decipher.update(ct, undefined, 'utf8');
+    dec += decipher.final('utf8');
+    const parsed = JSON.parse(dec);
+    return parsed.source || null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveYandexDisk(yandexUrl: string): Promise<string | null> {
+  try {
+    const apiUrl = `https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=${encodeURIComponent(yandexUrl)}`;
+    const resp = await fetch(apiUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return data.href || null;
+  } catch {
+    return null;
+  }
+}
+
 function extractHdfilmSubtitles(
   html: string,
   embedOrigin = 'https://hdfilmcehennemi.mobi',
@@ -134,6 +255,8 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const url = searchParams.get('url') || '';
   const provider = (searchParams.get('provider') || '').toLowerCase();
+  const commonUA =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
   if (!url) {
     return NextResponse.json({ error: 'Missing url' }, { status: 400 });
@@ -189,6 +312,33 @@ export async function GET(req: NextRequest) {
     'uns.bio',
     'p2pplay',
     'rpmplay',
+    'parklogic',
+    'vtube.to',
+    'highload.to',
+    'vadshar.com',
+    'viidshar.com',
+    'segavid.com',
+    'upload.do',
+    'lylxan.com',
+    'embedrise.com',
+    'embedgram.com',
+    'openload.co',
+    'streamango.com',
+    'rapidvideo.com',
+    'estream.to',
+    'vid.me',
+    'cloudvideo.tv',
+    'wolfstream.tv',
+    'mystream.to',
+    'vidmoly.me',
+    'fembed.com',
+    'feurl.com',
+    'suzihaza.com',
+    'gounlimited.to',
+    'jetload.net',
+    'supervideo.tv',
+    'upstream.to',
+    'mixdrop',
   ];
   if (
     provider === 'sibnet' ||
@@ -520,13 +670,18 @@ export async function GET(req: NextRequest) {
           }
         } catch {}
 
-        return NextResponse.json({
-          mode: 'iframe',
-          iframeUrl: fullEmbed,
-          streamUrl: fullEmbed,
-          directUrl: fullEmbed,
+        const hlsUrl = `https://dbx.molystream.org/embed/sheila/${videoId}`;
+        const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(hlsUrl)}&ref=${encodeURIComponent('https://dbx.molystream.org/')}`;
+        const result = {
+          mode: 'native_hls' as const,
+          streamUrl: proxiedStream,
+          streamType: 'hls' as const,
+          directUrl: hlsUrl,
+          qualities: [{ label: '1080p (Molystream DBX)', url: proxiedStream }],
           fallbackIframe: fullEmbed,
-        });
+        };
+        setCachedStream(url, result);
+        return NextResponse.json(result, { headers: CACHE_HEADERS });
       }
     } catch {}
   }
@@ -912,9 +1067,200 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // 3b. DDizi Bridge & Media Duhnet Direct MP4 Resolver
+  if (lowerUrl.includes('ddizi.tel/player/mp4/')) {
+    try {
+      const b64 = url.split('/player/mp4/')[1]?.replace('.mp4', '');
+      if (b64) {
+        const decoded = Buffer.from(b64, 'base64').toString('utf8');
+        if (decoded && decoded.startsWith('http')) {
+          const proxied = `/api/stream-proxy?url=${encodeURIComponent(decoded)}&ref=${encodeURIComponent('https://media.duhnet.tv/')}`;
+          const result = {
+            mode: 'native_mp4' as const,
+            streamUrl: proxied,
+            qualities: [{ label: '1080p (Duhnet)', url: proxied }],
+            fallbackIframe: url,
+          };
+          setCachedStream(url, result);
+          return NextResponse.json(result, { headers: CACHE_HEADERS });
+        }
+      }
+    } catch {}
+  }
+
+  // 3c. Yandex Disk Direct Stream Resolver
+  if (lowerUrl.includes('yadi.sk') || lowerUrl.includes('disk.yandex')) {
+    try {
+      const href = await resolveYandexDisk(url);
+      if (href) {
+        const proxied = `/api/stream-proxy?url=${encodeURIComponent(href)}&ref=${encodeURIComponent('https://disk.yandex.com.tr/')}`;
+        const result = {
+          mode: 'native_mp4' as const,
+          streamUrl: proxied,
+          qualities: [{ label: '1080p (Yandex Disk)', url: proxied }],
+          fallbackIframe: url,
+        };
+        setCachedStream(url, result);
+        return NextResponse.json(result, { headers: CACHE_HEADERS });
+      }
+    } catch {}
+  }
+
+  // 3d. EV Player (morencius.com) Direct 1080p HLS Resolver
+  if (lowerUrl.includes('morencius.com') || provider === 'morencius' || provider === 'ev') {
+    try {
+      const resp = await fetch(url, {
+        headers: {
+          'User-Agent': commonUA,
+          Referer: 'https://morencius.com/',
+        },
+        signal: AbortSignal.timeout(6000),
+      });
+      if (!resp.ok && (resp.status === 404 || resp.status === 410)) {
+        return NextResponse.json({ error: 'EV videosu bulunamadı (404)', isDead: true }, { status: 410 });
+      }
+      const html = await resp.text();
+      if (html.includes('File Not Found') || html.includes('Video not found')) {
+        return NextResponse.json({ error: 'EV videosu silinmiş', isDead: true }, { status: 410 });
+      }
+      const unpacked = unpackDeanEdwards(html);
+      const m3u8Match =
+        unpacked.match(/["']hls2["']\s*:\s*["']([^"']+)["']/) ||
+        unpacked.match(/["']hls3["']\s*:\s*["']([^"']+)["']/) ||
+        unpacked.match(/["']hls4["']\s*:\s*["']([^"']+)["']/) ||
+        unpacked.match(/https?:\/\/[^\s"'<>]+\.m3u8[^\s"'<>]*/);
+      if (m3u8Match) {
+        const m3u8Url = m3u8Match[1] || m3u8Match[0];
+        const proxied = `/api/stream-proxy?url=${encodeURIComponent(m3u8Url)}&ref=${encodeURIComponent('https://morencius.com/')}`;
+        const result = {
+          mode: 'native_hls' as const,
+          streamUrl: proxied,
+          qualities: [{ label: '1080p (EV)', url: proxied }],
+          fallbackIframe: url,
+        };
+        setCachedStream(url, result);
+        return NextResponse.json(result, { headers: CACHE_HEADERS });
+      }
+    } catch {}
+  }
+
+  // 3e. GDrivePlayer XOR Direct HLS Resolver
+  if (lowerUrl.includes('gdriveplayer') || lowerUrl.includes('gdplayer') || provider.includes('gdriveplayer')) {
+    try {
+      const resp = await fetch(url, {
+        headers: {
+          'User-Agent': commonUA,
+          Referer: 'https://gdriveplayer.to/',
+        },
+        signal: AbortSignal.timeout(6000),
+      });
+      if (resp.ok) {
+        const html = await resp.text();
+        const directHls = resolveGDrivePlayer(html);
+        if (directHls) {
+          const proxied = `/api/stream-proxy?url=${encodeURIComponent(directHls)}&ref=${encodeURIComponent('https://gdriveplayer.to/')}`;
+          const result = {
+            mode: 'native_hls' as const,
+            streamUrl: proxied,
+            qualities: [{ label: '1080p (GDrivePlayer)', url: proxied }],
+            fallbackIframe: url,
+          };
+          setCachedStream(url, result);
+          return NextResponse.json(result, { headers: CACHE_HEADERS });
+        }
+      }
+    } catch {}
+  }
+
+  // 3f. Filemoon & Byse Direct 1080p HLS Resolver
+  if (
+    lowerUrl.includes('filemoon.sx') ||
+    lowerUrl.includes('bysesukior') ||
+    lowerUrl.includes('bysedikamoum') ||
+    lowerUrl.includes('byse.') ||
+    provider === 'filemoon' ||
+    provider === 'byse'
+  ) {
+    try {
+      const parsedU = new URL(url);
+      const host = parsedU.host;
+      const codeMatch = url.match(/(?:\/e\/|\/v\/|\/d\/|\/download\/|videos\/)([a-zA-Z0-9]+)/);
+      const code = codeMatch?.[1];
+      if (code) {
+        const directHls = await resolveFilemoonByse(code, host);
+        if (directHls) {
+          const proxied = `/api/stream-proxy?url=${encodeURIComponent(directHls)}&ref=${encodeURIComponent(`https://${host}/`)}`;
+          const result = {
+            mode: 'native_hls' as const,
+            streamUrl: proxied,
+            qualities: [{ label: '1080p (Filemoon)', url: proxied }],
+            fallbackIframe: url,
+          };
+          setCachedStream(url, result);
+          return NextResponse.json(result, { headers: CACHE_HEADERS });
+        }
+      }
+    } catch {}
+  }
+
+  // 3g. UPNS Direct 1080p HLS Resolver
+  if (lowerUrl.includes('upns.one') || lowerUrl.includes('upns.online') || lowerUrl.includes('upn.one') || provider === 'upns') {
+    try {
+      const parsedU = new URL(url);
+      const host = parsedU.host;
+      const hashMatch = url.match(/[#\/]([a-zA-Z0-9_-]{5,12})$/);
+      const hashId = hashMatch?.[1];
+      if (hashId) {
+        const directHls = await resolveUPNS(hashId, host);
+        if (directHls) {
+          const proxied = `/api/stream-proxy?url=${encodeURIComponent(directHls)}&ref=${encodeURIComponent(`https://${host}/`)}`;
+          const result = {
+            mode: 'native_hls' as const,
+            streamUrl: proxied,
+            qualities: [{ label: '1080p (UPNS)', url: proxied }],
+            fallbackIframe: url,
+          };
+          setCachedStream(url, result);
+          return NextResponse.json(result, { headers: CACHE_HEADERS });
+        }
+      }
+    } catch {}
+  }
+
+  // 3h. LULU Player Direct HLS Resolver
+  if (lowerUrl.includes('luluvdo') || lowerUrl.includes('lulustream') || lowerUrl.includes('lulu.st') || provider.includes('lulu')) {
+    try {
+      const resp = await fetch(url, {
+        headers: { 'User-Agent': commonUA, Referer: 'https://luluvdo.com/' },
+        signal: AbortSignal.timeout(6000),
+      });
+      if (!resp.ok && (resp.status === 404 || resp.status === 410)) {
+        return NextResponse.json({ error: 'Lulu videosu silinmiş (404)', isDead: true }, { status: 410 });
+      }
+      const html = await resp.text();
+      if (html.includes('File was deleted') || html.includes('File Not Found')) {
+        return NextResponse.json({ error: 'Lulu videosu silinmiş', isDead: true }, { status: 410 });
+      }
+      const unpacked = unpackDeanEdwards(html);
+      const m3u8Match =
+        unpacked.match(/sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
+        unpacked.match(/https?:\/\/[^\s"'<>]+\.m3u8[^\s"'<>]*/);
+      if (m3u8Match) {
+        const m3u8Url = m3u8Match[1] || m3u8Match[0];
+        const proxied = `/api/stream-proxy?url=${encodeURIComponent(m3u8Url)}&ref=${encodeURIComponent('https://luluvdo.com/')}`;
+        const result = {
+          mode: 'native_hls' as const,
+          streamUrl: proxied,
+          qualities: [{ label: '1080p (LULU)', url: proxied }],
+          fallbackIframe: url,
+        };
+        setCachedStream(url, result);
+        return NextResponse.json(result, { headers: CACHE_HEADERS });
+      }
+    } catch {}
+  }
+
   // 4. Universal External Provider Direct Stream Extractor -> KoUp Native NetflixPlayer
-  const commonUA =
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
   // 4a. Uqload (uqload.com / uqload.io / uqload.co / uqload.vc) -> Direct HLS (.m3u8) or 410 Dead Detection
   if (provider === 'uqload' || lowerUrl.includes('uqload.')) {
@@ -1681,7 +2027,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 4i. Sendvid / Yourupload / Mp4upload / Filemoon / Streamwish / Vidguard / Vidspeed generic stream extraction
+  // 4i. Streamwish / Vidhide / Streamruby / Yourupload / Mp4upload / Dzen / Vidguard generic stream extraction
   if (
     [
       'sendvid',
@@ -1691,9 +2037,14 @@ export async function GET(req: NextRequest) {
       'streamwish',
       'strw',
       'awish',
+      'ghbrisk',
+      'vidhide',
+      'dhtpre',
+      'streamruby',
       'vidguard',
       'vidspeed',
       'streamtape',
+      'dzen',
     ].some((p) => provider.includes(p) || lowerUrl.includes(p))
   ) {
     try {
@@ -1707,10 +2058,12 @@ export async function GET(req: NextRequest) {
         signal: AbortSignal.timeout(5000),
       });
       if (resp.ok) {
-        const html = await resp.text();
+        const rawHtml = await resp.text();
+        const html = rawHtml.includes('eval(function') ? unpackDeanEdwards(rawHtml) : rawHtml;
         const m3u8Match =
           html.match(/(?:file|source|hls|video_source)\s*[:=]\s*["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i) ||
-          html.match(/<source[^>]+src=["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
+          html.match(/<source[^>]+src=["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i) ||
+          html.match(/https?:\/\/[^\s"'<>]+\.okcdn\.ru\/video\.m3u8[^\s"'<>]*/);
         if (m3u8Match?.[1]) {
           const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(m3u8Match[1])}&ref=${encodeURIComponent(refOrigin)}`;
           return NextResponse.json(
