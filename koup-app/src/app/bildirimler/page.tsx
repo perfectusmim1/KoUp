@@ -374,12 +374,12 @@ export default function NotificationsPage() {
         {/* Filter Bar */}
         <div className="py-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
           {/* Category Tabs */}
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2 md:pb-0">
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-2.5 -my-2.5 px-1">
             <button
               onClick={() => setSelectedFilter('all')}
-              className={`px-4 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
+              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
                 selectedFilter === 'all'
-                  ? 'bg-white text-black shadow-lg shadow-white/10'
+                  ? 'bg-white text-black glow-white'
                   : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
               }`}
             >
@@ -395,9 +395,9 @@ export default function NotificationsPage() {
 
             <button
               onClick={() => setSelectedFilter('episode')}
-              className={`px-4 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
+              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
                 selectedFilter === 'episode'
-                  ? 'bg-amber-400 text-black shadow-lg shadow-amber-400/20'
+                  ? 'bg-amber-400 text-black glow-amber'
                   : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
               }`}
             >
@@ -418,7 +418,7 @@ export default function NotificationsPage() {
 
             <button
               onClick={() => setSelectedFilter('actor')}
-              className={`px-4 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
+              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
                 selectedFilter === 'actor'
                   ? 'bg-emerald-500 text-black glow-emerald'
                   : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
@@ -441,7 +441,7 @@ export default function NotificationsPage() {
 
             <button
               onClick={() => setSelectedFilter('reply')}
-              className={`px-4 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
+              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
                 selectedFilter === 'reply'
                   ? 'bg-sky-400 text-black glow-sky'
                   : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
@@ -464,9 +464,9 @@ export default function NotificationsPage() {
 
             <button
               onClick={() => setSelectedFilter('system')}
-              className={`px-4 py-2 rounded-2xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
+              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
                 selectedFilter === 'system'
-                  ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/25'
+                  ? 'bg-indigo-500 text-white glow-indigo'
                   : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
               }`}
             >
@@ -489,7 +489,7 @@ export default function NotificationsPage() {
           {/* Unread Only Toggle */}
           <button
             onClick={() => setUnreadOnly((prev) => !prev)}
-            className={`px-3.5 py-2 rounded-2xl text-xs font-medium transition-colors cursor-pointer flex items-center gap-2 self-start md:self-auto shrink-0 border ${
+            className={`px-3.5 py-2 rounded-full text-xs font-medium transition-colors cursor-pointer flex items-center gap-2 self-start md:self-auto shrink-0 border ${
               unreadOnly
                 ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 shadow-[0_0_15px_rgba(244,63,94,0.2)]'
                 : 'bg-white/[0.04] text-white/60 hover:text-white border-white/10'

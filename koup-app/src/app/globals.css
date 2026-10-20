@@ -37,6 +37,7 @@
 }
 
 :root {
+  interpolate-size: allow-keywords;
   --bg-canvas: #080808;
   --bg-surface: #0f0f11;
   --bg-elevated: #17171a;
@@ -190,15 +191,44 @@ img {
   box-shadow: 0 20px 45px rgba(0, 0, 0, 0.75);
 }
 
-/* Universal Interactive Glass Pill with Crisp Snappy Highlight */
+/* Universal Interactive Liquid Glass Pill with Specular Highlight */
 .glass-pill {
-  background: rgba(255, 255, 255, 0.09);
-  border: 1px solid rgba(255, 255, 255, 0.13);
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 6px 20px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
   transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    box-shadow 120ms ease,
-    color 120ms ease;
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    color 140ms ease;
+}
+
+/* Liquid Glass Navbar Shell & Active Sliding Pill */
+.liquid-glass-bar {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.20),
+    0 12px 36px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+}
+
+.liquid-glass-active-pill {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.24) 0%,
+    rgba(255, 255, 255, 0.12) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.44),
+    0 4px 16px rgba(0, 0, 0, 0.28),
+    0 0 20px rgba(255, 255, 255, 0.10);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -221,29 +251,29 @@ img {
   /* Active / Clicked Button Hover & Focus Enhancements (Takipte, Favorilerimde, Puanım, vb.) */
   button[class*="bg-amber-"]:hover,
   a[class*="bg-amber-"]:hover {
-    filter: brightness(1.12) saturate(1.05);
-    box-shadow: 0 0 20px rgba(251, 191, 36, 0.5) !important;
+    filter: brightness(1.10) saturate(1.05);
+    box-shadow: 0 0 10px rgba(251, 191, 36, 0.30), 0 0 22px -2px rgba(251, 191, 36, 0.20) !important;
   }
   button[class*="bg-rose-"]:hover,
   a[class*="bg-rose-"]:hover,
   button[class*="bg-pink-"]:hover,
   a[class*="bg-pink-"]:hover {
-    filter: brightness(1.14) saturate(1.05);
-    box-shadow: 0 0 20px rgba(244, 63, 94, 0.5) !important;
+    filter: brightness(1.10) saturate(1.05);
+    box-shadow: 0 0 10px rgba(244, 63, 94, 0.30), 0 0 22px -2px rgba(244, 63, 94, 0.20) !important;
   }
   button[class*="bg-sky-"]:hover,
   a[class*="bg-sky-"]:hover,
   button[class*="bg-blue-"]:hover,
   a[class*="bg-blue-"]:hover {
-    filter: brightness(1.14) saturate(1.05);
-    box-shadow: 0 0 20px rgba(56, 189, 248, 0.5) !important;
+    filter: brightness(1.10) saturate(1.05);
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.30), 0 0 22px -2px rgba(56, 189, 248, 0.20) !important;
   }
   button[class*="bg-emerald-"]:hover,
   a[class*="bg-emerald-"]:hover,
   button[class*="bg-green-"]:hover,
   a[class*="bg-green-"]:hover {
-    filter: brightness(1.14) saturate(1.05);
-    box-shadow: 0 0 20px rgba(16, 185, 129, 0.5) !important;
+    filter: brightness(1.10) saturate(1.05);
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.30), 0 0 22px -2px rgba(16, 185, 129, 0.20) !important;
   }
 }
 
@@ -337,7 +367,7 @@ a[class~="bg-white"] {
   a[class~="bg-white"]:hover {
     background-color: #e8e8ed !important;
     color: #000000 !important;
-    box-shadow: 0 0 16px rgba(255, 255, 255, 0.28), 0 4px 14px rgba(0, 0, 0, 0.3) !important;
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.25), 0 0 20px -2px rgba(255, 255, 255, 0.15), 0 4px 14px rgba(0, 0, 0, 0.3) !important;
   }
 }
 
@@ -390,55 +420,120 @@ textarea.koup-input {
 
 /* ============================================================================
    CINEMA DISPERSED RADIAL GLOWS (No boxy bounds, no clipping, smooth Gaussian blur)
+   Layer 1: Near soft ambient bloom
+   Layer 2: Midfield radial bloom (negative spread prevents rectangular corner bunching)
+   Layer 3: Deep atmospheric dispersion (wide fade into dark background)
    ============================================================================ */
 .glow-blue,
 .btn-glow-blue {
-  box-shadow: 0 0 20px rgba(41, 151, 255, 0.45), 0 0 38px rgba(41, 151, 255, 0.18) !important;
+  box-shadow: 
+    0 0 10px rgba(41, 151, 255, 0.32),
+    0 0 22px -2px rgba(41, 151, 255, 0.22),
+    0 0 42px -4px rgba(41, 151, 255, 0.12) !important;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .glow-blue:hover,
 .btn-glow-blue:hover {
-  box-shadow: 0 0 28px rgba(56, 189, 248, 0.65), 0 0 48px rgba(41, 151, 255, 0.28) !important;
+  box-shadow: 
+    0 0 14px rgba(41, 151, 255, 0.45),
+    0 0 28px -2px rgba(41, 151, 255, 0.32),
+    0 0 52px -4px rgba(41, 151, 255, 0.18) !important;
 }
 
 .glow-white,
 .btn-glow-white {
-  box-shadow: 0 0 22px rgba(255, 255, 255, 0.38), 0 0 42px rgba(255, 255, 255, 0.14) !important;
+  box-shadow: 
+    0 0 10px rgba(255, 255, 255, 0.25),
+    0 0 22px -2px rgba(255, 255, 255, 0.16),
+    0 0 42px -4px rgba(255, 255, 255, 0.08) !important;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .glow-white:hover,
 .btn-glow-white:hover {
-  box-shadow: 0 0 30px rgba(255, 255, 255, 0.58), 0 0 54px rgba(255, 255, 255, 0.22) !important;
+  box-shadow: 
+    0 0 14px rgba(255, 255, 255, 0.38),
+    0 0 28px -2px rgba(255, 255, 255, 0.24),
+    0 0 52px -4px rgba(255, 255, 255, 0.12) !important;
 }
 
 .glow-emerald,
 .btn-glow-emerald {
-  box-shadow: 0 0 18px rgba(16, 185, 129, 0.42), 0 0 34px rgba(16, 185, 129, 0.16) !important;
+  box-shadow: 
+    0 0 10px rgba(16, 185, 129, 0.30),
+    0 0 22px -2px rgba(16, 185, 129, 0.20),
+    0 0 42px -4px rgba(16, 185, 129, 0.12) !important;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .glow-emerald:hover,
 .btn-glow-emerald:hover {
-  box-shadow: 0 0 26px rgba(16, 185, 129, 0.62), 0 0 44px rgba(16, 185, 129, 0.24) !important;
+  box-shadow: 
+    0 0 14px rgba(16, 185, 129, 0.42),
+    0 0 28px -2px rgba(16, 185, 129, 0.28),
+    0 0 52px -4px rgba(16, 185, 129, 0.16) !important;
 }
 
 .glow-sky,
 .btn-glow-sky {
-  box-shadow: 0 0 18px rgba(56, 189, 248, 0.45), 0 0 36px rgba(56, 189, 248, 0.18) !important;
+  box-shadow: 
+    0 0 10px rgba(56, 189, 248, 0.32),
+    0 0 22px -2px rgba(56, 189, 248, 0.22),
+    0 0 42px -4px rgba(56, 189, 248, 0.12) !important;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .glow-sky:hover,
 .btn-glow-sky:hover {
-  box-shadow: 0 0 26px rgba(56, 189, 248, 0.65), 0 0 46px rgba(56, 189, 248, 0.26) !important;
+  box-shadow: 
+    0 0 14px rgba(56, 189, 248, 0.45),
+    0 0 28px -2px rgba(56, 189, 248, 0.30),
+    0 0 52px -4px rgba(56, 189, 248, 0.18) !important;
 }
 
 .glow-rose,
 .btn-glow-rose {
-  box-shadow: 0 0 18px rgba(244, 63, 94, 0.42), 0 0 34px rgba(244, 63, 94, 0.16) !important;
+  box-shadow: 
+    0 0 10px rgba(244, 63, 94, 0.30),
+    0 0 22px -2px rgba(244, 63, 94, 0.20),
+    0 0 42px -4px rgba(244, 63, 94, 0.12) !important;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .glow-rose:hover,
 .btn-glow-rose:hover {
-  box-shadow: 0 0 26px rgba(244, 63, 94, 0.62), 0 0 44px rgba(244, 63, 94, 0.25) !important;
+  box-shadow: 
+    0 0 14px rgba(244, 63, 94, 0.42),
+    0 0 28px -2px rgba(244, 63, 94, 0.28),
+    0 0 52px -4px rgba(244, 63, 94, 0.16) !important;
+}
+
+.glow-amber,
+.btn-glow-amber {
+  box-shadow: 
+    0 0 10px rgba(251, 191, 36, 0.30),
+    0 0 22px -2px rgba(251, 191, 36, 0.20),
+    0 0 42px -4px rgba(251, 191, 36, 0.12) !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.glow-amber:hover,
+.btn-glow-amber:hover {
+  box-shadow: 
+    0 0 14px rgba(251, 191, 36, 0.42),
+    0 0 28px -2px rgba(251, 191, 36, 0.28),
+    0 0 52px -4px rgba(251, 191, 36, 0.16) !important;
+}
+
+.glow-indigo,
+.btn-glow-indigo {
+  box-shadow: 
+    0 0 10px rgba(99, 102, 241, 0.30),
+    0 0 22px -2px rgba(99, 102, 241, 0.20),
+    0 0 42px -4px rgba(99, 102, 241, 0.12) !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.glow-indigo:hover,
+.btn-glow-indigo:hover {
+  box-shadow: 
+    0 0 14px rgba(99, 102, 241, 0.42),
+    0 0 28px -2px rgba(99, 102, 241, 0.28),
+    0 0 52px -4px rgba(99, 102, 241, 0.16) !important;
 }
 
 /* Balanced Hero Cinema Vignette */
@@ -919,6 +1014,51 @@ input[type="range"].netflix-volume-slider:focus-visible {
 .koup-page-transition {
   animation: koupPageEnter calc(200ms * (1 - var(--animation-reduced))) cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
+
+/* Smooth 120fps Intrinsic Expansion Drawer (animate-to-intrinsic-sizes with CSS Grid fallback) */
+.koup-expandable-drawer {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transition:
+    grid-template-rows 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 190ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.koup-expandable-drawer > .koup-expandable-inner {
+  min-height: 0;
+  overflow: hidden;
+  contain: layout paint style;
+}
+
+.koup-expandable-drawer.is-expanded {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@supports (interpolate-size: allow-keywords) {
+  .koup-expandable-drawer {
+    display: block;
+    block-size: 0;
+    transition:
+      block-size 240ms cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 190ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .koup-expandable-drawer.is-expanded {
+    block-size: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .koup-expandable-drawer {
+    transition: none !important;
+  }
+}
+
 
 
 

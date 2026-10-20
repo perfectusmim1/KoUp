@@ -111,6 +111,25 @@ export default function SeriesDetailPage({
   const [selectedSeason, setSelectedSeason] = useState(1);
   const [showAllCast, setShowAllCast] = useState(false);
   const [showAllEpisodes, setShowAllEpisodes] = useState(false);
+  const [extraSectionsReady, setExtraSectionsReady] = useState(false);
+
+  // Pre-mount extra Cast and Episode cards during idle time after initial render
+  // so clicking "Tümünü Gör" toggles a pure CSS class with zero React DOM creation on the click frame.
+  useEffect(() => {
+    if (!media) return;
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (typeof w.requestIdleCallback === 'function') {
+      const id = w.requestIdleCallback(() => setExtraSectionsReady(true), { timeout: 250 });
+      return () => {
+        if (typeof w.cancelIdleCallback === 'function') w.cancelIdleCallback(id);
+      };
+    }
+    const timer = setTimeout(() => setExtraSectionsReady(true), 120);
+    return () => clearTimeout(timer);
+  }, [media]);
   const [showAddToListModal, setShowAddToListModal] = useState(false);
   const [trailerYoutubeId, setTrailerYoutubeId] = useState<string | null>(null);
   const [isTrailerSearching, setIsTrailerSearching] = useState(false);
@@ -1346,7 +1365,7 @@ export default function SeriesDetailPage({
 
         {/* 3. CAST & CHARACTERS */}
         {cast.length > 0 && (
-          <section className="p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08]">
+          <section className="p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08] [contain:layout_paint_style]">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
                 <Users className="w-5 h-5 text-sky-400" />
@@ -1362,6 +1381,7 @@ export default function SeriesDetailPage({
                   <Link
                     key={`${c.person_id}-${c.character_name || ''}`}
                     href={`/oyuncu/${p.slug}`}
+                    style={{ contain: 'content' }}
                     className="p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/20 transition-[background-color,border-color] flex flex-col items-center text-center group relative cursor-pointer"
                   >
                     <div className="w-20 h-20 rounded-full overflow-hidden border border-white/15 group-hover:border-white/30 transition-colors mb-3 shadow-md">
@@ -1389,63 +1409,64 @@ export default function SeriesDetailPage({
               })}
             </div>
 
-            {/* Extra Cast Members with Fast Downward Animation */}
-            {cast.length > 6 && (
-              <AnimatePresence initial={false}>
-                {showAllCast && (
-                  <motion.div
-                    key="extra-cast"
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-                    className="overflow-hidden"
-                  >
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 pt-4">
-                      {cast.slice(6).map((c) => {
-                        const p = c.people;
-                        if (!p) return null;
-                        return (
-                          <Link
-                            key={`${c.person_id}-${c.character_name || ''}`}
-                            href={`/oyuncu/${p.slug}`}
-                            className="p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/20 transition-[background-color,border-color] flex flex-col items-center text-center group relative cursor-pointer"
-                          >
-                            <div className="w-20 h-20 rounded-full overflow-hidden border border-white/15 group-hover:border-white/30 transition-colors mb-3 shadow-md">
-                              <img
-                                src={getProxiedImageUrl(p.image_url, p.name, null, 'w500', 'person')}
-                                alt={p.name}
-                                loading="lazy"
-                                decoding="async"
-                                className="w-full h-full object-cover"
-                              />
+            {/* Extra Cast Members with Pre-Mounted 120fps Intrinsic CSS Drawer */}
+            {cast.length > 6 && (extraSectionsReady || showAllCast) && (
+              <div
+                aria-hidden={!showAllCast}
+                {...(!showAllCast ? ({ inert: '' } as any) : {})}
+                className={`koup-expandable-drawer ${showAllCast ? 'is-expanded' : ''}`}
+              >
+                <div className="koup-expandable-inner">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 pt-4">
+                    {cast.slice(6).map((c) => {
+                      const p = c.people;
+                      if (!p) return null;
+                      return (
+                        <Link
+                          key={`${c.person_id}-${c.character_name || ''}`}
+                          href={`/oyuncu/${p.slug}`}
+                          style={{ contain: 'content' }}
+                          className="p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/20 transition-[background-color,border-color] flex flex-col items-center text-center group relative cursor-pointer"
+                        >
+                          <div className="w-20 h-20 rounded-full overflow-hidden border border-white/15 group-hover:border-white/30 transition-colors mb-3 shadow-md">
+                            <img
+                              src={getProxiedImageUrl(p.image_url, p.name, null, 'w500', 'person')}
+                              alt={p.name}
+                              loading="lazy"
+                              decoding="async"
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <div className="text-xs font-bold text-white line-clamp-1 group-hover:text-sky-300 transition-colors">
+                            {p.name}
+                          </div>
+                          {c.character_name && (
+                            <div className="text-[11px] text-white/50 line-clamp-1 mt-0.5">
+                              {c.character_name}
                             </div>
-                            <div className="text-xs font-bold text-white line-clamp-1 group-hover:text-sky-300 transition-colors">
-                              {p.name}
-                            </div>
-                            {c.character_name && (
-                              <div className="text-[11px] text-white/50 line-clamp-1 mt-0.5">
-                                {c.character_name}
-                              </div>
-                            )}
-                            <span className="text-[9px] font-mono uppercase px-2 py-0.5 rounded bg-white/[0.06] text-white/60 mt-1.5">
-                              {c.role_type === 'lead' ? 'Başrol' : 'Kadro'}
-                            </span>
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                          )}
+                          <span className="text-[9px] font-mono uppercase px-2 py-0.5 rounded bg-white/[0.06] text-white/60 mt-1.5">
+                            {c.role_type === 'lead' ? 'Başrol' : 'Kadro'}
+                          </span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             )}
 
             {cast.length > 6 && (
               <div className="flex justify-center mt-6 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowAllCast((prev) => !prev)}
-                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full apple-glass-pill hover:bg-white/15 text-xs font-semibold text-white/90 hover:text-white border border-white/15 transition-[background-color,color,transform] cursor-pointer shadow-sm active:scale-95"
+                  aria-expanded={showAllCast}
+                  onMouseEnter={() => setExtraSectionsReady(true)}
+                  onClick={() => {
+                    setExtraSectionsReady(true);
+                    setShowAllCast((prev) => !prev);
+                  }}
+                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full glass-pill hover:bg-white/18 text-xs font-semibold text-white/90 hover:text-white transition-[background-color,color,transform] cursor-pointer shadow-sm active:scale-95"
                 >
                   <span>
                     {showAllCast
@@ -1465,7 +1486,7 @@ export default function SeriesDetailPage({
 
         {/* 4. FULL EPISODES GRID (Only for series, not movies) */}
         {!isFilm && (
-          <section className="p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08]">
+          <section className="p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08] [contain:layout_paint_style]">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div>
               <div className="flex flex-wrap items-center gap-3 relative z-30">
@@ -1490,7 +1511,7 @@ export default function SeriesDetailPage({
               {/* Season Selector Tabs if Multi-Season with Fluid Sliding Pill */}
               {seasons.length > 1 && (
                 <LayoutGroup id="seri-season-selector-group">
-                  <div className="flex items-center gap-1 p-1 rounded-full glass-pill-dark border border-white/12 overflow-x-auto no-scrollbar">
+                  <div className="flex items-center gap-1 p-1.5 rounded-full glass-pill-dark border border-white/12 overflow-x-auto no-scrollbar">
                     {seasons.map((s) => {
                       const active = selectedSeason === s;
                       return (
@@ -1515,7 +1536,7 @@ export default function SeriesDetailPage({
                               layoutId="seri-season-active-pill"
                               initial={false}
                               transition={{ type: 'spring', stiffness: 500, damping: 35, mass: 0.5 }}
-                              className="absolute inset-0 rounded-full bg-[#2997ff] shadow-[0_0_16px_rgba(41,151,255,0.45)]"
+                              className="absolute inset-0 rounded-full bg-[#2997ff] shadow-[0_0_10px_rgba(41,151,255,0.32),0_0_20px_-2px_rgba(41,151,255,0.20)]"
                             />
                           )}
                           <span className="relative z-10">{s}. Sezon</span>
@@ -1670,32 +1691,33 @@ export default function SeriesDetailPage({
                   {seasonEpisodes.slice(0, 4).map(renderEpisodeCard)}
                 </div>
 
-                {/* Extra Episodes with Fast Downward Animation */}
-                {seasonEpisodes.length > 4 && (
-                  <AnimatePresence initial={false}>
-                    {showAllEpisodes && (
-                      <motion.div
-                        key={`extra-episodes-${selectedSeason}`}
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-                        className="overflow-hidden"
-                      >
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 pt-3.5">
-                          {seasonEpisodes.slice(4).map(renderEpisodeCard)}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                {/* Extra Episodes with Pre-Mounted 120fps Intrinsic CSS Drawer */}
+                {seasonEpisodes.length > 4 && (extraSectionsReady || showAllEpisodes) && (
+                  <div
+                    key={`extra-episodes-${selectedSeason}`}
+                    aria-hidden={!showAllEpisodes}
+                    {...(!showAllEpisodes ? ({ inert: '' } as any) : {})}
+                    className={`koup-expandable-drawer ${showAllEpisodes ? 'is-expanded' : ''}`}
+                  >
+                    <div className="koup-expandable-inner">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 pt-3.5">
+                        {seasonEpisodes.slice(4).map(renderEpisodeCard)}
+                      </div>
+                    </div>
+                  </div>
                 )}
 
               {seasonEpisodes.length > 4 && (
                 <div className="flex justify-center mt-6 pt-2">
                   <button
                     type="button"
-                    onClick={() => setShowAllEpisodes((prev) => !prev)}
-                    className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full apple-glass-pill hover:bg-white/15 text-xs font-semibold text-white/90 hover:text-white border border-white/15 transition-[background-color,color,transform] cursor-pointer shadow-sm active:scale-95"
+                    aria-expanded={showAllEpisodes}
+                    onMouseEnter={() => setExtraSectionsReady(true)}
+                    onClick={() => {
+                      setExtraSectionsReady(true);
+                      setShowAllEpisodes((prev) => !prev);
+                    }}
+                    className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full glass-pill hover:bg-white/18 text-xs font-semibold text-white/90 hover:text-white transition-[background-color,color,transform] cursor-pointer shadow-sm active:scale-95"
                   >
                     <span>
                       {showAllEpisodes
@@ -1718,7 +1740,7 @@ export default function SeriesDetailPage({
 
         {/* 5. RELATED RECOMMENDATIONS */}
         {relatedMedia.length > 0 && (
-          <section className="space-y-4">
+          <section className="space-y-4 [contain:layout_paint_style]">
             <div className="flex items-end justify-between">
               <div>
                 <div className="flex items-center gap-1.5 text-[11px] font-bold tracking-[0.18em] uppercase text-sky-400">

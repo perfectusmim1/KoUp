@@ -276,7 +276,7 @@ export default function PublicListsPage() {
         </div>
 
         {/* Sort Controls */}
-        <div className="flex items-center gap-1.5 p-1 rounded-full glass-pill-dark overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-1.5 p-1.5 rounded-full glass-pill-dark overflow-x-auto no-scrollbar">
           <span className="text-xs font-mono text-white/40 ml-3 mr-1 hidden sm:inline">Sırala:</span>
           {(
             [
@@ -307,7 +307,7 @@ export default function PublicListsPage() {
                       stiffness: 420,
                       damping: 32,
                     }}
-                    className="absolute inset-0 rounded-full bg-white shadow-[0_0_20px_rgba(255,255,255,0.4)]"
+                    className="absolute inset-0 rounded-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.25),0_0_20px_-2px_rgba(255,255,255,0.15)]"
                   />
                 )}
                 <Icon className="w-3.5 h-3.5 relative z-10" />

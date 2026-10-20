@@ -353,11 +353,11 @@ export default function Navbar() {
           className={`pointer-events-auto flex items-center justify-between transition-all duration-300 ease-out ${
             navbarBehavior === 'floating'
               ? isScrolled
-                ? 'mt-2 sm:mt-3.5 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-full bg-[#08080a]/96 sm:backdrop-blur-md shadow-[0_20px_50px_rgba(0,0,0,0.9),0_0_30px_-5px_rgba(41,151,255,0.08)] py-2 sm:py-2.5 px-4 sm:px-6'
+                ? 'mt-2 sm:mt-3.5 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-full bg-[#0c0d12]/68 backdrop-blur-2xl border border-white/[0.15] shadow-[0_20px_50px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.18)] py-2 sm:py-2.5 px-4 sm:px-6'
                 : 'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
               : navbarBehavior === 'sticky'
               ? isScrolled
-                ? 'mt-0 w-full max-w-full rounded-none bg-[#08080a]/96 sm:backdrop-blur-md border-b border-white/10 shadow-[0_12px_32px_rgba(0,0,0,0.8)] py-3 sm:py-4 px-4 sm:px-8 lg:px-14'
+                ? 'mt-0 w-full max-w-full rounded-none bg-[#0c0d12]/72 backdrop-blur-2xl border-b border-white/[0.14] shadow-[0_12px_32px_rgba(0,0,0,0.72)] py-3 sm:py-4 px-4 sm:px-8 lg:px-14'
                 : 'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
               : /* static: sitenin üstünde kalır, sayfa kayınca bizle gelmez */
                 'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
@@ -399,8 +399,8 @@ export default function Navbar() {
         </Link>
       </div>
 
-      {/* CENTER: Floating Glassy Pill Menu (Exact ui/code.html style + Fluid Spring Pill Slider) */}
-      <nav className="relative pointer-events-auto hidden lg:flex items-center shrink-0 p-1.5 rounded-full glass-pill-dark shadow-[0_16px_40px_rgba(0,0,0,0.75)]">
+      {/* CENTER: Liquid Glass Pill Menu + Fluid Sliding Translucent Pill */}
+      <nav className="relative pointer-events-auto hidden lg:flex items-center shrink-0 p-1.5 rounded-full liquid-glass-bar">
         <span
           aria-hidden="true"
           style={{
@@ -408,7 +408,7 @@ export default function Navbar() {
             width: `${navPillStyle.w}px`,
             opacity: navPillStyle.visible ? 1 : 0,
           }}
-          className={`pointer-events-none absolute top-1.5 bottom-1.5 left-0 rounded-full bg-white shadow-[0_0_24px_rgba(255,255,255,0.4)] ${
+          className={`pointer-events-none absolute top-1.5 bottom-1.5 left-0 rounded-full liquid-glass-active-pill ${
             navPillStyle.ready
               ? 'transition-[transform,width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]'
               : 'transition-opacity duration-150'
@@ -439,7 +439,9 @@ export default function Navbar() {
                 router.prefetch(item.href);
               }}
               className={`relative px-5 py-2 rounded-full text-[13px] font-semibold transition-colors duration-200 select-none ${
-                active ? 'text-black' : 'text-white/70 hover:text-white'
+                active
+                  ? 'text-white [text-shadow:0_1px_10px_rgba(255,255,255,0.35)]'
+                  : 'text-white/65 hover:text-white'
               }`}
             >
               <span className="relative z-10">{item.label}</span>
@@ -462,10 +464,10 @@ export default function Navbar() {
           <Search className="w-4 h-4" />
         </button>
 
-        {/* Desktop Instant Search Bar / Trigger (>= md) */}
+        {/* Desktop Instant Search Bar / Trigger (>= md) — Unified Liquid Glass */}
         <div ref={searchContainerRef} className="relative hidden md:block">
-          <div className="flex items-center gap-2 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/50 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-300 w-44 lg:w-60 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.25)]">
-            <Search className="w-4 h-4 text-white/60 shrink-0" />
+          <div className="flex items-center gap-2 px-3.5 py-2 rounded-full glass-pill hover:bg-white/[0.15] hover:border-white/[0.28] focus-within:bg-white/[0.16] focus-within:border-white/[0.38] focus-within:shadow-[inset_0_1px_1px_rgba(255,255,255,0.35),0_8px_24px_rgba(0,0,0,0.35),0_0_20px_rgba(255,255,255,0.10)] transition-all duration-200 w-44 lg:w-64">
+            <Search className="w-4 h-4 text-white/75 shrink-0" />
             <input
               ref={searchInputRef}
               type="text"
@@ -482,24 +484,24 @@ export default function Navbar() {
                 }
               }}
               placeholder="İçerik veya oyuncu ara..."
-              className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full"
+              className="bg-transparent text-xs text-white placeholder-white/55 focus:outline-none w-full"
             />
             {query ? (
               <button
                 onClick={() => setQuery('')}
-                className="text-white/50 hover:text-white cursor-pointer"
+                className="text-white/60 hover:text-white cursor-pointer"
                 aria-label="Aramayı temizle"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             ) : (
-              <kbd className="hidden xl:inline-block text-[10px] font-mono text-white/35 px-1.5 py-0.5 rounded bg-white/[0.06] border border-white/10">
+              <kbd className="hidden xl:inline-block text-[10px] font-mono text-white/60 px-1.5 py-0.5 rounded-md bg-white/[0.10] border border-white/[0.18] shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]">
                 ⌘K
               </kbd>
             )}
           </div>
 
-          {/* Search Omnibox Dropdown with Spring Animation & Responsive Clamp */}
+          {/* Search Omnibox Dropdown with Spring Animation & Liquid Glass */}
           <AnimatePresence>
             {searchOpen && query.trim().length >= 2 && (
               <motion.div
@@ -507,7 +509,7 @@ export default function Navbar() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 6, scale: 0.97 }}
                 transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="absolute right-0 mt-3 w-[calc(100vw-2.5rem)] sm:w-[440px] max-w-[440px] rounded-3xl bg-[#0f0f12]/98 backdrop-blur-md p-4 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.12)] border border-white/15 z-50"
+                className="absolute right-0 mt-3 w-[calc(100vw-2.5rem)] sm:w-[440px] max-w-[440px] rounded-3xl bg-[#101218]/82 backdrop-blur-2xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.22)] border border-white/[0.16] z-50"
               >
                 <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-white/10">
                   <span className="text-[11px] font-bold uppercase tracking-widest text-white/50">
@@ -677,7 +679,7 @@ export default function Navbar() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 6, scale: 0.96 }}
                 transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="fixed left-3 right-3 top-20 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-3 sm:w-[410px] sm:max-w-[410px] rounded-3xl bg-[#0f0f12]/98 backdrop-blur-md p-4 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.12)] border border-white/15 z-50 flex flex-col gap-3"
+                className="fixed left-3 right-3 top-20 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-3 sm:w-[410px] sm:max-w-[410px] rounded-3xl bg-[#101218]/82 backdrop-blur-2xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.22)] border border-white/[0.16] z-50 flex flex-col gap-3"
               >
                 {/* Header */}
                 <div className="flex items-center justify-between pb-2.5 border-b border-white/10">
@@ -891,7 +893,7 @@ export default function Navbar() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 6, scale: 0.96 }}
                   transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                  className="fixed right-3 top-20 sm:absolute sm:right-0 sm:top-full sm:mt-3 w-64 rounded-3xl bg-[#0f0f12]/98 backdrop-blur-md p-3 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.15)] border border-white/15 z-50 flex flex-col gap-1"
+                  className="fixed right-3 top-20 sm:absolute sm:right-0 sm:top-full sm:mt-3 w-64 rounded-3xl bg-[#101218]/82 backdrop-blur-2xl p-3 shadow-[0_28px_64px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.22)] border border-white/[0.16] z-50 flex flex-col gap-1"
                 >
                   {/* User Header */}
                   <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/[0.06] flex items-center gap-3 mb-1">
@@ -1042,7 +1044,7 @@ export default function Navbar() {
       </header>
       </div>
 
-      {/* Mobile Navigation Drawer with Backdrop */}
+      {/* Mobile Navigation Drawer with Liquid Glass Floating Sheet */}
       <AnimatePresence>
         {mobileMenuOpen && (
           <>
@@ -1052,39 +1054,79 @@ export default function Navbar() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
               onClick={() => setMobileMenuOpen(false)}
-              className="pointer-events-auto fixed inset-0 z-40 bg-black/75 touch-none overscroll-none lg:hidden transform-gpu will-change-[opacity]"
+              className="pointer-events-auto fixed inset-0 z-40 bg-black/65 backdrop-blur-xs touch-none overscroll-none lg:hidden transform-gpu will-change-[opacity]"
             />
             <motion.div
-              initial={{ x: '-100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '-100%' }}
-              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className="pointer-events-auto lg:hidden fixed top-0 left-0 w-[290px] max-w-[85vw] h-[100dvh] bg-[#0c0d12] p-6 border-r border-white/15 shadow-2xl z-50 flex flex-col justify-between overscroll-contain touch-pan-y transform-gpu will-change-transform"
+              initial={{ x: '-105%', opacity: 0.8 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: '-105%', opacity: 0.8 }}
+              transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+              className="pointer-events-auto lg:hidden fixed top-2.5 bottom-2.5 left-2.5 w-[312px] max-w-[88vw] rounded-[28px] bg-gradient-to-b from-[#1a1c24]/82 via-[#11131a]/86 to-[#0b0c11]/90 backdrop-blur-2xl p-5 border border-white/[0.18] shadow-[0_28px_80px_rgba(0,0,0,0.88),inset_0_1px_1px_rgba(255,255,255,0.26)] z-50 flex flex-col justify-between overflow-hidden overscroll-contain touch-pan-y transform-gpu will-change-transform"
             >
-              {/* Drawer Top Header */}
-              <div>
-                <div className="flex items-center justify-between pb-6 border-b border-white/10">
-                  <div className="flex items-center gap-2.5">
+              {/* Subtle Liquid Glass Top Specular Sheen */}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute -top-24 -left-16 w-64 h-64 rounded-full bg-white/[0.08] blur-3xl"
+              />
+
+              {/* Drawer Top Header + Quick Search Pill */}
+              <div className="relative z-10 flex flex-col min-h-0 flex-1">
+                <div className="flex items-center justify-between pb-4 border-b border-white/[0.10]">
+                  <Link
+                    href="/"
+                    onClick={() => {
+                      triggerSound('click');
+                      setMobileMenuOpen(false);
+                    }}
+                    className="flex items-center gap-2.5"
+                  >
                     <img
                       src="/logo-dark.png"
                       alt="KoUp"
-                      className="h-8 w-auto object-contain"
+                      className="h-8 w-auto object-contain drop-shadow-[0_4px_12px_rgba(255,255,255,0.2)]"
                     />
-                    <span className="text-base font-bold text-white tracking-wider">
-                      KoUp
-                    </span>
-                  </div>
+                    <div className="flex flex-col">
+                      <span className="text-[15px] font-bold text-white tracking-wider leading-none">
+                        KoUp
+                        <span className="text-white/55 font-light ml-1 text-xs">
+                          TV+
+                        </span>
+                      </span>
+                      <span className="text-[9px] tracking-[0.22em] font-medium uppercase text-white/40 mt-1">
+                        Cinema Studio
+                      </span>
+                    </div>
+                  </Link>
                   <button
                     onClick={() => setMobileMenuOpen(false)}
-                    className="w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white cursor-pointer"
+                    className="w-9 h-9 rounded-full glass-pill flex items-center justify-center text-white/80 hover:text-white cursor-pointer"
                     aria-label="Kapat"
                   >
-                    <X className="w-5 h-5" />
+                    <X className="w-4 h-4" />
                   </button>
                 </div>
 
-                {/* Navigation Links with touch targets >= 44px */}
-                <div className="py-6 space-y-2 overflow-y-auto max-h-[calc(100vh-260px)] no-scrollbar">
+                {/* Embedded Liquid Glass Quick Search Trigger */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerSound('click');
+                    setMobileMenuOpen(false);
+                    setMobileSearchOpen(true);
+                  }}
+                  className="mt-3.5 w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl glass-pill text-left text-xs text-white/65 hover:text-white cursor-pointer"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <Search className="w-4 h-4 text-white/75 shrink-0" />
+                    <span>İçerik veya oyuncu ara...</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-white/50 px-1.5 py-0.5 rounded-md bg-white/[0.08] border border-white/[0.14]">
+                    Ara
+                  </span>
+                </button>
+
+                {/* Navigation Links with Liquid Glass Active Capsule */}
+                <div className="py-4 space-y-1.5 overflow-y-auto flex-1 no-scrollbar">
                   {NAV_LINKS.map((item) => {
                     const Icon = item.icon;
                     const active = isNavActive(item.href);
@@ -1097,59 +1139,81 @@ export default function Navbar() {
                           triggerSound('click');
                           setMobileMenuOpen(false);
                         }}
-                        className={`flex items-center gap-3.5 px-4 min-h-[48px] rounded-2xl text-sm font-semibold transition-all ${
+                        className={`group flex items-center justify-between px-3.5 min-h-[48px] rounded-2xl text-sm font-semibold transition-all duration-200 ${
                           active
-                            ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.3)]'
-                            : 'text-white/75 hover:text-white hover:bg-white/[0.06]'
+                            ? 'liquid-glass-active-pill text-white'
+                            : 'text-white/70 hover:text-white hover:bg-white/[0.07] border border-transparent hover:border-white/[0.10]'
                         }`}
                       >
-                        <Icon className="w-5 h-5 shrink-0" />
-                        <span>{item.label}</span>
+                        <span className="flex items-center gap-3">
+                          <span
+                            className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
+                              active
+                                ? 'bg-white/[0.18] border border-white/[0.32] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]'
+                                : 'bg-white/[0.05] border border-white/[0.08] text-white/65 group-hover:text-white group-hover:bg-white/[0.10]'
+                            }`}
+                          >
+                            <Icon className="w-4 h-4 shrink-0" />
+                          </span>
+                          <span className={active ? '[text-shadow:0_1px_8px_rgba(255,255,255,0.3)]' : ''}>
+                            {item.label}
+                          </span>
+                        </span>
+                        {active ? (
+                          <span className="w-2 h-2 rounded-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.9)]" />
+                        ) : (
+                          <ArrowRight className="w-3.5 h-3.5 text-white/25 group-hover:text-white/60 transition-colors" />
+                        )}
                       </Link>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Drawer Bottom Auth/Profile Section */}
-              <div className="pt-4 border-t border-white/10">
+              {/* Drawer Bottom Liquid Glass Profile Dock */}
+              <div className="relative z-10 pt-3 border-t border-white/[0.10]">
                 {user ? (
-                  <div className="space-y-3">
+                  <div className="p-2.5 rounded-2xl bg-white/[0.05] border border-white/[0.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.14)] space-y-2.5">
                     <Link
                       href={`/profil/${encodeURIComponent(user.username)}`}
                       prefetch={true}
                       onClick={() => setMobileMenuOpen(false)}
-                      className="flex items-center gap-3 p-2 rounded-2xl hover:bg-white/[0.06] transition-colors"
+                      className="flex items-center justify-between gap-2.5 p-1.5 rounded-xl hover:bg-white/[0.06] transition-colors"
                     >
-                      <div className="w-10 h-10 rounded-full overflow-hidden bg-white/10 border border-white/15 shrink-0 flex items-center justify-center">
-                        {user.avatar_url ? (
-                          <img
-                            src={getProxiedImageUrl(
-                              user.avatar_url,
-                              user.display_name || user.username,
-                              null,
-                              'w185',
-                              'person'
-                            )}
-                            alt={user.display_name || user.username}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <User className="w-5 h-5 text-white/80" />
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-bold text-white truncate">
-                          {user.display_name || user.username}
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-9 h-9 rounded-full overflow-hidden bg-white/12 border border-white/20 shrink-0 flex items-center justify-center shadow-xs">
+                          {user.avatar_url ? (
+                            <img
+                              src={getProxiedImageUrl(
+                                user.avatar_url,
+                                user.display_name || user.username,
+                                null,
+                                'w185',
+                                'person'
+                              )}
+                              alt={user.display_name || user.username}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <User className="w-4 h-4 text-white/85" />
+                          )}
                         </div>
-                        <div className="text-xs text-white/50 truncate">
-                          @{user.username}
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-white truncate">
+                            {user.display_name || user.username}
+                          </div>
+                          <div className="text-[10px] font-mono text-white/50 truncate">
+                            @{user.username}
+                          </div>
                         </div>
                       </div>
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-semibold bg-white/[0.10] border border-white/[0.16] text-white/80 shrink-0">
+                        {user.role === 'admin' ? 'Yönetici' : 'Profil'}
+                      </span>
                     </Link>
 
                     {/* Quick Profile Navigation for Mobile */}
-                    <div className="grid grid-cols-2 gap-1.5 py-1">
+                    <div className="grid grid-cols-2 gap-1.5">
                       <Link
                         href="/kutuphane"
                         prefetch={true}
@@ -1157,10 +1221,10 @@ export default function Navbar() {
                           triggerSound('click');
                           setMobileMenuOpen(false);
                         }}
-                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.04] text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.08]"
+                        className="flex items-center gap-2 px-2.5 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.08] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
                       >
-                        <Library className="w-3.5 h-3.5 text-sky-400" />
-                        <span>Kütüphanem</span>
+                        <Library className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                        <span className="truncate">Kütüphanem</span>
                       </Link>
                       <Link
                         href="/gecmis"
@@ -1169,10 +1233,10 @@ export default function Navbar() {
                           triggerSound('click');
                           setMobileMenuOpen(false);
                         }}
-                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.04] text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.08]"
+                        className="flex items-center gap-2 px-2.5 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.08] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
                       >
-                        <Clock className="w-3.5 h-3.5 text-sky-400" />
-                        <span>İzleme Geçmişi</span>
+                        <Clock className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                        <span className="truncate">Geçmişim</span>
                       </Link>
                       <Link
                         href="/listelerim"
@@ -1181,10 +1245,10 @@ export default function Navbar() {
                           triggerSound('click');
                           setMobileMenuOpen(false);
                         }}
-                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.04] text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.08]"
+                        className="flex items-center gap-2 px-2.5 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.08] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
                       >
-                        <FolderHeart className="w-3.5 h-3.5 text-sky-400" />
-                        <span>Özel Listelerim</span>
+                        <FolderHeart className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                        <span className="truncate">Listelerim</span>
                       </Link>
                       <Link
                         href="/ayarlar"
@@ -1193,10 +1257,10 @@ export default function Navbar() {
                           triggerSound('click');
                           setMobileMenuOpen(false);
                         }}
-                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.04] text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.08]"
+                        className="flex items-center gap-2 px-2.5 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.08] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
                       >
-                        <Settings className="w-3.5 h-3.5 text-sky-400" />
-                        <span>Ayarlar</span>
+                        <Settings className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                        <span className="truncate">Ayarlar</span>
                       </Link>
                     </div>
 
@@ -1206,9 +1270,9 @@ export default function Navbar() {
                         setMobileMenuOpen(false);
                         logout();
                       }}
-                      className="w-full flex items-center justify-center gap-2 min-h-[44px] rounded-xl text-xs font-semibold text-rose-300 hover:bg-rose-500/15 transition-colors cursor-pointer"
+                      className="w-full flex items-center justify-center gap-2 min-h-[38px] rounded-xl bg-rose-500/[0.10] hover:bg-rose-500/[0.18] border border-rose-400/20 text-xs font-semibold text-rose-200 transition-colors cursor-pointer"
                     >
-                      <LogOut className="w-4 h-4" />
+                      <LogOut className="w-3.5 h-3.5 text-rose-400" />
                       <span>Çıkış Yap</span>
                     </button>
                   </div>
@@ -1218,7 +1282,7 @@ export default function Navbar() {
                       setMobileMenuOpen(false);
                       setIsAuthModalOpen(true);
                     }}
-                    className="w-full min-h-[48px] rounded-2xl bg-white text-black font-bold text-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg transition-all"
+                    className="w-full min-h-[48px] rounded-2xl liquid-glass-active-pill text-white font-bold text-sm flex items-center justify-center gap-2 cursor-pointer transition-all hover:bg-white/25"
                   >
                     <LogIn className="w-4 h-4" />
                     <span>Giriş Yap / Kayıt Ol</span>
@@ -1238,11 +1302,11 @@ export default function Navbar() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="pointer-events-auto md:hidden fixed inset-0 z-50 bg-[#0a0a0c]/98 p-4 flex flex-col"
+            className="pointer-events-auto md:hidden fixed inset-0 z-50 bg-[#0b0c12]/88 backdrop-blur-2xl p-4 flex flex-col"
           >
             {/* Top Search Input Bar */}
             <div className="flex items-center gap-2.5 pb-3 border-b border-white/10">
-              <div className="flex-1 flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-white/10 border border-white/15 focus-within:border-sky-400">
+              <div className="flex-1 flex items-center gap-2.5 px-4 py-2.5 rounded-full glass-pill focus-within:border-white/40">
                 <Search className="w-4 h-4 text-white/60 shrink-0" />
                 <input
                   autoFocus

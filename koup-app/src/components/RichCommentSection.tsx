@@ -370,6 +370,7 @@ export default function RichCommentSection({
   const [reportDetails, setReportDetails] = useState('');
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const [reportCooldownSec, setReportCooldownSec] = useState<number>(0);
+  const [isRulesExpanded, setIsRulesExpanded] = useState(false);
 
   // Issue report rate-limit cooldown tracker
   useEffect(() => {
@@ -1930,15 +1931,40 @@ export default function RichCommentSection({
         </div>
       </div>
 
-      {/* KoUp Community Rules Warning Banner */}
-      <div className="mb-6 p-3.5 sm:p-4 rounded-2xl bg-amber-500/10 border border-amber-400/25 flex items-start gap-3 text-amber-200/90 text-xs leading-relaxed">
-        <ShieldAlert className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400 shrink-0 mt-0.5" />
-        <p>
-          <strong className="font-semibold text-amber-300">KoUp Topluluk Kuralları:</strong>{' '}
-          Aşırı küfür, hakaret ve nefret söylemi kesinlikle yasaktır. Tartışmalar saygı çerçevesinde yürütülmelidir. 
-          Gönderilen yorumlar sonradan düzenlenemez veya silinemez; lütfen paylaşmadan önce içeriğinizi kontrol ediniz. 
-          Kural ihlali durumunda hesap veya cihaz düzeyinde kalıcı kısıtlama uygulanır.
-        </p>
+      {/* KoUp Community Rules Warning Banner (Collapsible / Default Minimized) */}
+      <div className="mb-6 rounded-2xl bg-amber-500/10 border border-amber-400/25 overflow-hidden transition-all duration-200">
+        <button
+          type="button"
+          onClick={() => setIsRulesExpanded((prev) => !prev)}
+          className="w-full p-3 sm:py-3 sm:px-4 flex items-center justify-between gap-2.5 text-left cursor-pointer hover:bg-amber-500/15 transition-colors select-none"
+          aria-expanded={isRulesExpanded}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="text-xs font-semibold text-amber-300">
+              KoUp Topluluk Kuralları
+            </span>
+            <span className="text-[11px] text-amber-200/60 hidden sm:inline truncate">
+              · Saygı çerçevesi, spoiler ve yorum standartları
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0 text-amber-300/80 text-[11px] font-medium">
+            <span>{isRulesExpanded ? 'Gizle' : 'Kuralları Gör'}</span>
+            <ChevronDown
+              className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                isRulesExpanded ? 'rotate-180' : ''
+              }`}
+            />
+          </div>
+        </button>
+
+        {isRulesExpanded && (
+          <div className="px-3.5 pb-3.5 sm:px-4 sm:pb-4 pt-1 border-t border-amber-400/20 text-amber-200/90 text-xs leading-relaxed animate-in fade-in duration-150">
+            Aşırı küfür, hakaret ve nefret söylemi kesinlikle yasaktır. Tartışmalar saygı çerçevesinde yürütülmelidir. 
+            Gönderilen yorumlar sonradan düzenlenemez veya silinemez; lütfen paylaşmadan önce içeriğinizi kontrol ediniz. 
+            Kural ihlali durumunda hesap veya cihaz düzeyinde kalıcı kısıtlama uygulanır.
+          </div>
+        )}
       </div>
 
       {/* REQUIRE AUTHENTICATION GATE */}

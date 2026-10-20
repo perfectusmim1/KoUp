@@ -2325,6 +2325,15 @@ export default function NetflixPlayer({
           singleClickTimerRef.current = null;
         }
         lastTouchTapRef.current = { time: 0, x: 0 };
+
+        // Çift dokunmada arayüzü KESİNLİKLE kapalı tut
+        showOverlayRef.current = false;
+        setShowOverlay(false);
+        if (hideControlsTimer.current) {
+          clearTimeout(hideControlsTimer.current);
+          hideControlsTimer.current = null;
+        }
+
         if (relX < 0.38) {
           triggerMobileSeek('left');
         } else if (relX > 0.62) {
@@ -2337,19 +2346,36 @@ export default function NetflixPlayer({
 
       lastTouchTapRef.current = { time: now, x: relX };
 
-      // SIFIR GECİKME (ZERO-LAG TAP):
-      // Dokunulduğu anda UI bekletilmeden (setTimeout olmadan) 0ms anında açılır/kapanır
-      if (!showOverlayRef.current) {
-        showOverlayRef.current = true;
-        setShowOverlay(true);
-        scheduleHideOverlay();
-      } else {
-        showOverlayRef.current = false;
-        setShowOverlay(false);
-        if (hideControlsTimer.current) {
-          clearTimeout(hideControlsTimer.current);
-          hideControlsTimer.current = null;
+      // Kenar seek bölgelerine dokunulduğunda olası çift dokunmayı arayüzü açmadan yakala
+      const isSeekZone = relX < 0.38 || relX > 0.62;
+
+      const toggleControls = () => {
+        if (!showOverlayRef.current) {
+          showOverlayRef.current = true;
+          setShowOverlay(true);
+          scheduleHideOverlay();
+        } else {
+          showOverlayRef.current = false;
+          setShowOverlay(false);
+          if (hideControlsTimer.current) {
+            clearTimeout(hideControlsTimer.current);
+            hideControlsTimer.current = null;
+          }
         }
+      };
+
+      if (singleClickTimerRef.current) {
+        clearTimeout(singleClickTimerRef.current);
+        singleClickTimerRef.current = null;
+      }
+
+      if (isSeekZone && !showOverlayRef.current) {
+        singleClickTimerRef.current = setTimeout(() => {
+          singleClickTimerRef.current = null;
+          toggleControls();
+        }, 220);
+      } else {
+        toggleControls();
       }
     } else {
       // Desktop mouse: immediate play/pause, double-click toggles fullscreen
@@ -3021,33 +3047,9 @@ export default function NetflixPlayer({
                             <Unlock className="w-4 h-4 sm:w-5 sm:h-5" />
                           </button>
                         )}
-
-                        <button
-                          type="button"
-                          onClick={toggleFullscreen}
-                          aria-label={isFullscreen ? 'Tam Ekrandan Çık' : 'Tam Ekran'}
-                          className="p-1 text-white/90 hover:text-white active:scale-95 transition-transform cursor-pointer"
-                        >
-                          {isFullscreen ? (
-                            <X className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.2]" />
-                          ) : (
-                            <Maximize className="w-4 h-4 sm:w-5 sm:h-5" />
-                          )}
-                        </button>
                       </>
                     ) : (
-                      <div className="w-8 flex justify-end">
-                        {isFullscreen && (
-                          <button
-                            type="button"
-                            onClick={toggleFullscreen}
-                            aria-label="Tam Ekrandan Çık (Esc / F)"
-                            className="p-1.5 text-white/85 hover:text-white hover:scale-110 active:scale-95 transition-transform cursor-pointer"
-                          >
-                            <X className="w-6 h-6 stroke-[2.2]" />
-                          </button>
-                        )}
-                      </div>
+                      <div className="w-8 flex justify-end" />
                     )}
                   </div>
                 </div>
@@ -3109,10 +3111,10 @@ export default function NetflixPlayer({
                           seekBy(-10, true);
                         }}
                         aria-label="10 Saniye Geri Sar"
-                        className={`text-white hover:scale-110 active:scale-90 transition-[transform,opacity] duration-200 cursor-pointer p-1 sm:p-2 focus:outline-none ${
+                        className={`text-white hover:scale-110 active:scale-90 transition-opacity duration-150 ease-out cursor-pointer p-1 sm:p-2 focus:outline-none ${
                           showOverlay
-                            ? 'opacity-100 scale-100 pointer-events-auto'
-                            : 'opacity-0 scale-75 pointer-events-none'
+                            ? 'opacity-100 pointer-events-auto'
+                            : 'opacity-0 pointer-events-none'
                         }`}
                       >
                         <NetflixRewind10Icon
@@ -3131,10 +3133,10 @@ export default function NetflixPlayer({
                           togglePlayPause();
                         }}
                         aria-label={isPlaying ? 'Duraklat' : 'Oynat'}
-                        className={`text-white hover:scale-110 active:scale-90 transition-[transform,opacity] duration-200 cursor-pointer p-1 sm:p-2 focus:outline-none flex items-center justify-center ${
+                        className={`text-white hover:scale-110 active:scale-90 transition-opacity duration-150 ease-out cursor-pointer p-1 sm:p-2 focus:outline-none flex items-center justify-center ${
                           showOverlay
-                            ? 'opacity-100 scale-100 pointer-events-auto'
-                            : 'opacity-0 scale-75 pointer-events-none'
+                            ? 'opacity-100 pointer-events-auto'
+                            : 'opacity-0 pointer-events-none'
                         }`}
                       >
                         {isPlaying ? (
@@ -3153,10 +3155,10 @@ export default function NetflixPlayer({
                           seekBy(10, true);
                         }}
                         aria-label="10 Saniye İleri Sar"
-                        className={`text-white hover:scale-110 active:scale-90 transition-[transform,opacity] duration-200 cursor-pointer p-1 sm:p-2 focus:outline-none ${
+                        className={`text-white hover:scale-110 active:scale-90 transition-opacity duration-150 ease-out cursor-pointer p-1 sm:p-2 focus:outline-none ${
                           showOverlay
-                            ? 'opacity-100 scale-100 pointer-events-auto'
-                            : 'opacity-0 scale-75 pointer-events-none'
+                            ? 'opacity-100 pointer-events-auto'
+                            : 'opacity-0 pointer-events-none'
                         }`}
                       >
                         <NetflixForward10Icon
@@ -3567,21 +3569,6 @@ export default function NetflixPlayer({
                               <span>Sonraki</span>
                             </button>
                           )}
-
-                          {/* Tam Ekran Butonu */}
-                          <button
-                            type="button"
-                            onClick={toggleFullscreen}
-                            aria-label={isFullscreen ? 'Tam Ekrandan Çık' : 'Tam Ekran'}
-                            className="flex items-center gap-1 py-1 text-xs font-medium text-white/90 hover:text-white active:scale-95 transition-transform cursor-pointer shrink-0"
-                          >
-                            {isFullscreen ? (
-                              <Minimize className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                            ) : (
-                              <Maximize className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                            )}
-                            <span>{isFullscreen ? 'Küçült' : 'Tam Ekran'}</span>
-                          </button>
                         </>
                       )}
                     </div>
@@ -3942,19 +3929,6 @@ export default function NetflixPlayer({
                             )}
                           </>
                         )}
-
-                        <button
-                          type="button"
-                          onClick={toggleFullscreen}
-                          aria-label={isFullscreen ? 'Tam Ekrandan Çık (F)' : 'Tam Ekran (F)'}
-                          className="text-white/90 hover:text-white hover:scale-110 active:scale-95 transition-transform cursor-pointer p-1 shrink-0"
-                        >
-                          {isFullscreen ? (
-                            <Minimize className="w-5 h-5" />
-                          ) : (
-                            <Maximize className="w-5 h-5" />
-                          )}
-                        </button>
                       </div>
                     </div>
                   )}
@@ -4383,40 +4357,40 @@ export default function NetflixPlayer({
 
                   if (isCurrentYouTube && !forceEmbedYouTube) {
                     return (
-                      <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-b from-zinc-950 via-[#140608] to-black p-3 sm:p-6 text-center select-none overflow-y-auto overflow-x-hidden no-scrollbar">
+                      <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-b from-zinc-950 via-[#140608] to-black p-2 sm:p-6 text-center select-none overflow-y-auto overflow-x-hidden no-scrollbar">
                         {/* Soft Ambient Aura */}
                         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-600/20 via-transparent to-transparent pointer-events-none" />
 
-                        <div className="relative z-10 max-w-lg mx-auto flex flex-col items-center gap-2.5 sm:gap-5 my-auto py-2">
-                          <div className="w-12 h-12 sm:w-20 sm:h-20 rounded-xl sm:rounded-2xl bg-red-600/15 border border-red-500/30 flex items-center justify-center shadow-[0_0_50px_rgba(239,68,68,0.25)] shrink-0">
-                            <svg className="w-6 h-6 sm:w-10 sm:h-10 fill-[#FF0000]" viewBox="0 0 24 24">
+                        <div className="relative z-10 max-w-md mx-auto flex flex-col items-center gap-1.5 sm:gap-4 my-auto py-1 px-2">
+                          <div className="w-8 h-8 sm:w-16 sm:h-16 rounded-lg sm:rounded-2xl bg-red-600/15 border border-red-500/30 flex items-center justify-center shadow-[0_0_30px_rgba(239,68,68,0.25)] shrink-0">
+                            <svg className="w-4 h-4 sm:w-8 sm:h-8 fill-[#FF0000]" viewBox="0 0 24 24">
                               <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
                             </svg>
                           </div>
 
-                          <div className="space-y-1 sm:space-y-2">
-                            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 text-[10px] sm:text-[11px] font-bold tracking-wider uppercase">
+                          <div className="space-y-0.5 sm:space-y-1.5 max-w-full">
+                            <div className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-3 sm:py-1 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 text-[9px] sm:text-[11px] font-bold tracking-wider uppercase">
                               YouTube Resmi Yayını
                             </div>
-                            <h2 className="text-base sm:text-xl md:text-2xl font-extrabold text-white tracking-tight leading-snug">
+                            <h2 className="text-xs sm:text-lg md:text-xl font-extrabold text-white tracking-tight leading-snug line-clamp-1">
                               {media?.title} · {currentSeason}. Sezon {currentEpisode}. Bölüm
                             </h2>
-                            <p className="text-[11px] sm:text-xs md:text-sm text-zinc-400 max-w-md leading-relaxed px-2 sm:px-0">
-                              Bu bölümün yayıncısı harici sitelerde gömülü oynatmayı kısıtladığı için doğrudan YouTube üzerinden yüksek kalitede izleyebilirsiniz.
+                            <p className="text-[10px] sm:text-xs text-zinc-400 max-w-sm leading-tight line-clamp-2 px-1">
+                              Bu bölümün yayıncısı harici sitelerde gömülü oynatmayı kısıtladığı için doğrudan YouTube üzerinden izleyebilirsiniz.
                             </p>
                           </div>
 
-                          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 pt-1 sm:pt-2">
+                          <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2.5 pt-0.5 sm:pt-1">
                             {ytWatchUrl && (
                               <a
                                 href={ytWatchUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-2 px-5 py-2.5 sm:px-7 sm:py-3.5 rounded-full bg-[#E50914] hover:bg-[#b80710] text-white font-bold text-xs sm:text-sm tracking-wide shadow-[0_0_35px_rgba(229,9,20,0.45)] hover:scale-105 active:scale-95 transition-[transform,background-color] duration-150 cursor-pointer"
+                                className="flex items-center gap-1.5 px-4 py-1.5 sm:px-6 sm:py-2.5 rounded-full bg-[#E50914] hover:bg-[#b80710] text-white font-bold text-[11px] sm:text-xs tracking-wide shadow-[0_0_25px_rgba(229,9,20,0.45)] hover:scale-105 active:scale-95 transition-[transform,background-color] duration-150 cursor-pointer"
                               >
-                                <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-white" />
+                                <Play className="w-3 h-3 sm:w-3.5 sm:h-3.5 fill-white" />
                                 <span>YouTube'da İzle</span>
-                                <ExternalLink className="w-3 h-3 sm:w-3.5 sm:h-3.5 opacity-80" />
+                                <ExternalLink className="w-2.5 h-2.5 sm:w-3 sm:h-3 opacity-80" />
                               </a>
                             )}
 
@@ -4427,9 +4401,9 @@ export default function NetflixPlayer({
                                   const nextIdx = filteredSources.findIndex((s) => nonYtSources.includes(s));
                                   if (nextIdx !== -1) setSelectedSourceIdx(nextIdx);
                                 }}
-                                className="flex items-center gap-1.5 px-3.5 py-2 sm:px-5 sm:py-3 rounded-full bg-white/15 hover:bg-white/25 text-white font-medium text-[11px] sm:text-xs border border-white/10 transition-colors duration-150 cursor-pointer"
+                                className="flex items-center gap-1 px-3 py-1.5 sm:px-4 sm:py-2 rounded-full bg-white/15 hover:bg-white/25 text-white font-medium text-[10px] sm:text-xs border border-white/10 transition-colors duration-150 cursor-pointer"
                               >
-                                <span>Alternatif Siteden İzle ({nonYtSources.length} Kaynak)</span>
+                                <span>Alternatif Kaynak ({nonYtSources.length})</span>
                               </button>
                             )}
                           </div>
@@ -4437,7 +4411,7 @@ export default function NetflixPlayer({
                           <button
                             type="button"
                             onClick={() => setForceEmbedYouTube(true)}
-                            className="text-[10px] sm:text-[11px] text-zinc-500 hover:text-zinc-300 underline underline-offset-4 transition-colors pt-0.5 sm:pt-1 cursor-pointer"
+                            className="text-[9px] sm:text-[10px] text-zinc-500 hover:text-zinc-300 underline underline-offset-4 transition-colors cursor-pointer"
                           >
                             Gömülü oynatıcıyı yine de açmayı dene
                           </button>

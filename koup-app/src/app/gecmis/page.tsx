@@ -139,7 +139,7 @@ export default function WatchHistoryPage() {
 
       {/* Filter and Search Bar */}
       <div className="rounded-3xl bg-[#0f0f11] p-4 sm:p-5 border border-white/[0.08] flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 no-scrollbar">
+        <div className="flex items-center gap-2 overflow-x-auto py-1.5 -my-1.5 px-0.5 no-scrollbar">
           {[
             { id: 'ALL' as const, label: `Tüm Geçmiş (${allHistoryItems.length})` },
             { id: 'in_progress' as const, label: 'Kaldığım Yerden Devam Et' },

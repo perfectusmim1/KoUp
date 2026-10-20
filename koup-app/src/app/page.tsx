@@ -477,6 +477,52 @@ export default function HomePage() {
 
   const activeHero = heroItems[heroIdx] || heroItems[0];
 
+  // Responsive Hero Images: PC gets widescreen landscape backdrop, mobile gets vertical portrait cover
+  const desktopHeroImage = useMemo(() => {
+    if (!activeHero) return '';
+    return getProxiedImageUrl(
+      activeHero.backdrop_image || activeHero.cover_image,
+      activeHero.cover_image,
+      activeHero.title,
+      'w1280'
+    );
+  }, [activeHero]);
+
+  const mobileHeroImage = useMemo(() => {
+    if (!activeHero) return '';
+    return getProxiedImageUrl(
+      activeHero.cover_image || activeHero.backdrop_image,
+      activeHero.backdrop_image,
+      activeHero.title,
+      'w780'
+    );
+  }, [activeHero]);
+
+  // Preload next hero slide image seamlessly
+  useEffect(() => {
+    if (!heroItems || heroItems.length <= 1) return;
+    const nextIdx = (heroIdx + 1) % heroItems.length;
+    const nextItem = heroItems[nextIdx];
+    if (!nextItem) return;
+
+    const imgToPreload = isDesktop
+      ? getProxiedImageUrl(nextItem.backdrop_image || nextItem.cover_image, nextItem.cover_image, nextItem.title, 'w1280')
+      : getProxiedImageUrl(nextItem.cover_image || nextItem.backdrop_image, nextItem.backdrop_image, nextItem.title, 'w780');
+
+    if (imgToPreload) {
+      const link = document.createElement('link');
+      link.rel = 'prefetch';
+      link.as = 'image';
+      link.href = imgToPreload;
+      document.head.appendChild(link);
+      return () => {
+        try {
+          document.head.removeChild(link);
+        } catch {}
+      };
+    }
+  }, [heroIdx, heroItems, isDesktop]);
+
   // Fetch trailer for active Hero vitrin after a smooth 150ms stabilization delay (PC / Desktop Only)
   useEffect(() => {
     setHeroTrailerYtId(null);
@@ -988,27 +1034,46 @@ export default function HomePage() {
       >
         {activeHero ? (
           <>
-            {/* Crossfading Widescreen Backdrop */}
+            {/* Crossfading Responsive Backdrop / Poster (PC: Landscape Backdrop, Mobile: Portrait Poster) */}
             <div className="absolute inset-0 w-full h-full overflow-hidden">
               <AnimatePresence mode="sync">
-                <motion.img
+                <motion.div
                   key={activeHero.id}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.45, ease: 'easeOut' }}
-                  src={getProxiedImageUrl(
-                    activeHero.backdrop_image || activeHero.cover_image,
-                    activeHero.cover_image,
-                    activeHero.title,
-                    'w1280'
-                  )}
-                  alt={activeHero.title}
-                  loading="eager"
-                  fetchPriority="high"
-                  decoding="async"
-                  className="absolute inset-0 w-full h-full object-cover object-center"
-                />
+                  className="absolute inset-0 w-full h-full"
+                >
+                  <picture className="w-full h-full block">
+                    {/* PC / Masaüstü (Geniş Ekran - 768px ve üzeri): Yatay / Yan Görsel (Backdrop) */}
+                    <source
+                      media="(min-width: 768px)"
+                      srcSet={desktopHeroImage}
+                    />
+                    {/* Mobil / Dikey Ekran (< 768px): Dik Görsel (Afiş / Cover) */}
+                    <img
+                      src={mobileHeroImage}
+                      alt={activeHero.title}
+                      loading="eager"
+                      fetchPriority="high"
+                      decoding="async"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (!target.dataset.triedFallback && activeHero.backdrop_image && activeHero.cover_image) {
+                          target.dataset.triedFallback = 'true';
+                          target.src = getProxiedImageUrl(
+                            activeHero.backdrop_image,
+                            null,
+                            activeHero.title,
+                            'w1280'
+                          );
+                        }
+                      }}
+                      className="w-full h-full object-cover object-top md:object-center"
+                    />
+                  </picture>
+                </motion.div>
               </AnimatePresence>
 
               {/* Dynamic 16:9 Cinema Hero Trailer Video (Netflix Style - PC / Desktop Only) */}
@@ -1034,7 +1099,7 @@ export default function HomePage() {
               <div className="absolute inset-0 cinema-vignette pointer-events-none z-10" />
 
               {/* 2. Soft Obsidian Bottom Gradient: Melts the bottom seamlessly into the #080808 background without hiding the lower video */}
-              <div className="absolute inset-x-0 bottom-0 h-44 sm:h-56 md:h-64 bg-gradient-to-t from-[#080808] via-[#080808]/70 via-25% to-transparent pointer-events-none z-10" />
+              <div className="absolute inset-x-0 bottom-0 h-60 sm:h-56 md:h-64 bg-gradient-to-t from-[#080808] via-[#080808]/80 via-30% to-transparent pointer-events-none z-10" />
 
               {/* 3. Left-edge text protection gradient: keeps typography legible while letting video & backdrop show through */}
               <div className="absolute inset-y-0 left-0 w-full sm:w-3/5 md:w-[46%] bg-gradient-to-r from-[#080808]/85 via-[#080808]/40 to-transparent pointer-events-none z-10" />
