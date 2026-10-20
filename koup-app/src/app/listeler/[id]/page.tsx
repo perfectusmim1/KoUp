@@ -1005,19 +1005,16 @@ export default function ListDetailPage({
                         triggerSound?.('click');
                         setEditVisibility('public');
                       }}
-                      className={`p-3.5 rounded-2xl border text-left cursor-pointer transition-colors ${
+                      className={`p-3 rounded-2xl border text-left cursor-pointer transition-colors ${
                         editVisibility === 'public'
                           ? 'bg-sky-500/15 border-sky-400 text-white shadow-[0_0_18px_rgba(41,151,255,0.22)]'
                           : 'bg-white/[0.04] border-white/10 text-white/60 hover:border-white/25 hover:text-white'
                       }`}
                     >
-                      <div className="text-xs font-bold flex items-center gap-1.5 mb-1">
+                      <div className="text-xs font-bold flex items-center gap-1.5">
                         <Globe className={`w-3.5 h-3.5 ${editVisibility === 'public' ? 'text-sky-400' : 'text-white/50'}`} />
                         <span>Herkese Açık</span>
                       </div>
-                      <p className="text-[11px] text-white/50">
-                        Topluluk listeler sayfasında ve profilinizde herkes görebilir.
-                      </p>
                     </button>
 
                     <button
@@ -1026,19 +1023,16 @@ export default function ListDetailPage({
                         triggerSound?.('click');
                         setEditVisibility('private');
                       }}
-                      className={`p-3.5 rounded-2xl border text-left cursor-pointer transition-colors ${
+                      className={`p-3 rounded-2xl border text-left cursor-pointer transition-colors ${
                         editVisibility === 'private'
                           ? 'bg-amber-500/15 border-amber-400 text-white shadow-[0_0_18px_rgba(245,158,11,0.22)]'
                           : 'bg-white/[0.04] border-white/10 text-white/60 hover:border-white/25 hover:text-white'
                       }`}
                     >
-                      <div className="text-xs font-bold flex items-center gap-1.5 mb-1">
+                      <div className="text-xs font-bold flex items-center gap-1.5">
                         <Lock className={`w-3.5 h-3.5 ${editVisibility === 'private' ? 'text-amber-400' : 'text-white/50'}`} />
                         <span>Gizli Liste</span>
                       </div>
-                      <p className="text-[11px] text-white/50">
-                        Yalnızca siz görebilir ve yönetebilirsiniz.
-                      </p>
                     </button>
                   </div>
                 </div>

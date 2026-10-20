@@ -14,6 +14,7 @@ import {
   Check,
   X,
 } from 'lucide-react';
+import { motion } from 'motion/react';
 import { supabase, MediaItem, getCountryFlag } from '@/lib/supabase';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 import CountryFlag from '@/components/CountryFlag';
@@ -23,7 +24,6 @@ import CustomSelect from '@/components/CustomSelect';
 import { cachedQuery, getCache, registerMediaItems } from '@/lib/cache';
 import { normalizeSearchQuery } from '@/lib/search';
 import { useDragScroll } from '@/hooks/useDragScroll';
-import { useDeferredMount } from '@/hooks/useDeferredMount';
 import { rankSearchResults } from '@/lib/searchRanking';
 
 const ITEMS_PER_PAGE = 36;
@@ -143,8 +143,6 @@ function DiscoverContent() {
   const [totalCount, setTotalCount] = useState<number>(24746);
   const [items, setItems] = useState<MediaItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const batch2 = useDeferredMount(1);
-  const batch3 = useDeferredMount(2);
 
   useEffect(() => {
     setIsMounted(true);
@@ -481,12 +479,23 @@ function DiscoverContent() {
                   setTypeFilter(ct.id);
                   setCurrentPage(1);
                 }}
-                className={`relative shrink-0 flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition-all duration-200 cursor-pointer ${
-                  active
-                    ? 'bg-white text-black font-bold shadow-[0_0_24px_rgba(255,255,255,0.4)]'
-                    : 'glass-pill text-white/75 hover:text-white'
+                className={`relative shrink-0 flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition-colors duration-200 cursor-pointer ${
+                  active ? 'text-black font-bold' : 'glass-pill text-white/75 hover:text-white'
                 }`}
               >
+                {active && (
+                  <motion.span
+                    layoutId="kesfet-type-active-pill"
+                    initial={false}
+                    transition={{
+                      type: 'spring',
+                      stiffness: 480,
+                      damping: 34,
+                      mass: 0.6,
+                    }}
+                    className="absolute inset-0 rounded-full bg-white shadow-[0_0_24px_rgba(255,255,255,0.4)]"
+                  />
+                )}
                 <Icon className="w-3.5 h-3.5 relative z-10" />
                 <span className="relative z-10">{ct.label}</span>
               </button>
@@ -558,37 +567,15 @@ function DiscoverContent() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3.5 sm:gap-4 pt-2.5 pb-6">
-          {items.slice(0, 12).map((item, idx) => (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3.5 sm:gap-4 pt-2.5 pb-6 [contain:layout_paint_style]">
+          {items.map((item, idx) => (
             <AccordionMediaCard
               key={item.id}
               item={item}
               fluidWidth={true}
-              priority={idx < 4}
+              priority={idx < 6}
             />
           ))}
-          {items.slice(12, 24).map((item, idx) =>
-            batch2.isMounted ? (
-              <AccordionMediaCard key={item.id} item={item} fluidWidth={true} />
-            ) : (
-              <div
-                key={item.id}
-                ref={idx === 0 ? batch2.ref : undefined}
-                className="aspect-[2/3] rounded-2xl bg-white/[0.03] border border-white/[0.06]"
-              />
-            )
-          )}
-          {items.slice(24, 36).map((item, idx) =>
-            batch3.isMounted ? (
-              <AccordionMediaCard key={item.id} item={item} fluidWidth={true} />
-            ) : (
-              <div
-                key={item.id}
-                ref={idx === 0 ? batch3.ref : undefined}
-                className="aspect-[2/3] rounded-2xl bg-white/[0.03] border border-white/[0.06]"
-              />
-            )
-          )}
         </div>
       )}
 

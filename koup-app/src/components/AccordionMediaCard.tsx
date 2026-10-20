@@ -153,8 +153,31 @@ export function preloadImage(url?: string | null, onDecoded?: () => void) {
   }
 }
 
-export function preloadMediaImages(_items?: (MediaItem | null | undefined)[]) {
-  // No-op on bulk row hover to prevent simultaneous image decode spikes during card expansion
+export function preloadMediaImages(items?: (MediaItem | null | undefined)[]) {
+  if (typeof window === 'undefined' || !items || items.length === 0) return;
+  if (window.innerWidth < 768) return;
+  // Stagger-preload the first 6 visible cards' w780 backdrops during idle time
+  // (pauses automatically while any card is actively expanding)
+  const slice = items.slice(0, 6);
+  slice.forEach((item, idx) => {
+    if (!item?.backdrop_image || item.backdrop_image === item.cover_image) return;
+    const mediaType: 'tv' | 'movie' = item.content_type === 'film' ? 'movie' : 'tv';
+    const url = getProxiedImageUrl(
+      item.backdrop_image,
+      item.cover_image,
+      item.title,
+      'w780',
+      'banner',
+      item.tmdb_id,
+      mediaType
+    );
+    if (!url || preloadedImageCache.has(url)) return;
+    setTimeout(() => {
+      if (activeCardId === null && !isDragLocked) {
+        preloadImage(url);
+      }
+    }, idx * 90);
+  });
 }
 
 function getCleanOverview(overview?: string | null): string | null {
@@ -388,18 +411,15 @@ function AccordionMediaCardComponent({
       });
     }
 
-    // Trigger instant rating upgrade if missing
-    if (!upgradedRating && !ratingInfo) {
-      fetchTrailerAndUpgradeImages();
-    }
-
     if (fluidWidth) {
       setIsHovered(true);
+      if (!upgradedRating && !ratingInfo) {
+        fetchTrailerAndUpgradeImages();
+      }
     } else {
       requestAccordionHover(
         cardKey,
         () => {
-          setMountBackdrop(true);
           setIsHovered(true);
         },
         () => {
@@ -410,9 +430,12 @@ function AccordionMediaCardComponent({
       );
     }
 
-    // Defer route prefetch, episode cache & trailer start until AFTER the width expansion finishes!
+    // Defer route prefetch, episode cache & trailer start until AFTER the 260ms width expansion finishes!
     if (prefetchTimerRef.current) clearTimeout(prefetchTimerRef.current);
     prefetchTimerRef.current = setTimeout(() => {
+      if (!upgradedRating && !ratingInfo) {
+        fetchTrailerAndUpgradeImages();
+      }
       if (!prefetchRef.current) {
         prefetchRef.current = true;
         router.prefetch(`/seri/${item.slug}`);
@@ -426,23 +449,24 @@ function AccordionMediaCardComponent({
       }
     }, 420);
 
-    // Start trailer playback immediately in the background on hover (hidden & strictly muted behind poster)
+    // Start trailer playback 380ms after hover (once card width expansion animation is 100% finished)
     if (!fluidWidth && autoCardTrailerEnabled) {
       if (trailerTimerRef.current) clearTimeout(trailerTimerRef.current);
-      const cached = clientTrailerCache.get(item.id);
-      if (cached?.youtubeId) {
-        setIsTrailerReady(false);
-        setShowTrailerVideo(true);
-      } else {
-        // Fast 90ms intent check so rapid swiping doesn't trigger unneeded fetches
-        trailerTimerRef.current = setTimeout(async () => {
-          const res = await fetchTrailerAndUpgradeImages();
-          if (res?.youtubeId && activeCardId === cardKey) {
+      trailerTimerRef.current = setTimeout(async () => {
+        const cached = clientTrailerCache.get(item.id);
+        if (cached?.youtubeId) {
+          if (activeCardId === cardKey) {
             setIsTrailerReady(false);
             setShowTrailerVideo(true);
           }
-        }, 90);
-      }
+          return;
+        }
+        const res = await fetchTrailerAndUpgradeImages();
+        if (res?.youtubeId && activeCardId === cardKey) {
+          setIsTrailerReady(false);
+          setShowTrailerVideo(true);
+        }
+      }, 380);
     }
   }, [
     cardKey,
@@ -635,7 +659,7 @@ function AccordionMediaCardComponent({
               }
             }}
             className={`absolute inset-0 w-full h-full object-cover object-center pointer-events-none select-none transition-opacity duration-250 ${
-              isAccordionExpanded && (hasDistinctBackdrop || isTrailerReady)
+              isAccordionExpanded && ((hasDistinctBackdrop && mountBackdrop) || isTrailerReady)
                 ? 'opacity-0'
                 : 'opacity-100'
             }`}
@@ -686,12 +710,17 @@ function AccordionMediaCardComponent({
         }`}
       />
 
+      {/* Top Scrim Shadow so Country Flag & Star Rating are always crystal-clear on bright posters */}
+      <div
+        className="absolute top-0 inset-x-0 h-16 bg-gradient-to-b from-black/80 via-black/35 to-transparent pointer-events-none z-10"
+      />
+
       {/* Top Badges: Country Flag, Content Type, Ratings & Top-Right Trailer Mute Button */}
       <div className="absolute top-2.5 left-2.5 right-2.5 z-20 flex items-center justify-between gap-1.5 pointer-events-none">
         <div className="flex items-center gap-1.5">
           {countryCode ? (
-            <span className="inline-flex items-center justify-center select-none">
-              <CountryFlag code={countryCode} size="md" className="rounded-[3px] drop-shadow-sm" />
+            <span className="inline-flex items-center justify-center filter drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)] drop-shadow-[0_1px_3px_rgba(0,0,0,1)] select-none">
+              <CountryFlag code={countryCode} size="md" className="rounded-[3px] drop-shadow-[0_2px_5px_rgba(0,0,0,0.95)]" />
             </span>
           ) : null}
 
@@ -726,18 +755,18 @@ function AccordionMediaCardComponent({
           )}
 
           {ratingInfo && (
-            <div className="inline-flex items-center gap-1 select-none">
+            <div className="inline-flex items-center gap-1 filter drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)] drop-shadow-[0_1px_3px_rgba(0,0,0,1)] select-none">
               {ratingInfo.isKoUp ? (
                 <>
                   <span className="text-[9px] font-black tracking-wider uppercase text-sky-400 bg-sky-500/20 px-1 py-0.5 rounded border border-sky-400/30">
                     KoUp
                   </span>
-                  <Star className="w-3.5 h-3.5 fill-sky-400 text-sky-400 shrink-0" />
+                  <Star className="w-3.5 h-3.5 fill-sky-400 text-sky-400 shrink-0 drop-shadow-[0_0_6px_rgba(56,189,248,0.8)]" />
                 </>
               ) : (
-                <Star className="w-3.5 h-3.5 fill-[#f5c518] text-[#f5c518] shrink-0" />
+                <Star className="w-3.5 h-3.5 fill-[#f5c518] text-[#f5c518] shrink-0 drop-shadow-[0_1px_4px_rgba(0,0,0,0.95)]" />
               )}
-              <span className="font-extrabold text-[12px] sm:text-[13px] text-white tracking-tight [text-shadow:0_1px_3px_rgba(0,0,0,0.95)] leading-none">
+              <span className="font-extrabold text-[12px] sm:text-[13px] text-white tracking-tight drop-shadow-[0_2px_6px_rgba(0,0,0,1)] [text-shadow:0_2px_6px_rgba(0,0,0,1),0_1px_3px_rgba(0,0,0,0.95)] leading-none">
                 {ratingInfo.score}
               </span>
             </div>
@@ -785,13 +814,13 @@ function AccordionMediaCardComponent({
           {displayTitle}
         </h3>
 
-        {/* Expanded Widescreen Details: Pre-mounted CSS transition (zero DOM mount jitter) */}
+        {/* Expanded Widescreen Details: Fixed target width so text/genres never re-wrap across 30 frames during card width expansion */}
         {!fluidWidth && (
           <div
-            className={`overflow-hidden transition-all duration-500 ease-out ${
+            className={`w-[296px] sm:w-[342px] md:w-[392px] overflow-hidden transition-[max-height,opacity,transform] duration-300 ease-out ${
               isAccordionExpanded && !isTrailerActive
                 ? 'max-h-[76px] opacity-100 translate-y-0 mt-1.5'
-                : 'max-h-0 opacity-0 translate-y-3 mt-0 pointer-events-none'
+                : 'max-h-0 opacity-0 translate-y-2 mt-0 pointer-events-none'
             }`}
           >
             {genres.length > 0 && (
@@ -816,7 +845,7 @@ function AccordionMediaCardComponent({
 
         {/* Quick Action Drawer on Hover */}
         <div
-          className={`overflow-hidden pointer-events-auto transition-all duration-200 ${
+          className={`overflow-hidden pointer-events-auto transition-[max-height,opacity,transform] duration-200 ease-out ${
             isHovered
               ? 'max-h-[44px] opacity-100 translate-y-0'
               : 'max-h-0 opacity-0 translate-y-1'

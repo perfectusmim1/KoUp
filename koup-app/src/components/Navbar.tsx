@@ -292,6 +292,18 @@ export default function Navbar() {
   }, [mobileMenuOpen]);
 
   const [optimisticPath, setOptimisticPath] = useState<string | null>(null);
+  const navLinkRefs = useRef<Record<string, HTMLAnchorElement | null>>({});
+  const [navPillStyle, setNavPillStyle] = useState<{
+    x: number;
+    w: number;
+    visible: boolean;
+    ready: boolean;
+  }>({
+    x: 0,
+    w: 0,
+    visible: false,
+    ready: false,
+  });
 
   // Sync optimistic navigation path with router pathname
   useEffect(() => {
@@ -303,6 +315,31 @@ export default function Navbar() {
     if (href === '/') return activePath === '/';
     return activePath === href || activePath.startsWith(`${href}/`);
   };
+
+  useEffect(() => {
+    const updatePill = () => {
+      const activeItem = NAV_LINKS.find((item) => {
+        if (item.href === '/') return activePath === '/';
+        return activePath === item.href || activePath.startsWith(`${item.href}/`);
+      });
+      if (!activeItem) {
+        setNavPillStyle((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+        return;
+      }
+      const el = navLinkRefs.current[activeItem.href];
+      if (el && el.offsetWidth > 0) {
+        setNavPillStyle((prev) => ({
+          x: el.offsetLeft,
+          w: el.offsetWidth,
+          visible: true,
+          ready: prev.visible,
+        }));
+      }
+    };
+    updatePill();
+    window.addEventListener('resize', updatePill);
+    return () => window.removeEventListener('resize', updatePill);
+  }, [activePath]);
 
   return (
     <>
@@ -363,12 +400,28 @@ export default function Navbar() {
       </div>
 
       {/* CENTER: Floating Glassy Pill Menu (Exact ui/code.html style + Fluid Spring Pill Slider) */}
-      <nav className="pointer-events-auto hidden lg:flex items-center shrink-0 p-1.5 rounded-full glass-pill-dark shadow-[0_16px_40px_rgba(0,0,0,0.75)]">
+      <nav className="relative pointer-events-auto hidden lg:flex items-center shrink-0 p-1.5 rounded-full glass-pill-dark shadow-[0_16px_40px_rgba(0,0,0,0.75)]">
+        <span
+          aria-hidden="true"
+          style={{
+            transform: `translate3d(${navPillStyle.x}px, 0, 0)`,
+            width: `${navPillStyle.w}px`,
+            opacity: navPillStyle.visible ? 1 : 0,
+          }}
+          className={`pointer-events-none absolute top-1.5 bottom-1.5 left-0 rounded-full bg-white shadow-[0_0_24px_rgba(255,255,255,0.4)] ${
+            navPillStyle.ready
+              ? 'transition-[transform,width,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]'
+              : 'transition-opacity duration-150'
+          }`}
+        />
         {NAV_LINKS.map((item) => {
           const active = isNavActive(item.href);
           return (
             <Link
               key={item.href}
+              ref={(node) => {
+                navLinkRefs.current[item.href] = node;
+              }}
               href={item.href}
               prefetch={true}
               onMouseDown={(e) => {
@@ -381,16 +434,14 @@ export default function Navbar() {
                 setOptimisticPath(item.href);
                 triggerSound('click');
               }}
-              onMouseEnter={() => triggerSound('hover')}
+              onMouseEnter={() => {
+                triggerSound('hover');
+                router.prefetch(item.href);
+              }}
               className={`relative px-5 py-2 rounded-full text-[13px] font-semibold transition-colors duration-200 select-none ${
                 active ? 'text-black' : 'text-white/70 hover:text-white'
               }`}
             >
-              {active && (
-                <span
-                  className="absolute inset-0 rounded-full bg-white shadow-[0_0_24px_rgba(255,255,255,0.4)] transition-opacity duration-200"
-                />
-              )}
               <span className="relative z-10">{item.label}</span>
             </Link>
           );

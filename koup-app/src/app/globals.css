@@ -449,26 +449,37 @@ textarea.koup-input {
     linear-gradient(to right, rgba(8, 8, 8, 0.7) 0%, rgba(8, 8, 8, 0.3) 25%, transparent 50%);
 }
 
-/* Clean Specular Card Hover (No Garish Blue-Orange Gradient) */
+/* Clean Specular Card Hover (Optimized: No scale/expansion, zero layout shifts, high fps) */
 .koup-projection-card {
   position: relative;
   background-color: #0f0f11;
   border: 1px solid rgba(255, 255, 255, 0.08);
+  contain: layout paint style;
   transition:
-    transform 420ms var(--spring-apple),
-    box-shadow 420ms var(--spring-apple),
-    border-color 320ms var(--spring-apple),
-    background-color 320ms ease;
+    border-color 200ms ease,
+    background-color 200ms ease,
+    box-shadow 200ms ease;
 }
 
 .koup-projection-card:hover {
-  will-change: transform;
-  transform: translateY(-4px) scale(1.015);
   background-color: #16161a;
   border-color: rgba(255, 255, 255, 0.26);
   box-shadow:
-    0 24px 48px -12px rgba(0, 0, 0, 0.9),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    0 12px 28px -8px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.koup-projection-card:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+  background-color: #16161a;
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
+/* Strict size+layout+paint+style containment on horizontal accordion rails
+   so expanding a card's width from 200px to 420px never invalidates layout outside that single row. */
+.koup-accordion-rail {
+  contain: strict;
 }
 
 /* Accordion Poster-to-Widescreen Expansion — Fluid Width + Sibling Slide (GPU Optimized) */
@@ -486,6 +497,8 @@ textarea.koup-input {
 
 .koup-accordion-card:hover {
   border-color: rgba(255, 255, 255, 0.32);
+  will-change: width;
+  transform: translateZ(0);
 }
 
 /* Subtle Cinema Focus Ring */
@@ -890,6 +903,23 @@ input[type="range"].netflix-volume-slider:focus-visible {
   animation: ambientWave 7.5s ease-in-out infinite;
   will-change: transform, opacity;
 }
+
+/* Fast, silky-smooth page entry transition (ends at transform: none so fixed modals aren't trapped) */
+@keyframes koupPageEnter {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.koup-page-transition {
+  animation: koupPageEnter calc(200ms * (1 - var(--animation-reduced))) cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
 
 
 

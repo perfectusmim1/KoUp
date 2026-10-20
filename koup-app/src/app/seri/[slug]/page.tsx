@@ -1489,34 +1489,41 @@ export default function SeriesDetailPage({
             <div className="flex items-center justify-between sm:justify-end gap-3">
               {/* Season Selector Tabs if Multi-Season with Fluid Sliding Pill */}
               {seasons.length > 1 && (
-                <div className="flex items-center gap-1 p-1 rounded-full glass-pill-dark border border-white/12 overflow-x-auto no-scrollbar">
-                  {seasons.map((s) => {
-                    const active = selectedSeason === s;
-                    return (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => {
-                          if (selectedSeason === s) return;
-                          React.startTransition(() => {
-                            setSelectedSeason(s);
-                            setShowAllEpisodes(false);
-                          });
-                        }}
-                        className={`relative px-4 py-1.5 rounded-full text-xs font-bold font-mono transition-colors duration-200 cursor-pointer select-none ${
-                          active
-                            ? 'text-white'
-                            : 'text-white/70 hover:text-white'
-                        }`}
-                      >
-                        {active && (
-                          <span className="absolute inset-0 rounded-full bg-[#2997ff] shadow-[0_0_16px_rgba(41,151,255,0.45)] transition-opacity duration-200" />
-                        )}
-                        <span className="relative z-10">{s}. Sezon</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <LayoutGroup id="seri-season-selector-group">
+                  <div className="flex items-center gap-1 p-1 rounded-full glass-pill-dark border border-white/12 overflow-x-auto no-scrollbar">
+                    {seasons.map((s) => {
+                      const active = selectedSeason === s;
+                      return (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => {
+                            if (selectedSeason === s) return;
+                            React.startTransition(() => {
+                              setSelectedSeason(s);
+                              setShowAllEpisodes(false);
+                            });
+                          }}
+                          className={`relative px-4 py-1.5 rounded-full text-xs font-bold font-mono transition-colors duration-200 cursor-pointer select-none ${
+                            active
+                              ? 'text-white'
+                              : 'text-white/70 hover:text-white'
+                          }`}
+                        >
+                          {active && (
+                            <motion.span
+                              layoutId="seri-season-active-pill"
+                              initial={false}
+                              transition={{ type: 'spring', stiffness: 500, damping: 35, mass: 0.5 }}
+                              className="absolute inset-0 rounded-full bg-[#2997ff] shadow-[0_0_16px_rgba(41,151,255,0.45)]"
+                            />
+                          )}
+                          <span className="relative z-10">{s}. Sezon</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </LayoutGroup>
               )}
             </div>
           </div>
@@ -1760,7 +1767,7 @@ export default function SeriesDetailPage({
 
             <div
               ref={relatedScrollRef}
-              className="flex items-center gap-4 overflow-x-auto no-scrollbar py-2 [-webkit-overflow-scrolling:touch]"
+              className="koup-accordion-rail flex items-center gap-4 overflow-x-auto overflow-y-hidden w-full h-[266px] sm:h-[296px] md:h-[324px] no-scrollbar py-2 [-webkit-overflow-scrolling:touch]"
             >
               {relatedMedia.map((item) => (
                 <AccordionMediaCard key={item.id} item={item} />

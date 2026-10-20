@@ -77,3 +77,22 @@ Bu kurallar, projede yapılan tüm kodlama, tasarım, refaktör ve mimari geliş
   - **Kod Yazımı & Refaktör:** Alt ajana kod yazdırılacak veya dosya düzenlenecekse kesinlikle en az `flash` modeli tercih edilecektir.
   - **Araştırma & Basit İşler:** `flash_lite` modeli **asla** kod yazımı için kullanılmayacak; yalnızca salt okuma, log/dosya tarama, basit web aramaları ve bilgi toplama gibi aşırı basit/hafif işlerde kullanılacaktır.
 
+---
+
+## 11. Arşiv Düzeltmeleri, R2 ve Supabase Eşitleme Zorunluluğu (Full Storage Sync)
+- **Arşivde Düzeltme Sonrası Tam Senkronizasyon Zinciri:** Yerel arşiv veritabanında (`webdrama_archive.db`) yapılan herhangi bir veri düzeltme, temizleme (purge), kaynak onarımı (heal), tekilleştirme (merge) veya yeni ekleme işlemi sonrasında yalnızca yerel veritabanında kalmak kesinlikle yasaktır. Yapılan değişiklikler anında depolama ve bulut katmanlarına yansıtılacaktır:
+  - **Cloudflare R2 Veritabanı Dosyası (DB Sync):** Yerel SQLite veritabanı WAL checkpoint yapıldıktan sonra R2 üzerindeki `db/webdrama_archive.db` konumuna eksiksiz yüklenmeli/yedeklenmelidir (`backup_db_to_r2()`).
+  - **Cloudflare R2 Arşiv Klasörleri & JSON Paketleri (Bundles Sync):** Güncellenen veya etkilenen yapımların kaynak JSON paketleri (`r2_bundles/sources/{id}.json`) yeniden dışa aktarılmalı (`scripts/export_sources_bundles.py`) ve R2'ye yüklenmelidir (`scripts/upload_to_r2.py`).
+  - **Supabase Senkronizasyonu (Supabase Sync):** Arşiv üzerinde yapılan değişiklikler aynı şekilde Supabase tarafına da yansıtılmalı (`media`/`dramas`, `episodes` tabloları güncellenmeli veya `scripts/sync_all_episodes_to_supabase.py` ile eşitlenmelidir).
+- **Asla Desenkronize / Eksik Bırakmama:** Bir arşiv düzeltmesi yapıldığında yerel DB, R2 veritabanı, R2 arşiv paketleri ve Supabase olmak üzere zincirin tüm halkaları güncellenmeden görev "tamamlandı" sayılmayacaktır.
+
+---
+
+## 12. Geliştirme Sunucusu ve Derleyici Bütünlüğü (Dev Server & Build Lifecycle)
+- **Çalışan Sunucu Varken Build Çakışmasını Engelleme:** Next.js geliştirme sunucusu (`npm run dev`) çalışırken aynı anda `npm run build` veya benzeri derleme araçları çalıştırıldığında `.next` önbelleği ve derleme dosyaları bozulmakta, sunucu kilitlenmekte veya runtime hatalarına düşmektedir.
+- **Kapatıp Tekrar Başlatma Kuralı:** Eğer site/geliştirme sunucusu çalışır durumdayken `npm run build` veya tam derleyici araçları kullanılacaksa:
+  1. Çalışan geliştirme sunucusu **önce güvenli bir şekilde kapatılacaktır**.
+  2. Derleme / build işlemi tamamlanıp hatalar kontrol edilecektir.
+  3. İşlem bittikten sonra sunucu **tekrar temiz bir şekilde başlatılacaktır**.
+- **Hafif Tip Kontrolü Alternatifi:** Yalnızca TypeScript ve sözdizimi hatalarını derleme önbelleğini bozmadan kontrol etmek için öncelikle `npx tsc --noEmit` tercih edilebilir; tam `npm run build` çalıştırıldığında ise sunucuyu kapatıp yeniden başlatma adımı tavizsiz uygulanacaktır.
+

@@ -1404,7 +1404,7 @@ export default function HomePage() {
               </div>
             }
             placeholder={
-              <div className="w-full h-[240px] sm:h-[320px] md:h-[380px] my-3 rounded-2xl sm:rounded-3xl bg-white/[0.03] border border-white/[0.06]" />
+              <div className="w-full h-[240px] sm:h-[320px] md:h-[380px] my-3" />
             }
           >
             <div
@@ -1489,7 +1489,7 @@ export default function HomePage() {
               </div>
             }
             placeholder={
-              <div className="w-full h-[240px] sm:h-[320px] md:h-[380px] my-3 rounded-2xl sm:rounded-3xl bg-white/[0.03] border border-white/[0.06]" />
+              <div className="w-full h-[240px] sm:h-[320px] md:h-[380px] my-3" />
             }
           >
             <div
@@ -1589,7 +1589,7 @@ export default function HomePage() {
                 </div>
 
                 {!isMounted ? (
-                  <div className="w-full min-h-[320px] sm:min-h-[360px] rounded-2xl bg-white/[0.03] border border-white/[0.06]" />
+                  <div className="w-full min-h-[320px] sm:min-h-[360px]" />
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
                     {topPeople.slice(0, 12).map((person, idx) => {
@@ -1707,7 +1707,7 @@ export default function HomePage() {
               </div>
             }
             placeholder={
-              <div className="w-full min-h-[260px] sm:min-h-[280px] rounded-2xl sm:rounded-3xl bg-white/[0.03] border border-white/[0.06]" />
+              <div className="w-full min-h-[260px] sm:min-h-[280px]" />
             }
           >
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
@@ -1716,7 +1716,7 @@ export default function HomePage() {
                   key={post.slug}
                   href={`/magazin/${post.slug}`}
                  
-                  className="koup-projection-card rounded-2xl overflow-hidden flex flex-col justify-between group"
+                  className="koup-projection-card rounded-2xl overflow-hidden flex flex-col justify-between group [content-visibility:auto] [contain-intrinsic-size:auto_280px]"
                 >
                   <div className="relative h-40 sm:h-44 overflow-hidden">
                     <img
@@ -1795,7 +1795,7 @@ const DeferredSection = memo(function DeferredSection({
   const { isMounted, ref } = useDeferredMount(order);
 
   return (
-    <section ref={ref} className={className}>
+    <section ref={ref} className={`${className} [contain:layout_paint_style]`}>
       {typeof children === 'function' ? (
         children(isMounted)
       ) : (
@@ -1831,7 +1831,7 @@ const AccordionRow = memo(function AccordionRow({
   if (!items || items.length === 0) return null;
 
   return (
-    <section ref={deferredRef} className="w-full px-4 sm:px-6 md:px-14 max-w-full">
+    <section ref={deferredRef} className="w-full px-4 sm:px-6 md:px-14 max-w-full [contain:layout_paint_style]">
       <div className="flex flex-col gap-1 mb-4 sm:mb-5">
         <div className="flex items-center justify-between min-h-[22px]">
           {subtitle ? (
@@ -1893,7 +1893,7 @@ const AccordionRow = memo(function AccordionRow({
       </div>
 
       {!isMounted ? (
-        <div className="w-full min-h-[300px] sm:min-h-[330px] my-2 sm:my-3 rounded-3xl bg-white/[0.03] border border-white/[0.06]" />
+        <div className="w-full h-[266px] sm:h-[296px] md:h-[324px]" />
       ) : (
         <div
           ref={scrollRef}
@@ -1901,7 +1901,7 @@ const AccordionRow = memo(function AccordionRow({
             preloadMediaImages(items);
           }}
           onMouseLeave={() => requestAccordionHover(null)}
-          className="flex items-center gap-3 sm:gap-4 overflow-x-auto min-h-[300px] sm:min-h-[330px] py-2 sm:py-3 no-scrollbar [-webkit-overflow-scrolling:touch] max-w-full"
+          className="koup-accordion-rail flex items-center gap-3 sm:gap-4 overflow-x-auto overflow-y-hidden w-full h-[266px] sm:h-[296px] md:h-[324px] py-2 sm:py-3 no-scrollbar [-webkit-overflow-scrolling:touch] max-w-full"
         >
           {items.map((item, idx) => (
             <AccordionMediaCard key={item.id} item={item} priority={priority && idx < 4} />

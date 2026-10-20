@@ -76,15 +76,8 @@ class IdleQueueScheduler {
     };
 
     if (typeof window !== 'undefined') {
-      const hasUrgent = this.queue.some((t) => t.urgent && !t.isDone());
-      if (hasUrgent) {
-        // Mount at most 1 urgent section per animation frame so fast scrolling never batches multiple rails
-        this.rafId = window.requestAnimationFrame(runTask);
-      } else if (typeof window.requestIdleCallback === 'function') {
-        this.idleId = window.requestIdleCallback(runTask, { timeout: 600 });
-      } else {
-        this.idleId = window.setTimeout(runTask, 50);
-      }
+      // Mount 1 section per animation frame so below-the-fold rails populate invisibly before the user ever sees a placeholder
+      this.rafId = window.requestAnimationFrame(runTask);
     }
   }
 
@@ -170,9 +163,9 @@ export interface DeferredMountResult {
  * 1-per-frame urgent rAF queue.
  */
 export function useDeferredMount(order: number): DeferredMountResult {
-  // If order is <= 0 (e.g. the first content rail), mount immediately during SSR and initial hydration.
-  const [isMounted, setIsMounted] = useState(() => order <= 0);
-  const isMountedRef = useRef(order <= 0);
+  // Mount the first 3 sections (order <= 2) immediately so the entire viewport is 100% populated on frame 1 with zero skeleton pop-in.
+  const [isMounted, setIsMounted] = useState(() => order <= 2);
+  const isMountedRef = useRef(order <= 2);
   const domNodeRef = useRef<HTMLElement | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const taskRef = useRef<ScheduledTask | null>(null);
@@ -203,7 +196,7 @@ export function useDeferredMount(order: number): DeferredMountResult {
   const setRef = useCallback(
     (node: HTMLElement | null) => {
       domNodeRef.current = node;
-      if (order <= 0 || isMountedRef.current) return;
+      if (order <= 2 || isMountedRef.current) return;
 
       if (node && typeof IntersectionObserver !== 'undefined') {
         if (!observerRef.current) {
@@ -224,7 +217,7 @@ export function useDeferredMount(order: number): DeferredMountResult {
                 }
               }
             },
-            { rootMargin: '250px 0px' }
+            { rootMargin: '400px 0px' }
           );
         }
         observerRef.current.observe(node);
@@ -234,7 +227,7 @@ export function useDeferredMount(order: number): DeferredMountResult {
   );
 
   useEffect(() => {
-    if (order <= 0 || isMounted) return;
+    if (order <= 2 || isMounted) return;
 
     // Fast-path: Back navigation / saved scroll position restores everything immediately
     if (isScrollRestorationActive()) {
