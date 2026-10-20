@@ -251,13 +251,13 @@ export default function HomePage() {
 
   useEffect(() => {
     // 1. Instantly populate on client mount from memory or localStorage cache for 0ms transition
-    const cached = memoryHomeBundle || getCache<HomeDataBundle>('home_catalog_bundle_v6');
+    const cached = memoryHomeBundle || getCache<HomeDataBundle>('home_catalog_bundle_v7');
     if (cached) {
       applyBundle(cached);
     }
 
     async function fetchHomeData() {
-      const homeData = await cachedQuery('home_catalog_bundle_v6', 300_000, async () => {
+      const homeData = await cachedQuery('home_catalog_bundle_v7', 300_000, async () => {
         const [
           featRes,
           kdRes,
