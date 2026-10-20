@@ -310,9 +310,9 @@ export default function MagazineHubPage() {
                         ? 'KoreZin'
                         : 'AsyaMag'}
                     </span>
-                    {(featuredPost.categories || ['Magazin']).map((c) => (
+                    {Array.from(new Set((featuredPost.categories || ['Magazin']).map((c) => (c || '').trim()).filter(Boolean))).map((c, idx) => (
                       <span
-                        key={c}
+                        key={`${c}-${idx}`}
                         className={`px-3 py-1 rounded-full text-xs font-mono font-bold border ${getMagCategoryColor(c)}`}
                       >
                         {c}
@@ -376,9 +376,9 @@ export default function MagazineHubPage() {
                       >
                         {isKoreZin ? 'KoreZin' : 'AsyaMag'}
                       </span>
-                      {(post.categories || ['Magazin']).slice(0, 2).map((cat) => (
+                      {Array.from(new Set((post.categories || ['Magazin']).map((c) => (c || '').trim()).filter(Boolean))).slice(0, 2).map((cat, idx) => (
                         <span
-                          key={cat}
+                          key={`${cat}-${idx}`}
                           className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border ${getMagCategoryColor(cat)}`}
                         >
                           {cat}

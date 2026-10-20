@@ -281,7 +281,9 @@ function AccordionMediaCardComponent({
 
   const countryCode = item.country_code || item.country;
   const cleanOverview = getCleanOverview(item.overview);
-  const genres = Array.isArray(item.categories) ? item.categories.slice(0, 3) : [];
+  const genres = Array.isArray(item.categories)
+    ? Array.from(new Set(item.categories.map((c) => (c || '').trim()).filter(Boolean))).slice(0, 3)
+    : [];
 
   // Puan gösterimi: 50+ kullanıcı oy verdiyse KoUp puanı, aksi halde IMDb/AniList/MDL fallback
   const ratingInfo = (() => {
@@ -825,9 +827,9 @@ function AccordionMediaCardComponent({
           >
             {genres.length > 0 && (
               <div className="flex flex-wrap items-center gap-1 mb-1">
-                {genres.map((g) => (
+                {genres.map((g, idx) => (
                   <span
-                    key={g}
+                    key={`${g}-${idx}`}
                     className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white/12 text-white/90 border border-white/15"
                   >
                     {g}

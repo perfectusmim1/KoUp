@@ -311,9 +311,9 @@ export default function MagazineArticlePage({
             {isKoreZin ? 'KoreZin' : 'AsyaMag'}
           </span>
 
-          {(post.categories || ['Magazin']).map((cat) => (
+          {Array.from(new Set((post.categories || ['Magazin']).map((c) => (c || '').trim()).filter(Boolean))).map((cat, idx) => (
             <span
-              key={cat}
+              key={`${cat}-${idx}`}
               className={`px-3 py-1 rounded-full text-xs font-mono font-bold border ${getMagCategoryColor(cat)}`}
             >
               {cat}
@@ -376,9 +376,9 @@ export default function MagazineArticlePage({
         {/* Tags & Like Bar */}
         <div className="pt-6 border-t border-white/10 flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap gap-1.5">
-            {(post.tags || []).slice(0, 8).map((tag) => (
+            {Array.from(new Set((post.tags || []).map((t) => (t || '').trim()).filter(Boolean))).slice(0, 8).map((tag, idx) => (
               <span
-                key={tag}
+                key={`${tag}-${idx}`}
                 className="px-2.5 py-1 rounded-full text-[11px] bg-white/[0.06] text-white/70 border border-white/10"
               >
                 #{tag}

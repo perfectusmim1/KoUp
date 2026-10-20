@@ -786,7 +786,12 @@ export default function SeriesDetailPage({
     media.backdrop_image || media.cover_image,
     media.cover_image,
     media.title,
-    'original'
+    'original',
+    'banner',
+    media.tmdb_id,
+    media.content_type === 'film' ? 'movie' : 'tv',
+    media.release_year,
+    media.native_title
   );
   const posterSrc = getProxiedImageUrl(
     media.cover_image,
@@ -1012,12 +1017,12 @@ export default function SeriesDetailPage({
                 )}
               </div>
 
-              {/* Categories */}
+              {/* Categories (Tekilleştirilmiş & Eşsiz Anahtarlı) */}
               {media.categories && media.categories.length > 0 && (
                 <div className="flex flex-wrap justify-center md:justify-start gap-1.5 pt-0.5">
-                  {media.categories.map((cat) => (
+                  {Array.from(new Set(media.categories.map((c) => (c || '').trim()).filter(Boolean))).map((cat, idx) => (
                     <Link
-                      key={cat}
+                      key={`${cat}-${idx}`}
                       href={`/kesfet?category=${encodeURIComponent(cat)}`}
                       className="text-xs px-2.5 py-1 rounded-lg bg-white/[0.06] text-white/80 border border-white/10 hover:bg-white/15 hover:text-white hover:border-white/30 transition-colors cursor-pointer"
                       aria-label={`${cat} kategorisindeki yapımları keşfet`}
