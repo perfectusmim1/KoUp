@@ -65,38 +65,54 @@ const TOUR_STAGES: TourStageDef[] = [
     name: '1. Anasayfa: Vitrin & Seri Kartları',
     routeHint: '/',
     fractionStart: 0.0,
-    fractionEnd: 0.22,
+    fractionEnd: 0.16,
     icon: '🏠',
   },
   {
     id: 'explore',
     name: '2. Keşfet: Medya Grid & Filtreler',
     routeHint: '/kesfet',
-    fractionStart: 0.22,
-    fractionEnd: 0.44,
+    fractionStart: 0.16,
+    fractionEnd: 0.30,
     icon: '🧭',
   },
   {
     id: 'series',
-    name: '3. Seri Detay: Bölüm Rayı & Oynatıcı',
+    name: '3. Seri Detay: Bilgiler & Bölümler',
     routeHint: '/seri',
-    fractionStart: 0.44,
-    fractionEnd: 0.68,
+    fractionStart: 0.30,
+    fractionEnd: 0.44,
     icon: '🎬',
   },
   {
+    id: 'watch',
+    name: '4. Canlı Oynatıcı: Bölüm İzleme & İleri Sarma',
+    routeHint: '/seri',
+    fractionStart: 0.44,
+    fractionEnd: 0.60,
+    icon: '▶️',
+  },
+  {
+    id: 'actor',
+    name: '5. Oyuncu Detay: Biyografi & Filmografi',
+    routeHint: '/oyuncu',
+    fractionStart: 0.60,
+    fractionEnd: 0.74,
+    icon: '🌟',
+  },
+  {
     id: 'calendar',
-    name: '4. Yayın Takvimi: Canlı Akış & Günler',
+    name: '6. Yayın Takvimi: Canlı Akış & Günler',
     routeHint: '/takvim',
-    fractionStart: 0.68,
-    fractionEnd: 0.84,
+    fractionStart: 0.74,
+    fractionEnd: 0.86,
     icon: '📅',
   },
   {
     id: 'stress',
-    name: '5. Final: Yüksek Hızlı GPU Stres Testi',
+    name: '7. Final: Tam Sayfa Yüksek Hızlı GPU Stres Testi',
     routeHint: '/',
-    fractionStart: 0.84,
+    fractionStart: 0.86,
     fractionEnd: 1.0,
     icon: '🔥',
   },
@@ -153,6 +169,7 @@ export default function BenchmarkRunner() {
   const currentStageIndexRef = useRef<number>(-1);
   const stageTransitionCooldownRef = useRef<number>(0);
   const dynamicSeriesPathRef = useRef<string>('/seri/squid-game');
+  const dynamicActorPathRef = useRef<string>('/oyuncu/song-kang');
   const lastInteractionTimeRef = useRef<number>(0);
   const lastSwipeTriggerTimeRef = useRef<number>(0);
   const activeHoveredElementRef = useRef<HTMLElement | null>(null);
@@ -174,6 +191,24 @@ export default function BenchmarkRunner() {
       }
     }
     return '/seri/squid-game';
+  }, []);
+
+  // Helper to discover actual actor slugs from cast members on the page
+  const discoverActorPath = useCallback(() => {
+    if (typeof document === 'undefined') return '/oyuncu/song-kang';
+    const anchors = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href^="/oyuncu/"]'));
+    for (const a of anchors) {
+      const href = a.getAttribute('href');
+      if (
+        href &&
+        href !== '/oyuncular' &&
+        !href.endsWith('/') &&
+        href.split('/').length === 3
+      ) {
+        return href;
+      }
+    }
+    return '/oyuncu/song-kang';
   }, []);
 
   // Stop benchmark cleanly & calculate final metrics
@@ -229,24 +264,24 @@ export default function BenchmarkRunner() {
     const jankCount = frames.filter((d) => d > 33.33).length;
     const jankPercent = (jankCount / totalFrames) * 100;
 
-    // Grade evaluation with Target 90+ FPS in mind
+    // Grade evaluation with Target 120+ FPS in mind
     let grade: 'S' | 'A' | 'B' | 'C' | 'D' = 'A';
-    let gradeTitle = 'Çok Akıcı (Stabil Performans)';
+    let gradeTitle = 'Yüksek Akıcılık (90+ FPS Stabil)';
     let gradeColor = 'text-sky-400 border-sky-400/40 bg-sky-500/15 shadow-[0_0_20px_rgba(56,189,248,0.25)]';
 
-    if (minFps >= 90 && avgFps >= 95) {
+    if (minFps >= 120 && avgFps >= 120) {
       grade = 'S';
-      gradeTitle = 'Ultra Akıcılık (Hedef 90+ FPS Sabit)';
+      gradeTitle = 'Ultra Akıcılık (Hedef 120+ FPS Sabit)';
       gradeColor =
         'text-emerald-400 border-emerald-400/40 bg-emerald-500/15 shadow-[0_0_25px_rgba(16,185,129,0.35)]';
-    } else if (avgFps >= 75 && minFps >= 60) {
+    } else if (minFps >= 90 && avgFps >= 100) {
       grade = 'A';
-      gradeTitle = 'Yüksek Akıcılık (60+ FPS Stabil)';
+      gradeTitle = 'Yüksek Akıcılık (90+ FPS Stabil)';
       gradeColor =
         'text-sky-400 border-sky-400/40 bg-sky-500/15 shadow-[0_0_20px_rgba(56,189,248,0.25)]';
-    } else if (avgFps >= 50) {
+    } else if (avgFps >= 75 && minFps >= 60) {
       grade = 'B';
-      gradeTitle = 'Kabul Edilebilir Akıcılık';
+      gradeTitle = 'İyi Akıcılık (60+ FPS)';
       gradeColor =
         'text-amber-400 border-amber-400/40 bg-amber-500/15 shadow-[0_0_20px_rgba(251,191,36,0.25)]';
     } else if (avgFps >= 30) {
@@ -263,7 +298,7 @@ export default function BenchmarkRunner() {
 
     const pagesList = Array.from(testedPagesSetRef.current);
     if (pagesList.length === 0) {
-      pagesList.push('Anasayfa (/)', 'Keşfet (/kesfet)', 'Seri Detayı', 'Takvim (/takvim)');
+      pagesList.push('Anasayfa (/)', 'Keşfet (/kesfet)', 'Seri Detayı', 'Bölüm İzleme', 'Oyuncu Profili', 'Takvim (/takvim)');
     }
 
     const report: BenchmarkResults = {
@@ -331,6 +366,11 @@ export default function BenchmarkRunner() {
         let dest = stage.routeHint;
         if (stage.id === 'series') {
           dest = dynamicSeriesPathRef.current || '/seri/squid-game';
+        } else if (stage.id === 'watch') {
+          const sPath = dynamicSeriesPathRef.current || '/seri/squid-game';
+          dest = `${sPath}/1`;
+        } else if (stage.id === 'actor') {
+          dest = dynamicActorPathRef.current || '/oyuncu/song-kang';
         }
 
         // Navigate client-side via Next.js router
@@ -366,12 +406,18 @@ export default function BenchmarkRunner() {
         const found = discoverSeriesPath();
         if (found) dynamicSeriesPathRef.current = found;
       }
+      if (activeIndex >= 2 && activeIndex <= 4) {
+        const foundActor = discoverActorPath();
+        if (foundActor) dynamicActorPathRef.current = foundActor;
+      }
 
       // Prefetch upcoming routes in background for instant 0ms transitions
       if (activeIndex === 0) router.prefetch('/kesfet');
       if (activeIndex === 1) router.prefetch(dynamicSeriesPathRef.current || '/seri/squid-game');
-      if (activeIndex === 2) router.prefetch('/takvim');
-      if (activeIndex === 3) router.prefetch('/');
+      if (activeIndex === 2) router.prefetch(`${dynamicSeriesPathRef.current || '/seri/squid-game'}/1`);
+      if (activeIndex === 3) router.prefetch(dynamicActorPathRef.current || '/oyuncu/song-kang');
+      if (activeIndex === 4) router.prefetch('/takvim');
+      if (activeIndex === 5) router.prefetch('/');
 
       // 3. Local progress within this stage (0.0 to 1.0)
       const stageSpan = stage.fractionEnd - stage.fractionStart;
@@ -382,8 +428,8 @@ export default function BenchmarkRunner() {
 
       // STAGE SPECIFIC BEHAVIORS:
       if (stage.id === 'stress') {
-        // --- STAGE 5: FINAL HIGH-SPEED STRESS TEST ---
-        setActiveStageText('🔥 5. Aşama: Tam Sayfa Yüksek Hızlı GPU Stres & Jank Tespiti...');
+        // --- STAGE 7: FINAL HIGH-SPEED STRESS TEST ---
+        setActiveStageText('🔥 7. Final: Tam Sayfa Yüksek Hızlı GPU Stres & Jank Tespiti...');
         const cyclePeriod = 2200;
         const isScrollingDown = Math.floor(elapsed / cyclePeriod) % 2 === 0;
 
@@ -399,6 +445,122 @@ export default function BenchmarkRunner() {
           visible: true,
           label: isScrollingDown ? '⚡ Yüksek Hızlı Aşağı İniş' : '⚡ Yüksek Hızlı Yukarı Çıkış',
         });
+      } else if (stage.id === 'watch') {
+        // --- STAGE 4: CANLI OYNATICI & BÖLÜM İZLEME ---
+        if (localP < 0.35) {
+          // Oynatıcı Kontrolü & İleri Sarma
+          setActiveStageText('▶️ Canlı Oynatıcı: Oynatma & +10s İleri Sarma...');
+          const playerEl = document.querySelector<HTMLElement>('#koup-player-container, video, iframe');
+          if (playerEl) {
+            const r = playerEl.getBoundingClientRect();
+            setVirtualPointerPos({
+              x: r.left + r.width * 0.5,
+              y: r.top + r.height * 0.5,
+              visible: true,
+              label: isMobile ? '📱 Oynatıcı Dokunuldu (+10s)' : '▶️ Oynatıcı +10s İleri Sar',
+            });
+
+            // Trigger forward 10s or play tap every 1.5s
+            if (Math.floor(elapsed / 1500) !== Math.floor((elapsed - 100) / 1500)) {
+              const fwdBtn = document.querySelector<HTMLElement>(
+                'button svg[class*="NetflixForward10"], button[aria-label*="İleri"], button[aria-label*="ileri"]'
+              );
+              if (fwdBtn) {
+                (fwdBtn.closest('button') || fwdBtn).click();
+              } else {
+                playerEl.click?.();
+              }
+            }
+          }
+        } else if (localP < 0.70) {
+          // Yorumlar & Reaksiyon Akışı
+          setActiveStageText('💬 Bölüm Reaksiyonları & Yorum Akışı Taraması...');
+          window.scrollBy({ top: isMobile ? 18 : 26, behavior: 'auto' });
+
+          setVirtualPointerPos({
+            x: window.innerWidth * 0.5,
+            y: window.innerHeight * 0.65,
+            visible: true,
+            label: '💬 Yorumlar & Reaksiyonlar',
+          });
+
+          const reactBtn = document.querySelector<HTMLButtonElement>(
+            'button[aria-label="Efsane"], button[aria-label="Ağlattı"], button[aria-label="Şok"]'
+          );
+          if (reactBtn && Math.floor(elapsed / 2200) !== Math.floor((elapsed - 100) / 2200)) {
+            reactBtn.click();
+          }
+        } else {
+          // Ray & Yukarı Çıkış
+          setActiveStageText('↔️ Bölüm Listesi & Hızlı Navigasyon...');
+          const epRails = Array.from(document.querySelectorAll<HTMLElement>('.overflow-y-auto, .overflow-x-auto'));
+          if (epRails.length > 0) {
+            epRails[0].scrollBy({ top: isMobile ? 80 : 120, behavior: 'smooth' });
+          }
+          window.scrollBy({ top: -fastScrollDelta * 1.5, behavior: 'auto' });
+          setVirtualPointerPos({
+            x: window.innerWidth * 0.5,
+            y: window.innerHeight * 0.35,
+            visible: true,
+            label: '⚡ Üst Panele Dönüş',
+          });
+        }
+      } else if (stage.id === 'actor') {
+        // --- STAGE 5: OYUNCU DETAY PROFİLİ ---
+        if (localP < 0.35) {
+          // Biyografi Taraması
+          setActiveStageText('🌟 Oyuncu Profili: Biyografi & Filmografi Rayı...');
+          window.scrollBy({ top: fastScrollDelta, behavior: 'auto' });
+
+          setVirtualPointerPos({
+            x: window.innerWidth * (isMobile ? 0.5 : 0.6),
+            y: window.innerHeight * 0.55,
+            visible: true,
+            label: '🌟 Oyuncu Biyografisi',
+          });
+        } else if (localP < 0.70) {
+          // Filmografi Rayı Yatay Kaydırma
+          setActiveStageText('↔️ Filmografi Rayı Yatay Kaydırma (Accordion Kartlar)...');
+          const rails = Array.from(
+            document.querySelectorAll<HTMLElement>('.overflow-x-auto, [data-drag-scroll]')
+          );
+          if (rails.length > 0) {
+            const rail = rails[0];
+            const swipeDirection = Math.floor(elapsed / 1200) % 2 === 0 ? 1 : -1;
+
+            if (now - lastSwipeTriggerTimeRef.current > 1100) {
+              lastSwipeTriggerTimeRef.current = now;
+              rail.scrollBy({
+                left: swipeDirection * (isMobile ? 320 : 480),
+                behavior: 'smooth',
+              });
+            }
+
+            const r = rail.getBoundingClientRect();
+            setVirtualPointerPos({
+              x: Math.max(
+                50,
+                Math.min(window.innerWidth - 50, r.left + r.width * 0.5 + swipeDirection * 100)
+              ),
+              y: r.top + r.height * 0.5,
+              visible: true,
+              label: isMobile ? '📱 Filmografi Swipe' : '↔️ Filmografi Rayı',
+            });
+          } else {
+            window.scrollBy({ top: fastScrollDelta, behavior: 'auto' });
+          }
+        } else {
+          // Rol Arkadaşları & Magazin
+          setActiveStageText('👥 Rol Arkadaşları & Magazin Haberleri Taraması...');
+          window.scrollBy({ top: fastScrollDelta * 1.4, behavior: 'auto' });
+
+          setVirtualPointerPos({
+            x: window.innerWidth * 0.5,
+            y: window.innerHeight * 0.75,
+            visible: true,
+            label: '👥 Rol Arkadaşları & Magazin',
+          });
+        }
       } else if (localP < 0.32) {
         // --- PHASE A: RAPID SWEEP DOWNWARDS ---
         setActiveStageText(`${stage.icon} ${stage.name}: Hızlı Aşağı Kaydırma...`);
@@ -676,7 +838,7 @@ Toplam İşlenen Kare: ${results.totalFrames.toLocaleString()} kare
 
 --- PERFORMANS & STABİLİTE DEĞERLERİ ---
 • Ortalama FPS: ${results.avgFps} FPS
-• Minimum FPS (En Düşük Dip): ${results.minFps} FPS  [Hedef: >=90 FPS ${results.minFps >= 90 ? 'BAŞARILI' : 'OPTİMİZASYON DEVAM'}]
+• Minimum FPS (En Düşük Dip): ${results.minFps} FPS  [Hedef: >=120 FPS ${results.minFps >= 120 ? 'BAŞARILI' : 'OPTİMİZASYON DEVAM'}]
 • Maksimum FPS: ${results.maxFps} FPS
 • FPS Stabilite Skoru: %${results.stabilityPercent}
 • %1 Low FPS (En Kötü %1): ${results.onePercentLowFps} FPS
@@ -767,7 +929,7 @@ Toplam İşlenen Kare: ${results.totalFrames.toLocaleString()} kare
                     <span>Min:</span>
                     <strong
                       className={`font-bold ${
-                        currentMinFps >= 90 ? 'text-emerald-300' : 'text-amber-300'
+                        currentMinFps >= 120 ? 'text-emerald-300' : 'text-amber-300'
                       }`}
                     >
                       {currentMinFps} FPS
@@ -901,7 +1063,7 @@ Toplam İşlenen Kare: ${results.totalFrames.toLocaleString()} kare
                   <div>
                     <h3 className="font-extrabold text-white text-base">KoUp Benchmark & FPS Testi</h3>
                     <p className="text-[11px] text-white/50">
-                      Hedef: 90+ FPS Min Değer & Stabilite Grafiği
+                      Hedef: 120+ FPS Min Değer & Stabilite Grafiği
                     </p>
                   </div>
                 </div>
@@ -1098,19 +1260,21 @@ Toplam İşlenen Kare: ${results.totalFrames.toLocaleString()} kare
                     <span className="text-[10px] font-mono text-white/40 uppercase">Minimum FPS</span>
                     <span
                       className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
-                        results.minFps >= 90
+                        results.minFps >= 120
                           ? 'bg-emerald-500/20 text-emerald-300'
+                          : results.minFps >= 90
+                          ? 'bg-sky-500/20 text-sky-300'
                           : 'bg-amber-500/20 text-amber-300'
                       }`}
                     >
-                      Hedef ≥90
+                      Hedef ≥120
                     </span>
                   </div>
                   <div
                     className={`text-xl sm:text-2xl font-black font-mono ${
-                      results.minFps >= 90
+                      results.minFps >= 120
                         ? 'text-emerald-400'
-                        : results.minFps >= 60
+                        : results.minFps >= 90
                         ? 'text-sky-400'
                         : 'text-amber-400'
                     }`}
@@ -1163,7 +1327,7 @@ Toplam İşlenen Kare: ${results.totalFrames.toLocaleString()} kare
                     </div>
                     <div className="flex items-center gap-3 text-[10px]">
                       <span className="flex items-center gap-1 text-emerald-400 font-bold">
-                        <span className="w-2.5 h-0.5 bg-emerald-400 inline-block" /> Hedef: 90+ FPS
+                        <span className="w-2.5 h-0.5 bg-emerald-400 inline-block" /> Hedef: 120+ FPS
                       </span>
                       <span className="text-white/40">Tepe: {results.maxFps} FPS</span>
                     </div>
@@ -1184,12 +1348,12 @@ Toplam İşlenen Kare: ${results.totalFrames.toLocaleString()} kare
                         </linearGradient>
                       </defs>
 
-                      {/* 90 FPS Target Reference Line */}
+                      {/* 120 FPS Target Reference Line */}
                       <line
                         x1="0"
-                        y1={100 - (90 / 144) * 100}
+                        y1={100 - (120 / 144) * 100}
                         x2={results.fpsHistory.length * 6}
-                        y2={100 - (90 / 144) * 100}
+                        y2={100 - (120 / 144) * 100}
                         stroke="#10b981"
                         strokeDasharray="4 4"
                         strokeWidth="1"

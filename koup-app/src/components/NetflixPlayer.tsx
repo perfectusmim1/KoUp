@@ -823,20 +823,17 @@ export default function NetflixPlayer({
     const ctx = canvas.getContext('2d', { willReadFrequently: false });
     if (!ctx) return;
 
-    let animFrame: number;
-    let lastSample = 0;
     let isInitialFrame = true;
+    let timerId: NodeJS.Timeout | null = null;
+    let isCancelled = false;
 
-    const sample = (now: number) => {
-      // Throttle sampling to ~300ms (pause when tab is hidden or paused)
-      if (typeof document !== 'undefined' && document.hidden) {
-        animFrame = requestAnimationFrame(sample);
-        return;
-      }
-      if (now - lastSample >= 300) {
-        lastSample = now;
-        const v = videoRef.current;
-        if (v && v.readyState >= 2 && !v.paused) {
+    const sampleFrame = () => {
+      if (isCancelled) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
+      const v = videoRef.current;
+      if (v && v.readyState >= 2 && !v.paused) {
+        requestAnimationFrame(() => {
+          if (isCancelled) return;
           try {
             if (isInitialFrame) {
               ctx.globalAlpha = 1.0;
@@ -849,20 +846,22 @@ export default function NetflixPlayer({
               ctx.drawImage(v, 0, 0, 32, 18);
             }
           } catch {}
-        }
+        });
       }
-      animFrame = requestAnimationFrame(sample);
     };
+
+    timerId = setInterval(sampleFrame, 350);
 
     const handleSeeked = () => {
       isInitialFrame = true;
+      sampleFrame();
     };
     const vEl = videoRef.current;
     vEl?.addEventListener('seeked', handleSeeked);
 
-    animFrame = requestAnimationFrame(sample);
     return () => {
-      cancelAnimationFrame(animFrame);
+      isCancelled = true;
+      if (timerId) clearInterval(timerId);
       vEl?.removeEventListener('seeked', handleSeeked);
     };
   }, [ambientLightingEnabled, isPlaying, isFullscreen, isTrailerMode]);
@@ -2372,13 +2371,14 @@ export default function NetflixPlayer({
               ? '-top-12 sm:-top-16 -bottom-16 sm:-bottom-20 -left-6 sm:-left-12 -right-6 sm:-right-12'
               : '-top-12 sm:-top-16 -bottom-16 sm:-bottom-20 -left-6 sm:-left-12 -right-6 lg:-right-[320px] xl:-right-[340px]'
           }`}
-          style={{ opacity: isPlaying ? 0.9 : 0.4 }}
+          style={{ opacity: isPlaying ? 0.9 : 0.4, transform: 'translateZ(0)', backfaceVisibility: 'hidden' }}
         >
           {/* Real-time ambient canvas sampled directly from active video with wave animation */}
           <canvas
             ref={ambientCanvasRef}
             width={32}
             height={18}
+            style={{ transform: 'translateZ(0)', backfaceVisibility: 'hidden' }}
             className="w-full h-full object-cover filter blur-[28px] sm:blur-[44px] md:blur-[56px] scale-[1.05] saturate-[1.25] brightness-[1.05] rounded-[24px]"
           />
 

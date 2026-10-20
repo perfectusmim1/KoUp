@@ -2556,7 +2556,7 @@ export default function RichCommentSection({
           rootComments.map((root) => {
             const replies = repliesByRoot[root.id] || [];
             return (
-              <div key={root.id} className="space-y-2.5 [content-visibility:auto] [contain-intrinsic-size:auto_140px]">
+              <div key={root.id} className="space-y-2.5">
                 {renderCommentCard(root, false)}
                 {replies.length > 0 && (
                   <div className="ml-4 sm:ml-10 pl-3 sm:pl-5 border-l-2 border-white/10 space-y-2.5 mt-2">

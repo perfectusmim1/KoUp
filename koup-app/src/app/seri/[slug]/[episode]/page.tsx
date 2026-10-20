@@ -894,12 +894,16 @@ export default function EpisodeWatchPage({
 
   return (
     <div className="min-h-screen pb-32 text-white relative overflow-hidden bg-[#060608] pt-28 sm:pt-32 transition-[padding,background-color] duration-300">
-      {/* Dynamic Ambient Lighting Diffused Across Site Background */}
-      <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden">
+      {/* Dynamic Ambient Lighting Diffused Across Site Background (GPU Layer Promoted) */}
+      <div
+        style={{ transform: 'translateZ(0)', backfaceVisibility: 'hidden' }}
+        className="fixed inset-0 pointer-events-none -z-10 overflow-hidden"
+      >
         <img
           src={getProxiedImageUrl(media.backdrop_image || media.cover_image, media.title)}
           alt=""
           aria-hidden="true"
+          style={{ transform: 'translateZ(0)', backfaceVisibility: 'hidden' }}
           className="w-full h-full object-cover filter blur-[120px] scale-125 transition-opacity duration-700 opacity-35 brightness-105 saturate-140"
         />
         <div className="absolute inset-0 bg-gradient-to-b from-[#060608]/50 via-[#060608]/85 to-[#060608] transition-colors duration-700" />

@@ -691,7 +691,7 @@ export default function PersonDetailPage({
               <Link
                 key={peer.id}
                 href={`/oyuncu/${peer.slug}`}
-                className="p-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/20 transition-colors flex flex-col items-center text-center group relative cursor-pointer [content-visibility:auto] [contain-intrinsic-size:auto_140px]"
+                className="p-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/20 transition-colors flex flex-col items-center text-center group relative cursor-pointer"
               >
                 <div className="w-16 h-16 rounded-full overflow-hidden border border-white/15 group-hover:border-white/30 transition-colors mb-2 shadow-md shrink-0">
                   <img
@@ -747,7 +747,7 @@ export default function PersonDetailPage({
               <Link
                 key={post.slug || post.id}
                 href={`/magazin/${post.slug}`}
-                className="group rounded-2xl overflow-hidden bg-[#121216] border border-white/10 hover:border-white/30 transition-colors flex flex-col justify-between shadow-xl cursor-pointer [content-visibility:auto] [contain-intrinsic-size:auto_260px]"
+                className="group rounded-2xl overflow-hidden bg-[#121216] border border-white/10 hover:border-white/30 transition-colors flex flex-col justify-between shadow-xl cursor-pointer"
               >
                 <div className="relative aspect-[16/9] w-full overflow-hidden bg-black/40">
                   {post.featured_image ? (
