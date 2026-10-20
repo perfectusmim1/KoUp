@@ -218,6 +218,14 @@ img {
   border: 1px solid rgba(255, 255, 255, 0.14);
 }
 
+/* Zero-Lag Instant Native Search Focus (Fires on exact mousedown / focus frame) */
+.navbar-search-bar:focus-within {
+  background-color: #121318 !important;
+  border-color: rgba(255, 255, 255, 0.32) !important;
+  box-shadow: 0 0 16px rgba(255, 255, 255, 0.12) !important;
+  width: 18rem !important;
+}
+
 @media (hover: hover) and (pointer: fine) {
   button.glass-pill:hover,
   a.glass-pill:hover,

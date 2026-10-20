@@ -69,6 +69,100 @@ function getNavTypeBadgeClass(contentType?: string, countryCode?: string): strin
   return 'badge-type badge-global';
 }
 
+function NavbarNotificationThumbnail({
+  notification,
+  CatIcon,
+  catColor,
+}: {
+  notification: any;
+  CatIcon: any;
+  catColor: string;
+}) {
+  const [imageError, setImageError] = useState(false);
+  const link = notification.linkUrl || notification.link_url;
+
+  let rawImg: string | null = notification.imageUrl || notification.image_url || null;
+
+  if (!rawImg) {
+    if (notification.type === 'episode' || (link && link.startsWith('/seri/'))) {
+      const title = notification.title?.includes('•')
+        ? notification.title.split('•')[0].trim()
+        : (notification.title || '').trim();
+      if (title) {
+        rawImg = getProxiedImageUrl(null, title, null, 'w185', 'media');
+      }
+    } else if (notification.type === 'actor' || (link && link.startsWith('/oyuncu/'))) {
+      const name = notification.title?.includes('•')
+        ? notification.title.split('•')[0].trim()
+        : (notification.title || '').trim();
+      if (name) {
+        rawImg = getProxiedImageUrl(null, name, null, 'w185', 'person');
+      }
+    }
+  } else {
+    rawImg = getProxiedImageUrl(
+      rawImg,
+      notification.title,
+      null,
+      'w185',
+      notification.type === 'actor' ? 'person' : 'media'
+    );
+  }
+
+  if (imageError || !rawImg) {
+    return (
+      <div
+        className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 mt-0.5 ${catColor}`}
+      >
+        <CatIcon className="w-4 h-4" />
+      </div>
+    );
+  }
+
+  if (notification.type === 'episode' || (link && link.startsWith('/seri/'))) {
+    return (
+      <div className="relative w-9 aspect-[2/3] rounded-lg overflow-hidden border border-white/15 bg-[#121216] shrink-0 shadow-sm mt-0.5">
+        <img
+          src={rawImg}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onError={() => setImageError(true)}
+          className="w-full h-full object-cover"
+        />
+      </div>
+    );
+  }
+
+  if (notification.type === 'actor' || notification.type === 'reply') {
+    return (
+      <div className="relative w-9 h-9 rounded-full overflow-hidden border border-white/15 bg-[#121216] shrink-0 shadow-sm mt-0.5">
+        <img
+          src={rawImg}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onError={() => setImageError(true)}
+          className="w-full h-full object-cover"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative w-9 h-9 rounded-xl overflow-hidden border border-white/15 bg-[#121216] shrink-0 shadow-sm mt-0.5">
+      <img
+        src={rawImg}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        onError={() => setImageError(true)}
+        className="w-full h-full object-cover"
+      />
+    </div>
+  );
+}
+
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -110,6 +204,7 @@ export default function Navbar() {
 
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [mediaResults, setMediaResults] = useState<MediaItem[]>([]);
   const [personResults, setPersonResults] = useState<PersonItem[]>([]);
@@ -466,13 +561,25 @@ export default function Navbar() {
 
         {/* Desktop Instant Search Bar / Trigger (>= md) */}
         <div ref={searchContainerRef} className="relative hidden md:block">
-          <div className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-black/40 hover:bg-black/60 focus-within:bg-[#121318] border border-white/[0.10] hover:border-white/[0.18] focus-within:border-white/[0.25] backdrop-blur-md transition-all duration-200 w-44 lg:w-64">
-            <Search className="w-4 h-4 text-white/75 shrink-0" />
+          <div
+            className={`navbar-search-bar flex items-center gap-2 px-3.5 py-2 rounded-full backdrop-blur-md transition-all duration-150 ease-out ${
+              isSearchFocused
+                ? 'w-60 lg:w-72 bg-[#121318] border border-white/30 shadow-[0_0_16px_rgba(255,255,255,0.12)]'
+                : 'w-44 lg:w-64 bg-black/40 hover:bg-black/60 border border-white/[0.10] hover:border-white/[0.18]'
+            }`}
+          >
+            <Search className={`w-4 h-4 shrink-0 transition-colors duration-150 ${isSearchFocused ? 'text-white' : 'text-white/75'}`} />
             <input
               ref={searchInputRef}
               type="text"
               value={query}
-              onFocus={() => setSearchOpen(true)}
+              onFocus={() => {
+                setIsSearchFocused(true);
+                setSearchOpen(true);
+              }}
+              onBlur={() => {
+                setIsSearchFocused(false);
+              }}
               onChange={(e) => {
                 setQuery(e.target.value);
                 setSearchOpen(true);
@@ -752,12 +859,12 @@ export default function Navbar() {
 
                       const cardContent = (
                         <div className="flex items-start gap-3">
-                          {/* Category Icon Badge */}
-                          <div
-                            className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 mt-0.5 ${catColor}`}
-                          >
-                            <CatIcon className="w-4 h-4" />
-                          </div>
+                          {/* Poster / Avatar / Category Thumbnail */}
+                          <NavbarNotificationThumbnail
+                            notification={n}
+                            CatIcon={CatIcon}
+                            catColor={catColor}
+                          />
 
                           {/* Message Content */}
                           <div className="flex-1 min-w-0">
