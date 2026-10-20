@@ -616,42 +616,6 @@ export default function EpisodeWatchPage({
     }
   }, [media?.title, activeEpNum]);
 
-
-
-  if (isLoading && (!media || episodes.length === 0)) {
-    return (
-      <div className="min-h-screen pt-24 pb-20 bg-[#080808] px-4 sm:px-8 max-w-7xl mx-auto space-y-6">
-        <div className="aspect-video w-full rounded-3xl bg-white/[0.03] border border-white/[0.08] animate-pulse flex items-center justify-center relative overflow-hidden">
-          <div className="flex flex-col items-center gap-3 text-sky-400/70 font-mono text-xs">
-            <Film className="w-8 h-8 animate-spin text-sky-400" />
-            <span>KoUp Sinema Oynatıcısı Hazırlanıyor...</span>
-          </div>
-        </div>
-        <div className="space-y-3">
-          <div className="h-8 w-2/5 rounded-xl bg-white/[0.05] animate-pulse" />
-          <div className="h-4 w-1/4 rounded-lg bg-white/[0.03] animate-pulse" />
-        </div>
-      </div>
-    );
-  }
-
-  if (!media) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center pt-24 px-4 text-center bg-[#080808]">
-        <h1 className="text-2xl font-bold text-white mb-2">Bölüm Bulunamadı</h1>
-        <p className="text-sm text-white/60 mb-6">
-          Aradığınız dizi veya bölüm yayından kaldırılmış olabilir.
-        </p>
-        <Link
-          href="/kesfet"
-          className="px-6 py-3 rounded-full bg-[#2997ff] text-white font-bold text-xs hover:bg-sky-400 transition-colors glow-blue cursor-pointer"
-        >
-          Kataloğa Dön
-        </Link>
-      </div>
-    );
-  }
-
   // Robust episode bounds checking
   const isFilm = Boolean(
     media && (
@@ -686,6 +650,77 @@ export default function EpisodeWatchPage({
     activeEpIndex >= 0 && activeEpIndex + 1 < episodes.length
       ? episodes[activeEpIndex + 1]
       : null;
+
+  const seasons = Array.from(
+    new Set(episodes.map((e) => e.season_number || 1))
+  ).sort((a, b) => a - b);
+
+  const rawSources: EpisodeSource[] = currentEpObj?.sources || [];
+  const availableSources: EpisodeSource[] = rawSources.map((s) => ({
+    ...s,
+    source_name: cleanSourceName(s.source_name),
+    fansub: cleanFansubName(s.fansub),
+  }));
+  const uniqueFansubs = Array.from(
+    new Set(availableSources.map((s) => s.fansub).filter(Boolean))
+  ) as string[];
+
+  const filteredSources =
+    selectedFansub === 'all'
+      ? availableSources
+      : availableSources.filter((s) => s.fansub === selectedFansub);
+
+  const activeSource: EpisodeSource | undefined =
+    filteredSources[selectedSourceIdx] || availableSources[0];
+
+  // Track active source preference for seamless cross-episode playback continuity
+  useEffect(() => {
+    if (activeSource) {
+      preferredSourceRef.current = {
+        provider: activeSource.provider,
+        source_name: activeSource.source_name,
+        fansub: activeSource.fansub || selectedFansub,
+      };
+    }
+  }, [activeSource?.provider, activeSource?.source_name, activeSource?.fansub, selectedFansub]);
+
+
+
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen pt-24 pb-20 bg-[#080808] px-4 sm:px-8 max-w-7xl mx-auto space-y-6">
+        <div className="aspect-video w-full rounded-3xl bg-white/[0.03] border border-white/[0.08] animate-pulse flex items-center justify-center relative overflow-hidden">
+          <div className="flex flex-col items-center gap-3 text-sky-400/70 font-mono text-xs">
+            <Film className="w-8 h-8 animate-spin text-sky-400" />
+            <span>KoUp Sinema Oynatıcısı Hazırlanıyor...</span>
+          </div>
+        </div>
+        <div className="space-y-3">
+          <div className="h-8 w-2/5 rounded-xl bg-white/[0.05] animate-pulse" />
+          <div className="h-4 w-1/4 rounded-lg bg-white/[0.03] animate-pulse" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!media) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center pt-24 px-4 text-center bg-[#080808]">
+        <h1 className="text-2xl font-bold text-white mb-2">Bölüm Bulunamadı</h1>
+        <p className="text-sm text-white/60 mb-6">
+          Aradığınız dizi veya bölüm yayından kaldırılmış olabilir.
+        </p>
+        <Link
+          href="/kesfet"
+          className="px-6 py-3 rounded-full bg-[#2997ff] text-white font-bold text-xs hover:bg-sky-400 transition-colors glow-blue cursor-pointer"
+        >
+          Kataloğa Dön
+        </Link>
+      </div>
+    );
+  }
+
 
   // Single-vote reaction handler with real Supabase RPC persistence
   const handleReaction = async (type: 'fire' | 'cry' | 'shock' | 'angry') => {
@@ -850,38 +885,6 @@ export default function EpisodeWatchPage({
     }
   };
 
-  const seasons = Array.from(
-    new Set(episodes.map((e) => e.season_number || 1))
-  ).sort((a, b) => a - b);
-
-  const rawSources: EpisodeSource[] = currentEpObj?.sources || [];
-  const availableSources: EpisodeSource[] = rawSources.map((s) => ({
-    ...s,
-    source_name: cleanSourceName(s.source_name),
-    fansub: cleanFansubName(s.fansub),
-  }));
-  const uniqueFansubs = Array.from(
-    new Set(availableSources.map((s) => s.fansub).filter(Boolean))
-  ) as string[];
-
-  const filteredSources =
-    selectedFansub === 'all'
-      ? availableSources
-      : availableSources.filter((s) => s.fansub === selectedFansub);
-
-  const activeSource: EpisodeSource | undefined =
-    filteredSources[selectedSourceIdx] || availableSources[0];
-
-  // Track active source preference for seamless cross-episode playback continuity
-  useEffect(() => {
-    if (activeSource) {
-      preferredSourceRef.current = {
-        provider: activeSource.provider,
-        source_name: activeSource.source_name,
-        fansub: activeSource.fansub || selectedFansub,
-      };
-    }
-  }, [activeSource?.provider, activeSource?.source_name, activeSource?.fansub, selectedFansub]);
 
 
 
