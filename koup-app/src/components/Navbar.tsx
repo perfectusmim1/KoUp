@@ -350,17 +350,17 @@ export default function Navbar() {
         }`}
       >
         <header
-          className={`pointer-events-auto flex items-center justify-between transition-all duration-300 ease-out ${
+          className={`pointer-events-auto flex items-center justify-between border-0 outline-none transition-[width,max-width,margin-top,padding,border-radius,background-color,box-shadow] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)] ${
             navbarBehavior === 'floating'
               ? isScrolled
-                ? 'mt-2 sm:mt-3.5 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-full bg-[#0c0d12]/68 backdrop-blur-2xl border border-white/[0.15] shadow-[0_20px_50px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.18)] py-2 sm:py-2.5 px-4 sm:px-6'
-                : 'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+                ? 'mt-2 sm:mt-3 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-[28px] bg-[#0a0b10]/72 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.78)] py-2 sm:py-2.5 px-4 sm:px-6'
+                : 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
               : navbarBehavior === 'sticky'
               ? isScrolled
-                ? 'mt-0 w-full max-w-full rounded-none bg-[#0c0d12]/72 backdrop-blur-2xl border-b border-white/[0.14] shadow-[0_12px_32px_rgba(0,0,0,0.72)] py-3 sm:py-4 px-4 sm:px-8 lg:px-14'
-                : 'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+                ? 'mt-0 w-full max-w-[2560px] rounded-none bg-[#0a0b10]/76 backdrop-blur-2xl shadow-[0_12px_32px_rgba(0,0,0,0.75)] py-3 sm:py-4 px-4 sm:px-8 lg:px-14'
+                : 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
               : /* static: sitenin üstünde kalır, sayfa kayınca bizle gelmez */
-                'mt-0 w-full max-w-full rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+                'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
           }`}
         >
       {/* LEFT: Brand Mark (Original KU Logo — No Circle or Box Wrapper) */}

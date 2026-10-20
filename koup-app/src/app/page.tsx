@@ -1486,7 +1486,7 @@ export default function HomePage() {
                   {/* Netflix/Apple TV+ Top 10 Stroke Numeral (Vector Clean, Artifact-Free) */}
                   <Top10Numeral
                     rank={idx + 1}
-                    className="h-[128px] sm:h-[185px] md:h-[240px] w-auto select-none pointer-events-none drop-shadow-[0_8px_20px_rgba(0,0,0,0.9)] -mr-4 sm:-mr-7 md:-mr-10 z-0 shrink-0"
+                    className="h-[135px] sm:h-[195px] md:h-[250px] w-auto select-none pointer-events-none drop-shadow-[0_8px_20px_rgba(0,0,0,0.9)] -mr-3 sm:-mr-5 md:-mr-6 z-0 shrink-0"
                   />
 
                   <div className="relative z-10 w-28 sm:w-40 md:w-52 min-w-[112px] sm:min-w-[160px] aspect-[2/3] rounded-xl sm:rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 group-hover:border-white/30 shadow-[0_20px_45px_rgba(0,0,0,0.85)] group-hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-end p-2.5 sm:p-4">
@@ -1571,7 +1571,7 @@ export default function HomePage() {
                   {/* Netflix/Apple TV+ Top 10 Stroke Numeral (Vector Clean, Artifact-Free) */}
                   <Top10Numeral
                     rank={idx + 1}
-                    className="h-[128px] sm:h-[185px] md:h-[240px] w-auto select-none pointer-events-none drop-shadow-[0_8px_20px_rgba(0,0,0,0.9)] -mr-4 sm:-mr-7 md:-mr-10 z-0 shrink-0"
+                    className="h-[135px] sm:h-[195px] md:h-[250px] w-auto select-none pointer-events-none drop-shadow-[0_8px_20px_rgba(0,0,0,0.9)] -mr-3 sm:-mr-5 md:-mr-6 z-0 shrink-0"
                   />
 
                   <div className="relative z-10 w-28 sm:w-40 md:w-52 min-w-[112px] sm:min-w-[160px] aspect-[2/3] rounded-xl sm:rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 group-hover:border-white/30 shadow-[0_20px_45px_rgba(0,0,0,0.85)] group-hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-end p-2.5 sm:p-4">
