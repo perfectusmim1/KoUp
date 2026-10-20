@@ -938,10 +938,10 @@ export default function EpisodeWatchPage({
             <span>{isFilm ? 'Film Detayına Dön' : 'Seri Sayfasına Dön'}</span>
           </Link>
 
-          {/* Center: Kaynak Seçici Dropdown */}
-          <div className="flex items-center gap-2.5 flex-1 max-w-md mx-auto justify-center">
+          {/* Center / Right: Kaynak Seçici Dropdown */}
+          <div className="flex items-center gap-2.5 ml-auto sm:ml-0 justify-end sm:justify-center sm:flex-1 sm:max-w-md">
             {filteredSources.length > 0 ? (
-              <div className="w-full sm:w-auto min-w-0 sm:min-w-[220px]">
+              <div className="w-auto min-w-0 sm:min-w-[220px]">
                 <CustomSelect
                   value={String(selectedSourceIdx)}
                   onChange={(val) => setSelectedSourceIdx(Number(val) || 0)}
@@ -1007,8 +1007,8 @@ export default function EpisodeWatchPage({
             )}
           </div>
 
-          {/* Right: Badges & Controls */}
-          <div className="flex items-center gap-2 shrink-0">
+          {/* Right / Row 2 on mobile: Badges & Controls */}
+          <div className="w-full sm:w-auto flex items-center justify-center sm:justify-end gap-2 shrink-0 pt-1 sm:pt-0">
             <Link
               href={`/kesfet?country=${encodeURIComponent(
                 ((media.country_code || media.country) || '').toUpperCase()

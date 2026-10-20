@@ -3032,7 +3032,7 @@ export default function NetflixPlayer({
                         )}
                       </div>
                     ) : isTouchDevice ? (
-                      <>
+                      <div className="flex items-center gap-2">
                         {isFullscreen && (
                           <button
                             type="button"
@@ -3047,9 +3047,34 @@ export default function NetflixPlayer({
                             <Unlock className="w-4 h-4 sm:w-5 sm:h-5" />
                           </button>
                         )}
-                      </>
+                        <button
+                          type="button"
+                          onClick={toggleFullscreen}
+                          aria-label={isFullscreen ? 'Tam Ekrandan Çık' : 'Tam Ekran'}
+                          className="p-1 text-white/90 hover:text-white active:scale-95 transition-transform cursor-pointer"
+                        >
+                          {isFullscreen ? (
+                            <Minimize className="w-4 h-4 sm:w-5 sm:h-5" />
+                          ) : (
+                            <Maximize className="w-4 h-4 sm:w-5 sm:h-5" />
+                          )}
+                        </button>
+                      </div>
                     ) : (
-                      <div className="w-8 flex justify-end" />
+                      <div className="w-8 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={toggleFullscreen}
+                          aria-label={isFullscreen ? 'Tam Ekrandan Çık (Esc / F)' : 'Tam Ekran (F)'}
+                          className="p-1.5 text-white/85 hover:text-white hover:scale-110 active:scale-95 transition-transform cursor-pointer"
+                        >
+                          {isFullscreen ? (
+                            <Minimize className="w-5 h-5 stroke-[2.2]" />
+                          ) : (
+                            <Maximize className="w-5 h-5 stroke-[2.2]" />
+                          )}
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -3569,6 +3594,21 @@ export default function NetflixPlayer({
                               <span>Sonraki</span>
                             </button>
                           )}
+
+                          {/* Tam Ekran Butonu */}
+                          <button
+                            type="button"
+                            onClick={toggleFullscreen}
+                            aria-label={isFullscreen ? 'Tam Ekrandan Çık' : 'Tam Ekran'}
+                            className="flex items-center gap-1 py-1 text-xs font-medium text-white/90 hover:text-white active:scale-95 transition-transform cursor-pointer shrink-0"
+                          >
+                            {isFullscreen ? (
+                              <Minimize className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                            ) : (
+                              <Maximize className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                            )}
+                            <span>{isFullscreen ? 'Küçült' : 'Tam Ekran'}</span>
+                          </button>
                         </>
                       )}
                     </div>
@@ -3929,6 +3969,20 @@ export default function NetflixPlayer({
                             )}
                           </>
                         )}
+
+                        {/* Tam Ekran Butonu */}
+                        <button
+                          type="button"
+                          onClick={toggleFullscreen}
+                          aria-label={isFullscreen ? 'Tam Ekrandan Çık (F)' : 'Tam Ekran (F)'}
+                          className="text-white/90 hover:text-white hover:scale-110 active:scale-95 transition-transform cursor-pointer p-1 shrink-0"
+                        >
+                          {isFullscreen ? (
+                            <Minimize className="w-5 h-5" />
+                          ) : (
+                            <Maximize className="w-5 h-5" />
+                          )}
+                        </button>
                       </div>
                     </div>
                   )}

@@ -2542,14 +2542,11 @@ export default function RichCommentSection({
           )}
 
           {/* Send Button with Cooldown & Spinner */}
-          <div className="flex items-center justify-between pt-1">
-            <span className="text-[11px] text-white/40">
-              {user.display_name || user.username} olarak paylaşıyorsun {charCount > 0 ? `· ${charCount}/1200` : ''}
-            </span>
+          <div className="pt-1.5 flex items-center justify-end w-full">
             <button
               type="submit"
               disabled={isSubmitting || cooldownSec > 0}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition-[background-color,box-shadow] ${
+              className={`w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 sm:py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-[background-color,box-shadow,transform] active:scale-[0.99] ${
                 isSubmitting || cooldownSec > 0
                   ? 'bg-white/20 text-white/50 cursor-not-allowed'
                   : 'bg-[#2997ff] hover:bg-sky-400 text-white shadow-[0_0_20px_rgba(41,151,255,0.45)] hover:shadow-[0_0_28px_rgba(41,151,255,0.7)] cursor-pointer'

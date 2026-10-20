@@ -36,6 +36,8 @@ import {
   getProxiedImageUrl,
   formatContentTypeTR,
   getEpisodeProgressStats,
+  getEpisodeProgress,
+  cleanEpisodeName,
   cleanOverviewText,
   cleanMediaTitle,
   formatViewCount,
@@ -103,6 +105,26 @@ function getTypeBadgeClass(contentType?: string, countryCode?: string): string {
   return 'badge-type badge-global';
 }
 
+function formatRelativeTime(dateStr?: string | null): string {
+  if (!dateStr) return 'Yeni';
+  try {
+    const d = new Date(dateStr);
+    const now = Date.now();
+    const diffSec = Math.floor((now - d.getTime()) / 1000);
+    if (diffSec < 60) return 'Az önce';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin} dk önce`;
+    const diffHours = Math.floor(diffMin / 60);
+    if (diffHours < 24) return `${diffHours} sa önce`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return 'Dün';
+    if (diffDays < 7) return `${diffDays} gün önce`;
+    return new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'short' }).format(d);
+  } catch {
+    return 'Yeni';
+  }
+}
+
 export default function HomePage() {
   const router = useRouter();
   const user = useKoUpSelector((s) => s.user);
@@ -161,6 +183,7 @@ export default function HomePage() {
 
   const top10SeriesScrollRef = useDragScroll<HTMLDivElement>();
   const top10MoviesScrollRef = useDragScroll<HTMLDivElement>();
+  const recentEpisodesScrollRef = useDragScroll<HTMLDivElement>();
   const heroThumbnailsRef = useDragScroll<HTMLDivElement>();
 
   const applyBundle = (bundle: HomeDataBundle) => {
@@ -220,6 +243,7 @@ export default function HomePage() {
         ...(feats || []),
         ...(top10Series || []),
         ...(top10Movies || []),
+        ...((bundle.recentEpsProcessed || []).map((e: any) => e.media).filter(Boolean)),
       ];
       registerMediaItems(allRowItems);
     }
@@ -227,13 +251,13 @@ export default function HomePage() {
 
   useEffect(() => {
     // 1. Instantly populate on client mount from memory or localStorage cache for 0ms transition
-    const cached = memoryHomeBundle || getCache<HomeDataBundle>('home_catalog_bundle_v5');
+    const cached = memoryHomeBundle || getCache<HomeDataBundle>('home_catalog_bundle_v6');
     if (cached) {
       applyBundle(cached);
     }
 
     async function fetchHomeData() {
-      const homeData = await cachedQuery('home_catalog_bundle_v5', 300_000, async () => {
+      const homeData = await cachedQuery('home_catalog_bundle_v6', 300_000, async () => {
         const [
           featRes,
           kdRes,
@@ -285,8 +309,9 @@ export default function HomePage() {
             .select(
               'id, media_id, season_number, episode_number, episode_name, published_at, status, scheduled_release_at, translation_note, react_fire'
             )
+            .eq('status', 'published')
             .order('id', { ascending: false })
-            .limit(12),
+            .limit(40),
           supabase
             .from('people')
             .select('*')
@@ -346,13 +371,33 @@ export default function HomePage() {
           }
         }
 
+        const rawEpisodes = epRes.data || [];
+        let processedEps: any[] = [];
+        if (rawEpisodes.length > 0) {
+          const seenMedia = new Set<number>();
+          const uniqueEps: any[] = [];
+          for (const ep of rawEpisodes) {
+            if (!seenMedia.has(ep.media_id)) {
+              seenMedia.add(ep.media_id);
+              uniqueEps.push(ep);
+            }
+          }
+          const mIds = Array.from(seenMedia);
+          const { data: mRows } = await supabase.from('media').select('*').in('id', mIds);
+          const mMap = new Map(((mRows as MediaItem[]) || []).map((m) => [m.id, m]));
+          processedEps = uniqueEps
+            .map((e: any) => ({ ...e, media: mMap.get(e.media_id) }))
+            .filter((e: any) => e.media);
+        }
+
         return {
           feats: featItems,
           kds: (kdRes.data as MediaItem[]) || [],
           cds: (cdRes.data as MediaItem[]) || [],
           ans: (anRes.data as MediaItem[]) || [],
           gls: (glRes.data as MediaItem[]) || [],
-          episodes: epRes.data || [],
+          episodes: rawEpisodes,
+          recentEpsProcessed: processedEps,
           people: (peopRes.data as PersonItem[]) || [],
           magPosts: (magRes.data as MagazinePost[]) || [],
           top10Series: top10SeriesRes.error
@@ -375,29 +420,7 @@ export default function HomePage() {
         })
         .catch(() => {});
 
-      let processedEps: any[] = [];
-      const episodes = homeData.episodes;
-      if (episodes && episodes.length > 0) {
-        const mIds = Array.from(new Set(episodes.map((e: any) => e.media_id)));
-        const mRows = await cachedQuery(
-          `home_episodes_media_${mIds.sort().join('_')}`,
-          300_000,
-          async () => {
-            const { data } = await supabase.from('media').select('*').in('id', mIds);
-            return (data as MediaItem[]) || [];
-          }
-        );
-        const mMap = new Map(((mRows as MediaItem[]) || []).map((m) => [m.id, m]));
-        processedEps = episodes
-          .map((e: any) => ({ ...e, media: mMap.get(e.media_id) }))
-          .filter((e: any) => e.media);
-        setRecentEpisodes(processedEps);
-      }
-
-      memoryHomeBundle = {
-        ...homeData,
-        recentEpsProcessed: processedEps,
-      };
+      memoryHomeBundle = homeData;
     }
     fetchHomeData();
   }, []);
@@ -1013,6 +1036,7 @@ export default function HomePage() {
   // - All rails below it get sequential orders released via idle callback or IntersectionObserver.
   const hasContinueWatching = continueWatchingItems.length > 0;
   let runningOrder = hasContinueWatching ? 1 : 0;
+  const recentEpisodesOrder = runningOrder++;
   const top10SeriesOrder = runningOrder++;
   const top10MoviesOrder = runningOrder++;
   const personalizedOrder = runningOrder++;
@@ -1427,6 +1451,180 @@ export default function HomePage() {
               })}
             </div>
           </section>
+        )}
+
+        {/* =====================================================================
+            3. SON EKLENEN BÖLÜMLER (Canlı Yayın & Bölüm Akışı)
+        ===================================================================== */}
+        {recentEpisodes.length > 0 && (
+          <DeferredSection
+            order={recentEpisodesOrder}
+            className="w-full px-4 sm:px-6 md:px-14 max-w-full"
+            header={
+              <div className="flex flex-col gap-1 mb-4 sm:mb-5">
+                <div className="flex items-center justify-between min-h-[22px]">
+                  <div className="flex items-center gap-2">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                    </span>
+                    <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase text-emerald-400">
+                      Canlı Yayın Akışı
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 sm:gap-2 ml-auto shrink-0">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        recentEpisodesScrollRef.current?.scrollBy({ left: -340, behavior: 'smooth' })
+                      }
+                      aria-label="Sola Kaydır"
+                      className="hidden sm:flex w-8 h-8 rounded-full glass-pill items-center justify-center text-white/70 hover:text-white cursor-pointer"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        recentEpisodesScrollRef.current?.scrollBy({ left: 340, behavior: 'smooth' })
+                      }
+                      aria-label="Sağa Kaydır"
+                      className="hidden sm:flex w-8 h-8 rounded-full glass-pill items-center justify-center text-white/70 hover:text-white cursor-pointer"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                    <Link
+                      href="/takvim"
+                      className="text-xs font-semibold text-white/55 hover:text-white flex items-center gap-1 transition-colors whitespace-nowrap"
+                    >
+                      <span>Yayın Takvimi</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
+                </div>
+
+                <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white mt-0.5">
+                  Son Eklenen Bölümler
+                </h2>
+              </div>
+            }
+            placeholder={
+              <div className="w-full h-[180px] sm:h-[200px] my-3" />
+            }
+          >
+            <div
+              ref={recentEpisodesScrollRef}
+              className="flex items-center gap-3 sm:gap-4 overflow-x-auto overflow-y-hidden w-full pb-3 no-scrollbar [-webkit-overflow-scrolling:touch] max-w-full"
+            >
+              {recentEpisodes.map((ep) => {
+                const m = ep.media as MediaItem;
+                if (!m) return null;
+                const seasonNum = ep.season_number || 1;
+                const epNum = ep.episode_number || 1;
+                const userProg = progressMap[m.id];
+                const epProg = getEpisodeProgress(userProg, m.id, seasonNum, epNum);
+                const isWatched = epProg.isWatched;
+                const subtitle = cleanEpisodeName(ep.episode_name, seasonNum, epNum);
+                const timeLabel = formatRelativeTime(ep.published_at);
+
+                return (
+                  <Link
+                    key={`${ep.id}-${m.id}-${seasonNum}-${epNum}`}
+                    href={`/seri/${m.slug}/${epNum}?season=${seasonNum}`}
+                    className="w-[74vw] sm:w-[280px] md:w-[310px] lg:w-[330px] shrink-0 snap-start group relative rounded-2xl overflow-hidden aspect-[16/10] bg-[#0c0c0e] border border-white/10 hover:border-sky-400/50 transition-all duration-300 active:scale-[0.99] shadow-xl hover:shadow-[0_0_24px_rgba(56,189,248,0.22)] cursor-pointer block select-none"
+                  >
+                    {/* Media backdrop image with subtle hover zoom */}
+                    <img
+                      src={getProxiedImageUrl(
+                        m.backdrop_image || m.cover_image,
+                        m.title,
+                        null,
+                        'w780',
+                        'banner'
+                      )}
+                      alt={m.title}
+                      loading="lazy"
+                      decoding="async"
+                      className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
+                    />
+
+                    {/* Gradient overlays */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/45 to-black/20 pointer-events-none" />
+
+                    {/* Top Bar Badges */}
+                    <div className="absolute top-2.5 inset-x-2.5 z-10 flex items-center justify-between gap-1.5 pointer-events-none">
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur-md border shadow-sm ${getTypeBadgeClass(
+                          m.content_type,
+                          m.country_code
+                        )}`}
+                      >
+                        {formatContentTypeTR(m.content_type, m.country_code)}
+                      </span>
+
+                      <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/25 border border-emerald-400/50 text-emerald-300 backdrop-blur-md shadow-sm">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        <span>
+                          S{seasonNum} · B{epNum}
+                        </span>
+                      </span>
+                    </div>
+
+                    {/* Center Play Button Overlay on Hover */}
+                    <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+                      <div className="w-11 h-11 rounded-full bg-[#2997ff]/90 border border-sky-300/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 group-hover:scale-105 transition-all duration-300 shadow-[0_0_20px_rgba(41,151,255,0.6)]">
+                        <Play className="w-5 h-5 fill-white ml-0.5" />
+                      </div>
+                    </div>
+
+                    {/* Bottom Info Overlay */}
+                    <div className="absolute inset-x-0 bottom-0 z-10 p-3 sm:p-3.5 flex flex-col justify-end">
+                      <h3 className="text-white font-bold text-xs sm:text-[14px] truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] group-hover:text-sky-200 transition-colors">
+                        {cleanMediaTitle(m.title)}
+                      </h3>
+
+                      <div className="flex items-center justify-between gap-2 text-[10px] sm:text-[11px] font-mono mt-0.5">
+                        <span className="text-white/70 truncate">
+                          {subtitle || `${epNum}. Bölüm`}
+                        </span>
+                        <span className="text-white/45 shrink-0 flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-white/40" />
+                          <span>{timeLabel}</span>
+                        </span>
+                      </div>
+
+                      {/* Progress / Watched State */}
+                      {isWatched ? (
+                        <div className="mt-2 pt-1.5 border-t border-white/10 flex items-center justify-between text-[10px] font-mono text-emerald-400">
+                          <span className="flex items-center gap-1">
+                            <Check className="w-3 h-3 stroke-[2.5]" />
+                            <span>İzlendi</span>
+                          </span>
+                          <span className="text-white/40 group-hover:text-sky-300 transition-colors">
+                            Tekrar İzle →
+                          </span>
+                        </div>
+                      ) : epProg.position > 15 ? (
+                        <div className="mt-2 pt-1.5 border-t border-white/10">
+                          <div className="flex items-center justify-between text-[9px] font-mono text-sky-400 mb-1">
+                            <span>Kaldığın Yerden</span>
+                            <span>{epProg.remainingMinutes} dk kaldı</span>
+                          </div>
+                          <div className="w-full h-1 bg-white/20 rounded-full overflow-hidden">
+                            <div
+                              style={{ width: `${epProg.percent}%` }}
+                              className="h-full bg-gradient-to-r from-sky-400 to-[#2997ff]"
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </DeferredSection>
         )}
 
         {/* =====================================================================

@@ -350,17 +350,17 @@ export default function Navbar() {
         }`}
       >
         <header
-          className={`pointer-events-auto flex items-center justify-between border outline-none transition-[width,max-width,margin-top,padding,border-radius,background-color,box-shadow,border-color] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+          className={`pointer-events-auto flex items-center justify-between outline-none transition-[width,max-width,margin-top,padding,border-radius,background-color,box-shadow,border-color] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)] ${
             navbarBehavior === 'floating'
               ? isScrolled
-                ? 'mt-2 sm:mt-3 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-[28px] bg-[#0a0b10]/95 backdrop-blur-xl border-white/[0.08] shadow-[0_20px_50px_rgba(0,0,0,0.85)] py-2 sm:py-2.5 px-4 sm:px-6'
-                : 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-transparent shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+                ? 'mt-2 sm:mt-3 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-[28px] bg-[#0a0b10]/95 backdrop-blur-xl border border-white/[0.08] shadow-[0_20px_50px_rgba(0,0,0,0.85)] py-2 sm:py-2.5 px-4 sm:px-6'
+                : 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-0 shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
               : navbarBehavior === 'sticky'
               ? isScrolled
-                ? 'mt-0 w-full max-w-[2560px] rounded-none bg-[#0a0b10]/95 backdrop-blur-xl border-white/[0.08] shadow-[0_12px_32px_rgba(0,0,0,0.85)] py-3 sm:py-4 px-4 sm:px-8 lg:px-14'
-                : 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-transparent shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+                ? 'mt-0 w-full max-w-[2560px] rounded-none bg-[#0a0b10]/95 backdrop-blur-xl border-b border-white/[0.08] shadow-[0_12px_32px_rgba(0,0,0,0.85)] py-3 sm:py-4 px-4 sm:px-8 lg:px-14'
+                : 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-0 shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
               : /* static: sitenin üstünde kalır, sayfa kayınca bizle gelmez */
-                'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-transparent shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+                'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-0 shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
           }`}
         >
       {/* LEFT: Brand Mark (Original KU Logo — No Circle or Box Wrapper) */}
@@ -368,7 +368,7 @@ export default function Navbar() {
         <button
           type="button"
           onClick={() => setMobileMenuOpen((v) => !v)}
-          className="lg:hidden w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white/80 hover:text-white cursor-pointer select-none focus:outline-none focus-visible:outline-none active:bg-white/20"
+          className="lg:hidden w-10 h-10 rounded-full bg-black/40 hover:bg-white/12 border border-white/[0.10] hover:border-white/[0.18] backdrop-blur-md flex items-center justify-center text-white/80 hover:text-white cursor-pointer select-none focus:outline-none focus-visible:outline-none transition-all duration-200"
           aria-label="Menü"
         >
           <Menu className="w-5 h-5" />
@@ -458,7 +458,7 @@ export default function Navbar() {
             triggerSound('click');
             setMobileSearchOpen(true);
           }}
-          className="md:hidden w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white/80 hover:text-white cursor-pointer"
+          className="md:hidden w-10 h-10 rounded-full bg-black/40 hover:bg-white/12 border border-white/[0.10] hover:border-white/[0.18] backdrop-blur-md flex items-center justify-center text-white/80 hover:text-white cursor-pointer transition-all duration-200"
           aria-label="Arama Yap"
         >
           <Search className="w-4 h-4" />
@@ -466,7 +466,7 @@ export default function Navbar() {
 
         {/* Desktop Instant Search Bar / Trigger (>= md) */}
         <div ref={searchContainerRef} className="relative hidden md:block">
-          <div className="flex items-center gap-2 px-3.5 py-2 rounded-full glass-pill hover:bg-white/[0.13] hover:border-white/[0.20] focus-within:bg-[#14151a] focus-within:border-white/[0.25] transition-all duration-200 w-44 lg:w-64">
+          <div className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-black/40 hover:bg-black/60 focus-within:bg-[#121318] border border-white/[0.10] hover:border-white/[0.18] focus-within:border-white/[0.25] backdrop-blur-md transition-all duration-200 w-44 lg:w-64">
             <Search className="w-4 h-4 text-white/75 shrink-0" />
             <input
               ref={searchInputRef}
@@ -495,7 +495,7 @@ export default function Navbar() {
                 <X className="w-3.5 h-3.5" />
               </button>
             ) : (
-              <kbd className="hidden xl:inline-block text-[10px] font-mono text-white/50 px-1.5 py-0.5 rounded-md bg-white/[0.07] border border-white/[0.12]">
+              <kbd className="hidden xl:inline-block text-[10px] font-mono text-white/50 px-1.5 py-0.5 rounded-md bg-white/[0.06] border border-white/[0.08]">
                 ⌘K
               </kbd>
             )}
@@ -657,10 +657,10 @@ export default function Navbar() {
               setProfileDropdownOpen(false);
               setSearchOpen(false);
             }}
-            className={`w-10 h-10 rounded-full glass-pill flex items-center justify-center text-white/80 hover:text-white focus-visible:text-white relative cursor-pointer transition-all duration-200 focus:outline-none focus-visible:outline-none ${
+            className={`w-10 h-10 rounded-full flex items-center justify-center relative cursor-pointer backdrop-blur-md transition-all duration-200 focus:outline-none ${
               notifOpen
-                ? 'bg-white/[0.22] border-white/45 shadow-[0_0_16px_rgba(255,255,255,0.18)] text-white'
-                : 'hover:bg-white/[0.20] hover:border-white/40 hover:shadow-[0_0_16px_rgba(255,255,255,0.14)] focus-visible:bg-white/[0.20] focus-visible:border-white/40'
+                ? 'bg-white/20 border border-white/30 text-white'
+                : 'bg-black/40 hover:bg-white/12 border border-white/[0.10] hover:border-white/[0.18] text-white/80 hover:text-white'
             }`}
             aria-label="Bildirimler"
           >
@@ -844,7 +844,7 @@ export default function Navbar() {
             href="/admin"
             prefetch={true}
             aria-label="Admin Kontrol Merkezi"
-            className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-full glass-pill text-xs font-medium text-amber-300 border-amber-400/30 hover:border-amber-400/60 transition-all shadow-[0_0_12px_rgba(245,158,11,0.2)]"
+            className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-400/25 hover:border-amber-400/40 text-xs font-medium text-amber-300 backdrop-blur-md transition-all duration-200 shadow-[0_0_12px_rgba(245,158,11,0.15)]"
           >
             <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
             <span>Admin</span>
@@ -861,10 +861,10 @@ export default function Navbar() {
                 setNotifOpen(false);
                 setSearchOpen(false);
               }}
-              className={`group flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 rounded-full glass-pill transition-all duration-200 cursor-pointer select-none relative focus:outline-none focus-visible:outline-none ${
+              className={`group flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 rounded-full backdrop-blur-md transition-all duration-200 cursor-pointer select-none relative focus:outline-none ${
                 profileDropdownOpen
-                  ? 'bg-white/[0.22] border-white/45 shadow-[0_0_16px_rgba(255,255,255,0.18)]'
-                  : 'hover:bg-white/[0.20] hover:border-white/40 hover:shadow-[0_0_16px_rgba(255,255,255,0.14)] focus-visible:bg-white/[0.20] focus-visible:border-white/40'
+                  ? 'bg-white/20 border border-white/30 text-white'
+                  : 'bg-black/40 hover:bg-white/12 border border-white/[0.10] hover:border-white/[0.18] text-white/90 hover:text-white'
               }`}
               aria-label="Kullanıcı Menüsü"
               aria-expanded={profileDropdownOpen}
@@ -1033,7 +1033,7 @@ export default function Navbar() {
               triggerSound('click');
               setIsAuthModalOpen(true);
             }}
-            className="group flex items-center gap-2 px-4.5 py-2 rounded-full glass-pill text-xs font-semibold text-white/90 hover:text-white hover:bg-white/[0.22] hover:border-white/45 hover:shadow-[0_0_16px_rgba(255,255,255,0.16)] focus-visible:bg-white/[0.22] focus-visible:border-white/45 focus:outline-none transition-all duration-200 cursor-pointer select-none"
+            className="group flex items-center gap-2 px-4 py-2 rounded-full bg-black/40 hover:bg-white/12 border border-white/[0.10] hover:border-white/[0.18] backdrop-blur-md text-xs font-semibold text-white/90 hover:text-white transition-all duration-200 cursor-pointer select-none"
             aria-label="Giriş Yap"
           >
             <LogIn className="w-3.5 h-3.5 text-white/70 group-hover:text-white group-hover:translate-x-0.5 transition-all duration-300" />
