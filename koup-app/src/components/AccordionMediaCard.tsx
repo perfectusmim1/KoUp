@@ -728,6 +728,16 @@ function AccordionMediaCardComponent({
             loading="eager"
             fetchPriority={priority ? 'high' : 'auto'}
             decoding="async"
+            onError={(e) => {
+              const target = e.currentTarget;
+              if (!target.dataset.triedFallback && item.poster_fallback_url && item.poster_fallback_url !== effectiveCover) {
+                target.dataset.triedFallback = 'true';
+                target.src = getProxiedImageUrl(item.poster_fallback_url, null, item.title, 'w500', 'poster', item.tmdb_id, mediaType);
+              } else if (!target.dataset.triedTmdb && item.title) {
+                target.dataset.triedTmdb = 'true';
+                target.src = `/api/image-proxy?title=${encodeURIComponent(item.title)}&type=media`;
+              }
+            }}
             className={`absolute inset-0 w-full h-full object-cover object-center pointer-events-none select-none transition-opacity duration-250 ${
               isAccordionExpanded && (hasDistinctBackdrop || isTrailerReady)
                 ? 'opacity-0'

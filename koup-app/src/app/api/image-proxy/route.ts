@@ -474,9 +474,10 @@ async function fetchTmdbPosterForTitle(
               }
               const title = r.title || r.name;
               const origTitle = r.original_title || r.original_name;
+              const matchExpected = cleanTitle || slugHint || '';
               return (
-                isTitleMatch(cleanTitle, title) ||
-                isTitleMatch(cleanTitle, origTitle) ||
+                isTitleMatch(matchExpected, title) ||
+                isTitleMatch(matchExpected, origTitle) ||
                 (nativeTitle ? isTitleMatch(nativeTitle, title) || isTitleMatch(nativeTitle, origTitle) : false)
               );
             });

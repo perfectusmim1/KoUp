@@ -288,9 +288,9 @@ export async function GET(req: NextRequest) {
     let query = supabase.from('media').select('*');
 
     if (mode === 'vitrin') {
-      query = query.or('is_featured.eq.true,featured_order.not.is.null').order('views_total', { ascending: false }).limit(limit);
+      query = query.or('is_featured.eq.true,featured_order.not.is.null').order('views_total', { ascending: false, nullsFirst: false }).limit(limit);
     } else if (mode === 'top') {
-      query = query.order('views_total', { ascending: false }).limit(limit);
+      query = query.order('views_total', { ascending: false, nullsFirst: false }).limit(limit);
     } else if (mode === 'bad_overviews') {
       query = query
         .or('overview.is.null,overview.ilike.%1080p%,overview.ilike.%altyazılı%,overview.ilike.%tek parça%,overview.ilike.%kalitede%,overview.ilike.%yapımı dizi serisi%,overview.ilike.%yapımı film serisi%')

@@ -270,6 +270,7 @@ export default function CalendarPage() {
               const coverImg =
                 item.media?.cover_image ||
                 item.cover_image ||
+                item.media?.poster_fallback_url ||
                 '/logo-dark.png';
               const isFollowed = item.media_id
                 ? followedMediaIds.includes(item.media_id)
@@ -297,10 +298,33 @@ export default function CalendarPage() {
                     className="relative aspect-[2/3] w-full overflow-hidden block bg-black/60"
                   >
                     <img
-                      src={getProxiedImageUrl(coverImg)}
+                      src={getProxiedImageUrl(
+                        coverImg,
+                        item.media?.poster_fallback_url || item.cover_image,
+                        item.title,
+                        'w500',
+                        'media',
+                        item.media?.tmdb_id,
+                        item.media?.content_type === 'film' || item.media?.content_type === 'movie' ? 'movie' : 'tv',
+                        item.media?.release_year,
+                        item.media?.native_title
+                      )}
                       alt={item.title}
                       loading="lazy"
                       decoding="async"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (!target.dataset.triedMedia && item.media?.cover_image && target.src !== item.media.cover_image) {
+                          target.dataset.triedMedia = 'true';
+                          target.src = item.media.cover_image;
+                        } else if (!target.dataset.triedFallback && item.media?.poster_fallback_url) {
+                          target.dataset.triedFallback = 'true';
+                          target.src = item.media.poster_fallback_url;
+                        } else if (!target.dataset.triedTmdb && item.title) {
+                          target.dataset.triedTmdb = 'true';
+                          target.src = `/api/image-proxy?title=${encodeURIComponent(item.title)}&type=media`;
+                        }
+                      }}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
 

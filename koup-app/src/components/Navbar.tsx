@@ -174,7 +174,7 @@ export default function Navbar() {
                 .from('media')
                 .select('id, slug, title, native_title, content_type, country_code, release_year, cover_image, backdrop_image, mdl_rating, anilist_rating, imdb_rating, categories')
                 .or(`title.ilike.%${raw}%,slug.ilike.%${normalized || raw}%,search_text.ilike.%${normalized || raw}%`)
-                .order('views_total', { ascending: false })
+                .order('views_total', { ascending: false, nullsFirst: false })
                 .limit(8);
 
               if (directMedia && directMedia.length > 0) {

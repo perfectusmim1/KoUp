@@ -369,7 +369,7 @@ export default function SeriesDetailPage({
                 .select('*')
                 .eq('content_type', item.content_type)
                 .neq('id', item.id)
-                .order('views_total', { ascending: false })
+                .order('views_total', { ascending: false, nullsFirst: false })
                 .limit(45) as unknown as Promise<any>
             );
 

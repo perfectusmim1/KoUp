@@ -145,7 +145,7 @@ function DiscoverContent() {
   const [searchQuery, setSearchQuery] = useState(initialQ);
   const [debouncedQuery, setDebouncedQuery] = useState(initialQ);
   const [currentPage, setCurrentPage] = useState(initialPage);
-  const [totalCount, setTotalCount] = useState<number>(0);
+  const [totalCount, setTotalCount] = useState<number>(24746);
   const [items, setItems] = useState<MediaItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -280,7 +280,7 @@ function DiscoverContent() {
             if (sortBy === 'latest') {
               query = query.order('id', { ascending: false });
             } else if (sortBy === 'views') {
-              query = query.order('views_total', { ascending: false });
+              query = query.order('views_total', { ascending: false, nullsFirst: false });
             } else if (sortBy === 'rating') {
               query = query.order('site_rating', { ascending: false, nullsFirst: false });
             } else {
@@ -294,6 +294,17 @@ function DiscoverContent() {
             return (resData as MediaItem[]) || [];
           }),
           cachedQuery(countKey, 120_000, async () => {
+            if (
+              yearFilter === 'ALL' &&
+              selectedGenres.length === 0 &&
+              typeFilter === 'ALL' &&
+              countryFilter === 'ALL' &&
+              !normalized &&
+              !raw
+            ) {
+              return 24746;
+            }
+
             if (yearFilter === 'ALL' && selectedGenres.length <= 1) {
               try {
                 const rpcCount = await supabase.rpc('count_search_media', {
@@ -387,9 +398,9 @@ function DiscoverContent() {
             <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-white/45">
               <SlidersHorizontal className="w-3.5 h-3.5 text-white/70" />
               <span suppressHydrationWarning>
-                {isMounted && totalCount > 0
+                {totalCount > 0
                   ? `${totalCount.toLocaleString('tr-TR')} Master Yapım`
-                  : '26.750+ Master Yapım'}
+                  : '24.746 Master Yapım'}
               </span>
             </div>
             <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight mt-1">

@@ -81,11 +81,19 @@ export async function GET(req: Request) {
       return trimmed;
     }
 
-    const sanitized = filtered.map((s) => ({
-      ...s,
-      category: cleanCategory(s.category),
-      date_label: s.date_label && !s.date_label.includes('{') ? s.date_label : (DAY_MAP[s.day_of_week] || 'Pazartesi'),
-    }));
+    const sanitized = filtered.map((s) => {
+      const bestCover =
+        s.media?.cover_image ||
+        s.cover_image ||
+        s.media?.poster_fallback_url ||
+        '/logo-dark.png';
+      return {
+        ...s,
+        cover_image: bestCover,
+        category: cleanCategory(s.category),
+        date_label: s.date_label && !s.date_label.includes('{') ? s.date_label : (DAY_MAP[s.day_of_week] || 'Pazartesi'),
+      };
+    });
 
     return NextResponse.json(
       {

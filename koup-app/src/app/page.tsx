@@ -1185,49 +1185,52 @@ export default function HomePage() {
               </AnimatePresence>
 
               {/* Floating Interactive Preview Rail (Bottom Right — Exact ui/code.html) */}
-              <div className="relative flex flex-col items-start lg:items-end gap-2.5 sm:gap-3 z-20 w-full lg:w-auto max-w-full min-w-0 overflow-hidden">
+              <div className="relative flex flex-col items-start lg:items-end gap-2 sm:gap-2.5 z-20 w-full lg:w-auto max-w-full min-w-0 overflow-hidden">
                 <span className="text-[10px] tracking-[0.2em] font-semibold uppercase text-white/45">
                   Sıradaki Vitrin Seçkisi
                 </span>
                 <div
                   ref={heroThumbnailsRef}
-                  className="flex items-center gap-2.5 glass-pill-dark p-1.5 sm:p-2 rounded-2xl shadow-[0_20px_45px_rgba(0,0,0,0.85)] overflow-x-auto overflow-y-hidden max-w-full w-full sm:w-auto no-scrollbar scroll-smooth [-webkit-overflow-scrolling:touch]"
+                  className="flex items-center gap-2 sm:gap-2.5 glass-pill-dark p-1.5 rounded-2xl shadow-[0_20px_45px_rgba(0,0,0,0.85)] max-w-full overflow-x-auto no-scrollbar scroll-smooth [-webkit-overflow-scrolling:touch]"
                 >
                   {heroItems.slice(0, 4).map((hItem, idx) => {
                     const active = idx === heroIdx;
                     return (
                       <button
                         key={hItem.id}
+                        type="button"
                         onClick={() => {
                           triggerSound('click');
                           setHeroIdx(idx);
                         }}
-                        className={`relative flex items-center gap-2.5 sm:gap-3 p-1 sm:p-1.5 pr-3 sm:pr-4 rounded-xl cursor-pointer transition-all duration-300 text-left shrink-0 ${
+                        aria-label={cleanMediaTitle(hItem.title)}
+                        title={cleanMediaTitle(hItem.title)}
+                        className={`relative w-16 h-10 sm:w-20 sm:h-12 rounded-xl overflow-hidden cursor-pointer transition-opacity duration-200 shrink-0 ${
                           active
-                            ? 'bg-white/12 border border-white/25 opacity-100'
-                            : 'hover:bg-white/[0.06] border border-transparent opacity-60 hover:opacity-100'
+                            ? 'ring-2 ring-white opacity-100 shadow-[0_0_20px_rgba(255,255,255,0.45)] z-10'
+                            : 'opacity-40 hover:opacity-85 ring-1 ring-white/15'
                         }`}
                       >
                         <img
                           src={getProxiedImageUrl(
                             hItem.backdrop_image || hItem.cover_image,
+                            hItem.cover_image,
                             hItem.title
                           )}
                           alt={hItem.title}
                           loading="lazy"
                           fetchPriority="low"
-                          className="w-12 h-8 sm:w-16 sm:h-10 rounded-lg object-cover shrink-0 shadow-md"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            if (!target.dataset.triedCover && hItem.cover_image && target.src !== hItem.cover_image) {
+                              target.dataset.triedCover = 'true';
+                              target.src = getProxiedImageUrl(hItem.cover_image, null, hItem.title);
+                            }
+                          }}
+                          className="w-full h-full object-cover"
                         />
-                        <div className="flex flex-col max-w-[110px] sm:max-w-[130px]">
-                          <span className="text-[11px] sm:text-[12px] font-semibold text-white truncate">
-                            {cleanMediaTitle(hItem.title)}
-                          </span>
-                          <span className="text-[9px] sm:text-[10px] text-white/50 tracking-wider truncate">
-                            {formatContentTypeTR(hItem.content_type, hItem.country_code || hItem.country)}
-                          </span>
-                        </div>
                         {active && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping ml-1" />
+                          <div className="absolute inset-0 ring-1 ring-inset ring-white/30 pointer-events-none" />
                         )}
                       </button>
                     );
