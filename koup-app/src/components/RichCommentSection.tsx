@@ -1891,7 +1891,7 @@ export default function RichCommentSection({
                       type="button"
                       disabled={isSubmittingInline || !inlineReplyText.trim()}
                       onClick={() => handleSubmitInlineReply(c)}
-                      className={`inline-flex items-center gap-2 px-5 py-2 rounded-2xl text-xs font-bold transition-colors shadow-md cursor-pointer ${
+                      className={`inline-flex items-center gap-2 px-5 py-2 rounded-full text-xs font-bold transition-colors shadow-md cursor-pointer ${
                         isSubmittingInline || !inlineReplyText.trim()
                           ? 'bg-white/10 text-white/40 cursor-not-allowed'
                           : 'bg-[#2997ff] hover:bg-sky-400 text-white glow-blue'
@@ -2701,7 +2701,7 @@ export default function RichCommentSection({
                 type="button"
                 disabled={isSubmittingReport || reportCooldownSec > 0}
                 onClick={handleSubmitReport}
-                className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs glow-rose transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs glow-rose transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Flag className="w-3.5 h-3.5" />
                 <span>

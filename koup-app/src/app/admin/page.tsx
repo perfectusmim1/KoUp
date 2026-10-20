@@ -3736,7 +3736,7 @@ export default function AdminDashboardPage() {
                       }
                     }}
                     disabled={!singleSeriesQuery.trim() || isSelectedRunning}
-                    className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs tracking-wide transition-all glow-sky disabled:opacity-40 disabled:pointer-events-none cursor-pointer flex items-center justify-center gap-2 shrink-0 active:scale-95"
+                    className="w-full sm:w-auto px-6 py-3 rounded-full bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs tracking-wide transition-all glow-sky disabled:opacity-40 disabled:pointer-events-none cursor-pointer flex items-center justify-center gap-2 shrink-0 active:scale-95"
                   >
                     <Sparkles className="w-4 h-4 text-white" />
                     <span>{isSelectedRunning ? 'Senkronize Ediliyor...' : 'Diziyi Çek & Senkron Et'}</span>

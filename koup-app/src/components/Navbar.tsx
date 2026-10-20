@@ -1057,11 +1057,11 @@ export default function Navbar() {
               className="pointer-events-auto fixed inset-0 z-40 bg-black/65 backdrop-blur-xs touch-none overscroll-none lg:hidden transform-gpu will-change-[opacity]"
             />
             <motion.div
-              initial={{ x: '-105%', opacity: 0.8 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: '-105%', opacity: 0.8 }}
-              transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-              className="pointer-events-auto lg:hidden fixed top-2.5 bottom-2.5 left-2.5 w-[312px] max-w-[88vw] rounded-[28px] bg-gradient-to-b from-[#1a1c24]/82 via-[#11131a]/86 to-[#0b0c11]/90 backdrop-blur-2xl p-5 border border-white/[0.18] shadow-[0_28px_80px_rgba(0,0,0,0.88),inset_0_1px_1px_rgba(255,255,255,0.26)] z-50 flex flex-col justify-between overflow-hidden overscroll-contain touch-pan-y transform-gpu will-change-transform"
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="pointer-events-auto lg:hidden fixed inset-y-0 left-0 w-[300px] max-w-[85vw] h-full h-dvh bg-[#0c0d12] p-5 border-r border-white/15 shadow-2xl z-50 flex flex-col justify-between overflow-y-auto overscroll-contain touch-pan-y transform-gpu will-change-transform no-scrollbar"
             >
               {/* Subtle Liquid Glass Top Specular Sheen */}
               <div
@@ -1263,18 +1263,6 @@ export default function Navbar() {
                         <span className="truncate">Ayarlar</span>
                       </Link>
                     </div>
-
-                    <button
-                      onClick={() => {
-                        triggerSound('click');
-                        setMobileMenuOpen(false);
-                        logout();
-                      }}
-                      className="w-full flex items-center justify-center gap-2 min-h-[38px] rounded-xl bg-rose-500/[0.10] hover:bg-rose-500/[0.18] border border-rose-400/20 text-xs font-semibold text-rose-200 transition-colors cursor-pointer"
-                    >
-                      <LogOut className="w-3.5 h-3.5 text-rose-400" />
-                      <span>Çıkış Yap</span>
-                    </button>
                   </div>
                 ) : (
                   <button

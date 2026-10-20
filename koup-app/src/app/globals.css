@@ -1020,11 +1020,13 @@ input[type="range"].netflix-volume-slider:focus-visible {
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
+  visibility: hidden;
   overflow: hidden;
   pointer-events: none;
   transition:
-    grid-template-rows 240ms cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 190ms cubic-bezier(0.22, 1, 0.36, 1);
+    grid-template-rows 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 220ms allow-discrete;
 }
 
 .koup-expandable-drawer > .koup-expandable-inner {
@@ -1036,6 +1038,7 @@ input[type="range"].netflix-volume-slider:focus-visible {
 .koup-expandable-drawer.is-expanded {
   grid-template-rows: 1fr;
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
 }
 
@@ -1044,8 +1047,9 @@ input[type="range"].netflix-volume-slider:focus-visible {
     display: block;
     block-size: 0;
     transition:
-      block-size 240ms cubic-bezier(0.22, 1, 0.36, 1),
-      opacity 190ms cubic-bezier(0.22, 1, 0.36, 1);
+      block-size 220ms cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 220ms allow-discrete;
   }
 
   .koup-expandable-drawer.is-expanded {

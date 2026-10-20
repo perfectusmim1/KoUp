@@ -112,24 +112,48 @@ export default function SeriesDetailPage({
   const [showAllCast, setShowAllCast] = useState(false);
   const [showAllEpisodes, setShowAllEpisodes] = useState(false);
   const [extraSectionsReady, setExtraSectionsReady] = useState(false);
+  const castDrawerRef = useRef<HTMLDivElement>(null);
+  const episodesDrawerRef = useRef<HTMLDivElement>(null);
 
   // Pre-mount extra Cast and Episode cards during idle time after initial render
-  // so clicking "Tümünü Gör" toggles a pure CSS class with zero React DOM creation on the click frame.
+  // and pre-decode extra cast avatars in the background so clicking "Tümünü Gör" is 120fps.
   useEffect(() => {
     if (!media) return;
+    let cancelled = false;
+    const predecodeCastAvatars = () => {
+      if (cancelled) return;
+      setExtraSectionsReady(true);
+      cast.slice(6).forEach((c, idx) => {
+        const p = c.people;
+        if (!p?.image_url) return;
+        setTimeout(() => {
+          if (cancelled) return;
+          const img = new Image();
+          img.decoding = 'async';
+          img.src = getProxiedImageUrl(p.image_url, p.name, null, 'w500', 'person');
+          if (typeof img.decode === 'function') {
+            img.decode().catch(() => {});
+          }
+        }, idx * 15);
+      });
+    };
     const w = window as Window & {
       requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
       cancelIdleCallback?: (id: number) => void;
     };
     if (typeof w.requestIdleCallback === 'function') {
-      const id = w.requestIdleCallback(() => setExtraSectionsReady(true), { timeout: 250 });
+      const id = w.requestIdleCallback(predecodeCastAvatars, { timeout: 250 });
       return () => {
+        cancelled = true;
         if (typeof w.cancelIdleCallback === 'function') w.cancelIdleCallback(id);
       };
     }
-    const timer = setTimeout(() => setExtraSectionsReady(true), 120);
-    return () => clearTimeout(timer);
-  }, [media]);
+    const timer = setTimeout(predecodeCastAvatars, 120);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [media, cast]);
   const [showAddToListModal, setShowAddToListModal] = useState(false);
   const [trailerYoutubeId, setTrailerYoutubeId] = useState<string | null>(null);
   const [isTrailerSearching, setIsTrailerSearching] = useState(false);
@@ -1412,8 +1436,8 @@ export default function SeriesDetailPage({
             {/* Extra Cast Members with Pre-Mounted 120fps Intrinsic CSS Drawer */}
             {cast.length > 6 && (extraSectionsReady || showAllCast) && (
               <div
+                ref={castDrawerRef}
                 aria-hidden={!showAllCast}
-                {...(!showAllCast ? ({ inert: '' } as any) : {})}
                 className={`koup-expandable-drawer ${showAllCast ? 'is-expanded' : ''}`}
               >
                 <div className="koup-expandable-inner">
@@ -1432,7 +1456,6 @@ export default function SeriesDetailPage({
                             <img
                               src={getProxiedImageUrl(p.image_url, p.name, null, 'w500', 'person')}
                               alt={p.name}
-                              loading="lazy"
                               decoding="async"
                               className="w-full h-full object-cover"
                             />
@@ -1463,8 +1486,15 @@ export default function SeriesDetailPage({
                   aria-expanded={showAllCast}
                   onMouseEnter={() => setExtraSectionsReady(true)}
                   onClick={() => {
-                    setExtraSectionsReady(true);
-                    setShowAllCast((prev) => !prev);
+                    const next = !showAllCast;
+                    if (castDrawerRef.current) {
+                      castDrawerRef.current.classList.toggle('is-expanded', next);
+                      castDrawerRef.current.setAttribute('aria-hidden', String(!next));
+                    }
+                    React.startTransition(() => {
+                      setExtraSectionsReady(true);
+                      setShowAllCast(next);
+                    });
                   }}
                   className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full glass-pill hover:bg-white/18 text-xs font-semibold text-white/90 hover:text-white transition-[background-color,color,transform] cursor-pointer shadow-sm active:scale-95"
                 >
@@ -1694,9 +1724,9 @@ export default function SeriesDetailPage({
                 {/* Extra Episodes with Pre-Mounted 120fps Intrinsic CSS Drawer */}
                 {seasonEpisodes.length > 4 && (extraSectionsReady || showAllEpisodes) && (
                   <div
+                    ref={episodesDrawerRef}
                     key={`extra-episodes-${selectedSeason}`}
                     aria-hidden={!showAllEpisodes}
-                    {...(!showAllEpisodes ? ({ inert: '' } as any) : {})}
                     className={`koup-expandable-drawer ${showAllEpisodes ? 'is-expanded' : ''}`}
                   >
                     <div className="koup-expandable-inner">
@@ -1714,8 +1744,15 @@ export default function SeriesDetailPage({
                     aria-expanded={showAllEpisodes}
                     onMouseEnter={() => setExtraSectionsReady(true)}
                     onClick={() => {
-                      setExtraSectionsReady(true);
-                      setShowAllEpisodes((prev) => !prev);
+                      const next = !showAllEpisodes;
+                      if (episodesDrawerRef.current) {
+                        episodesDrawerRef.current.classList.toggle('is-expanded', next);
+                        episodesDrawerRef.current.setAttribute('aria-hidden', String(!next));
+                      }
+                      React.startTransition(() => {
+                        setExtraSectionsReady(true);
+                        setShowAllEpisodes(next);
+                      });
                     }}
                     className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full glass-pill hover:bg-white/18 text-xs font-semibold text-white/90 hover:text-white transition-[background-color,color,transform] cursor-pointer shadow-sm active:scale-95"
                   >
