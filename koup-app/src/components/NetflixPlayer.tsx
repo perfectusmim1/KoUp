@@ -472,6 +472,7 @@ export default function NetflixPlayer({
   const hideControlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const singleClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTouchTapRef = useRef<{ time: number; x: number }>({ time: 0, x: 0 });
+  const touchStartPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const isDraggingVolumeRef = useRef(false);
   const volumeHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedVolumeRef = useRef(1);
@@ -1129,6 +1130,7 @@ export default function NetflixPlayer({
       );
       setIsFullscreen(activeFs);
       if (!activeFs) {
+        setActivePanel((prev) => (prev === 'quality' || prev === 'episodes' ? null : prev));
         try {
           (screen.orientation as any)?.unlock?.();
         } catch {}
@@ -2264,6 +2266,12 @@ export default function NetflixPlayer({
     revealControls,
   ]);
 
+  const handleStagePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'touch') {
+      touchStartPosRef.current = { x: e.clientX, y: e.clientY };
+    }
+  };
+
   // Handle stage surface pointer click / double-click / mobile double-tap
   const handleStagePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     // Ignore if user clicked inside an interactive control or open drawer
@@ -2287,10 +2295,23 @@ export default function NetflixPlayer({
     const now = Date.now();
 
     if (e.pointerType === 'touch') {
+      // Sayfayı kaydırma / sürükleme hareketini (scroll gesture) dokunma ile karıştırma
+      const dist = Math.hypot(
+        e.clientX - touchStartPosRef.current.x,
+        e.clientY - touchStartPosRef.current.y
+      );
+      if (dist > 16) {
+        return;
+      }
+
       const timeSinceLast = now - lastTouchTapRef.current.time;
-      if (timeSinceLast < 300) {
+      if (timeSinceLast < 320 && Math.abs(relX - lastTouchTapRef.current.x) < 0.35) {
         // Double tap on mobile: Left 38% rewinds 10s, Right 38% forwards 10s
-        if (singleClickTimerRef.current) clearTimeout(singleClickTimerRef.current);
+        if (singleClickTimerRef.current) {
+          clearTimeout(singleClickTimerRef.current);
+          singleClickTimerRef.current = null;
+        }
+        lastTouchTapRef.current = { time: 0, x: 0 };
         if (relX < 0.38) {
           triggerMobileSeek('left');
         } else if (relX > 0.62) {
@@ -2298,18 +2319,25 @@ export default function NetflixPlayer({
         } else {
           togglePlayPause();
         }
-        lastTouchTapRef.current = { time: 0, x: 0 };
         return;
       }
 
       lastTouchTapRef.current = { time: now, x: relX };
-      singleClickTimerRef.current = setTimeout(() => {
-        setShowOverlay((prev) => {
-          const next = !prev;
-          if (next) scheduleHideOverlay();
-          return next;
-        });
-      }, 210);
+
+      // SIFIR GECİKME (ZERO-LAG TAP):
+      // Dokunulduğu anda UI bekletilmeden (setTimeout olmadan) 0ms anında açılır/kapanır
+      if (!showOverlayRef.current) {
+        showOverlayRef.current = true;
+        setShowOverlay(true);
+        scheduleHideOverlay();
+      } else {
+        showOverlayRef.current = false;
+        setShowOverlay(false);
+        if (hideControlsTimer.current) {
+          clearTimeout(hideControlsTimer.current);
+          hideControlsTimer.current = null;
+        }
+      }
     } else {
       // Desktop mouse: immediate play/pause, double-click toggles fullscreen
       const timeSinceLast = now - lastTouchTapRef.current.time;
@@ -2589,6 +2617,7 @@ export default function NetflixPlayer({
              LAYER 1: AUTHENTIC NETFLIX NATIVE PLAYER (HLS / MP4 / Trailer)
              ================================================================== */
           <div
+            onPointerDown={handleStagePointerDown}
             onPointerUp={handleStagePointerUp}
             className="relative w-full h-full bg-black flex items-center justify-center overflow-hidden"
           >
@@ -2965,18 +2994,20 @@ export default function NetflixPlayer({
                       </div>
                     ) : isTouchDevice ? (
                       <>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsScreenLocked(true);
-                            setActivePanel(null);
-                            triggerHudToast('Ekran Kilitlendi');
-                          }}
-                          aria-label="Ekran Kontrollerini Kilitle"
-                          className="p-1 text-white/90 hover:text-white active:scale-95 transition-transform cursor-pointer"
-                        >
-                          <Unlock className="w-4 h-4 sm:w-5 sm:h-5" />
-                        </button>
+                        {isFullscreen && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsScreenLocked(true);
+                              setActivePanel(null);
+                              triggerHudToast('Ekran Kilitlendi');
+                            }}
+                            aria-label="Ekran Kontrollerini Kilitle"
+                            className="p-1 text-white/90 hover:text-white active:scale-95 transition-transform cursor-pointer"
+                          >
+                            <Unlock className="w-4 h-4 sm:w-5 sm:h-5" />
+                          </button>
+                        )}
 
                         <button
                           type="button"
@@ -3011,11 +3042,11 @@ export default function NetflixPlayer({
                 {/* 2. MIDDLE STAGE: Left Brightness + Center Transport Trio + Right Volume */}
                 <div className="relative flex-1 flex items-center justify-center px-2 sm:px-10 min-h-0 overflow-hidden pointer-events-none">
                   {/* MOBILE: Left Vertical Brightness Bar */}
-                  {isTouchDevice && (
+                  {isTouchDevice && isFullscreen && (
                     <div
                       data-netflix-control="true"
                       onClick={(e) => e.stopPropagation()}
-                      className={`flex flex-col items-center gap-1 sm:gap-2.5 absolute left-2 sm:left-6 top-1/2 -translate-y-1/2 z-30 transition-opacity duration-200 ${
+                      className={`flex flex-col items-center gap-1 sm:gap-2.5 absolute left-2 sm:left-6 top-1/2 -translate-y-1/2 z-30 transition-opacity duration-150 ${
                         showOverlay ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
                       }`}
                     >
@@ -3161,11 +3192,11 @@ export default function NetflixPlayer({
                   )}
 
                   {/* MOBILE: Right Vertical Volume Bar */}
-                  {isTouchDevice && (
+                  {isTouchDevice && isFullscreen && (
                     <div
                       data-netflix-control="true"
                       onClick={(e) => e.stopPropagation()}
-                      className={`flex flex-col items-center gap-1 sm:gap-2.5 absolute right-2 sm:right-6 top-1/2 -translate-y-1/2 z-30 transition-opacity duration-200 ${
+                      className={`flex flex-col items-center gap-1 sm:gap-2.5 absolute right-2 sm:right-6 top-1/2 -translate-y-1/2 z-30 transition-opacity duration-150 ${
                         showOverlay ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
                       }`}
                     >
@@ -3405,7 +3436,7 @@ export default function NetflixPlayer({
                             <span>Hız ({playbackRate}x)</span>
                           </button>
 
-                          {!isMovie && (
+                          {!isMovie && isFullscreen && (
                             <button
                               type="button"
                               onClick={() =>
@@ -3425,7 +3456,7 @@ export default function NetflixPlayer({
                             </button>
                           )}
 
-                          {qualities.length > 0 && (
+                          {qualities.length > 0 && isFullscreen && (
                             <div className="relative flex items-center shrink-0">
                               <button
                                 type="button"
@@ -3523,6 +3554,21 @@ export default function NetflixPlayer({
                               <span>Sonraki</span>
                             </button>
                           )}
+
+                          {/* Tam Ekran Butonu */}
+                          <button
+                            type="button"
+                            onClick={toggleFullscreen}
+                            aria-label={isFullscreen ? 'Tam Ekrandan Çık' : 'Tam Ekran'}
+                            className="flex items-center gap-1 py-1 text-xs font-medium text-white/90 hover:text-white active:scale-95 transition-transform cursor-pointer shrink-0"
+                          >
+                            {isFullscreen ? (
+                              <Minimize className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                            ) : (
+                              <Maximize className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                            )}
+                            <span>{isFullscreen ? 'Küçült' : 'Tam Ekran'}</span>
+                          </button>
                         </>
                       )}
                     </div>
@@ -3987,11 +4033,21 @@ export default function NetflixPlayer({
                     onClick={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
                     onPointerUp={(e) => e.stopPropagation()}
-                    className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 sm:top-auto sm:bottom-20 sm:left-6 md:left-8 sm:translate-x-0 sm:translate-y-0 z-50 w-[92vw] sm:w-[430px] max-w-[430px] p-4 sm:p-6 rounded-xl bg-[#222222] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.9)] select-none"
+                    className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 sm:top-auto sm:bottom-20 sm:left-6 md:left-8 sm:translate-x-0 sm:translate-y-0 z-50 w-[92vw] sm:w-[430px] max-w-[430px] p-3.5 sm:p-6 rounded-xl bg-[#222222] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.9)] select-none"
                   >
-                    {/* Title */}
-                    <div className="text-white font-bold text-base sm:text-[17px] tracking-normal mb-8">
-                      Oynatma Hızı
+                    {/* Header: Title + Close Button */}
+                    <div className="flex items-center justify-between mb-5 sm:mb-8">
+                      <div className="text-white font-bold text-sm sm:text-[17px] tracking-normal">
+                        Oynatma Hızı
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setActivePanel(null)}
+                        className="w-6 h-6 rounded-full hover:bg-white/10 flex items-center justify-center text-white/70 hover:text-white cursor-pointer"
+                        aria-label="Kapat"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                     </div>
 
                     {/* Horizontal Segmented Track with Equal Spacing */}
@@ -4090,9 +4146,22 @@ export default function NetflixPlayer({
                   transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
                   data-netflix-control="true"
                   onClick={(e) => e.stopPropagation()}
-                  className="absolute bottom-12 sm:bottom-20 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-md sm:max-w-xl p-5 sm:p-6 rounded-xl bg-[#181818]/98 backdrop-blur-sm border border-white/10 shadow-[0_24px_60px_rgba(0,0,0,0.95)] max-h-[80%] overflow-y-auto custom-scrollbar select-none"
+                  className="absolute bottom-12 sm:bottom-20 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-md sm:max-w-xl p-4 sm:p-6 rounded-xl bg-[#181818]/98 backdrop-blur-sm border border-white/10 shadow-[0_24px_60px_rgba(0,0,0,0.95)] max-h-[80%] overflow-y-auto custom-scrollbar select-none"
                 >
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="flex items-center justify-between mb-3 pb-2 border-b border-white/10">
+                    <div className="text-white font-bold text-sm sm:text-base tracking-wide">
+                      Ses & Altyazı
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActivePanel(null)}
+                      className="w-6 h-6 rounded-full hover:bg-white/10 flex items-center justify-center text-white/70 hover:text-white cursor-pointer"
+                      aria-label="Kapat"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                     {/* LEFT COLUMN: AUDIO */}
                     <div className="space-y-2.5">
                       <div className="text-white font-bold text-sm sm:text-base tracking-wide">
