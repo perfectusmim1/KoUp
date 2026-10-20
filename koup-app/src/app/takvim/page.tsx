@@ -192,11 +192,7 @@ export default function CalendarPage() {
                 }`}
               >
                 {active && (
-                  <motion.span
-                    layoutId="calendar-day-pill"
-                    transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                    className="absolute inset-0 rounded-xl bg-white shadow-[0_0_20px_rgba(255,255,255,0.35)]"
-                  />
+                  <span className="absolute inset-0 rounded-xl bg-white shadow-[0_0_20px_rgba(255,255,255,0.35)]" />
                 )}
                 <span className="w-full text-center relative z-10 text-xs font-mono font-bold">
                   {d.short}
@@ -251,16 +247,11 @@ export default function CalendarPage() {
           </p>
         </div>
       ) : (
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={selectedDay}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.18, ease: 'easeInOut' }}
-            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4"
-          >
-            {displayedSchedules.map((item) => {
+        <div
+          key={selectedDay}
+          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4"
+        >
+          {displayedSchedules.map((item) => {
               const targetSlug = item.media?.slug || item.slug;
               const coverImg =
                 item.media?.cover_image ||
@@ -384,8 +375,7 @@ export default function CalendarPage() {
                 </div>
               );
             })}
-          </motion.div>
-        </AnimatePresence>
+        </div>
       )}
     </div>
   );

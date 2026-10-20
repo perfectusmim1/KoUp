@@ -338,8 +338,12 @@ export default function BenchmarkRunner() {
           router.push(dest);
         }
 
-        // Reset scroll position on route change
-        window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+        // Reset scroll position on route change without blocking navigation frame
+        if (window.scrollY > 0) {
+          requestAnimationFrame(() => {
+            window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+          });
+        }
 
         setActiveStageText(`🚀 ${stage.name} - Rota Yükleniyor...`);
         setVirtualPointerPos({
@@ -362,6 +366,12 @@ export default function BenchmarkRunner() {
         const found = discoverSeriesPath();
         if (found) dynamicSeriesPathRef.current = found;
       }
+
+      // Prefetch upcoming routes in background for instant 0ms transitions
+      if (activeIndex === 0) router.prefetch('/kesfet');
+      if (activeIndex === 1) router.prefetch(dynamicSeriesPathRef.current || '/seri/squid-game');
+      if (activeIndex === 2) router.prefetch('/takvim');
+      if (activeIndex === 3) router.prefetch('/');
 
       // 3. Local progress within this stage (0.0 to 1.0)
       const stageSpan = stage.fractionEnd - stage.fractionStart;
@@ -607,9 +617,15 @@ export default function BenchmarkRunner() {
       // Update Live HUD & Sample FPS every ~90ms
       if (now - lastInteractionTimeRef.current > 90) {
         lastInteractionTimeRef.current = now;
-        const currentFps = delta > 0 ? Math.min(144, Math.round(1000 / delta)) : 60;
+        // Rolling 3-frame window for smooth, jitter-resistant instantaneous FPS
+        const recentFrames = frameTimesRef.current.slice(-3);
+        const avgDelta =
+          recentFrames.length > 0
+            ? recentFrames.reduce((a, b) => a + b, 0) / recentFrames.length
+            : delta;
+        const currentFps = avgDelta > 0 ? Math.min(144, Math.round(1000 / avgDelta)) : 60;
         setLiveFps(currentFps);
-        setLiveLatencyMs(Math.round(delta * 10) / 10);
+        setLiveLatencyMs(Math.round(avgDelta * 10) / 10);
         setProgressPercent(Math.round(progress * 100));
         setElapsedSec(Math.round(elapsed / 1000));
 
