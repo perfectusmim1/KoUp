@@ -260,12 +260,12 @@ function AccordionMediaCardComponent({
       ? 0
       : Math.max(Number(item.episode_count || 0), Number(item.episodes_available || 0));
 
-  // Request w342 for 2:3 vertical poster (~480p resolution) and w780 for 16:9 card backdrop
+  // Request w92 for 2:3 vertical poster (bariz dusuk cozunurluk test modu)
   const posterSrc = getProxiedImageUrl(
     effectiveCover,
     item.poster_fallback_url || null,
     item.title,
-    'w342',
+    'w92',
     'poster',
     item.tmdb_id,
     mediaType

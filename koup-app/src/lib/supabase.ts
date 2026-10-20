@@ -433,7 +433,7 @@ export function getProxiedImageUrl(
   url?: string | null,
   fallbackOrTitle?: string | null,
   titleHint?: string | null,
-  tmdbSize: 'w92' | 'w154' | 'w185' | 'w342' | 'w500' | 'w780' | 'w1280' | 'original' = 'w500',
+  tmdbSize: 'w92' | 'w154' | 'w185' | 'w342' | 'w500' | 'w780' | 'w1280' | 'original' = 'w92',
   type?: 'media' | 'person' | 'character' | 'banner' | 'poster',
   tmdbId?: number | string | null,
   mediaType?: 'tv' | 'movie' | null,
@@ -462,22 +462,16 @@ export function getProxiedImageUrl(
 
   if (url.startsWith('/') || url.startsWith('data:')) return url;
 
-  // TMDB resolution: ensure correct size is requested without huge downloads, optimized for mobile
+  // TMDB resolution: vitrin & seri sayfası original kalır, tüm kartlar belirgin şekilde düşük çözünürlüğe çekilir
   if (url.includes('image.tmdb.org')) {
-    const isMobileClient = typeof window !== 'undefined' && window.innerWidth > 0 && window.innerWidth < 768;
-    let effectiveSize = tmdbSize;
+    let effectiveSize: string;
 
-    if (type === 'person') {
-      effectiveSize = tmdbSize === 'w500' ? 'w185' : tmdbSize;
-    } else if (effectiveSize === 'original') {
-      // Keep uncompressed original resolution on series page
+    if (tmdbSize === 'original') {
+      // Vitrin / Series Detail: uncompressed original
       effectiveSize = 'original';
-    } else if (isMobileClient) {
-      if (type === 'poster') {
-        effectiveSize = 'w342';
-      } else if (effectiveSize === 'w1280') {
-        effectiveSize = 'w780';
-      }
+    } else {
+      // Tüm seri kartları, oyuncular, listeler, takvim: bariz fark edilebilen w92 düşük çözünürlük
+      effectiveSize = type === 'banner' ? 'w300' : 'w92';
     }
 
     return url.replace(
@@ -494,14 +488,13 @@ export function getProxiedImageUrl(
     return `${url}=s192-c`;
   }
 
+  // AniList images: vitrinde extraLarge, kartlarda bariz düşük çözünürlüklü medium (100x140px)
   if (url.includes('s4.anilist.co')) {
     if (tmdbSize === 'original') {
-      return url.replace('/cover/medium/', '/cover/extraLarge/').replace('/cover/large/', '/cover/extraLarge/');
+      return url.replace('/cover/medium/', '/cover/extraLarge/').replace('/cover/large/', '/cover/extraLarge/').replace('/cover/small/', '/cover/extraLarge/');
+    } else {
+      return url.replace('/cover/extraLarge/', '/cover/medium/').replace('/cover/large/', '/cover/medium/');
     }
-    if (tmdbSize === 'w342') {
-      return url.replace('/cover/extraLarge/', '/cover/large/').replace('/cover/medium/', '/cover/large/');
-    }
-    return url;
   }
 
   const params = new URLSearchParams({ url });

@@ -288,7 +288,7 @@ export default function CalendarPage() {
                         coverImg,
                         item.media?.poster_fallback_url || item.cover_image,
                         item.title,
-                        'w500',
+                        'w92',
                         'media',
                         item.media?.tmdb_id,
                         item.media?.content_type === 'film' || item.media?.content_type === 'movie' ? 'movie' : 'tv',
