@@ -462,6 +462,11 @@ export function getProxiedImageUrl(
 
   if (url.startsWith('/') || url.startsWith('data:')) return url;
 
+  // Normalize old scraper actor URLs to official MyDramaList CDN
+  if (url.includes('cdn.webdrama.io/actor/')) {
+    url = url.replace(/https?:\/\/cdn\.webdrama\.io\/actor\//i, 'https://i.mydramalist.com/');
+  }
+
   // TMDB resolution: vitrin & seri sayfası original kalır, tüm kartlar belirgin şekilde düşük çözünürlüğe çekilir
   if (url.includes('image.tmdb.org')) {
     let effectiveSize: string;
@@ -488,19 +493,20 @@ export function getProxiedImageUrl(
     return `${url}=s192-c`;
   }
 
-  // AniList images: vitrinde extraLarge, kartlarda bariz dusuk cozunurluklu small (64x90px)
+  // AniList images: vitrin ve seri sayfasında orijinal kaliteli hali (404 vermemesi için URL korunur), kartlarda small (64x90px)
   if (url.includes('s4.anilist.co')) {
     if (tmdbSize === 'original') {
-      return url
-        .replace('/cover/medium/', '/cover/extraLarge/')
-        .replace('/cover/large/', '/cover/extraLarge/')
-        .replace('/cover/small/', '/cover/extraLarge/');
-    } else {
+      return url;
+    }
+    // Kapak görseli ise AniList CDN'inin doğrudan 64x90'lık küçük versiyonunu kullan
+    if (url.includes('/cover/')) {
       return url
         .replace('/cover/extraLarge/', '/cover/small/')
         .replace('/cover/large/', '/cover/small/')
         .replace('/cover/medium/', '/cover/small/');
     }
+    // AniList banner görseli ise (/banner/), CDN'de küçük versiyon bulunmadığı için
+    // aşağıya düşerek /api/image-proxy üzerinden sharp ile küçültülmesini sağla.
   }
 
   const params = new URLSearchParams({ url });

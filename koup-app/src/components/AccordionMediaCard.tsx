@@ -166,7 +166,7 @@ export function preloadMediaImages(items?: (MediaItem | null | undefined)[]) {
       item.backdrop_image,
       item.cover_image,
       item.title,
-      'w780',
+      'w92',
       'banner',
       item.tmdb_id,
       mediaType
@@ -276,7 +276,7 @@ function AccordionMediaCardComponent({
       effectiveBackdrop !== effectiveCover
   );
   const backdropSrc = hasDistinctBackdrop
-    ? getProxiedImageUrl(effectiveBackdrop, effectiveCover, item.title, 'w780', 'banner', item.tmdb_id, mediaType)
+    ? getProxiedImageUrl(effectiveBackdrop, effectiveCover, item.title, 'w92', 'banner', item.tmdb_id, mediaType)
     : posterSrc;
 
   const countryCode = item.country_code || item.country;

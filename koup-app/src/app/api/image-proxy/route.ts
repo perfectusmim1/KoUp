@@ -638,8 +638,14 @@ export async function GET(req: NextRequest) {
     const urlsToTry: string[] = [];
 
     if (targetUrl) {
+      // Map old dead scraper actor URLs to official MyDramaList CDN
+      if (targetUrl.includes('cdn.webdrama.io/actor/')) {
+        const mdlUrl = targetUrl.replace(/https?:\/\/cdn\.webdrama\.io\/actor\//i, 'https://i.mydramalist.com/');
+        urlsToTry.push(mdlUrl);
+      }
+
       // If it's already an official CDN URL, stream directly
-      if (targetUrl.includes('image.tmdb.org') || targetUrl.includes('s4.anilist.co')) {
+      if (targetUrl.includes('image.tmdb.org') || targetUrl.includes('s4.anilist.co') || targetUrl.includes('i.mydramalist.com')) {
         urlsToTry.push(targetUrl);
       } else if (!targetUrl.toLowerCase().includes('hdfilmcehennemi')) {
         // hdfilmcehennemi blocks Node.js runtime with Cloudflare 403, handled via slug fallback below
