@@ -485,12 +485,26 @@ export function rankRelatedMedia(
 export function buildPersonalizedFeed(
   pool: MediaItem[],
   progressMap: Record<number, UserMediaProgress> = {},
-  limit = 14
+  limit = 60
 ): MediaItem[] {
   const taste = getTasteProfile();
   const summary = getTasteSummary(taste);
   if (!summary.hasTaste || !Array.isArray(pool) || pool.length === 0) {
-    return [];
+    if (!Array.isArray(pool) || pool.length === 0) return [];
+    const seen = new Set<number>();
+    return pool
+      .filter((m) => {
+        if (!m || !m.id || seen.has(m.id)) return false;
+        seen.add(m.id);
+        const s = progressMap[m.id]?.status;
+        return s !== 'completed' && s !== 'dropped';
+      })
+      .sort((a, b) => {
+        const rA = Number(a.mdl_rating || a.imdb_rating || a.rating || 0);
+        const rB = Number(b.mdl_rating || b.imdb_rating || b.rating || 0);
+        return rB - rA;
+      })
+      .slice(0, limit);
   }
 
   const maxGenre = Math.max(1, ...Object.values(taste.genres), 1);
@@ -545,11 +559,30 @@ export function buildPersonalizedFeed(
       score -= 15;
     }
 
-    if (score > 18) {
+    if (score > 12) {
       scored.push({ item, score });
     }
   }
 
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, limit).map((s) => s.item);
+  const result = scored.map((s) => s.item);
+
+  // If scored items are fewer than limit (e.g. 60), fill remaining slots from high-rated pool items
+  if (result.length < limit) {
+    const scoredIds = new Set(result.map((m) => m.id));
+    const extra = pool
+      .filter((m) => {
+        if (!m || !m.id || scoredIds.has(m.id)) return false;
+        const s = progressMap[m.id]?.status;
+        return s !== 'completed' && s !== 'dropped';
+      })
+      .sort((a, b) => {
+        const rA = Number(a.mdl_rating || a.imdb_rating || a.rating || 0);
+        const rB = Number(b.mdl_rating || b.imdb_rating || b.rating || 0);
+        return rB - rA;
+      });
+    result.push(...extra.slice(0, limit - result.length));
+  }
+
+  return result.slice(0, limit);
 }

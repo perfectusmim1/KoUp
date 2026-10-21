@@ -13,6 +13,7 @@ import {
   Sparkles,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
   Clock,
   Award,
   Heart,
@@ -290,14 +291,14 @@ export default function HomePage() {
 
   useEffect(() => {
     // 1. Instantly populate on client mount from memory or localStorage cache for 0ms transition
-    const cached = memoryHomeBundle || getCache<HomeDataBundle>('home_catalog_bundle_v9');
+    const cached = memoryHomeBundle || getCache<HomeDataBundle>('home_catalog_bundle_v10');
     if (cached) {
       applyBundle(cached);
     }
 
     async function fetchHomeData() {
       const homeData = await cachedQuery(
-        'home_catalog_bundle_v9',
+        'home_catalog_bundle_v10',
         60_000,
         async () => {
         const [
@@ -325,20 +326,20 @@ export default function HomePage() {
             .select('*')
             .eq('country_code', 'KR')
             .order('mdl_rating', { ascending: false, nullsFirst: false })
-            .limit(16),
+            .limit(28),
           supabase
             .from('media')
             .select('*')
             .eq('country_code', 'CN')
             .order('mdl_rating', { ascending: false, nullsFirst: false })
-            .limit(16),
+            .limit(28),
           supabase
             .from('media')
             .select('*')
             .eq('content_type', 'anime')
             .not('anilist_rating', 'is', null)
             .order('anilist_rating', { ascending: false })
-            .limit(16),
+            .limit(28),
           supabase
             .from('media')
             .select('*')
@@ -346,7 +347,7 @@ export default function HomePage() {
             .neq('content_type', 'anime')
             .order('imdb_rating', { ascending: false, nullsFirst: false })
             .order('mdl_rating', { ascending: false, nullsFirst: false })
-            .limit(16),
+            .limit(28),
           supabase
             .from('episodes')
             .select(
@@ -1036,7 +1037,7 @@ export default function HomePage() {
     };
   }, []);
 
-  const { personalizedItems, tasteSummary, orderedCategoryRows } = useMemo(() => {
+  const { personalizedItems, tasteSummary } = useMemo(() => {
     const allPool = [
       ...kdramaItems,
       ...animeItems,
@@ -1046,40 +1047,11 @@ export default function HomePage() {
     ];
     const profile = getTasteProfile();
     const summary = getTasteSummary(profile);
-    const feed = buildPersonalizedFeed(allPool, progressMap, 14);
-
-    const baseRows = [
-      {
-        key: 'kdrama',
-        score: (profile.countries['KR'] || 0) + (profile.types['dizi'] || 0) * 0.5,
-                title: 'Kore Dizileri',
-        href: '/kesfet?country=KR',
-        items: kdramaItems,
-      },
-      {
-        key: 'anime',
-        score: (profile.types['anime'] || 0) * 1.4 + (profile.countries['JP'] || 0) * 0.8,
-                title: 'Animeler',
-        href: '/kesfet?type=anime',
-        items: animeItems,
-      },
-      {
-        key: 'cdrama',
-        score: (profile.countries['CN'] || 0) * 1.3,
-                title: 'Çin Dizileri',
-        href: '/kesfet?country=CN',
-        items: cdramaItems,
-      },
-    ];
-
-    if (summary.hasTaste) {
-      baseRows.sort((a, b) => b.score - a.score);
-    }
+    const feed = buildPersonalizedFeed(allPool, progressMap, 60);
 
     return {
       personalizedItems: feed,
       tasteSummary: summary,
-      orderedCategoryRows: baseRows,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kdramaItems, animeItems, cdramaItems, globalItems, heroItems, progressMap, tasteVersion]);
@@ -1130,8 +1102,6 @@ export default function HomePage() {
   const top10SeriesOrder = runningOrder++;
   const top10MoviesOrder = runningOrder++;
   const personalizedOrder = runningOrder++;
-  const categoryBaseOrder = runningOrder;
-  runningOrder += orderedCategoryRows.length;
   const topPeopleOrder = runningOrder++;
   const magPostsOrder = runningOrder++;
 
@@ -1987,32 +1957,17 @@ export default function HomePage() {
         )}
 
         {/* =====================================================================
-            4. SANA ÖZEL SEÇKİ (Cookie & İzleme Verisiyle Beslenen Canlı Öneri Satırı)
+            4. SANA ÖZEL ÖNERİLEN YAPIMLAR (Aşağı Doğru Uzayan, Çok Satırlı, 60 Önerili & Akıcı Bar)
         ===================================================================== */}
         {personalizedItems.length > 0 && (
-          <AccordionRow
-            title="Sana Özel Önerilen Yapımlar"
-            href="/kesfet"
+          <PersonalizedRecommendationsSection
             items={personalizedItems}
             onConfigureTaste={openCookiePreferencesModal}
-            priority={true}
             order={personalizedOrder}
+            isDesktop={isDesktop}
+            triggerSound={triggerSound}
           />
         )}
-
-        {/* =====================================================================
-            5. K-DRAMA, ANIME & C-DRAMA ACCORDION ROWS (Kullanıcı Zevkine Göre Dinamik Sıralı)
-        ===================================================================== */}
-        {orderedCategoryRows.map((row, idx) => (
-          <AccordionRow
-            key={row.key}
-            title={row.title}
-            href={row.href}
-            items={row.items}
-            priority={personalizedItems.length === 0 && idx === 0}
-            order={categoryBaseOrder + idx}
-          />
-        ))}
       </div>
     </div>
   );
@@ -2047,44 +2002,83 @@ const DeferredSection = memo(function DeferredSection({
   );
 });
 
-const AccordionRow = memo(function AccordionRow({
-  subtitle,
-  title,
-  href,
-  items,
-  onConfigureTaste,
-  priority = false,
-  order = 0,
-}: {
-  subtitle?: string;
-  title: string;
-  href: string;
+interface PersonalizedRecommendationsSectionProps {
   items: MediaItem[];
   onConfigureTaste?: () => void;
-  priority?: boolean;
-  order?: number;
-}) {
-  const scrollRef = useDragScroll<HTMLDivElement>();
+  order: number;
+  isDesktop: boolean;
+  triggerSound?: (type: string) => void;
+}
+
+const PersonalizedRecommendationsSection = memo(function PersonalizedRecommendationsSection({
+  items,
+  onConfigureTaste,
+  order,
+  isDesktop,
+  triggerSound,
+}: PersonalizedRecommendationsSectionProps) {
+  const sectionRef = useRef<HTMLElement | null>(null);
   const { isMounted, ref: deferredRef } = useDeferredMount(order);
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  // Responsive columns: mobile 2, tablet 3-4, desktop 5-6
+  const [cols, setCols] = useState(6);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const calcCols = () => {
+      const w = window.innerWidth;
+      if (w < 640) setCols(2);
+      else if (w < 860) setCols(3);
+      else if (w < 1140) setCols(4);
+      else if (w < 1440) setCols(5);
+      else setCols(6);
+    };
+    calcCols();
+    window.addEventListener('resize', calcCols);
+    return () => window.removeEventListener('resize', calcCols);
+  }, []);
+
+  // Partition items into rows of size `cols`
+  const allRows = useMemo(() => {
+    const res: MediaItem[][] = [];
+    for (let i = 0; i < items.length; i += cols) {
+      res.push(items.slice(i, i + cols));
+    }
+    return res;
+  }, [items, cols]);
+
+  const initialRowCount = isDesktop ? 2 : 3;
+  const initialRows = useMemo(() => allRows.slice(0, initialRowCount), [allRows, initialRowCount]);
+  const extraRows = useMemo(() => allRows.slice(initialRowCount), [allRows, initialRowCount]);
+
+  const handleToggleExpand = useCallback(() => {
+    triggerSound?.('click');
+    if (isExpanded) {
+      setIsExpanded(false);
+      if (sectionRef.current) {
+        sectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    } else {
+      setIsExpanded(true);
+    }
+  }, [isExpanded, triggerSound]);
 
   if (!items || items.length === 0) return null;
 
   return (
-    <section ref={deferredRef} className="w-full px-4 sm:px-6 md:px-14 max-w-full [contain:layout_paint_style]">
-      <div className="flex flex-col gap-1 mb-4 sm:mb-5">
-        <div className="flex items-center justify-between min-h-[22px]">
-          {subtitle ? (
-            <span
-              className={`text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase ${
-                onConfigureTaste ? 'text-sky-400 flex items-center gap-1.5' : 'text-white/40'
-              }`}
-            >
-              {onConfigureTaste && <Sparkles className="w-3.5 h-3.5 shrink-0" />}
-              <span className="truncate">{subtitle}</span>
-            </span>
-          ) : (
-            <div />
-          )}
+    <section
+      ref={(el) => {
+        sectionRef.current = el;
+        deferredRef(el);
+      }}
+      className="w-full px-4 sm:px-6 md:px-14 max-w-full [contain:layout_paint_style]"
+    >
+      <div className="flex flex-col gap-1 mb-4 sm:mb-6">
+        <div className="flex items-center justify-between min-h-[24px]">
+          <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase text-sky-400 flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Sana Özel Seçki</span>
+          </span>
 
           <div className="flex items-center gap-1.5 sm:gap-2 ml-auto shrink-0">
             {onConfigureTaste && (
@@ -2097,27 +2091,8 @@ const AccordionRow = memo(function AccordionRow({
                 <span>Zevk Ayarları</span>
               </button>
             )}
-            <button
-              onClick={() =>
-                scrollRef.current?.scrollBy({ left: -320, behavior: 'smooth' })
-              }
-              aria-label="Sola Kaydır"
-              className="hidden sm:flex w-8 h-8 rounded-full glass-pill items-center justify-center text-white/70 hover:text-white cursor-pointer"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() =>
-                scrollRef.current?.scrollBy({ left: 320, behavior: 'smooth' })
-              }
-              aria-label="Sağa Kaydır"
-              className="hidden sm:flex w-8 h-8 rounded-full glass-pill items-center justify-center text-white/70 hover:text-white cursor-pointer"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
             <Link
-              href={href}
-             
+              href="/kesfet"
               className="text-xs font-semibold text-white/55 hover:text-white flex items-center gap-1 transition-colors whitespace-nowrap"
             >
               <span>Tümünü Gör</span>
@@ -2127,26 +2102,179 @@ const AccordionRow = memo(function AccordionRow({
         </div>
 
         <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white mt-0.5">
-          {title}
+          Sana Özel Önerilen Yapımlar
         </h2>
       </div>
 
       {!isMounted ? (
-        <div className="w-full h-[266px] sm:h-[296px] md:h-[324px]" />
+        <div className="w-full h-[320px] sm:h-[400px] my-2" />
       ) : (
-        <div
-          ref={scrollRef}
-          onMouseEnter={() => {
-            preloadMediaImages(items);
-          }}
-          onMouseLeave={() => requestAccordionHover(null)}
-          className="koup-accordion-rail flex items-center gap-3 sm:gap-4 overflow-x-auto overflow-y-hidden w-full h-[266px] sm:h-[296px] md:h-[324px] py-2 sm:py-3 no-scrollbar [-webkit-overflow-scrolling:touch] max-w-full"
-        >
-          {items.map((item, idx) => (
-            <AccordionMediaCard key={item.id} item={item} priority={priority && idx < 4} />
-          ))}
+        <div className="w-full flex flex-col">
+          {/* Initial Rows (Mounted instantly) */}
+          <div className="flex flex-col gap-3 sm:gap-4 w-full">
+            {initialRows.map((rowItems, rIdx) => (
+              <PersonalizedGridRow
+                key={`init-row-${rIdx}`}
+                items={rowItems}
+                cols={cols}
+                isDesktop={isDesktop}
+                priority={rIdx === 0}
+              />
+            ))}
+          </div>
+
+          {/* Extra Rows with Fluid Height/Opacity Spring Accordion Animation */}
+          <AnimatePresence initial={false}>
+            {isExpanded && (
+              <motion.div
+                key="extra-recommendations-wrapper"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                className="overflow-hidden flex flex-col gap-3 sm:gap-4 mt-3 sm:mt-4"
+              >
+                {extraRows.map((rowItems, rIdx) => (
+                  <PersonalizedGridRow
+                    key={`extra-row-${rIdx}`}
+                    items={rowItems}
+                    cols={cols}
+                    isDesktop={isDesktop}
+                    priority={false}
+                  />
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Integrated Sleek Expander Bar (Apple TV+ Glass Styling, No Garish Highlight Colors) */}
+          {extraRows.length > 0 && (
+            <div className="w-full mt-4 sm:mt-6">
+              <button
+                type="button"
+                onClick={handleToggleExpand}
+                aria-expanded={isExpanded}
+                className="w-full group relative py-3.5 sm:py-4 px-6 rounded-2xl bg-white/[0.025] hover:bg-white/[0.055] active:bg-white/[0.08] border border-white/[0.07] hover:border-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50 transition-all duration-300 flex items-center justify-center gap-2.5 cursor-pointer select-none"
+              >
+                <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-transparent via-white/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+                <span className="relative z-10 flex items-center gap-2 text-xs sm:text-sm font-semibold text-white/70 group-hover:text-white transition-colors tracking-wide">
+                  <Sparkles className="w-4 h-4 text-sky-400/80 group-hover:text-sky-300 transition-colors shrink-0" />
+                  <span>
+                    {isExpanded
+                      ? 'Daha Az Göster'
+                      : `Daha Fazla Öneri Göster (${items.length} Yapım)`}
+                  </span>
+                </span>
+                <motion.div
+                  animate={{ rotate: isExpanded ? 180 : 0 }}
+                  transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                  className="relative z-10"
+                >
+                  <ChevronDown className="w-4 h-4 text-white/50 group-hover:text-white transition-colors" />
+                </motion.div>
+              </button>
+            </div>
+          )}
         </div>
       )}
     </section>
+  );
+});
+
+const PersonalizedGridRow = memo(function PersonalizedGridRow({
+  items,
+  cols,
+  isDesktop,
+  priority,
+}: {
+  items: MediaItem[];
+  cols: number;
+  isDesktop: boolean;
+  priority?: boolean;
+}) {
+  const [hoveredCol, setHoveredCol] = useState<number | null>(null);
+  const hoverTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleCardEnter = useCallback((colIdx: number) => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    setHoveredCol(colIdx);
+  }, []);
+
+  const handleCardLeave = useCallback(() => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+    }
+    hoverTimerRef.current = setTimeout(() => {
+      setHoveredCol(null);
+      hoverTimerRef.current = null;
+    }, 45);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (hoverTimerRef.current) {
+        clearTimeout(hoverTimerRef.current);
+      }
+    };
+  }, []);
+
+  if (!isDesktop) {
+    return (
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full">
+        {items.map((item, idx) => (
+          <AccordionMediaCard
+            key={item.id}
+            item={item}
+            priority={priority && idx < 2}
+            fluidWidth={true}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  // Desktop Hover-Shift Calculation to prevent right-edge overflow or line wrapping
+  // Difference between expanded card width (420px) and collapsed card width (200px)
+  const delta = 220;
+  const isFullRow = items.length >= cols;
+  const shiftX =
+    isFullRow && hoveredCol !== null && items.length > 1
+      ? -Math.round((hoveredCol / (items.length - 1)) * delta)
+      : 0;
+
+  return (
+    <div className="w-full overflow-hidden py-1.5 px-0.5 relative">
+      <div
+        className="koup-accordion-rail flex items-center gap-3 sm:gap-4 overflow-visible w-full h-[266px] sm:h-[296px] md:h-[324px]"
+        style={{
+          transform: `translateX(${shiftX}px)`,
+          transition: 'transform 260ms cubic-bezier(0.22, 1, 0.36, 1)',
+          willChange: hoveredCol !== null ? 'transform' : 'auto',
+        }}
+        onMouseEnter={() => preloadMediaImages(items)}
+        onMouseLeave={() => {
+          setHoveredCol(null);
+          requestAccordionHover(null);
+        }}
+      >
+        {items.map((item, colIdx) => (
+          <div
+            key={item.id}
+            className="shrink-0"
+            onMouseEnter={() => handleCardEnter(colIdx)}
+            onMouseLeave={handleCardLeave}
+          >
+            <AccordionMediaCard
+              item={item}
+              priority={priority && colIdx < 4}
+              fluidWidth={false}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 });
