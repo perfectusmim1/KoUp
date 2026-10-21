@@ -1147,9 +1147,10 @@ export default function EpisodeWatchPage({
                     currentSeason,
                     activeEpNum
                   );
-                  return epProg.isWatched && epProg.position >= epProg.duration * 0.92
-                    ? 0
-                    : (epProg.position || 0);
+                  if (epProg.position > 15 && epProg.position < epProg.duration * 0.95) {
+                    return epProg.position;
+                  }
+                  return epProg.isWatched ? 0 : (epProg.position || 0);
                 })()}
               />
             </div>

@@ -543,6 +543,7 @@ export default function NetflixPlayer({
     'native_hls' | 'native_mp4' | 'iframe' | 'trailer' | 'resolving' | 'error'
   >(isTrailerMode ? 'trailer' : 'resolving');
   const [streamUrl, setStreamUrl] = useState<string>('');
+  const hasRefreshedStreamRef = useRef(false);
   const [internalTrailerYtId, setInternalTrailerYtId] = useState<string | null>(
     propTrailerYoutubeId || null
   );
@@ -1221,6 +1222,7 @@ export default function NetflixPlayer({
     let cancelled = false;
 
     async function resolve() {
+      hasRefreshedStreamRef.current = false;
       setIsResolving(true);
       setResolvedMode('resolving');
       const normalizedFallback = normalizePlayerStreamUrl(activeSourceUrl, targetResume).url;
@@ -1493,6 +1495,44 @@ export default function NetflixPlayer({
                     const httpCode = errData.response?.code;
                     hlsNetworkRetryCount += 1;
                     if (httpCode === 403 || httpCode === 404 || hlsNetworkRetryCount > 2) {
+                      // Attempt a 1-time fresh resolve with refresh=1 if stream token expired
+                      if (!hasRefreshedStreamRef.current && activeSourceUrl && (httpCode === 403 || httpCode === 404)) {
+                        hasRefreshedStreamRef.current = true;
+                        const refreshParams = new URLSearchParams({
+                          url: activeSourceUrl,
+                          provider: activeSourceProvider,
+                          refresh: '1',
+                        });
+                        void fetch(`/api/resolve-stream?${refreshParams.toString()}`, { cache: 'no-store' })
+                          .then((r) => r.json())
+                          .then((freshData) => {
+                            if (freshData?.streamUrl && (freshData.mode === 'native_hls' || freshData.mode === 'native_mp4')) {
+                              setStreamUrl(freshData.streamUrl);
+                              hls.loadSource(freshData.streamUrl);
+                              hls.startLoad();
+                            } else if (selectedSourceIdx + 1 < filteredSources.length) {
+                              pushNotification(
+                                'Otomatik Yedek Kaynağa Geçildi',
+                                `${activeSource?.source_name || 'Mevcut kaynak'} yanıt vermedi (${httpCode || 'bağlantı hatası'}), sıradaki kaynağa geçiliyor.`,
+                                'info'
+                              );
+                              setSelectedSourceIdx(selectedSourceIdx + 1);
+                            } else if (fallbackIframeUrl) {
+                              setStreamUrl(fallbackIframeUrl);
+                              setResolvedMode('iframe');
+                            }
+                          })
+                          .catch(() => {
+                            if (selectedSourceIdx + 1 < filteredSources.length) {
+                              setSelectedSourceIdx(selectedSourceIdx + 1);
+                            } else if (fallbackIframeUrl) {
+                              setStreamUrl(fallbackIframeUrl);
+                              setResolvedMode('iframe');
+                            }
+                          });
+                        return;
+                      }
+
                       if (selectedSourceIdx + 1 < filteredSources.length) {
                         pushNotification(
                           'Otomatik Yedek Kaynağa Geçildi',

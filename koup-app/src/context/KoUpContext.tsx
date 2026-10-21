@@ -1465,20 +1465,31 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         const epKey = `${existing.last_season_num || 1}_${episodeNum}`;
         const prevEpPositions = existing.episode_positions || {};
         const safeDur = existing.resume_duration_sec || 3600;
+
+        // Preserve user's actual playback position if they were watching this episode
+        const currentEpPos = prevEpPositions[epKey]?.position ?? (existing.last_episode_num === episodeNum ? (existing.resume_position_sec || 0) : 0);
+        const resolvedEpPos = currentEpPos > 15 && currentEpPos < safeDur * 0.95
+          ? currentEpPos
+          : isNowWatched ? safeDur : 0;
+
         const newEpPositions = {
           ...prevEpPositions,
           [epKey]: {
-            position: isNowWatched ? safeDur : 0,
-            duration: safeDur,
+            position: resolvedEpPos,
+            duration: prevEpPositions[epKey]?.duration || safeDur,
             updated_at: new Date().toISOString(),
           },
         };
         try {
           localStorage.setItem(
             `koup_ep_pos_${media.id}_${existing.last_season_num || 1}_${episodeNum}`,
-            JSON.stringify({ position: isNowWatched ? safeDur : 0, duration: safeDur })
+            JSON.stringify({ position: resolvedEpPos, duration: prevEpPositions[epKey]?.duration || safeDur })
           );
         } catch {}
+
+        // Preserve resume_position_sec so the user doesn't lose where they were!
+        const preservedResumePos = existing.resume_position_sec || 0;
+        const targetResumePos = preservedResumePos > 0 ? preservedResumePos : (resolvedEpPos > 15 && resolvedEpPos < safeDur * 0.95 ? resolvedEpPos : 0);
 
         const updated: UserMediaProgress = {
           ...existing,
@@ -1486,9 +1497,9 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           media_id: media.id,
           status: nextStatus,
           watched_episodes: watchedArr,
-          last_episode_num: nextEpNum,
-          last_episode_title: `${nextEpNum}. Bölüm`,
-          resume_position_sec: 0,
+          last_episode_num: existing.last_episode_num || nextEpNum,
+          last_episode_title: existing.last_episode_title || `${nextEpNum}. Bölüm`,
+          resume_position_sec: targetResumePos,
           episode_positions: newEpPositions,
           updated_at: new Date().toISOString(),
           media,

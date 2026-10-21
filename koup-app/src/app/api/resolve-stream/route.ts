@@ -113,7 +113,7 @@ async function resolveFilemoonByse(fileCode: string, domain: string = 'filemoon.
     let dec = decipher.update(ciphertext, undefined, 'utf8');
     dec += decipher.final('utf8');
     const parsed = JSON.parse(dec);
-    return parsed.sources?.[0]?.url || null;
+    return parsed.sources?.[0]?.url || parsed.sources?.[0]?.file || null;
   } catch {
     return null;
   }
@@ -263,9 +263,14 @@ export async function GET(req: NextRequest) {
   }
 
   // Check in-memory cache first to avoid hammering hosts (especially VOE / OK.RU rate limits)
-  const cachedStream = getCachedStream(url);
-  if (cachedStream) {
-    return NextResponse.json(cachedStream, { headers: CACHE_HEADERS });
+  const forceRefresh = searchParams.get('refresh') === '1' || searchParams.get('fresh') === '1';
+  if (!forceRefresh) {
+    const cachedStream = getCachedStream(url);
+    if (cachedStream) {
+      return NextResponse.json(cachedStream, { headers: CACHE_HEADERS });
+    }
+  } else {
+    streamResolutionCache.delete(url);
   }
 
   // Validate URL protocol
@@ -1111,7 +1116,7 @@ export async function GET(req: NextRequest) {
             qualities: [{ label: '1080p (Duhnet)', url: proxied }],
             fallbackIframe: url,
           };
-          setCachedStream(url, result);
+          setCachedStream(url, result, 8 * 60 * 1000);
           return NextResponse.json(result, { headers: CACHE_HEADERS });
         }
       }
@@ -1195,7 +1200,7 @@ export async function GET(req: NextRequest) {
             qualities: [{ label: '1080p (GDrivePlayer)', url: proxied }],
             fallbackIframe: url,
           };
-          setCachedStream(url, result);
+          setCachedStream(url, result, 8 * 60 * 1000);
           return NextResponse.json(result, { headers: CACHE_HEADERS });
         }
       }
@@ -1226,7 +1231,7 @@ export async function GET(req: NextRequest) {
             qualities: [{ label: '1080p (Filemoon)', url: proxied }],
             fallbackIframe: url,
           };
-          setCachedStream(url, result);
+          setCachedStream(url, result, 8 * 60 * 1000);
           return NextResponse.json(result, { headers: CACHE_HEADERS });
         }
       }
@@ -1250,7 +1255,7 @@ export async function GET(req: NextRequest) {
             qualities: [{ label: '1080p (UPNS)', url: proxied }],
             fallbackIframe: url,
           };
-          setCachedStream(url, result);
+          setCachedStream(url, result, 8 * 60 * 1000);
           return NextResponse.json(result, { headers: CACHE_HEADERS });
         }
       }
@@ -1494,7 +1499,7 @@ export async function GET(req: NextRequest) {
                 qualities: [{ label: '1080p', url: hlsUrl }],
                 fallbackIframe: url,
               };
-              setCachedStream(url, result);
+              setCachedStream(url, result, 8 * 60 * 1000);
               return NextResponse.json(result, { headers: CACHE_HEADERS });
             }
             if (Array.isArray(meta?.videos) && meta.videos.length > 0) {
@@ -1532,7 +1537,7 @@ export async function GET(req: NextRequest) {
                   qualities,
                   fallbackIframe: url,
                 };
-                setCachedStream(url, result);
+                setCachedStream(url, result, 8 * 60 * 1000);
                 return NextResponse.json(result, { headers: CACHE_HEADERS });
               }
             }
@@ -1624,7 +1629,7 @@ export async function GET(req: NextRequest) {
                 qualities,
                 fallbackIframe: normalizedMailUrl,
               };
-              setCachedStream(url, result);
+              setCachedStream(url, result, 8 * 60 * 1000);
               return NextResponse.json(result, { headers: CACHE_HEADERS });
             }
           }
@@ -2014,7 +2019,7 @@ export async function GET(req: NextRequest) {
             qualities: [{ label: '1080p', url: proxiedUrl }],
             fallbackIframe: url,
           };
-          setCachedStream(url, result);
+          setCachedStream(url, result, 8 * 60 * 1000);
           return NextResponse.json(result, { headers: CACHE_HEADERS });
         }
 
@@ -2037,7 +2042,7 @@ export async function GET(req: NextRequest) {
             qualities,
             fallbackIframe: url,
           };
-          setCachedStream(url, result);
+          setCachedStream(url, result, 8 * 60 * 1000);
           return NextResponse.json(result, { headers: CACHE_HEADERS });
         }
 

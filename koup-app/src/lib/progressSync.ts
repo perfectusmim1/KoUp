@@ -211,7 +211,26 @@ export async function syncProgressRecordToSupabase(
 
     if (error) {
       if (error.code === '23503') {
-        // Media no longer exists in DB (e.g. duplicate merged/deleted). Do not spam console or retry.
+        // Media no longer exists in DB (e.g. duplicate merged/deleted).
+        // Prune the deleted media_id from localStorage so client stops retrying
+        if (typeof window !== 'undefined') {
+          try {
+            const raw = localStorage.getItem('koup_progress_v1');
+            if (raw) {
+              const map = JSON.parse(raw);
+              if (Array.isArray(payloadToSend)) {
+                payloadToSend.forEach((r: any) => {
+                  if (r.media_id && map[r.media_id]) {
+                    delete map[r.media_id];
+                  }
+                });
+              } else if (payloadToSend && (payloadToSend as any).media_id) {
+                delete map[(payloadToSend as any).media_id];
+              }
+              localStorage.setItem('koup_progress_v1', JSON.stringify(map));
+            }
+          } catch {}
+        }
         return true;
       }
       console.warn('user_media_progress sync notice:', {

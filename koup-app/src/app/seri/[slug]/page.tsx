@@ -1710,9 +1710,24 @@ export default function SeriesDetailPage({
                         </span>
 
                         {epWatched ? (
-                          <span className="text-emerald-400 font-medium">
-                            • İzlendi
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-emerald-400 font-medium">
+                              • İzlendi
+                            </span>
+                            {epProg.position > 15 && epProg.position < epProg.duration * 0.95 && (
+                              <div className="flex items-center gap-1.5">
+                                <div className="w-12 h-1 bg-white/20 rounded-full overflow-hidden">
+                                  <div
+                                    style={{ width: `${epProg.percent}%` }}
+                                    className="h-full bg-emerald-400/80"
+                                  />
+                                </div>
+                                <span className="text-[9px] font-mono text-white/50">
+                                  {epProg.remainingMinutes} dk kaldı
+                                </span>
+                              </div>
+                            )}
+                          </div>
                         ) : epProg.position > 15 ? (
                           <div className="flex items-center gap-1.5">
                             <div className="w-12 h-1 bg-white/20 rounded-full overflow-hidden">
