@@ -894,7 +894,7 @@ export default function EpisodeWatchPage({
   };
 
   return (
-    <div className="min-h-screen pb-32 text-white relative overflow-hidden bg-[#060608] pt-28 sm:pt-32 transition-[padding,background-color] duration-300">
+    <div className="min-h-screen pb-32 text-white relative overflow-hidden bg-[#060608] pt-24 sm:pt-28 transition-[padding,background-color] duration-300">
       {/* Dynamic Ambient Lighting Diffused Across Site Background (GPU Layer Promoted) */}
       <div
         style={{ transform: 'translateZ(0)', backfaceVisibility: 'hidden' }}
@@ -930,7 +930,9 @@ export default function EpisodeWatchPage({
         <div className="absolute inset-0 bg-gradient-to-b from-[#060608]/50 via-[#060608]/85 to-[#060608] transition-colors duration-700" />
       </div>
 
-      {/* Top Header Navigation & Source Selector Bar */}
+      {/* 7% Proportional UI Scaling Wrapper for Episode Watch Interface */}
+      <div className="w-full [zoom:0.93] origin-top">
+        {/* Top Header Navigation & Source Selector Bar */}
       <div
         style={cinemaStageStyle}
         className="relative z-40 mx-auto px-3 sm:px-6 mb-2 sm:mb-2.5 w-full transition-[max-width,padding] duration-300"
@@ -1337,6 +1339,7 @@ export default function EpisodeWatchPage({
             targetTitle={isFilm ? cleanMediaTitle(media.title) : `${cleanMediaTitle(media.title)} • ${activeEpNum}. Bölüm`}
           />
         </div>
+      </div>
       </div>
 
       {/* Centered Episode Issue Report Modal (Matches Series Report Modal) */}

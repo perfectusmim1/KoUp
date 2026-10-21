@@ -572,15 +572,53 @@ export default function NetflixPlayer({
     propTrailerYoutubeId || null
   );
 
+  // HUD Toast feedback
+  const [hudToast, setHudToast] = useState<{ label: string; key: number } | null>(null);
+  const hudToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const triggerHudToast = useCallback((label: string) => {
+    if (hudToastTimerRef.current) clearTimeout(hudToastTimerRef.current);
+    setHudToast({ label, key: Date.now() });
+    hudToastTimerRef.current = setTimeout(() => {
+      setHudToast(null);
+    }, 1100);
+  }, []);
+
   // Google Cast / Remote Playback API
   const [isCasting, setIsCasting] = useState(false);
-  const [isCastSupported, setIsCastSupported] = useState(false);
+  const [isCastSupported, setIsCastSupported] = useState(true);
 
   useEffect(() => {
-    const video = videoRef.current as any;
-    if (!video) return;
+    if (typeof window === 'undefined') return;
 
-    if (video.remote) {
+    const initCast = () => {
+      if ((window as any).cast?.framework) {
+        try {
+          (window as any).cast.framework.CastContext.getInstance().setOptions({
+            receiverApplicationId: (window as any).chrome?.cast?.media?.DEFAULT_MEDIA_RECEIVER_APP_ID || 'CC1AD845',
+            autoJoinPolicy: (window as any).chrome?.cast?.AutoJoinPolicy?.ORIGIN_SCOPED,
+          });
+          setIsCastSupported(true);
+        } catch {}
+      }
+    };
+
+    if (!(window as any).cast) {
+      (window as any).__onGCastApiAvailable = (isAvailable: boolean) => {
+        if (isAvailable) initCast();
+      };
+      if (!document.getElementById('google-cast-sdk')) {
+        const script = document.createElement('script');
+        script.id = 'google-cast-sdk';
+        script.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
+        script.async = true;
+        document.head.appendChild(script);
+      }
+    } else {
+      initCast();
+    }
+
+    const video = videoRef.current as any;
+    if (video?.remote) {
       setIsCastSupported(true);
       const updateCastState = () => {
         setIsCasting(video.remote.state === 'connected' || video.remote.state === 'connecting');
@@ -593,37 +631,58 @@ export default function NetflixPlayer({
         video.remote?.removeEventListener?.('connect', updateCastState);
         video.remote?.removeEventListener?.('disconnect', updateCastState);
       };
-    } else if (typeof window !== 'undefined' && ('chrome' in window || 'WebKitPlaybackTargetAvailabilityEvent' in window)) {
-      setIsCastSupported(true);
     }
   }, [resolvedMode]);
 
   const handleCastPrompt = useCallback(async () => {
+    triggerHudToast('Televizyon Aranıyor...');
+
+    // 1. Try Google Cast Web SDK (Direct native Chromecast dialog in Chrome / Edge)
+    if (typeof window !== 'undefined' && (window as any).cast?.framework) {
+      try {
+        const castContext = (window as any).cast.framework.CastContext.getInstance();
+        await castContext.requestSession();
+        setIsCasting(true);
+        triggerHudToast('Televizyona Bağlandı!');
+        return;
+      } catch (err: any) {
+        if (err !== 'cancel' && err?.errorCode !== 'cancel') {
+          console.log('Google Cast requestSession:', err);
+        }
+      }
+    }
+
+    // 2. Try HTML5 RemotePlayback API (Android Chrome & Smart TV browsers)
     const video = videoRef.current as any;
     if (video?.remote && typeof video.remote.prompt === 'function') {
       try {
         await video.remote.prompt();
+        return;
       } catch (err: any) {
         if (err.name !== 'NotFoundError' && err.name !== 'NotAllowedError') {
-          console.warn('Cast prompt error:', err);
+          console.warn('RemotePlayback prompt error:', err);
         }
       }
-      return;
     }
+
+    // 3. Try WebKit / Safari AirPlay
     if (video?.webkitShowPlaybackTargetPicker) {
       try {
         video.webkitShowPlaybackTargetPicker();
+        return;
       } catch (err) {
         console.warn('AirPlay prompt error:', err);
       }
-      return;
     }
+
+    // 4. Always provide immediate, helpful instructions if direct hardware hook couldn't open native dialog
     pushNotification(
       'TV / Ekrana Yansıt',
-      'Tarayıcı menünüzden (Üç Nokta -> Yayınla / Cast) videoyu televizyonunuza veya Chromecast cihazınıza aktarabilirsiniz.',
+      'Tarayıcınızın menüsünden (⋮ Üç Nokta -> Yayınla / Cast) veya sayfaya sağ tıklayıp "Yayınla..." seçeneğini kullanarak doğrudan televizyonunuza aktarabilirsiniz.',
       'info'
     );
-  }, [pushNotification]);
+    triggerHudToast('Menüden "Yayınla / Cast" seçin');
+  }, [pushNotification, triggerHudToast]);
 
   useEffect(() => {
     if (propTrailerYoutubeId) {
@@ -835,17 +894,6 @@ export default function NetflixPlayer({
     key: number;
   } | null>(null);
   const mobileSeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const [hudToast, setHudToast] = useState<{ label: string; key: number } | null>(null);
-  const hudToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const triggerHudToast = useCallback((label: string) => {
-    if (hudToastTimerRef.current) clearTimeout(hudToastTimerRef.current);
-    setHudToast({ label, key: Date.now() });
-    hudToastTimerRef.current = setTimeout(() => {
-      setHudToast(null);
-    }, 1100);
-  }, []);
 
   // Sinematik Işıklandırma (YouTube-style Dual-Buffer Ambient Lighting)
   const ambientCanvasRefA = useRef<HTMLCanvasElement | null>(null);
