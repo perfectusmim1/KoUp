@@ -40,3 +40,4 @@ r2_bundles/
 scrapers/ddizi_catalog.json
 scripts/reports/
 *.log
+.agents/
