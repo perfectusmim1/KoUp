@@ -1665,7 +1665,6 @@ export default function SeriesDetailPage({
                   }}
                   aria-label={epTitle}
                   title={`${epTitle}${epWatched ? ' (İzlendi)' : ''}`}
-                  style={{ contain: 'content' }}
                   className={`p-3 sm:p-3.5 rounded-2xl border transition-colors duration-150 cursor-pointer flex items-center justify-between gap-3 group select-none ${
                     epWatched
                       ? 'bg-emerald-500/[0.05] hover:bg-emerald-500/[0.09] border-emerald-500/35 hover:border-emerald-400/65 shadow-[0_0_8px_rgba(16,185,129,0.12)] hover:shadow-[0_0_14px_rgba(16,185,129,0.22)]'
@@ -1787,7 +1786,7 @@ export default function SeriesDetailPage({
                     className={`koup-expandable-drawer ${showAllEpisodes ? 'is-expanded' : ''}`}
                   >
                     <div className="koup-expandable-inner">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 pt-3.5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 pt-3.5 pb-2.5 sm:pb-3">
                         {seasonEpisodes.slice(4).map(renderEpisodeCard)}
                       </div>
                     </div>

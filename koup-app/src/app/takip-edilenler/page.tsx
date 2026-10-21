@@ -407,7 +407,7 @@ export default function FollowedPage() {
       </div>
 
       {/* SUB-FILTER PILLS BAR */}
-      <div className="flex items-center gap-2 overflow-x-auto py-1 -my-1 no-scrollbar">
+      <div className="flex items-center gap-2 overflow-x-auto py-2 no-scrollbar mb-4 sm:mb-6">
         {activeTab === 'media' ? (
           <>
             {[
@@ -486,7 +486,7 @@ export default function FollowedPage() {
         /* MEDIA TAB */
         loadingMedia ? (
           /* Loading Shimmer Skeletons */
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5 pt-1 sm:pt-2">
             {Array.from({ length: 12 }).map((_, i) => (
               <div
                 key={i}
@@ -528,7 +528,7 @@ export default function FollowedPage() {
           </div>
         ) : (
           /* Grid of Followed Media */
-          <div className="space-y-8">
+          <div className="space-y-8 pt-1 sm:pt-2">
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
               {paginatedMedia.map((m, idx) => {
                 return (
@@ -578,7 +578,7 @@ export default function FollowedPage() {
         /* PEOPLE TAB */
         loadingPeople ? (
           /* Loading Skeletons */
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 pt-1 sm:pt-2">
             {Array.from({ length: 12 }).map((_, i) => (
               <div
                 key={i}
@@ -620,7 +620,7 @@ export default function FollowedPage() {
           </div>
         ) : (
           /* Grid of Followed People (Matches Oyuncular page design) */
-          <div className="space-y-8">
+          <div className="space-y-8 pt-1 sm:pt-2">
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
               {paginatedPeople.map((person) => {
                 const isFav = favPersonIds.includes(person.id);
