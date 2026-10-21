@@ -50,7 +50,7 @@ import {
   cleanMediaTitle,
 } from '@/lib/supabase';
 import { useKoUpSelector } from '@/context/KoUpContext';
-import AccordionMediaCard, { requestAccordionHover } from '@/components/AccordionMediaCard';
+import DirectMediaCard from '@/components/DirectMediaCard';
 import CountryFlag from '@/components/CountryFlag';
 import Pagination from '@/components/Pagination';
 
@@ -158,34 +158,6 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
   >([]);
   const [commentsPage, setCommentsPage] = useState<number>(1);
   const [revealedSpoilers, setRevealedSpoilers] = useState<Record<string, boolean>>({});
-  const libraryContainerRef = useRef<HTMLDivElement>(null);
-  const [cardsPerRow, setCardsPerRow] = useState<number>(6);
-
-  useEffect(() => {
-    const updateRowCapacity = () => {
-      if (typeof window !== 'undefined' && window.innerWidth < 640) {
-        setCardsPerRow(2);
-        return;
-      }
-      const w =
-        libraryContainerRef.current?.clientWidth ||
-        (typeof window !== 'undefined' ? Math.min(window.innerWidth - 64, 1568) : 1320);
-      const isMd = typeof window !== 'undefined' ? window.innerWidth >= 768 : true;
-      const isSm = typeof window !== 'undefined' ? window.innerWidth >= 640 : true;
-      const cardW = isMd ? 200 : isSm ? 185 : 165;
-      const expandDelta = isMd ? 220 : isSm ? 185 : 155;
-      const gap = 16;
-      // Exact capacity so (N * cardW + expandDelta + (N - 1) * gap <= w) — zero wrapping on hover!
-      const cap = Math.max(1, Math.floor((w - expandDelta + gap) / (cardW + gap)));
-      setCardsPerRow(cap);
-    };
-
-    updateRowCapacity();
-    if (typeof window !== 'undefined') {
-      window.addEventListener('resize', updateRowCapacity);
-      return () => window.removeEventListener('resize', updateRowCapacity);
-    }
-  }, [activeTab]);
 
   // Settings form states
   const [editDisplayName, setEditDisplayName] = useState('');
@@ -1239,32 +1211,13 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                       )}
                     </div>
                   ) : (
-                    <div
-                      ref={libraryContainerRef}
-                      onMouseLeave={() => requestAccordionHover(null)}
-                      className="space-y-4 overflow-visible"
-                    >
-                      {Array.from(
-                        { length: Math.ceil(filteredWatchedMedia.length / cardsPerRow) },
-                        (_, rowIdx) =>
-                          filteredWatchedMedia.slice(
-                            rowIdx * cardsPerRow,
-                            (rowIdx + 1) * cardsPerRow
-                          )
-                      ).map((rowItems, rowIdx) => (
-                        <div
-                          key={`lib-row-${rowIdx}`}
-                          className="grid grid-cols-2 sm:flex sm:items-center gap-3 sm:gap-4 sm:flex-nowrap overflow-visible"
-                        >
-                          {rowItems.map((m) => (
-                            <div
-                              key={m.id}
-                              className="w-full sm:w-auto sm:shrink-0 min-w-0 max-sm:[&_.koup-accordion-card]:!w-full max-sm:[&_.koup-accordion-card]:!h-[240px]"
-                            >
-                              <AccordionMediaCard item={m} />
-                            </div>
-                          ))}
-                        </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5 sm:gap-4 w-full">
+                      {filteredWatchedMedia.map((m, idx) => (
+                        <DirectMediaCard
+                          key={m.id}
+                          item={m}
+                          priority={idx < 6}
+                        />
                       ))}
                     </div>
                   )}
