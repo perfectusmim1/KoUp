@@ -976,6 +976,67 @@ input[type="range"].netflix-volume-slider:focus-visible {
   animation: netflixSeekSlideRight calc(650ms * (1 - var(--animation-reduced))) cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* Snappy Fluid Netflix Player Controls Animations */
+@keyframes netflixRewindPop {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  30% {
+    transform: rotate(-32deg) scale(0.90);
+  }
+  65% {
+    transform: rotate(4deg) scale(1.04);
+  }
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+}
+
+@keyframes netflixForwardPop {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  30% {
+    transform: rotate(32deg) scale(0.90);
+  }
+  65% {
+    transform: rotate(-4deg) scale(1.04);
+  }
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+}
+
+@keyframes netflixPlayPop {
+  0% {
+    transform: scale(0.72);
+    opacity: 0.35;
+  }
+  60% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-rewind-spring {
+  animation: netflixRewindPop calc(320ms * (1 - var(--animation-reduced))) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform;
+}
+
+.animate-forward-spring {
+  animation: netflixForwardPop calc(320ms * (1 - var(--animation-reduced))) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform;
+}
+
+.animate-play-pop {
+  animation: netflixPlayPop calc(220ms * (1 - var(--animation-reduced))) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+
 /* Ambient Lighting Wave Motion (Sinematik Işıklandırma Akıcı Dalgalı Yayılım) */
 @keyframes ambientWave {
   0%, 100% {

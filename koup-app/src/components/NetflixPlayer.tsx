@@ -65,9 +65,7 @@ function NetflixRewind10Icon({
       viewBox="0 0 64 64"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className={`${className} transition-transform duration-200 ease-out ${
-        isAnimating ? 'scale-90 opacity-80' : 'scale-100 opacity-100'
-      }`}
+      className={`${className} ${isAnimating ? 'animate-rewind-spring' : ''}`}
     >
       {/* Circular 300-degree arc */}
       <path
@@ -120,9 +118,7 @@ function NetflixForward10Icon({
       viewBox="0 0 64 64"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className={`${className} transition-transform duration-200 ease-out ${
-        isAnimating ? 'scale-90 opacity-80' : 'scale-100 opacity-100'
-      }`}
+      className={`${className} ${isAnimating ? 'animate-forward-spring' : ''}`}
     >
       {/* Circular 300-degree arc */}
       <path
@@ -697,8 +693,26 @@ export default function NetflixPlayer({
   const [hoverPercent, setHoverPercent] = useState<number>(0);
   const [showRemainingTime, setShowRemainingTime] = useState(true);
 
-  const [volume, setVolume] = useState(1);
-  const [isMuted, setIsMuted] = useState(isTrailerMode ? Boolean(isTrailerMuted) : false);
+  const [volume, setVolume] = useState<number>(() => {
+    if (typeof window === 'undefined') return 1;
+    try {
+      const saved = localStorage.getItem('koup_player_volume');
+      if (saved !== null) {
+        const parsed = parseFloat(saved);
+        if (!isNaN(parsed) && parsed >= 0 && parsed <= 1) return parsed;
+      }
+    } catch {}
+    return 1;
+  });
+  const [isMuted, setIsMuted] = useState<boolean>(() => {
+    if (isTrailerMode) return Boolean(isTrailerMuted);
+    if (typeof window === 'undefined') return false;
+    try {
+      const savedMute = localStorage.getItem('koup_player_muted');
+      if (savedMute !== null) return savedMute === 'true';
+    } catch {}
+    return false;
+  });
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
   const [isDraggingVolume, setIsDraggingVolume] = useState(false);
   const [brightness, setBrightness] = useState(100); // 45% to 130%
@@ -816,6 +830,14 @@ export default function NetflixPlayer({
     },
     [streamUrl, triggerHudToast]
   );
+
+  // Synchronize audio volume & muted state with videoRef
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.muted = isMuted;
+      videoRef.current.volume = isMuted ? 0 : volume;
+    }
+  }, [isMuted, volume]);
 
   // Ambient lighting canvas frame sampling loop with temporal exponential smoothing (wave-like color flow)
   useEffect(() => {
@@ -2159,7 +2181,13 @@ export default function NetflixPlayer({
       const currentEffective = isMuted ? 0 : volume;
       const nextVol = Math.max(0, Math.min(1, Math.round((currentEffective + delta) * 100) / 100));
       setVolume(nextVol);
-      setIsMuted(nextVol === 0);
+      const nextMuted = nextVol === 0;
+      setIsMuted(nextMuted);
+      try {
+        localStorage.setItem('koup_player_volume', String(nextVol));
+        localStorage.setItem('koup_player_muted', String(nextMuted));
+      } catch {}
+      if (nextVol > 0) savedVolumeRef.current = nextVol;
       if (isTrailerMode) {
         sendTrailerYtCommand('setVolume', [Math.round(nextVol * 100)]);
         if (nextVol === 0) sendTrailerYtCommand('mute');
@@ -2177,6 +2205,9 @@ export default function NetflixPlayer({
   const toggleMute = useCallback(() => {
     const nextMute = !isMuted;
     setIsMuted(nextMute);
+    try {
+      localStorage.setItem('koup_player_muted', String(nextMute));
+    } catch {}
     if (isTrailerMode && setTrailerMuted) {
       setTrailerMuted(nextMute);
     }
@@ -2185,6 +2216,9 @@ export default function NetflixPlayer({
     } else {
       const restored = savedVolumeRef.current > 0 ? savedVolumeRef.current : 0.5;
       setVolume(restored);
+      try {
+        localStorage.setItem('koup_player_volume', String(restored));
+      } catch {}
       if (isTrailerMode) {
         sendTrailerYtCommand('setVolume', [Math.round(restored * 100)]);
       } else if (videoRef.current) {
@@ -2765,6 +2799,7 @@ export default function NetflixPlayer({
               <video
                 ref={videoRef}
                 playsInline
+                muted={isMuted}
                 style={
                   brightness !== 100
                     ? { filter: `brightness(${brightness}%)` }
@@ -2781,6 +2816,10 @@ export default function NetflixPlayer({
                 onWaiting={() => setIsBuffering(true)}
                 onCanPlay={() => {
                   setIsBuffering(false);
+                  if (videoRef.current) {
+                    videoRef.current.muted = isMuted;
+                    videoRef.current.volume = isMuted ? 0 : volume;
+                  }
                   if (targetResumeRef.current <= 3) setIsResumeReady(true);
                 }}
                 onSeeked={() => {
@@ -3178,7 +3217,7 @@ export default function NetflixPlayer({
                           seekBy(-10, true);
                         }}
                         aria-label="10 Saniye Geri Sar"
-                        className={`text-white hover:scale-110 active:scale-90 transition-opacity duration-150 ease-out cursor-pointer p-1 sm:p-2 focus:outline-none ${
+                        className={`text-white hover:scale-115 active:scale-85 transition-all duration-150 ease-out hover:drop-shadow-[0_0_18px_rgba(255,255,255,0.45)] cursor-pointer p-1 sm:p-2 focus:outline-none ${
                           showOverlay
                             ? 'opacity-100 pointer-events-auto'
                             : 'opacity-0 pointer-events-none'
@@ -3200,17 +3239,19 @@ export default function NetflixPlayer({
                           togglePlayPause();
                         }}
                         aria-label={isPlaying ? 'Duraklat' : 'Oynat'}
-                        className={`text-white hover:scale-110 active:scale-90 transition-opacity duration-150 ease-out cursor-pointer p-1 sm:p-2 focus:outline-none flex items-center justify-center ${
+                        className={`text-white hover:scale-115 active:scale-85 transition-all duration-150 ease-out hover:drop-shadow-[0_0_24px_rgba(255,255,255,0.5)] cursor-pointer p-1 sm:p-2 focus:outline-none flex items-center justify-center ${
                           showOverlay
                             ? 'opacity-100 pointer-events-auto'
                             : 'opacity-0 pointer-events-none'
                         }`}
                       >
-                        {isPlaying ? (
-                          <NetflixPauseBarsIcon className="w-10 h-10 sm:w-18 sm:h-18 md:w-22 md:h-22" />
-                        ) : (
-                          <NetflixPlayTriangleIcon className="w-10 h-10 sm:w-18 sm:h-18 md:w-22 md:h-22" />
-                        )}
+                        <div key={isPlaying ? 'pause' : 'play'} className="animate-play-pop flex items-center justify-center">
+                          {isPlaying ? (
+                            <NetflixPauseBarsIcon className="w-10 h-10 sm:w-18 sm:h-18 md:w-22 md:h-22" />
+                          ) : (
+                            <NetflixPlayTriangleIcon className="w-10 h-10 sm:w-18 sm:h-18 md:w-22 md:h-22" />
+                          )}
+                        </div>
                       </button>
 
                       {/* Forward 10s Button */}
@@ -3222,7 +3263,7 @@ export default function NetflixPlayer({
                           seekBy(10, true);
                         }}
                         aria-label="10 Saniye İleri Sar"
-                        className={`text-white hover:scale-110 active:scale-90 transition-opacity duration-150 ease-out cursor-pointer p-1 sm:p-2 focus:outline-none ${
+                        className={`text-white hover:scale-115 active:scale-85 transition-all duration-150 ease-out hover:drop-shadow-[0_0_18px_rgba(255,255,255,0.45)] cursor-pointer p-1 sm:p-2 focus:outline-none ${
                           showOverlay
                             ? 'opacity-100 pointer-events-auto'
                             : 'opacity-0 pointer-events-none'
@@ -3239,7 +3280,7 @@ export default function NetflixPlayer({
                     /* Trailer Mode: Center is 100% clean while playing. If paused, show Play triangle to resume */
                     <div className="flex items-center justify-center gap-6 sm:gap-16 md:gap-24 pointer-events-none select-none">
                       {seekFeedback?.dir === 'left' && (
-                        <div className="text-white p-1 sm:p-2 animate-in fade-in zoom-in-95 duration-150">
+                        <div className="text-white p-1 sm:p-2">
                           <NetflixRewind10Icon
                             key={seekFeedback?.key}
                             className="w-8 h-8 sm:w-13 sm:h-13 md:w-16 md:h-16"
@@ -3256,13 +3297,15 @@ export default function NetflixPlayer({
                             togglePlayPause();
                           }}
                           aria-label="Oynat"
-                          className="p-3 sm:p-4 rounded-full bg-black/80 hover:bg-black/90 text-white border border-white/20 hover:scale-110 active:scale-95 transition-[transform,background-color] duration-150 cursor-pointer shadow-2xl pointer-events-auto"
+                          className="p-3 sm:p-4 rounded-full bg-black/80 hover:bg-black/90 text-white border border-white/20 hover:scale-115 active:scale-85 transition-all duration-150 ease-out cursor-pointer shadow-2xl pointer-events-auto hover:drop-shadow-[0_0_20px_rgba(255,255,255,0.5)]"
                         >
-                          <NetflixPlayTriangleIcon className="w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16" />
+                          <div className="animate-play-pop flex items-center justify-center">
+                            <NetflixPlayTriangleIcon className="w-10 h-10 sm:w-14 sm:h-14 md:w-16 md:h-16" />
+                          </div>
                         </button>
                       )}
                       {seekFeedback?.dir === 'right' && (
-                        <div className="text-white p-1 sm:p-2 animate-in fade-in zoom-in-95 duration-150">
+                        <div className="text-white p-1 sm:p-2">
                           <NetflixForward10Icon
                             key={seekFeedback?.key}
                             className="w-8 h-8 sm:w-13 sm:h-13 md:w-16 md:h-16"
@@ -3313,7 +3356,13 @@ export default function NetflixPlayer({
                           onChange={(e) => {
                             const v = Number(e.target.value);
                             setVolume(v);
-                            setIsMuted(v === 0);
+                            const nextMuted = v === 0;
+                            setIsMuted(nextMuted);
+                            try {
+                              localStorage.setItem('koup_player_volume', String(v));
+                              localStorage.setItem('koup_player_muted', String(nextMuted));
+                            } catch {}
+                            if (v > 0) savedVolumeRef.current = v;
                             if (videoRef.current) {
                               videoRef.current.volume = v;
                               videoRef.current.muted = v === 0;
@@ -3662,13 +3711,15 @@ export default function NetflixPlayer({
                           type="button"
                           onClick={togglePlayPause}
                           aria-label={isPlaying ? 'Duraklat (Space / K)' : 'Oynat (Space / K)'}
-                          className="text-white/95 hover:text-white hover:scale-110 active:scale-95 transition-transform cursor-pointer"
+                          className="text-white/95 hover:text-white hover:scale-115 active:scale-85 hover:drop-shadow-[0_0_12px_rgba(255,255,255,0.45)] transition-all duration-150 ease-out cursor-pointer"
                         >
-                          {isPlaying ? (
-                            <NetflixPauseBarsIcon className="w-6 h-6" />
-                          ) : (
-                            <NetflixPlayTriangleIcon className="w-6 h-6" />
-                          )}
+                          <div key={isPlaying ? 'pause' : 'play'} className="animate-play-pop flex items-center justify-center">
+                            {isPlaying ? (
+                              <NetflixPauseBarsIcon className="w-6 h-6" />
+                            ) : (
+                              <NetflixPlayTriangleIcon className="w-6 h-6" />
+                            )}
+                          </div>
                         </button>
 
                         {/* HORIZONTAL VOLUME SLIDER: expands to the right (PC only) */}
@@ -3681,7 +3732,12 @@ export default function NetflixPlayer({
                             const rounded = Math.round(Math.max(0, Math.min(1, raw)) * 100) / 100;
                             if (rounded === volume && isMuted === (rounded === 0)) return;
                             setVolume(rounded);
-                            setIsMuted(rounded === 0);
+                            const nextMuted = rounded === 0;
+                            setIsMuted(nextMuted);
+                            try {
+                              localStorage.setItem('koup_player_volume', String(rounded));
+                              localStorage.setItem('koup_player_muted', String(nextMuted));
+                            } catch {}
                             if (rounded > 0) savedVolumeRef.current = rounded;
                             if (isTrailerMode) {
                               sendTrailerYtCommand('setVolume', [Math.round(rounded * 100)]);
