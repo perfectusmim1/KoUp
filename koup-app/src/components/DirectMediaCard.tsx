@@ -9,6 +9,7 @@ import {
   formatContentTypeTR,
   cleanMediaTitle,
   formatViewCount,
+  formatBroadcastStatus,
 } from '@/lib/supabase';
 import CountryFlag from '@/components/CountryFlag';
 
@@ -162,11 +163,19 @@ function DirectMediaCardComponent({
 
       {/* Bottom Content Area */}
       <div className="absolute bottom-0 inset-x-0 p-2.5 sm:p-3.5 z-20 flex flex-col justify-end text-left pointer-events-none">
-        {(item.release_year || effectiveEpCount > 0) && (
+        {(item.release_year || effectiveEpCount > 0 || item.status_broadcast) && (
           <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-medium text-white/65 mb-0.5 font-mono">
             {item.release_year && <span>{item.release_year}</span>}
             {item.release_year && effectiveEpCount > 0 && <span className="text-white/40">•</span>}
             {effectiveEpCount > 0 && <span>{effectiveEpCount} Bölüm</span>}
+            {item.status_broadcast && (
+              <>
+                {(item.release_year || effectiveEpCount > 0) && <span className="text-white/40">•</span>}
+                <span className={formatBroadcastStatus(item.status_broadcast) === 'Devam Ediyor' ? 'text-emerald-400 font-semibold' : 'text-white/60'}>
+                  {formatBroadcastStatus(item.status_broadcast)}
+                </span>
+              </>
+            )}
           </div>
         )}
 

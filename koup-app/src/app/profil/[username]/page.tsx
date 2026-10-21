@@ -1132,7 +1132,8 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                         label: 'Tümü',
                         icon: Sparkles,
                         iconColor: 'text-white',
-                        activeClass: 'bg-white text-black font-bold shadow-[0_0_15px_rgba(255,255,255,0.3)]',
+                        activePillClass: 'bg-white shadow-[0_0_15px_rgba(255,255,255,0.3)]',
+                        activeTextClass: 'text-black font-bold',
                         inactiveClass: 'glass-pill text-white/80 hover:text-white',
                       },
                       {
@@ -1140,7 +1141,8 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                         label: 'İzleniyor',
                         icon: Clock,
                         iconColor: 'text-sky-400',
-                        activeClass: 'bg-sky-500 text-black font-bold shadow-[0_0_18px_rgba(14,165,233,0.45)]',
+                        activePillClass: 'bg-sky-500 shadow-[0_0_18px_rgba(14,165,233,0.45)]',
+                        activeTextClass: 'text-black font-bold',
                         inactiveClass: 'glass-pill text-sky-300/80 hover:text-sky-200 border-sky-500/20 hover:border-sky-500/40',
                       },
                       {
@@ -1148,7 +1150,8 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                         label: 'Tamamlandı',
                         icon: CheckCircle2,
                         iconColor: 'text-emerald-400',
-                        activeClass: 'bg-emerald-500 text-black font-bold shadow-[0_0_18px_rgba(16,185,129,0.45)]',
+                        activePillClass: 'bg-emerald-500 shadow-[0_0_18px_rgba(16,185,129,0.45)]',
+                        activeTextClass: 'text-black font-bold',
                         inactiveClass: 'glass-pill text-emerald-300/80 hover:text-emerald-200 border-emerald-500/20 hover:border-emerald-500/40',
                       },
                       {
@@ -1156,7 +1159,8 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                         label: 'Planlanan',
                         icon: Bookmark,
                         iconColor: 'text-amber-400',
-                        activeClass: 'bg-amber-400 text-black font-bold shadow-[0_0_18px_rgba(251,191,36,0.45)]',
+                        activePillClass: 'bg-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
+                        activeTextClass: 'text-black font-bold',
                         inactiveClass: 'glass-pill text-amber-300/80 hover:text-amber-200 border-amber-500/20 hover:border-amber-500/40',
                       },
                       {
@@ -1164,7 +1168,8 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                         label: 'Beklemede',
                         icon: PauseCircle,
                         iconColor: 'text-purple-400',
-                        activeClass: 'bg-purple-500 text-white font-bold shadow-[0_0_18px_rgba(168,85,247,0.45)]',
+                        activePillClass: 'bg-purple-500 shadow-[0_0_18px_rgba(168,85,247,0.45)]',
+                        activeTextClass: 'text-white font-bold',
                         inactiveClass: 'glass-pill text-purple-300/80 hover:text-purple-200 border-purple-500/20 hover:border-purple-500/40',
                       },
                       {
@@ -1172,7 +1177,8 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                         label: 'Bıraktım',
                         icon: XCircle,
                         iconColor: 'text-rose-400',
-                        activeClass: 'bg-rose-500 text-white font-bold shadow-[0_0_18px_rgba(244,63,94,0.45)]',
+                        activePillClass: 'bg-rose-500 shadow-[0_0_18px_rgba(244,63,94,0.45)]',
+                        activeTextClass: 'text-white font-bold',
                         inactiveClass: 'glass-pill text-rose-300/80 hover:text-rose-200 border-rose-500/20 hover:border-rose-500/40',
                       },
                     ].map((st) => {
@@ -1185,12 +1191,19 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                             triggerSound('click');
                             setLibraryFilter(st.id);
                           }}
-                          className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold cursor-pointer transition-colors active:scale-[0.98] ${
-                            active ? st.activeClass : st.inactiveClass
+                          className={`relative flex items-center gap-1.5 px-4 py-2 rounded-full text-xs cursor-pointer transition-colors active:scale-[0.98] select-none ${
+                            active ? st.activeTextClass : st.inactiveClass
                           }`}
                         >
-                          <Icon className={`w-3.5 h-3.5 ${active ? '' : st.iconColor}`} />
-                          <span>{st.label}</span>
+                          {active && (
+                            <motion.span
+                              layoutId="profile-library-filter-pill"
+                              transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                              className={`absolute inset-0 rounded-full ${st.activePillClass}`}
+                            />
+                          )}
+                          <Icon className={`relative z-10 w-3.5 h-3.5 ${active ? '' : st.iconColor}`} />
+                          <span className="relative z-10 font-bold">{st.label}</span>
                         </button>
                       );
                     })}

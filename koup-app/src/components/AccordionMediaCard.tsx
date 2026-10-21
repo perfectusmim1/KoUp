@@ -12,6 +12,7 @@ import {
   cleanOverviewText,
   cleanMediaTitle,
   formatViewCount,
+  formatBroadcastStatus,
 } from '@/lib/supabase';
 import { useKoUpSelector, useKoUpStoreGet } from '@/context/KoUpContext';
 import CountryFlag from '@/components/CountryFlag';
@@ -846,7 +847,7 @@ function AccordionMediaCardComponent({
               <>
                 <span className="text-white/40">•</span>
                 <span className="text-emerald-300 font-semibold">
-                  {item.status_broadcast}
+                  {formatBroadcastStatus(item.status_broadcast)}
                 </span>
               </>
             )}

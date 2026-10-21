@@ -362,7 +362,7 @@ def match_or_create_enriched_drama(
 
     base_s = clean_s_cand or clean_scraped_slug(clean_t) or "yapim"
     final_slug = unique_slug(cur, base_s)
-    status_b = "completed" if content_type == "film" else "ongoing"
+    status_b = "Final" if content_type == "film" else "Devam Ediyor"
 
     cur.execute(
         """

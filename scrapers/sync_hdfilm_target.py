@@ -421,7 +421,7 @@ def sync_hdfilm_series(series_url, conn, cur, idx, episodes_limit=None):
 
             cur.execute("""
                 INSERT INTO dramas (title, slug, content_type, country, country_name, release_year, status_broadcast, cover_image, overview, source_url)
-                VALUES (?, ?, 'dizi', ?, ?, ?, 'ongoing', '/logo-dark.png', ?, ?)
+                VALUES (?, ?, 'dizi', ?, ?, ?, 'Devam Ediyor', '/logo-dark.png', ?, ?)
             """, (t, unique_slug(cur, slug_cand), c_code, c_name, yr_val, f"{t} dizisi Türkçe dublaj ve altyazılı seçenekleriyle KoUp arşivinde.", series_url))
             did = cur.lastrowid
             tag_site(cur, did, 'hdfilm')

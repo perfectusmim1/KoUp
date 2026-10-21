@@ -46,6 +46,7 @@ import {
   formatEpisodeTitle,
   cleanScrapedSlug,
   formatViewCount,
+  formatBroadcastStatus,
 } from '@/lib/supabase';
 import { trackMediaView } from '@/lib/viewTracker';
 import { cachedQuery, getMediaFromCache, getCache, registerMediaItem, setCache, invalidateCache, invalidateMediaCache, updateCachedMedia } from '@/lib/cache';
@@ -1058,12 +1059,37 @@ export default function SeriesDetailPage({
                   </a>
                 ) : null}
 
-                {(media.status_translation || episodes[0]?.translation_note) && (
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-xs font-semibold text-emerald-300 inline-flex items-center gap-1.5">
-                    <span className="text-emerald-400/80 font-normal">Çeviri Durumu:</span>
-                    <span className="font-bold">{media.status_translation || episodes[0]?.translation_note}</span>
-                  </span>
-                )}
+                {(() => {
+                  const normBroadcast = formatBroadcastStatus(media.status_broadcast);
+                  const isOngoing = normBroadcast === 'Devam Ediyor';
+                  const rawTranslation = media.status_translation || episodes[0]?.translation_note;
+
+                  let effectiveTranslation = rawTranslation;
+                  if (isOngoing) {
+                    if (!rawTranslation || rawTranslation.toLowerCase().includes('tamam') || rawTranslation.toLowerCase().includes('final')) {
+                      effectiveTranslation = 'Devam Ediyor';
+                    }
+                  } else if (!effectiveTranslation) {
+                    effectiveTranslation = normBroadcast === 'Final' ? 'Tamamlandı' : null;
+                  }
+
+                  if (!effectiveTranslation) return null;
+
+                  return (
+                    <span
+                      className={`px-3 py-1 rounded-full border text-xs font-semibold inline-flex items-center gap-1.5 ${
+                        isOngoing
+                          ? 'bg-amber-500/15 border-amber-400/30 text-amber-300'
+                          : 'bg-emerald-500/15 border-emerald-400/30 text-emerald-300'
+                      }`}
+                    >
+                      <span className={isOngoing ? 'text-amber-400/80 font-normal' : 'text-emerald-400/80 font-normal'}>
+                        Çeviri Durumu:
+                      </span>
+                      <span className="font-bold">{effectiveTranslation}</span>
+                    </span>
+                  );
+                })()}
               </div>
 
               {/* Categories (Tekilleştirilmiş & Eşsiz Anahtarlı) */}

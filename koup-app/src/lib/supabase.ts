@@ -931,4 +931,40 @@ export function formatViewCount(count?: number | null): string {
   return `${m >= 10 ? Math.round(m) : Number(m.toFixed(1))}M`;
 }
 
+/**
+ * Normalizes broadcast status to consistent, professional Turkish terminology.
+ * e.g. "ongoing" / "airing" -> "Devam Ediyor", "completed" / "bitti" -> "Final".
+ */
+export function formatBroadcastStatus(status?: string | null): string {
+  if (!status) return '';
+  const s = status.trim().toLowerCase();
+  if (
+    s === 'ongoing' ||
+    s === 'devam ediyor' ||
+    s === 'airing' ||
+    s === 'guncel' ||
+    s === 'güncel' ||
+    s === 'yayında' ||
+    s === 'yayinda'
+  ) {
+    return 'Devam Ediyor';
+  }
+  if (
+    s === 'completed' ||
+    s === 'final' ||
+    s === 'tamamlandı' ||
+    s === 'tamamlandi' ||
+    s === 'bitti'
+  ) {
+    return 'Final';
+  }
+  if (s === 'yakında' || s === 'yakinda' || s === 'upcoming') {
+    return 'Yakında';
+  }
+  if (s === 'askıda' || s === 'askida' || s === 'paused') {
+    return 'Askıda';
+  }
+  return status;
+}
+
 

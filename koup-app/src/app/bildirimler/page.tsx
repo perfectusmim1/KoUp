@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { motion } from 'motion/react';
 import {
   Bell,
   Tv,
@@ -352,115 +353,91 @@ export default function NotificationsPage() {
         <div className="py-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
           {/* Category Tabs */}
           <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-2.5 -my-2.5 px-1">
-            <button
-              onClick={() => setSelectedFilter('all')}
-              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
-                selectedFilter === 'all'
-                  ? 'bg-white text-black glow-white'
-                  : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
-              }`}
-            >
-              <span>Tümü</span>
-              <span
-                className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
-                  selectedFilter === 'all' ? 'bg-black/15 text-black' : 'bg-white/10 text-white/70'
-                }`}
-              >
-                {counts.all}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setSelectedFilter('episode')}
-              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
-                selectedFilter === 'episode'
-                  ? 'bg-amber-400 text-black glow-amber'
-                  : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
-              }`}
-            >
-              <Tv className="w-3.5 h-3.5" />
-              <span>Bölümler</span>
-              {counts.episode > 0 && (
-                <span
-                  className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
-                    selectedFilter === 'episode'
-                      ? 'bg-black/20 text-black'
-                      : 'bg-amber-500/20 text-amber-300'
+            {[
+              {
+                id: 'all' as const,
+                label: 'Tümü',
+                countKey: 'all' as const,
+                activePillClass: 'bg-white shadow-[0_0_15px_rgba(255,255,255,0.35)]',
+                activeTextClass: 'text-black font-bold',
+                badgeActiveBg: 'bg-black/15 text-black',
+                badgeInactiveBg: 'bg-white/10 text-white/70',
+              },
+              {
+                id: 'episode' as const,
+                label: 'Bölümler',
+                icon: Tv,
+                countKey: 'episode' as const,
+                activePillClass: 'bg-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
+                activeTextClass: 'text-black font-bold',
+                badgeActiveBg: 'bg-black/20 text-black',
+                badgeInactiveBg: 'bg-amber-500/20 text-amber-300',
+              },
+              {
+                id: 'actor' as const,
+                label: 'Takip & Oyuncular',
+                icon: UserCheck,
+                countKey: 'actor' as const,
+                activePillClass: 'bg-emerald-500 shadow-[0_0_18px_rgba(16,185,129,0.45)]',
+                activeTextClass: 'text-black font-bold',
+                badgeActiveBg: 'bg-black/20 text-black',
+                badgeInactiveBg: 'bg-emerald-500/20 text-emerald-300',
+              },
+              {
+                id: 'reply' as const,
+                label: 'Yorum Yanıtları',
+                icon: MessageSquare,
+                countKey: 'reply' as const,
+                activePillClass: 'bg-sky-400 shadow-[0_0_18px_rgba(56,189,248,0.45)]',
+                activeTextClass: 'text-black font-bold',
+                badgeActiveBg: 'bg-black/20 text-black',
+                badgeInactiveBg: 'bg-sky-500/20 text-sky-300',
+              },
+              {
+                id: 'system' as const,
+                label: 'Duyurular',
+                icon: Megaphone,
+                countKey: 'system' as const,
+                activePillClass: 'bg-indigo-500 shadow-[0_0_18px_rgba(99,102,241,0.45)]',
+                activeTextClass: 'text-white font-bold',
+                badgeActiveBg: 'bg-white/20 text-white',
+                badgeInactiveBg: 'bg-indigo-500/20 text-indigo-300',
+              },
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const active = selectedFilter === tab.id;
+              const count = counts[tab.countKey];
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setSelectedFilter(tab.id)}
+                  className={`relative px-4 py-2 rounded-full text-xs whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 active:scale-[0.98] select-none ${
+                    active
+                      ? tab.activeTextClass
+                      : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
                   }`}
                 >
-                  {counts.episode}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setSelectedFilter('actor')}
-              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
-                selectedFilter === 'actor'
-                  ? 'bg-emerald-500 text-black glow-emerald'
-                  : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
-              }`}
-            >
-              <UserCheck className="w-3.5 h-3.5" />
-              <span>Takip & Oyuncular</span>
-              {counts.actor > 0 && (
-                <span
-                  className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
-                    selectedFilter === 'actor'
-                      ? 'bg-black/20 text-black'
-                      : 'bg-emerald-500/20 text-emerald-300'
-                  }`}
-                >
-                  {counts.actor}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setSelectedFilter('reply')}
-              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
-                selectedFilter === 'reply'
-                  ? 'bg-sky-400 text-black glow-sky'
-                  : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
-              }`}
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-              <span>Yorum Yanıtları</span>
-              {counts.reply > 0 && (
-                <span
-                  className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
-                    selectedFilter === 'reply'
-                      ? 'bg-black/20 text-black'
-                      : 'bg-sky-500/20 text-sky-300'
-                  }`}
-                >
-                  {counts.reply}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setSelectedFilter('system')}
-              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 ${
-                selectedFilter === 'system'
-                  ? 'bg-indigo-500 text-white glow-indigo'
-                  : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
-              }`}
-            >
-              <Megaphone className="w-3.5 h-3.5" />
-              <span>Duyurular</span>
-              {counts.system > 0 && (
-                <span
-                  className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
-                    selectedFilter === 'system'
-                      ? 'bg-white/20 text-white'
-                      : 'bg-indigo-500/20 text-indigo-300'
-                  }`}
-                >
-                  {counts.system}
-                </span>
-              )}
-            </button>
+                  {active && (
+                    <motion.span
+                      layoutId="notifications-category-pill"
+                      transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                      className={`absolute inset-0 rounded-full ${tab.activePillClass}`}
+                    />
+                  )}
+                  {Icon && <Icon className="relative z-10 w-3.5 h-3.5" />}
+                  <span className="relative z-10 font-semibold">{tab.label}</span>
+                  {(tab.id === 'all' || count > 0) && (
+                    <span
+                      className={`relative z-10 text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
+                        active ? tab.badgeActiveBg : tab.badgeInactiveBg
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           {/* Unread Only Toggle */}
