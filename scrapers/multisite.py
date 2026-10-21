@@ -213,16 +213,60 @@ def parse_season_and_episode(url: str = "", text: str = "") -> tuple:
     return season, episode
 
 def build_drama_index(cur, content_types=('dizi', 'film', 'program', 'anime')):
-    """ Bellek ici indeks: {norm_title: [(id, year, mdl, al, content_type)]}, {mdl: id}, {al: id}, {slugcore: [(id, year, content_type)]}."""
-    cur.execute("SELECT id, slug, title, release_year, mydramalist_url, anilist_url, content_type FROM dramas WHERE content_type IN ({})".format(
-        ','.join('?' * len(content_types))), content_types)
+    """ Bellek ici kapsamli indeks: basliklar, alternatif basliklar (tags), native_title, AniList, TMDb, IMDb ve sluglar."""
+    cur.execute("""
+        SELECT id, slug, title, release_year, mydramalist_url, anilist_url, content_type,
+               native_title, tags, anilist_id, imdb_id, tmdb_id
+        FROM dramas
+        WHERE content_type IN ({})
+    """.format(','.join('?' * len(content_types))), content_types)
+    
     by_title, by_mdl, by_al, by_slug = {}, {}, {}, {}
-    for did, slug, title, year, mdl, al, ctype in cur.fetchall():
-        nt = norm_title(title)
+    by_al_id, by_imdb_id, by_tmdb_id = {}, {}, {}
+
+    GENRE_TAGS_IGNORE = {'ilkask', 'arkadaslik', 'romantik', 'aksiyon', 'komedi', 'dram', 'fantastik', 'gizem', 'koredizisi', 'asya', 'diziizle', 'dizi', 'film', 'anime'}
+
+    for r in cur.fetchall():
+        did, slug, title, year, mdl, al, ctype, n_title, tags_raw, al_id, imdb_id, tmdb_id = r
         ct = (ctype or '').strip().lower()
         yr = (year or '').strip()
+        cand_tuple = (did, yr, mdl, al, ct)
+
+        # 1. Index canonical title
+        nt = norm_title(title)
         if len(nt) >= 4:
-            by_title.setdefault(nt, []).append((did, yr, mdl, al, ct))
+            by_title.setdefault(nt, []).append(cand_tuple)
+
+        # 2. Index native_title (e.g. Japanese/Korean original title)
+        if n_title:
+            n_nt = norm_title(n_title)
+            if len(n_nt) >= 4 and n_nt != nt:
+                by_title.setdefault(n_nt, []).append(cand_tuple)
+
+        # 3. Index alternative titles from tags
+        if tags_raw:
+            try:
+                parsed = json.loads(tags_raw) if isinstance(tags_raw, str) else tags_raw
+                if isinstance(parsed, list):
+                    for alt in parsed:
+                        alt_nt = norm_title(str(alt))
+                        if len(alt_nt) >= 4 and alt_nt not in GENRE_TAGS_IGNORE:
+                            by_title.setdefault(alt_nt, []).append(cand_tuple)
+            except Exception:
+                for alt in str(tags_raw).split(','):
+                    alt_nt = norm_title(alt.strip())
+                    if len(alt_nt) >= 4 and alt_nt not in GENRE_TAGS_IGNORE:
+                        by_title.setdefault(alt_nt, []).append(cand_tuple)
+
+        # 4. Index external IDs
+        if al_id and str(al_id).strip() not in ('0', 'None', ''):
+            by_al_id[str(al_id).strip()] = did
+        if imdb_id and str(imdb_id).strip().startswith('tt'):
+            by_imdb_id[str(imdb_id).strip()] = did
+        if tmdb_id and str(tmdb_id).strip() not in ('0', 'None', ''):
+            by_tmdb_id.setdefault(str(tmdb_id).strip(), []).append(cand_tuple)
+
+        # 5. Index URLs and slug
         if mdl:
             by_mdl[mdl.strip()] = did
         if al:
@@ -230,7 +274,16 @@ def build_drama_index(cur, content_types=('dizi', 'film', 'program', 'anime')):
         sc = slug_core(slug or '')
         if len(sc) >= 4:
             by_slug.setdefault(sc, []).append((did, yr, ct))
-    return {'title': by_title, 'mdl': by_mdl, 'al': by_al, 'slug': by_slug}
+
+    return {
+        'title': by_title,
+        'mdl': by_mdl,
+        'al': by_al,
+        'slug': by_slug,
+        'al_id': by_al_id,
+        'imdb_id': by_imdb_id,
+        'tmdb_id': by_tmdb_id,
+    }
 
 def _years_compatible(y1, y2):
     if not y1 or not y2:
@@ -240,7 +293,21 @@ def _years_compatible(y1, y2):
     except Exception:
         return str(y1).strip() == str(y2).strip()
 
-def find_in_index(idx, title, year=None, slug=None, content_type=None, mdl_url=None, anilist_url=None):
+def find_in_index(idx, title, year=None, slug=None, content_type=None, mdl_url=None, anilist_url=None, anilist_id=None, imdb_id=None, tmdb_id=None):
+    # 1. External ID matches have highest priority
+    if anilist_id and str(anilist_id).strip() in idx.get('al_id', {}):
+        return idx['al_id'][str(anilist_id).strip()]
+    if imdb_id and str(imdb_id).strip() in idx.get('imdb_id', {}):
+        return idx['imdb_id'][str(imdb_id).strip()]
+    if tmdb_id and str(tmdb_id).strip() in idx.get('tmdb_id', {}):
+        cands = idx['tmdb_id'][str(tmdb_id).strip()]
+        if year:
+            for did, y, _m, _a, _ct in cands:
+                if _years_compatible(y, year):
+                    return did
+        elif cands:
+            return cands[0][0]
+
     if mdl_url and mdl_url.strip() in idx.get('mdl', {}):
         return idx['mdl'][mdl_url.strip()]
     if anilist_url and anilist_url.strip() in idx.get('al', {}):
@@ -250,17 +317,16 @@ def find_in_index(idx, title, year=None, slug=None, content_type=None, mdl_url=N
     nt = norm_title(title)
     if len(nt) >= 4 and nt in idx['title']:
         cands = idx['title'][nt]
-        # Filter by content_type if specified (never mix anime and live-action dizi)
+        # Prefer exact content_type match if available, but allow anime/dizi overlap
         if target_ct:
             matching_cands = [c for c in cands if not c[4] or c[4] == target_ct]
             if matching_cands:
                 cands = matching_cands
-            else:
-                # If target is dizi and all candidates are anime, do NOT match!
-                if target_ct in ('dizi', 'film') and all(c[4] == 'anime' for c in cands):
-                    cands = []
-                elif target_ct == 'anime' and all(c[4] in ('dizi', 'film') for c in cands):
-                    cands = []
+            elif target_ct in ('dizi', 'anime'):
+                # Allow cross-match between dizi and anime (scrapers often label anime as dizi)
+                cross_cands = [c for c in cands if c[4] in ('dizi', 'anime')]
+                if cross_cands:
+                    cands = cross_cands
 
         if cands:
             if year:
@@ -270,7 +336,7 @@ def find_in_index(idx, title, year=None, slug=None, content_type=None, mdl_url=N
                 for did, y, _m, _a, _ct in cands:
                     if _years_compatible(y, year):
                         return did
-                return None
+                return cands[0][0]
             return cands[0][0]
 
     if slug:
@@ -281,7 +347,9 @@ def find_in_index(idx, title, year=None, slug=None, content_type=None, mdl_url=N
                     did, y = item[0], item[1]
                     item_ct = item[2] if len(item) > 2 else None
                     if target_ct and item_ct and target_ct != item_ct:
-                        continue
+                        # Allow cross-match between anime and dizi
+                        if not (target_ct in ('dizi', 'anime') and item_ct in ('dizi', 'anime')):
+                            continue
                     if _years_compatible(y, year):
                         return did
                 else:
