@@ -1128,6 +1128,7 @@ export default function SeriesDetailPage({
                   className="w-full sm:w-auto"
                   triggerClassName="w-full sm:w-auto justify-between px-4 py-2.5 sm:py-2 text-xs"
                   value={userProg?.status || ''}
+                  allowDeselect={true}
                   onChange={(val) => {
                     if (!user) {
                       openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
@@ -1141,7 +1142,9 @@ export default function SeriesDetailPage({
                       );
                       return;
                     }
-                    if (val) {
+                    if (!val || val === userProg?.status) {
+                      setLibraryStatus(media, null);
+                    } else {
                       setLibraryStatus(
                         media,
                         val as
@@ -1570,7 +1573,7 @@ export default function SeriesDetailPage({
 
         {/* 4. FULL EPISODES GRID (Only for series, not movies) */}
         {!isFilm && (
-          <section className="p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08] [contain:layout_paint_style]">
+          <section className="p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08] relative z-20 overflow-visible">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div>
               <div className="flex flex-wrap items-center gap-3 relative z-30">

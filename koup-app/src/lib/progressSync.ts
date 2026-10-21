@@ -24,7 +24,7 @@ export interface LastSyncSnapshot {
   positionSec: number;
   seasonNum: number;
   episodeNum: number;
-  status: string;
+  status?: string | null;
   watchedCount: number;
   syncedAt: number;
 }
@@ -92,7 +92,7 @@ export function sanitizeProgressDbPayload(
   const rawUid = item.user_id && item.user_id !== 'guest' ? item.user_id : fallbackUserId;
   const uid = isValidUuid(rawUid) ? rawUid : undefined;
 
-  const validStatus = item.status && VALID_STATUSES.has(item.status) ? item.status : 'watching';
+  const validStatus = item.status && VALID_STATUSES.has(item.status) ? item.status : null;
 
   let validScore: number | null = null;
   if (typeof item.user_score === 'number' && item.user_score >= 1 && item.user_score <= 10) {
@@ -241,7 +241,7 @@ export function shouldSyncToSupabase(
   newPos: number,
   newSeason: number,
   newEpisode: number,
-  newStatus: string,
+  newStatus: string | null | undefined,
   newWatchedCount: number,
   lastSync: LastSyncSnapshot | undefined,
   options?: ProgressSyncOptions
@@ -275,7 +275,7 @@ export function shouldSyncToSupabase(
   }
 
   // 2. Status or watched episodes count changed -> sync!
-  if (lastSync.status !== newStatus || lastSync.watchedCount !== newWatchedCount) {
+  if ((lastSync.status || '') !== (newStatus || '') || lastSync.watchedCount !== newWatchedCount) {
     return true;
   }
 

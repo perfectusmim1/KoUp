@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   RefreshCw,
@@ -82,11 +83,67 @@ export default function AdminSeriesSync({
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
+  const [portalCoords, setPortalCoords] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    width: number;
+    upwards: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const calculatePosition = useCallback(() => {
+    if (!dropdownRef.current || typeof window === 'undefined') return null;
+    const rect = dropdownRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const upwards = spaceBelow < 340 && spaceAbove > 200;
+
+    const menuWidth = Math.min(320, window.innerWidth - 24);
+    const clampedLeft = Math.max(12, Math.min(rect.left, window.innerWidth - menuWidth - 12));
+
+    return {
+      top: upwards ? undefined : Math.round(rect.bottom + 6),
+      bottom: upwards ? Math.round(window.innerHeight - rect.top + 6) : undefined,
+      left: clampedLeft,
+      width: menuWidth,
+      upwards,
+    };
+  }, []);
+
+  const updatePosition = useCallback(() => {
+    const coords = calculatePosition();
+    if (coords) setPortalCoords(coords);
+  }, [calculatePosition]);
+
+  useEffect(() => {
+    if (isDropdownOpen) {
+      updatePosition();
+      const handleScrollOrResize = () => updatePosition();
+      window.addEventListener('resize', handleScrollOrResize, { passive: true });
+      window.addEventListener('scroll', handleScrollOrResize, { passive: true, capture: true });
+      return () => {
+        window.removeEventListener('resize', handleScrollOrResize);
+        window.removeEventListener('scroll', handleScrollOrResize, true);
+      };
+    }
+  }, [isDropdownOpen, updatePosition]);
 
   // Auto-close dropdown on outside click
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(target) &&
+        menuRef.current &&
+        !menuRef.current.contains(target)
+      ) {
         setIsDropdownOpen(false);
       }
     }
@@ -292,76 +349,90 @@ export default function AdminSeriesSync({
             />
           </button>
 
-          {/* Dropdown Popover */}
-          <AnimatePresence>
-            {isDropdownOpen && (
-              <motion.div
-                initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 6, scale: 0.96 }}
-                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                className="absolute top-full left-0 mt-2 w-80 rounded-2xl bg-[#0f0f13]/98 border border-white/20 shadow-[0_25px_60px_rgba(0,0,0,0.95),0_0_25px_rgba(0,0,0,0.8)] backdrop-blur-3xl p-2 z-[90] pointer-events-auto"
-              >
-                <div className="px-3 py-2 border-b border-white/10 mb-1 flex items-center justify-between">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-sky-400 font-bold flex items-center gap-1.5">
-                    <Sparkles className="w-3 h-3" />
-                    Senkronizasyon Sağlayıcısı
-                  </span>
-                </div>
+          {/* Dropdown Popover (Rendered via Portal to eliminate clipping issues) */}
+          {mounted &&
+            typeof document !== 'undefined' &&
+            createPortal(
+              <AnimatePresence>
+                {isDropdownOpen && portalCoords && (
+                  <motion.div
+                    ref={menuRef}
+                    initial={{ opacity: 0, y: portalCoords.upwards ? 8 : -8, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: portalCoords.upwards ? 6 : -6, scale: 0.96 }}
+                    transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                    style={{
+                      position: 'fixed',
+                      top: portalCoords.top !== undefined ? `${portalCoords.top}px` : undefined,
+                      bottom: portalCoords.bottom !== undefined ? `${portalCoords.bottom}px` : undefined,
+                      left: `${portalCoords.left}px`,
+                      width: `${portalCoords.width}px`,
+                      zIndex: 999999,
+                    }}
+                    className="rounded-2xl bg-[#0f0f13]/98 border border-white/20 shadow-[0_25px_60px_rgba(0,0,0,0.95),0_0_25px_rgba(0,0,0,0.8)] backdrop-blur-3xl p-2 pointer-events-auto"
+                  >
+                    <div className="px-3 py-2 border-b border-white/10 mb-1 flex items-center justify-between">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-sky-400 font-bold flex items-center gap-1.5">
+                        <Sparkles className="w-3 h-3" />
+                        Senkronizasyon Sağlayıcısı
+                      </span>
+                    </div>
 
-                <div className="space-y-1 max-h-[300px] overflow-y-auto no-scrollbar">
-                  {PROVIDERS.map((p) => {
-                    const isSelected = selectedProvider === p.id;
-                    return (
+                    <div className="space-y-1 max-h-[300px] overflow-y-auto no-scrollbar">
+                      {PROVIDERS.map((p) => {
+                        const isSelected = selectedProvider === p.id;
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedProvider(p.id);
+                              setIsDropdownOpen(false);
+                              handleTriggerSync(p.id);
+                            }}
+                            className={`w-full text-left px-3 py-2 rounded-xl transition-all flex items-start gap-2.5 cursor-pointer ${
+                              isSelected
+                                ? 'bg-sky-500/15 border border-sky-400/40 text-white'
+                                : 'hover:bg-white/[0.06] text-white/80 hover:text-white'
+                            }`}
+                          >
+                            <span className="text-base shrink-0 mt-0.5">{p.icon}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-bold flex items-center justify-between">
+                                <span>{p.name}</span>
+                                {isSelected && (
+                                  <span className="text-[10px] text-sky-400 font-mono font-bold">SEÇİLİ</span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-white/50 line-clamp-1 mt-0.5">{p.desc}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+
+                      {/* Custom URL Option */}
                       <button
-                        key={p.id}
                         type="button"
                         onClick={() => {
-                          setSelectedProvider(p.id);
                           setIsDropdownOpen(false);
-                          handleTriggerSync(p.id);
+                          setShowManualModal(true);
                         }}
-                        className={`w-full text-left px-3 py-2 rounded-xl transition-all flex items-start gap-2.5 cursor-pointer ${
-                          isSelected
-                            ? 'bg-sky-500/15 border border-sky-400/40 text-white'
-                            : 'hover:bg-white/[0.06] text-white/80 hover:text-white'
-                        }`}
+                        className="w-full text-left px-3 py-2 rounded-xl hover:bg-sky-500/15 border border-dashed border-sky-400/30 text-sky-300 hover:text-white transition-all flex items-start gap-2.5 cursor-pointer mt-1"
                       >
-                        <span className="text-base shrink-0 mt-0.5">{p.icon}</span>
+                        <LinkIcon className="w-4 h-4 shrink-0 mt-0.5 text-sky-400" />
                         <div className="flex-1 min-w-0">
-                          <div className="text-xs font-bold flex items-center justify-between">
-                            <span>{p.name}</span>
-                            {isSelected && (
-                              <span className="text-[10px] text-sky-400 font-mono font-bold">SEÇİLİ</span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-white/50 line-clamp-1 mt-0.5">{p.desc}</p>
+                          <div className="text-xs font-bold">Özel Kaynak Linki Gir...</div>
+                          <p className="text-[11px] text-sky-300/60 line-clamp-1 mt-0.5">
+                            DiziBOX, HDFilm vb. doğrudan dizi URL'sini yapıştırın
+                          </p>
                         </div>
                       </button>
-                    );
-                  })}
-
-                  {/* Custom URL Option */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsDropdownOpen(false);
-                      setShowManualModal(true);
-                    }}
-                    className="w-full text-left px-3 py-2 rounded-xl hover:bg-sky-500/15 border border-dashed border-sky-400/30 text-sky-300 hover:text-white transition-all flex items-start gap-2.5 cursor-pointer mt-1"
-                  >
-                    <LinkIcon className="w-4 h-4 shrink-0 mt-0.5 text-sky-400" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-bold">Özel Kaynak Linki Gir...</div>
-                      <p className="text-[11px] text-sky-300/60 line-clamp-1 mt-0.5">
-                        DiziBOX, HDFilm vb. doğrudan dizi URL'sini yapıştırın
-                      </p>
                     </div>
-                  </button>
-                </div>
-              </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>,
+              document.body
             )}
-          </AnimatePresence>
         </div>
 
         {/* Pending Episodes Badge for Admins */}

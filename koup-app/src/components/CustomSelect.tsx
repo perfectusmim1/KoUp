@@ -29,6 +29,7 @@ export interface CustomSelectProps {
   searchPlaceholder?: string;
   portal?: boolean;
   disabled?: boolean;
+  allowDeselect?: boolean;
   id?: string;
   name?: string;
   'aria-label'?: string;
@@ -50,6 +51,7 @@ export default function CustomSelect({
   searchPlaceholder = 'Seçenek ara...',
   portal = true,
   disabled = false,
+  allowDeselect = false,
   id: explicitId,
   name,
   'aria-label': ariaLabel,
@@ -458,7 +460,11 @@ export default function CustomSelect({
                     disabled={opt.disabled}
                     onClick={() => {
                       if (opt.disabled) return;
-                      onChange(opt.value);
+                      if (allowDeselect && opt.value === value) {
+                        onChange('');
+                      } else {
+                        onChange(opt.value);
+                      }
                       setIsOpen(false);
                       triggerRef.current?.focus();
                     }}

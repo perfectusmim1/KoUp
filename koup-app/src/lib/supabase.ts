@@ -223,7 +223,7 @@ export interface EpisodeProgressEntry {
 export interface UserMediaProgress {
   user_id?: string;
   media_id: number;
-  status: 'watching' | 'completed' | 'plan_to_watch' | 'on_hold' | 'dropped';
+  status: 'watching' | 'completed' | 'plan_to_watch' | 'on_hold' | 'dropped' | null;
   is_favorite: boolean;
   is_favorited?: boolean;
   user_score?: number | null;

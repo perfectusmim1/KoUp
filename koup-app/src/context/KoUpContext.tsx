@@ -16,6 +16,7 @@ import {
   MediaItem,
   UserProfile,
   UserMediaProgress,
+  cleanMediaTitle,
 } from '@/lib/supabase';
 import {
   reconcileProgressMaps,
@@ -1221,7 +1222,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       setProgressMap((prev) => {
         const existing = prev[media.id] || {
           media_id: media.id,
-          status: 'watching',
+          status: null,
           is_favorite: false,
           watched_episodes: [],
           last_season_num: seasonNum,
@@ -1281,13 +1282,17 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           );
         } catch {}
 
+        const existingStatus = existing.status || null;
+        const nextStatus: UserMediaProgress['status'] = existingStatus
+          ? media.episode_count > 0 && watchedSet.size >= media.episode_count
+            ? 'completed'
+            : existingStatus
+          : null;
+
         const updated: UserMediaProgress = {
           ...existing,
           user_id: user ? user.id : 'guest',
-          status:
-            media.episode_count > 0 && watchedSet.size >= media.episode_count
-              ? 'completed'
-              : 'watching',
+          status: nextStatus,
           watched_episodes: watchedArr,
           last_season_num: seasonNum,
           last_episode_num: nextLastEp,
@@ -1412,7 +1417,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       setProgressMap((prev) => {
         const existing = prev[media.id] || {
           media_id: media.id,
-          status: 'watching',
+          status: null,
           is_favorite: false,
           watched_episodes: [],
           last_season_num: 1,
@@ -1449,12 +1454,12 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
               : maxWatched + 1
             : 1;
 
-        const nextStatus: UserMediaProgress['status'] =
-          media.episode_count > 0 && watchedSet.size >= media.episode_count
+        const existingStatus = existing.status || null;
+        const nextStatus: UserMediaProgress['status'] = existingStatus
+          ? media.episode_count > 0 && watchedSet.size >= media.episode_count
             ? 'completed'
-            : watchedSet.size > 0
-            ? 'watching'
-            : existing.status || 'watching';
+            : existingStatus
+          : null;
 
         const isNowWatched = watchedSet.has(episodeNum);
         const epKey = `${existing.last_season_num || 1}_${episodeNum}`;
@@ -1498,7 +1503,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           positionSec: updated.resume_position_sec || 0,
           seasonNum: updated.last_season_num || 1,
           episodeNum: updated.last_episode_num || 1,
-          status: updated.status,
+          status: updated.status || '',
           watchedCount: updated.watched_episodes.length,
           syncedAt: Date.now(),
         };
@@ -1553,13 +1558,34 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           positionSec: updated.resume_position_sec || 0,
           seasonNum: updated.last_season_num || 1,
           episodeNum: updated.last_episode_num || 1,
-          status: updated.status,
+          status: updated.status || '',
           watchedCount: updated.watched_episodes.length,
           syncedAt: Date.now(),
         };
 
         const payload = sanitizeProgressDbPayload(updated, user.id);
         void syncProgressRecordToSupabase(payload);
+
+        if (status) {
+          const labels: Record<string, string> = {
+            watching: 'İzliyorum',
+            completed: 'Tamamladım',
+            plan_to_watch: 'İzleyeceğim',
+            on_hold: 'Beklemede',
+            dropped: 'Bıraktım',
+          };
+          pushNotification(
+            'Kütüphane Güncellendi',
+            `${cleanMediaTitle(media.title)}: ${labels[status] || status}`,
+            'success'
+          );
+        } else {
+          pushNotification(
+            'Kütüphane Güncellendi',
+            `${cleanMediaTitle(media.title)} kütüphane etiketi kaldırıldı.`,
+            'info'
+          );
+        }
 
         return next;
       });

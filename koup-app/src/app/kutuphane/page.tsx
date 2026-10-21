@@ -85,7 +85,9 @@ export default function KutuphanePage() {
       }
 
       setIsLoading(true);
-      const mediaIds = Object.keys(progressMap).map(Number).filter((n) => !isNaN(n) && n > 0);
+      const mediaIds = Object.keys(progressMap)
+        .map(Number)
+        .filter((n) => !isNaN(n) && n > 0 && progressMap[n]?.status);
 
       if (mediaIds.length === 0) {
         if (isMounted) {
@@ -120,7 +122,7 @@ export default function KutuphanePage() {
   // Compute status metrics
   const statusCounts = useMemo(() => {
     const counts = {
-      ALL: libraryMedia.length,
+      ALL: 0,
       watching: 0,
       completed: 0,
       plan_to_watch: 0,
@@ -128,23 +130,28 @@ export default function KutuphanePage() {
       dropped: 0,
     };
 
+    let totalWithStatus = 0;
     libraryMedia.forEach((m) => {
       const prog = progressMap[m.id];
       const st = prog?.status as LibraryStatus | undefined;
       if (st && counts[st] !== undefined) {
         counts[st]++;
+        totalWithStatus++;
       }
     });
 
+    counts.ALL = totalWithStatus;
     return counts;
   }, [libraryMedia, progressMap]);
 
   // Filtered media list
   const filteredMedia = useMemo(() => {
     return libraryMedia.filter((item) => {
+      const prog = progressMap[item.id];
+      if (!prog?.status) return false;
+
       // 1. Status Filter
       if (activeStatus !== 'ALL') {
-        const prog = progressMap[item.id];
         if (prog?.status !== activeStatus) return false;
       }
 
@@ -398,9 +405,14 @@ export default function KutuphanePage() {
                     <div className="flex-1 min-w-0">
                       <CustomSelect
                         value={currentStatus}
+                        allowDeselect={true}
                         onChange={(val) => {
                           triggerSound?.('click');
-                          setLibraryStatus(m, val as any);
+                          if (!val || val === currentStatus) {
+                            setLibraryStatus(m, null);
+                          } else {
+                            setLibraryStatus(m, val as any);
+                          }
                         }}
                         options={CARD_STATUS_OPTIONS}
                         variant="glass"
