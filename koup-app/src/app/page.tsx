@@ -2002,6 +2002,13 @@ const DeferredSection = memo(function DeferredSection({
   );
 });
 
+function getOverlayAnchor(colIdx: number, cols: number): 'left' | 'right' | 'center' {
+  if (cols <= 2) return colIdx === 0 ? 'left' : 'right';
+  if (colIdx <= 1) return 'left';
+  if (colIdx >= cols - 2) return 'right';
+  return 'center';
+}
+
 interface PersonalizedRecommendationsSectionProps {
   items: MediaItem[];
   onConfigureTaste?: () => void;
@@ -2020,6 +2027,7 @@ const PersonalizedRecommendationsSection = memo(function PersonalizedRecommendat
   const sectionRef = useRef<HTMLElement | null>(null);
   const { isMounted, ref: deferredRef } = useDeferredMount(order);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [hoveredCardId, setHoveredCardId] = useState<number | null>(null);
 
   // Responsive columns: mobile 2, tablet 3-4, desktop 5-6
   const [cols, setCols] = useState(6);
@@ -2028,9 +2036,9 @@ const PersonalizedRecommendationsSection = memo(function PersonalizedRecommendat
     const calcCols = () => {
       const w = window.innerWidth;
       if (w < 640) setCols(2);
-      else if (w < 860) setCols(3);
-      else if (w < 1140) setCols(4);
-      else if (w < 1440) setCols(5);
+      else if (w < 768) setCols(3);
+      else if (w < 1024) setCols(4);
+      else if (w < 1280) setCols(5);
       else setCols(6);
     };
     calcCols();
@@ -2038,18 +2046,9 @@ const PersonalizedRecommendationsSection = memo(function PersonalizedRecommendat
     return () => window.removeEventListener('resize', calcCols);
   }, []);
 
-  // Partition items into rows of size `cols`
-  const allRows = useMemo(() => {
-    const res: MediaItem[][] = [];
-    for (let i = 0; i < items.length; i += cols) {
-      res.push(items.slice(i, i + cols));
-    }
-    return res;
-  }, [items, cols]);
-
-  const initialRowCount = isDesktop ? 2 : 3;
-  const initialRows = useMemo(() => allRows.slice(0, initialRowCount), [allRows, initialRowCount]);
-  const extraRows = useMemo(() => allRows.slice(initialRowCount), [allRows, initialRowCount]);
+  const initialCount = isDesktop ? cols * 2 : 6;
+  const initialItems = useMemo(() => items.slice(0, initialCount), [items, initialCount]);
+  const extraItems = useMemo(() => items.slice(initialCount), [items, initialCount]);
 
   const handleToggleExpand = useCallback(() => {
     triggerSound?.('click');
@@ -2071,7 +2070,7 @@ const PersonalizedRecommendationsSection = memo(function PersonalizedRecommendat
         sectionRef.current = el;
         deferredRef(el);
       }}
-      className="w-full px-4 sm:px-6 md:px-14 max-w-full [contain:layout_paint_style]"
+      className="w-full px-4 sm:px-6 md:px-14 max-w-full overflow-visible"
     >
       <div className="flex flex-col gap-1 mb-4 sm:mb-6">
         <div className="flex items-center justify-between min-h-[24px]">
@@ -2109,21 +2108,33 @@ const PersonalizedRecommendationsSection = memo(function PersonalizedRecommendat
       {!isMounted ? (
         <div className="w-full h-[320px] sm:h-[400px] my-2" />
       ) : (
-        <div className="w-full flex flex-col">
-          {/* Initial Rows (Mounted instantly) */}
-          <div className="flex flex-col gap-3 sm:gap-4 w-full">
-            {initialRows.map((rowItems, rIdx) => (
-              <PersonalizedGridRow
-                key={`init-row-${rIdx}`}
-                items={rowItems}
-                cols={cols}
-                isDesktop={isDesktop}
-                priority={rIdx === 0}
-              />
-            ))}
+        <div className="w-full flex flex-col overflow-visible">
+          {/* Initial Grid (Stationary Fixed Slots — Zero Jitter / Zero Shift) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 w-full overflow-visible">
+            {initialItems.map((item, idx) => {
+              const colIdx = idx % cols;
+              const anchor = getOverlayAnchor(colIdx, cols);
+              const isHovered = hoveredCardId === item.id;
+              return (
+                <div
+                  key={item.id}
+                  className="relative w-full h-[250px] sm:h-[280px] md:h-[300px] overflow-visible"
+                  style={{ zIndex: isHovered ? 40 : 1 }}
+                  onMouseEnter={() => setHoveredCardId(item.id)}
+                  onMouseLeave={() => setHoveredCardId((curr) => (curr === item.id ? null : curr))}
+                >
+                  <AccordionMediaCard
+                    item={item}
+                    priority={idx < 4}
+                    fluidWidth={!isDesktop}
+                    overlayAnchor={anchor}
+                  />
+                </div>
+              );
+            })}
           </div>
 
-          {/* Extra Rows with Fluid Height/Opacity Spring Accordion Animation */}
+          {/* Extra Grid with Fluid Height/Opacity Spring Accordion Animation */}
           <AnimatePresence initial={false}>
             {isExpanded && (
               <motion.div
@@ -2132,23 +2143,37 @@ const PersonalizedRecommendationsSection = memo(function PersonalizedRecommendat
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
                 transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-                className="overflow-hidden flex flex-col gap-3 sm:gap-4 mt-3 sm:mt-4"
+                className="overflow-visible mt-3 sm:mt-4"
               >
-                {extraRows.map((rowItems, rIdx) => (
-                  <PersonalizedGridRow
-                    key={`extra-row-${rIdx}`}
-                    items={rowItems}
-                    cols={cols}
-                    isDesktop={isDesktop}
-                    priority={false}
-                  />
-                ))}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 w-full overflow-visible py-1">
+                  {extraItems.map((item, idx) => {
+                    const colIdx = idx % cols;
+                    const anchor = getOverlayAnchor(colIdx, cols);
+                    const isHovered = hoveredCardId === item.id;
+                    return (
+                      <div
+                        key={item.id}
+                        className="relative w-full h-[250px] sm:h-[280px] md:h-[300px] overflow-visible"
+                        style={{ zIndex: isHovered ? 40 : 1 }}
+                        onMouseEnter={() => setHoveredCardId(item.id)}
+                        onMouseLeave={() => setHoveredCardId((curr) => (curr === item.id ? null : curr))}
+                      >
+                        <AccordionMediaCard
+                          item={item}
+                          priority={false}
+                          fluidWidth={!isDesktop}
+                          overlayAnchor={anchor}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
 
-          {/* Integrated Sleek Expander Bar (Apple TV+ Glass Styling, No Garish Highlight Colors) */}
-          {extraRows.length > 0 && (
+          {/* Integrated Sleek Expander Bar */}
+          {extraItems.length > 0 && (
             <div className="w-full mt-4 sm:mt-6">
               <button
                 type="button"
@@ -2178,103 +2203,5 @@ const PersonalizedRecommendationsSection = memo(function PersonalizedRecommendat
         </div>
       )}
     </section>
-  );
-});
-
-const PersonalizedGridRow = memo(function PersonalizedGridRow({
-  items,
-  cols,
-  isDesktop,
-  priority,
-}: {
-  items: MediaItem[];
-  cols: number;
-  isDesktop: boolean;
-  priority?: boolean;
-}) {
-  const [hoveredCol, setHoveredCol] = useState<number | null>(null);
-  const hoverTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  const handleCardEnter = useCallback((colIdx: number) => {
-    if (hoverTimerRef.current) {
-      clearTimeout(hoverTimerRef.current);
-      hoverTimerRef.current = null;
-    }
-    setHoveredCol(colIdx);
-  }, []);
-
-  const handleCardLeave = useCallback(() => {
-    if (hoverTimerRef.current) {
-      clearTimeout(hoverTimerRef.current);
-    }
-    hoverTimerRef.current = setTimeout(() => {
-      setHoveredCol(null);
-      hoverTimerRef.current = null;
-    }, 45);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (hoverTimerRef.current) {
-        clearTimeout(hoverTimerRef.current);
-      }
-    };
-  }, []);
-
-  if (!isDesktop) {
-    return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full">
-        {items.map((item, idx) => (
-          <AccordionMediaCard
-            key={item.id}
-            item={item}
-            priority={priority && idx < 2}
-            fluidWidth={true}
-          />
-        ))}
-      </div>
-    );
-  }
-
-  // Desktop Hover-Shift Calculation to prevent right-edge overflow or line wrapping
-  // Difference between expanded card width (420px) and collapsed card width (200px)
-  const delta = 220;
-  const isFullRow = items.length >= cols;
-  const shiftX =
-    isFullRow && hoveredCol !== null && items.length > 1
-      ? -Math.round((hoveredCol / (items.length - 1)) * delta)
-      : 0;
-
-  return (
-    <div className="w-full overflow-hidden py-1.5 px-0.5 relative">
-      <div
-        className="koup-accordion-rail flex items-center gap-3 sm:gap-4 overflow-visible w-full h-[266px] sm:h-[296px] md:h-[324px]"
-        style={{
-          transform: `translateX(${shiftX}px)`,
-          transition: 'transform 260ms cubic-bezier(0.22, 1, 0.36, 1)',
-          willChange: hoveredCol !== null ? 'transform' : 'auto',
-        }}
-        onMouseEnter={() => preloadMediaImages(items)}
-        onMouseLeave={() => {
-          setHoveredCol(null);
-          requestAccordionHover(null);
-        }}
-      >
-        {items.map((item, colIdx) => (
-          <div
-            key={item.id}
-            className="shrink-0"
-            onMouseEnter={() => handleCardEnter(colIdx)}
-            onMouseLeave={handleCardLeave}
-          >
-            <AccordionMediaCard
-              item={item}
-              priority={priority && colIdx < 4}
-              fluidWidth={false}
-            />
-          </div>
-        ))}
-      </div>
-    </div>
   );
 });

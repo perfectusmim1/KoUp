@@ -25,6 +25,7 @@ interface AccordionMediaCardProps {
   rank?: number;
   priority?: boolean;
   fluidWidth?: boolean;
+  overlayAnchor?: 'left' | 'right' | 'center';
 }
 
 // Drag lock flag for horizontal carousels to prevent accidental hover/clicks while swiping
@@ -209,6 +210,7 @@ function AccordionMediaCardComponent({
   rank,
   priority = false,
   fluidWidth = false,
+  overlayAnchor,
 }: AccordionMediaCardProps) {
   const router = useRouter();
   const getStore = useKoUpStoreGet();
@@ -637,12 +639,22 @@ function AccordionMediaCardComponent({
         ['WebkitUserDrag' as any]: 'none',
         userSelect: 'none',
       }}
-      className={`koup-accordion-card koup-focus-ring relative select-none rounded-2xl overflow-hidden cursor-pointer group bg-[#0f0f11] ${
+      className={`koup-accordion-card koup-focus-ring select-none rounded-2xl overflow-hidden cursor-pointer group bg-[#0f0f11] ${
         fluidWidth
-          ? 'w-full aspect-[2/3]'
-          : isAccordionExpanded
-            ? 'w-[320px] sm:w-[370px] md:w-[420px] h-[250px] sm:h-[280px] md:h-[300px] shrink-0 z-30 border-white/40 shadow-[0_18px_40px_rgba(0,0,0,0.9)]'
-            : 'w-[165px] sm:w-[185px] md:w-[200px] h-[250px] sm:h-[280px] md:h-[300px] shrink-0 z-10 border-white/10 hover:border-white/25 shadow-md'
+          ? 'w-full aspect-[2/3] relative'
+          : overlayAnchor
+            ? isAccordionExpanded
+              ? `absolute top-0 z-40 w-[300px] sm:w-[350px] md:w-[390px] lg:w-[410px] h-[250px] sm:h-[280px] md:h-[300px] border-white/40 shadow-[0_18px_40px_rgba(0,0,0,0.95)] ${
+                  overlayAnchor === 'left'
+                    ? 'left-0 right-auto'
+                    : overlayAnchor === 'right'
+                      ? 'right-0 left-auto'
+                      : 'left-1/2 -translate-x-1/2'
+                }`
+              : 'w-full h-[250px] sm:h-[280px] md:h-[300px] relative z-10 border-white/10 hover:border-white/25 shadow-md'
+            : isAccordionExpanded
+              ? 'w-[320px] sm:w-[370px] md:w-[420px] h-[250px] sm:h-[280px] md:h-[300px] shrink-0 z-30 border-white/40 shadow-[0_18px_40px_rgba(0,0,0,0.9)] relative'
+              : 'w-[165px] sm:w-[185px] md:w-[200px] h-[250px] sm:h-[280px] md:h-[300px] shrink-0 z-10 border-white/10 hover:border-white/25 shadow-md relative'
       }`}
     >
       {/* Background Instant Navigation Link */}

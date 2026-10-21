@@ -588,7 +588,6 @@ textarea.koup-input {
 .koup-accordion-card:hover {
   border-color: rgba(255, 255, 255, 0.32);
   will-change: width;
-  transform: translateZ(0);
 }
 
 /* Subtle Cinema Focus Ring */
