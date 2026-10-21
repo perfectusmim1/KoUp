@@ -34,7 +34,7 @@ from scrapers.supabase_sync_helper import (
     backup_db_to_r2
 )
 
-def find_gapped_series(conn, limit=100, max_gap_size=50):
+def find_gapped_series(conn, limit=100, max_gap_size=50, country_filter=None, provider_filter=None):
     cur = conn.cursor()
     cur.execute("""
         SELECT d.id, d.title, d.slug, d.content_type, d.country, d.source_url
@@ -58,19 +58,30 @@ def find_gapped_series(conn, limit=100, max_gap_size=50):
         full = set(range(start_ep, max_ep + 1))
         diff = full - existing
         if diff and len(diff) <= max_gap_size:
-            gapped.append({
+            country = (row['country'] or '').upper()
+            if country_filter and country_filter.upper() != 'ALL' and country != country_filter.upper():
+                continue
+            item = {
                 'id': did,
                 'title': row['title'],
                 'slug': row['slug'],
                 'content_type': (row['content_type'] or '').lower(),
-                'country': (row['country'] or '').upper(),
+                'country': country,
                 'source_url': row['source_url'] or '',
                 'missing_count': len(diff),
                 'missing_eps': sorted(list(diff))
-            })
+            }
+            prov = choose_provider(item)
+            if provider_filter and provider_filter.lower() != 'all' and prov != provider_filter.lower():
+                continue
+            gapped.append(item)
     
-    # Sort: Prioritize series with 1-5 missing episodes for fastest completion
-    gapped.sort(key=lambda x: x['missing_count'])
+    # Sort: Prioritize high-yield Asian live scraper targets first, then by missing_count
+    def sort_key(x):
+        is_asian = 0 if x['country'] in ('KR', 'CN', 'TH', 'TW') else 1
+        return (is_asian, x['missing_count'])
+    
+    gapped.sort(key=sort_key)
     return gapped[:limit]
 
 def choose_provider(item):
@@ -89,12 +100,12 @@ def choose_provider(item):
     else:
         return 'dizibox'
 
-def run_healing_loop(limit=50, max_gap_size=50):
-    log("ENGINE", f"Otomatik Arşiv İyileştirici Başlatıldı. Hedef: İlk {limit} boşluklu seri (Max Gap: {max_gap_size})...")
+def run_healing_loop(limit=50, max_gap_size=50, country=None, provider=None):
+    log("ENGINE", f"Otomatik Arşiv İyileştirici Başlatıldı. Hedef: İlk {limit} seri (Max Gap: {max_gap_size}, Country: {country or 'ALL'}, Provider: {provider or 'ALL'})...")
     conn = get_db()
     cur = conn.cursor()
     
-    candidates = find_gapped_series(conn, limit=limit, max_gap_size=max_gap_size)
+    candidates = find_gapped_series(conn, limit=limit, max_gap_size=max_gap_size, country_filter=country, provider_filter=provider)
     log("ENGINE", f"Toplam {len(candidates)} adet iyileştirilebilir dizi tespit edildi.")
     
     healed_dramas = 0
@@ -176,9 +187,11 @@ def main():
     parser = argparse.ArgumentParser(description="KoUp Automated Archive Gap Healer")
     parser.add_argument("--limit", type=int, default=50, help="Number of series to heal in this run")
     parser.add_argument("--max-gap", type=int, default=50, help="Max gap size to process")
+    parser.add_argument("--country", type=str, default=None, help="Filter by country (e.g. KR, CN, TH, TR)")
+    parser.add_argument("--provider", type=str, default=None, help="Filter by target provider (e.g. dizikorea, bldrama)")
     args = parser.parse_args()
     
-    run_healing_loop(limit=args.limit, max_gap_size=args.max_gap)
+    run_healing_loop(limit=args.limit, max_gap_size=args.max_gap, country=args.country, provider=args.provider)
 
 if __name__ == '__main__':
     main()

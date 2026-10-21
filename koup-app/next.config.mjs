@@ -13,6 +13,16 @@ const nextConfig = {
     ],
   },
 
+  async redirects() {
+    return [
+      {
+        source: '/son-eklenen-bolumler',
+        destination: '/son-eklenenler',
+        permanent: true,
+      },
+    ];
+  },
+
   async headers() {
     return [
       {

@@ -1513,11 +1513,11 @@ export default function HomePage() {
                       <ChevronRight className="w-4 h-4" />
                     </button>
                     <Link
-                      href="/takvim"
-                      className="text-[11px] sm:text-[12px] tracking-wider uppercase font-semibold text-white/50 hover:text-white flex items-center gap-1 transition-colors"
+                      href="/son-eklenenler"
+                      className="text-[11px] sm:text-[12px] tracking-wider uppercase font-semibold text-white/50 hover:text-white flex items-center gap-1 transition-colors cursor-pointer group"
                     >
-                      <span>Yayın Takvimi</span>
-                      <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      <span className="group-hover:text-white">Tümünü Gör</span>
+                      <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 group-hover:translate-x-0.5 transition-transform" />
                     </Link>
                   </div>
                 </div>
