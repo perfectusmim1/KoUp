@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo, memo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
@@ -54,6 +54,8 @@ import {
 } from '@/lib/tasteProfile';
 import { useDragScroll } from '@/hooks/useDragScroll';
 import { useDeferredMount } from '@/hooks/useDeferredMount';
+import CustomSelect, { SelectOption } from '@/components/CustomSelect';
+import CountryFlag from '@/components/CountryFlag';
 
 // Vitrin Trailer Reveal & Seamless Loop Timing
 const HERO_TRAILER_FIRST_REVEAL_SEC = 3.9;
@@ -80,7 +82,19 @@ interface HomeDataBundle {
   top10Series?: MediaItem[];
   top10Movies?: MediaItem[];
   recentEpsProcessed?: any[];
+  recentMedia?: MediaItem[];
 }
+
+const COUNTRY_OPTIONS: SelectOption[] = [
+  { value: 'ALL', label: 'Tüm Ülkeler', icon: <Globe className="w-3.5 h-3.5 text-sky-400" /> },
+  { value: 'KR', label: 'Güney Kore', icon: <CountryFlag code="KR" size="sm" /> },
+  { value: 'JP', label: 'Japonya', icon: <CountryFlag code="JP" size="sm" /> },
+  { value: 'CN', label: 'Çin', icon: <CountryFlag code="CN" size="sm" /> },
+  { value: 'TR', label: 'Türkiye', icon: <CountryFlag code="TR" size="sm" /> },
+  { value: 'TH', label: 'Tayland', icon: <CountryFlag code="TH" size="sm" /> },
+  { value: 'TW', label: 'Tayvan', icon: <CountryFlag code="TW" size="sm" /> },
+  { value: 'US', label: 'ABD & Global', icon: <CountryFlag code="US" size="sm" /> },
+];
 
 // Module-level cache so navigating back to home in the same session is 0ms instant
 let memoryHomeBundle: HomeDataBundle | null = null;
@@ -177,13 +191,23 @@ export default function HomePage() {
   const [animeItems, setAnimeItems] = useState<MediaItem[]>([]);
   const [globalItems, setGlobalItems] = useState<MediaItem[]>([]);
   const [recentEpisodes, setRecentEpisodes] = useState<any[]>([]);
+  const [recentMediaItems, setRecentMediaItems] = useState<MediaItem[]>([]);
+  const [selectedCountry, setSelectedCountry] = useState<string>('ALL');
+  const [isLoadingCountryMedia, setIsLoadingCountryMedia] = useState(false);
+  const selectedCountryRef = useRef(selectedCountry);
+  const recentMediaCacheRef = useRef<Record<string, MediaItem[]>>({});
   const [topPeople, setTopPeople] = useState<PersonItem[]>([]);
   const [magPosts, setMagPosts] = useState<MagazinePost[]>([]);
 
   const top10SeriesScrollRef = useDragScroll<HTMLDivElement>();
   const top10MoviesScrollRef = useDragScroll<HTMLDivElement>();
   const recentEpisodesScrollRef = useDragScroll<HTMLDivElement>();
+  const recentMediaScrollRef = useDragScroll<HTMLDivElement>();
   const heroThumbnailsRef = useDragScroll<HTMLDivElement>();
+
+  useEffect(() => {
+    selectedCountryRef.current = selectedCountry;
+  }, [selectedCountry]);
 
   const applyBundle = (bundle: HomeDataBundle) => {
     memoryHomeBundle = bundle;
@@ -240,6 +264,12 @@ export default function HomePage() {
     if (bundle.recentEpsProcessed && bundle.recentEpsProcessed.length > 0) {
       setRecentEpisodes(bundle.recentEpsProcessed);
     }
+    if (bundle.recentMedia && bundle.recentMedia.length > 0) {
+      recentMediaCacheRef.current['ALL'] = bundle.recentMedia;
+      if (selectedCountryRef.current === 'ALL') {
+        setRecentMediaItems(bundle.recentMedia);
+      }
+    }
 
     // Register items into synchronous memory cache for 0ms navigation without competing with Hero LCP bandwidth
     if (typeof window !== 'undefined') {
@@ -251,6 +281,7 @@ export default function HomePage() {
         ...(feats || []),
         ...(top10Series || []),
         ...(top10Movies || []),
+        ...(bundle.recentMedia || []),
         ...((bundle.recentEpsProcessed || []).map((e: any) => e.media).filter(Boolean)),
       ];
       registerMediaItems(allRowItems);
@@ -259,14 +290,14 @@ export default function HomePage() {
 
   useEffect(() => {
     // 1. Instantly populate on client mount from memory or localStorage cache for 0ms transition
-    const cached = memoryHomeBundle || getCache<HomeDataBundle>('home_catalog_bundle_v8');
+    const cached = memoryHomeBundle || getCache<HomeDataBundle>('home_catalog_bundle_v9');
     if (cached) {
       applyBundle(cached);
     }
 
     async function fetchHomeData() {
       const homeData = await cachedQuery(
-        'home_catalog_bundle_v8',
+        'home_catalog_bundle_v9',
         60_000,
         async () => {
         const [
@@ -280,6 +311,7 @@ export default function HomePage() {
           magRes,
           top10SeriesRes,
           top10MoviesRes,
+          recentMediaRes,
         ] = await Promise.all([
           supabase
             .from('media')
@@ -346,6 +378,11 @@ export default function HomePage() {
             p_days: 7,
             p_category: 'film',
           }),
+          supabase
+            .from('media')
+            .select('*')
+            .order('id', { ascending: false })
+            .limit(24),
         ]);
 
         let featItems = (featRes.data as MediaItem[]) || [];
@@ -417,6 +454,7 @@ export default function HomePage() {
             ? []
             : ((top10SeriesRes.data as MediaItem[]) || []),
           top10Movies: movieItems,
+          recentMedia: (recentMediaRes.data as MediaItem[]) || [],
         };
       }, (freshBundle) => {
         applyBundle(freshBundle);
@@ -1046,12 +1084,49 @@ export default function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kdramaItems, animeItems, cdramaItems, globalItems, heroItems, progressMap, tasteVersion]);
 
+  const handleCountryChange = useCallback(
+    async (countryCode: string) => {
+      setSelectedCountry(countryCode);
+      triggerSound?.('click');
+
+      if (recentMediaCacheRef.current[countryCode]) {
+        setRecentMediaItems(recentMediaCacheRef.current[countryCode]);
+        return;
+      }
+
+      setIsLoadingCountryMedia(true);
+      try {
+        let query = supabase.from('media').select('*');
+        if (countryCode === 'US') {
+          query = query.in('country_code', ['US', 'GB', 'CA', 'FR', 'DE', 'AU', 'IT', 'ES']);
+        } else if (countryCode !== 'ALL') {
+          query = query.eq('country_code', countryCode);
+        }
+        const { data, error } = await query.order('id', { ascending: false }).limit(24);
+        if (!error && data) {
+          const items = data as MediaItem[];
+          recentMediaCacheRef.current[countryCode] = items;
+          setRecentMediaItems(items);
+          if (typeof window !== 'undefined') {
+            registerMediaItems(items);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching country recent media:', err);
+      } finally {
+        setIsLoadingCountryMedia(false);
+      }
+    },
+    [triggerSound]
+  );
+
   // Progressive below-the-fold rail mounting orders:
   // - Hero + first content rail mount immediately (order: 0).
   // - All rails below it get sequential orders released via idle callback or IntersectionObserver.
   const hasContinueWatching = continueWatchingItems.length > 0;
   let runningOrder = hasContinueWatching ? 1 : 0;
   const recentEpisodesOrder = runningOrder++;
+  const recentMediaOrder = runningOrder++;
   const top10SeriesOrder = runningOrder++;
   const top10MoviesOrder = runningOrder++;
   const personalizedOrder = runningOrder++;
@@ -1597,7 +1672,108 @@ export default function HomePage() {
         )}
 
         {/* =====================================================================
-            3A. TOP 10 DİZİLER WITH INTEGRATED STROKE OUTLINE NUMERALS
+            3A. SON EKLENEN YAPIMLAR (Ülke Filtrelemeli & Akordiyon Kart Mimarisi)
+        ===================================================================== */}
+        {(recentMediaItems.length > 0 || isLoadingCountryMedia || selectedCountry !== 'ALL') && (
+          <DeferredSection
+            order={recentMediaOrder}
+            className="w-full px-4 sm:px-6 md:px-14 max-w-full"
+            header={
+              <div className="flex flex-col gap-1 mb-4 sm:mb-6">
+                <div className="flex items-center justify-between min-h-[28px] gap-2">
+                  <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase text-emerald-400/90 flex items-center gap-1.5 shrink-0">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Yeni Yapımlar</span>
+                  </span>
+
+                  <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                    {/* Country Filter Dropdown */}
+                    <div className="w-[145px] sm:w-[175px]">
+                      <CustomSelect
+                        value={selectedCountry}
+                        onChange={handleCountryChange}
+                        options={COUNTRY_OPTIONS}
+                        size="sm"
+                        variant="pill"
+                        aria-label="Ülke Filtresi"
+                        portal={true}
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        recentMediaScrollRef.current?.scrollBy({ left: -340, behavior: 'smooth' })
+                      }
+                      aria-label="Sola Kaydır"
+                      className="hidden sm:flex w-8 h-8 rounded-full glass-pill items-center justify-center text-white/70 hover:text-white cursor-pointer"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        recentMediaScrollRef.current?.scrollBy({ left: 340, behavior: 'smooth' })
+                      }
+                      aria-label="Sağa Kaydır"
+                      className="hidden sm:flex w-8 h-8 rounded-full glass-pill items-center justify-center text-white/70 hover:text-white cursor-pointer"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+
+                    <Link
+                      href={
+                        selectedCountry === 'ALL'
+                          ? '/kesfet?sort=latest'
+                          : `/kesfet?country=${selectedCountry}&sort=latest`
+                      }
+                      className="text-[11px] sm:text-[12px] tracking-wider uppercase font-semibold text-white/50 hover:text-white flex items-center gap-1 transition-colors cursor-pointer group"
+                    >
+                      <span className="group-hover:text-white">Tümünü Gör</span>
+                      <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 group-hover:translate-x-0.5 transition-transform" />
+                    </Link>
+                  </div>
+                </div>
+
+                <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white mt-0.5">
+                  Son Eklenen Yapımlar
+                </h2>
+              </div>
+            }
+            placeholder={
+              <div className="w-full h-[266px] sm:h-[296px] md:h-[324px] my-2" />
+            }
+          >
+            {isLoadingCountryMedia ? (
+              <div className="flex items-center gap-3 sm:gap-4 overflow-hidden w-full h-[266px] sm:h-[296px] md:h-[324px] py-2 sm:py-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="shrink-0 w-[150px] sm:w-[170px] md:w-[190px] h-full rounded-2xl bg-white/[0.04] animate-pulse border border-white/[0.06]"
+                  />
+                ))}
+              </div>
+            ) : recentMediaItems.length > 0 ? (
+              <div
+                ref={recentMediaScrollRef}
+                className="koup-accordion-rail flex items-center gap-3 sm:gap-4 overflow-x-auto overflow-y-hidden w-full h-[266px] sm:h-[296px] md:h-[324px] py-2 sm:py-3 no-scrollbar [-webkit-overflow-scrolling:touch] max-w-full"
+                onMouseEnter={() => preloadMediaImages(recentMediaItems)}
+                onMouseLeave={() => requestAccordionHover(null)}
+              >
+                {recentMediaItems.map((item, idx) => (
+                  <AccordionMediaCard key={item.id} item={item} priority={idx < 4} />
+                ))}
+              </div>
+            ) : (
+              <div className="w-full h-36 rounded-2xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-center text-white/40 text-xs sm:text-sm">
+                Bu filtreye uygun yeni yapım bulunamadı.
+              </div>
+            )}
+          </DeferredSection>
+        )}
+
+        {/* =====================================================================
+            3B. TOP 10 DİZİLER WITH INTEGRATED STROKE OUTLINE NUMERALS
         ===================================================================== */}
         {top10SeriesItems.length > 0 && (
           <DeferredSection
