@@ -173,6 +173,13 @@ def sync_dizibox_target(conn, cur, drama, target_url=None):
         if created:
             episodes_added += 1
 
+        if not created:
+            cur.execute("SELECT id FROM episode_sources WHERE episode_id = ? LIMIT 1", (ep_id,))
+            if cur.fetchone():
+                reconcile_episode(cur, ep_id, is_placeholder=False)
+                safe_commit(conn)
+                continue
+
         is_ph = False
         try:
             ep_html = fetch_html(ep_url, referer=detail_url)
@@ -295,6 +302,13 @@ def sync_hdfilm_target(conn, cur, drama, target_url=None):
         if created:
             episodes_added += 1
 
+        if not created:
+            cur.execute("SELECT id FROM episode_sources WHERE episode_id = ? LIMIT 1", (ep_id,))
+            if cur.fetchone():
+                reconcile_episode(cur, ep_id, is_placeholder=False)
+                safe_commit(conn)
+                continue
+
         is_ph = False
         try:
             ep_html = fetch_html(ep_url, referer=detail_url)
@@ -379,6 +393,13 @@ def sync_dizikorea_target(conn, cur, drama, target_url=None):
         if created:
             episodes_added += 1
 
+        if not created:
+            cur.execute("SELECT id FROM episode_sources WHERE episode_id = ? LIMIT 1", (ep_id,))
+            if cur.fetchone():
+                reconcile_episode(cur, ep_id, is_placeholder=False)
+                safe_commit(conn)
+                continue
+
         is_ph = False
         try:
             ep_html = fetch_html(ep_url, referer=detail_url)
@@ -455,6 +476,13 @@ def sync_bldrama_target(conn, cur, drama, target_url=None):
             ep_id, created = match_or_create_episode(cur, drama['id'], s_num, e_num, clean_name, ep_url)
             if created:
                 episodes_added += 1
+
+            if not created:
+                cur.execute("SELECT id FROM episode_sources WHERE episode_id = ? LIMIT 1", (ep_id,))
+                if cur.fetchone():
+                    reconcile_episode(cur, ep_id, is_placeholder=False)
+                    safe_commit(conn)
+                    continue
 
             try:
                 ep_html = fetch_html(ep_url, referer=detail_url)
