@@ -292,7 +292,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     setNavbarBehavior(enabled ? 'floating' : 'sticky');
   }, [setNavbarBehavior]);
 
-  const [autoCardTrailerEnabled, setAutoCardTrailerEnabledState] = useState<boolean>(true);
+  const [autoCardTrailerEnabled, setAutoCardTrailerEnabledState] = useState<boolean>(false);
 
   const setAutoCardTrailerEnabled = useCallback((enabled: boolean) => {
     setAutoCardTrailerEnabledState(enabled);
