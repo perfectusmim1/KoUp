@@ -708,9 +708,33 @@ export default function AdminDashboardPage() {
         const searchQuery = debouncedSeriesSearch.trim();
 
         if (searchQuery) {
+          // 1. Hizli RPC aramasi (fuzzy + aka_titles + 0.3s)
+          try {
+            const { data: rpcData, error: rpcErr } = await supabase.rpc('search_catalog', {
+              p_query: searchQuery,
+              p_limit: 100,
+            });
+
+            if (!rpcErr && Array.isArray(rpcData) && rpcData.length > 0) {
+              let filtered = rpcData;
+              if (seriesTypeFilter !== 'ALL') {
+                filtered = filtered.filter((m: any) => m.content_type === seriesTypeFilter);
+              }
+              if (seriesCountryFilter !== 'ALL') {
+                filtered = filtered.filter((m: any) => m.country_code === seriesCountryFilter);
+              }
+              const ranked = rankSearchResults((filtered as MediaItem[]) || [], searchQuery);
+              setSeriesList(ranked.slice(from, to + 1));
+              setSeriesTotalCount(ranked.length);
+              setSeriesLoading(false);
+              return;
+            }
+          } catch {}
+
+          // 2. Dogrudan indeksli sorgu (fallback)
           let q = supabase
             .from('media')
-            .select('*', { count: 'exact' })
+            .select('*')
             .or(
               `title.ilike.%${searchQuery}%,slug.ilike.%${searchQuery}%,native_title.ilike.%${searchQuery}%`
             );
@@ -723,14 +747,12 @@ export default function AdminDashboardPage() {
           }
 
           // Fetch matching results and rank by accuracy/relevance
-          const { data, count, error } = await q.limit(100);
+          const { data, error } = await q.limit(100);
           if (error) throw error;
 
           const ranked = rankSearchResults((data as MediaItem[]) || [], searchQuery);
           setSeriesList(ranked.slice(from, to + 1));
-          if (typeof count === 'number') {
-            setSeriesTotalCount(count);
-          }
+          setSeriesTotalCount(ranked.length);
         } else {
           let q = supabase
             .from('media')
@@ -789,9 +811,23 @@ export default function AdminDashboardPage() {
       setEpMediaSearchLoading(true);
       try {
         const term = debouncedEpMediaSearch.trim();
+        // 1. Hizli RPC aramasi
+        try {
+          const { data: rpcData, error: rpcErr } = await supabase.rpc('search_catalog', {
+            p_query: term,
+            p_limit: 40,
+          });
+          if (!rpcErr && Array.isArray(rpcData) && rpcData.length > 0) {
+            const ranked = rankSearchResults((rpcData as MediaItem[]) || [], term);
+            setEpMediaSearchResults(ranked.slice(0, 25));
+            return;
+          }
+        } catch {}
+
+        // 2. Dogrudan indeksli fallback
         const { data } = await supabase
           .from('media')
-          .select('*')
+          .select('id, slug, title, native_title, cover_image, release_year, content_type')
           .or(`title.ilike.%${term}%,slug.ilike.%${term}%,native_title.ilike.%${term}%`)
           .limit(40);
         const ranked = rankSearchResults((data as MediaItem[]) || [], term);

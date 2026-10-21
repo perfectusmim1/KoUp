@@ -115,19 +115,26 @@ def run_healing_loop(limit=50, max_gap_size=50):
             eps_added, srcs_added = 0, 0
             if provider == 'dizikorea':
                 eps_added, srcs_added = sync_dizikorea_target(conn, cur, drama)
-                # Fallback to BLDrama or DiziBOX if 0 eps added
                 if eps_added == 0:
                     eps_added, srcs_added = sync_bldrama_target(conn, cur, drama)
+                if eps_added == 0:
+                    eps_added, srcs_added = sync_dizibox_target(conn, cur, drama)
             elif provider == 'bldrama':
                 eps_added, srcs_added = sync_bldrama_target(conn, cur, drama)
                 if eps_added == 0:
                     eps_added, srcs_added = sync_dizikorea_target(conn, cur, drama)
+                if eps_added == 0:
+                    eps_added, srcs_added = sync_dizibox_target(conn, cur, drama)
             elif provider == 'animecix':
                 eps_added, srcs_added = sync_animecix_target(conn, cur, drama)
+                if eps_added == 0:
+                    eps_added, srcs_added = sync_dizibox_target(conn, cur, drama)
             elif provider == 'ddizi':
                 eps_added, srcs_added = sync_ddizi_target(conn, cur, drama)
             elif provider == 'dizibox':
                 eps_added, srcs_added = sync_dizibox_target(conn, cur, drama)
+                if eps_added == 0:
+                    eps_added, srcs_added = sync_dizikorea_target(conn, cur, drama)
             
             if eps_added > 0 or srcs_added > 0:
                 sync_drama_bundle_and_counts(conn, cur, did)

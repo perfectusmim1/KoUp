@@ -210,6 +210,10 @@ export async function syncProgressRecordToSupabase(
       .upsert(payloadToSend, { onConflict: 'user_id,media_id' });
 
     if (error) {
+      if (error.code === '23503') {
+        // Media no longer exists in DB (e.g. duplicate merged/deleted). Do not spam console or retry.
+        return true;
+      }
       console.warn('user_media_progress sync notice:', {
         message: error.message,
         code: error.code,

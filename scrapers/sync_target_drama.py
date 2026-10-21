@@ -538,9 +538,23 @@ def sync_animecix_target(conn, cur, drama, target_url=None):
             log("AnimeciX", "AnimeciX üzerinde eşleşen anime bulunamadı.")
             return 0, 0
 
-        target_anime = results[0]
+        clean_q = norm_title(title)
+        best_match = None
+        best_sim = 0.0
+        for r in results:
+            r_name = r.get('name') or ''
+            sim = SequenceMatcher(None, clean_q, norm_title(r_name)).ratio()
+            if sim > best_sim:
+                best_sim = sim
+                best_match = r
+
+        if not best_match or best_sim < 0.45:
+            log("AnimeciX", f"AnimeciX üzerinde yeterli benzerlikte eşleşme bulunamadı (En iyi: {best_sim:.2f}).")
+            return 0, 0
+
+        target_anime = best_match
         anime_id = target_anime.get('id')
-        log("AnimeciX", f"Hedef anime bulundu: {target_anime.get('name')} (ID: {anime_id})")
+        log("AnimeciX", f"Hedef anime bulundu: {target_anime.get('name')} (ID: {anime_id}, Benzerlik: {best_sim:.2f})")
 
         # Fetch episodes
         ep_api = f"https://animecix.net/secure/titles/{anime_id}/episodes"
@@ -556,6 +570,13 @@ def sync_animecix_target(conn, cur, drama, target_url=None):
             ep_id, created = match_or_create_episode(cur, drama['id'], s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_url)
             if created:
                 episodes_added += 1
+
+            if not created:
+                cur.execute("SELECT id FROM episode_sources WHERE episode_id = ? LIMIT 1", (ep_id,))
+                if cur.fetchone():
+                    reconcile_episode(cur, ep_id, is_placeholder=False)
+                    safe_commit(conn)
+                    continue
 
             v_list = ep.get('videos', [])
             for v in v_list:
