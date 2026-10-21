@@ -22,16 +22,30 @@ def classify_stream_type(provider: str, direct_url: str) -> str:
     p = (provider or "").lower()
     u = (direct_url or "").lower()
     if (
-        p in ("diziyou-hls", "hdfilm-hls", "asyawatch", "dizilla", "dbx", "dizibox")
+        p in ("diziyou-hls", "hdfilm-hls", "asyawatch", "dizilla", "dbx", "dizibox", "morencius", "ev", "filemoon", "byse", "gdriveplayer", "gdplayer", "upns", "streamwish", "vidhide", "streamruby", "dzen")
         or "pichive" in u
         or "dplayer" in u
         or "hotlinger" in u
         or "molystream" in u
+        or "morencius" in u
+        or "filemoon" in u
+        or "bysesukior" in u
+        or "bysedikamoum" in u
+        or "gdriveplayer" in u
+        or "gdplayer" in u
+        or "upns" in u
+        or "streamwish" in u
+        or "ghbrisk" in u
+        or "dhtpre" in u
+        or "streamruby" in u
+        or "dzen.ru" in u
+        or "luluvdo" in u
+        or "lulustream" in u
         or ".m3u8" in u
         or "master.txt" in u
     ):
         return "hls"
-    if u.endswith(".mp4") or ".mp4?" in u or p in ("mail.ru", "mail") or "my.mail.ru" in u:
+    if u.endswith(".mp4") or ".mp4?" in u or "ddizi.tel/player/mp4" in u or p in ("mail.ru", "mail", "mp4upload") or "my.mail.ru" in u or "mp4upload" in u or "yadi.sk" in u or "disk.yandex" in u:
         return "mp4"
     if (
         p in ("uqload", "voe", "vk", "ok.ru", "odnoklassniki")
@@ -44,8 +58,8 @@ def classify_stream_type(provider: str, direct_url: str) -> str:
         return "hls"
     if p == "tau-video" or "tau-video.xyz" in u:
         return "tau"
-    if p in ("dailymotion",):
-        return "postmessage_iframe"
+    if p in ("dailymotion",) or "dailymotion.com" in u or "dai.ly" in u:
+        return "hls"
     return "locked_iframe"
 
 def get_provider_priority(provider: str, direct_url: str, content_type: str) -> int:
@@ -75,19 +89,17 @@ def get_provider_priority(provider: str, direct_url: str, content_type: str) -> 
         if p == "tau-video" or "tau-video" in u:
             return 2
 
-    if p in ("vidmoly", "filemoon", "yourupload"):
+    if p in ("vidmoly", "filemoon", "yourupload", "morencius", "ev"):
         return 3
-    if p in ("mail.ru", "mail", "vk", "dailymotion", "mega") or "mail.ru" in u:
+    if p in ("ok.ru", "odnoklassniki", "mail.ru", "mail", "vk", "dailymotion", "gdriveplayer") or "ok.ru" in u or "mail.ru" in u or "gdriveplayer" in u:
         return 4
     if p in ("mp4upload", "voe"):
         return 5
     if p == "uqload" or "uqload" in u:
-        return 8
-    if p in ("ok.ru", "odnoklassniki") or "ok.ru" in u or "odnoklassniki" in u:
-        return 90
+        return 6
     return 7
 
-def export_all():
+def export_all(drama_id: int = None):
     if not DB_PATH.exists():
         print(f"Error: {DB_PATH} not found.")
         return
@@ -96,19 +108,27 @@ def export_all():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    print("Fetching dramas with episodes and sources...")
-    # Get all dramas that have at least 1 episode with sources
-    dramas = c.execute("""
-        SELECT DISTINCT d.id, d.title, d.content_type
-        FROM dramas d
-        JOIN episodes e ON e.drama_id = d.id
-        JOIN episode_sources s ON s.episode_id = e.id
-        WHERE s.direct_url IS NOT NULL 
-          AND s.direct_url != '' 
-          AND s.direct_url != 'dead'
-          AND s.provider != 'sibnet'
-          AND s.direct_url NOT LIKE '%sibnet.ru%'
-    """).fetchall()
+    if drama_id:
+        print(f"Fetching drama #{drama_id}...")
+        dramas = c.execute("""
+            SELECT DISTINCT d.id, d.title, d.content_type
+            FROM dramas d
+            WHERE d.id = ?
+        """, (drama_id,)).fetchall()
+    else:
+        print("Fetching dramas with episodes and sources...")
+        # Get all dramas that have at least 1 episode with sources
+        dramas = c.execute("""
+            SELECT DISTINCT d.id, d.title, d.content_type
+            FROM dramas d
+            JOIN episodes e ON e.drama_id = d.id
+            JOIN episode_sources s ON s.episode_id = e.id
+            WHERE s.direct_url IS NOT NULL 
+              AND s.direct_url != '' 
+              AND s.direct_url != 'dead'
+              AND s.provider != 'sibnet'
+              AND s.direct_url NOT LIKE '%sibnet.ru%'
+        """).fetchall()
 
     print(f"Found {len(dramas):,} dramas with verified sources.")
 
@@ -158,12 +178,6 @@ def export_all():
             if not raw_sources and not is_pending:
                 continue
 
-            has_alt = any(
-                row[2] and "ok.ru" not in row[2].lower() and "odnoklassniki" not in row[2].lower()
-                and (row[3] or "").lower() not in ("ok.ru", "odnoklassniki")
-                for row in raw_sources
-            )
-
             seen_urls = set()
             processed = []
 
@@ -172,9 +186,6 @@ def export_all():
                     continue
                 p_low = (provider or "").lower()
                 u_low = direct_url.lower()
-
-                if has_alt and (p_low in ("ok.ru", "odnoklassniki") or "ok.ru" in u_low or "odnoklassniki" in u_low):
-                    continue
 
                 seen_urls.add(direct_url)
                 stype = classify_stream_type(provider, direct_url)
@@ -226,12 +237,12 @@ def export_all():
             # Clean episode name
             raw_ep_name = ep_name or ""
             is_corrupted = not raw_ep_name or "\ufffd" in raw_ep_name or "B?l?m" in raw_ep_name or "?" in raw_ep_name
-            cleaned_title = f"{ep_num or 1}. Bölüm" if is_corrupted else raw_ep_name
+            cleaned_title = f"{ep_num if ep_num is not None else 1}. Bölüm" if is_corrupted else raw_ep_name
 
             ep_dict = {
                 "id": ep_id,
-                "season_number": season_num or 1,
-                "episode_number": ep_num or 1,
+                "season_number": season_num if season_num is not None else 1,
+                "episode_number": ep_num if ep_num is not None else 1,
                 "episode_name": cleaned_title,
                 "episode_type": ep_type or "bolum",
                 "status": "pending_source" if is_pending else "published",
@@ -268,4 +279,8 @@ def export_all():
     print(f"\nDone! Exported {count:,} drama bundles ({total_sources:,} stream sources total) to {OUT_DIR}/")
 
 if __name__ == "__main__":
-    export_all()
+    import argparse
+    parser = argparse.ArgumentParser(description="Export source bundles to JSON")
+    parser.add_argument("--drama-id", type=int, default=None, help="Export single drama ID")
+    args = parser.parse_args()
+    export_all(drama_id=args.drama_id)

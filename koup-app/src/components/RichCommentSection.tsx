@@ -297,6 +297,7 @@ export default function RichCommentSection({
   const isBlockedBy = useKoUpSelector((s) => s.isBlockedBy);
   const confirmDialog = useKoUpSelector((s) => s.confirmDialog);
 
+  const isEpisodeTarget = targetType === 'episode';
   const [comments, setComments] = useState<CommentRow[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -948,7 +949,7 @@ export default function RichCommentSection({
     }
 
     let tsSec: number | null = null;
-    if (timestampInput.trim()) {
+    if (isEpisodeTarget && timestampInput.trim()) {
       const parts = timestampInput.trim().split(':').map(Number);
       if (parts.length === 2 && !Number.isNaN(parts[0]) && !Number.isNaN(parts[1])) {
         tsSec = parts[0] * 60 + parts[1];
@@ -2138,7 +2139,7 @@ export default function RichCommentSection({
               </button>
             </div>
 
-            {/* Bottom Row: Colors on Left, Timestamp (Süre) on Right */}
+            {/* Bottom Row: Colors on Left, Timestamp (Süre) on Right (Only for Episode Targets) */}
             <div className="flex items-center justify-between w-full gap-2 pt-0.5">
               <div className="flex items-center gap-1.5 shrink-0">
                 {APPLE_DARK_PALETTE.map((c) => (
@@ -2161,20 +2162,22 @@ export default function RichCommentSection({
                 ))}
               </div>
 
-              <div
-                title="Sahne Dakikası (Örn: 14:20)"
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#121217] hover:bg-[#181820] border border-white/15 hover:border-white/25 focus-within:border-sky-400/60 focus-within:ring-2 focus-within:ring-sky-400/20 focus-within:shadow-[0_0_12px_rgba(56,189,248,0.25)] transition-[border-color,box-shadow] cursor-text group shrink-0"
-              >
-                <Clock className="w-3.5 h-3.5 text-sky-400 shrink-0 group-focus-within:scale-110 transition-transform" />
-                <input
-                  type="text"
-                  value={timestampInput}
-                  onChange={(e) => setTimestampInput(e.target.value)}
-                  placeholder="14:20"
-                  maxLength={8}
-                  className="w-11 bg-transparent text-xs font-mono font-medium text-white placeholder-white/35 focus:outline-none text-center"
-                />
-              </div>
+              {isEpisodeTarget && (
+                <div
+                  title="Sahne Dakikası (Örn: 14:20)"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#121217] hover:bg-[#181820] border border-white/15 hover:border-white/25 focus-within:border-sky-400/60 focus-within:ring-2 focus-within:ring-sky-400/20 focus-within:shadow-[0_0_12px_rgba(56,189,248,0.25)] transition-[border-color,box-shadow] cursor-text group shrink-0"
+                >
+                  <Clock className="w-3.5 h-3.5 text-sky-400 shrink-0 group-focus-within:scale-110 transition-transform" />
+                  <input
+                    type="text"
+                    value={timestampInput}
+                    onChange={(e) => setTimestampInput(e.target.value)}
+                    placeholder="14:20"
+                    maxLength={8}
+                    className="w-11 bg-transparent text-xs font-mono font-medium text-white placeholder-white/35 focus:outline-none text-center"
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -2316,21 +2319,23 @@ export default function RichCommentSection({
               <span>Görsel</span>
             </button>
 
-            {/* Timestamp / Scene Duration Pill Input */}
-            <div
-              title="Sahne Dakikası (Örn: 14:20)"
-              className="flex items-center gap-1.5 ml-auto px-3 py-1.5 rounded-full bg-[#121217] hover:bg-[#181820] border border-white/15 hover:border-white/25 focus-within:border-sky-400/60 focus-within:ring-2 focus-within:ring-sky-400/20 focus-within:shadow-[0_0_12px_rgba(56,189,248,0.25)] transition-[border-color,box-shadow] cursor-text group"
-            >
-              <Clock className="w-3.5 h-3.5 text-sky-400 shrink-0 group-focus-within:scale-110 transition-transform" />
-              <input
-                type="text"
-                value={timestampInput}
-                onChange={(e) => setTimestampInput(e.target.value)}
-                placeholder="14:20"
-                maxLength={8}
-                className="w-12 bg-transparent text-xs font-mono font-medium text-white placeholder-white/35 focus:outline-none text-center"
-              />
-            </div>
+            {/* Timestamp / Scene Duration Pill Input (Only for Episode Targets) */}
+            {isEpisodeTarget && (
+              <div
+                title="Sahne Dakikası (Örn: 14:20)"
+                className="flex items-center gap-1.5 ml-auto px-3 py-1.5 rounded-full bg-[#121217] hover:bg-[#181820] border border-white/15 hover:border-white/25 focus-within:border-sky-400/60 focus-within:ring-2 focus-within:ring-sky-400/20 focus-within:shadow-[0_0_12px_rgba(56,189,248,0.25)] transition-[border-color,box-shadow] cursor-text group"
+              >
+                <Clock className="w-3.5 h-3.5 text-sky-400 shrink-0 group-focus-within:scale-110 transition-transform" />
+                <input
+                  type="text"
+                  value={timestampInput}
+                  onChange={(e) => setTimestampInput(e.target.value)}
+                  placeholder="14:20"
+                  maxLength={8}
+                  className="w-12 bg-transparent text-xs font-mono font-medium text-white placeholder-white/35 focus:outline-none text-center"
+                />
+              </div>
+            )}
           </div>
 
                     {/* GIF Picker Drawer with Dynamic Search */}

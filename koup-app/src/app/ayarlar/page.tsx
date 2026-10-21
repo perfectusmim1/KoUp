@@ -33,6 +33,7 @@ import {
   Sliders,
   Compass,
   Play,
+  Maximize2,
   Library,
   MessageSquare,
   ShieldAlert,
@@ -67,6 +68,8 @@ export default function SettingsPage() {
   const setFloatingNavbarEnabled = useKoUpSelector((s) => s.setFloatingNavbarEnabled);
   const autoCardTrailerEnabled = useKoUpSelector((s) => s.autoCardTrailerEnabled);
   const setAutoCardTrailerEnabled = useKoUpSelector((s) => s.setAutoCardTrailerEnabled);
+  const cardHoverExpandEnabled = useKoUpSelector((s) => s.cardHoverExpandEnabled);
+  const setCardHoverExpandEnabled = useKoUpSelector((s) => s.setCardHoverExpandEnabled);
 
   // Settings form states
   const [editDisplayName, setEditDisplayName] = useState('');
@@ -439,6 +442,43 @@ export default function SettingsPage() {
                   aria-hidden="true"
                   className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
                     autoCardTrailerEnabled ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* 3. Seri ve Film Kartlarında Yana Doğru Genişleme (Hover Efekti) */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-white flex items-center gap-2">
+                  <Maximize2 className="w-4 h-4 text-sky-400" />
+                  <span>Seri & Film Kartlarında Yana Genişleme (Hover)</span>
+                </div>
+                <div className="text-xs text-white/55 mt-0.5">
+                  Masaüstünde fareyle kart üzerine gelindiğinde yana doğru açılan geniş sinematik önizlemeyi kontrol edin.
+                </div>
+                <div className="text-[11px] text-white/40 mt-1">
+                  💡 Kapatıldığında geniş arka plan görseli yüklenmez; yalnızca dikey afiş render edilerek tarayıcı performansı maksimuma çıkar.
+                </div>
+              </div>
+
+              {/* iOS / Apple Style Toggle Switch */}
+              <button
+                type="button"
+                onClick={() => {
+                  triggerSound('click');
+                  setCardHoverExpandEnabled(!cardHoverExpandEnabled);
+                }}
+                role="switch"
+                aria-checked={cardHoverExpandEnabled}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  cardHoverExpandEnabled ? 'bg-sky-500' : 'bg-white/20'
+                }`}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                    cardHoverExpandEnabled ? 'translate-x-5' : 'translate-x-0'
                   }`}
                 />
               </button>
@@ -1111,6 +1151,43 @@ export default function SettingsPage() {
                   aria-hidden="true"
                   className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
                     autoCardTrailerEnabled ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* 3. Seri ve Film Kartlarında Yana Doğru Genişleme (Hover Efekti) */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-white flex items-center gap-2">
+                  <Maximize2 className="w-4 h-4 text-sky-400" />
+                  <span>Seri & Film Kartlarında Yana Genişleme (Hover)</span>
+                </div>
+                <div className="text-xs text-white/55 mt-0.5">
+                  Masaüstünde fareyle kart üzerine gelindiğinde yana doğru açılan geniş sinematik önizlemeyi kontrol edin.
+                </div>
+                <div className="text-[11px] text-white/40 mt-1">
+                  💡 Kapatıldığında geniş arka plan görseli yüklenmez; yalnızca dikey afiş render edilerek tarayıcı performansı maksimuma çıkar.
+                </div>
+              </div>
+
+              {/* iOS / Apple Style Toggle Switch */}
+              <button
+                type="button"
+                onClick={() => {
+                  triggerSound('click');
+                  setCardHoverExpandEnabled(!cardHoverExpandEnabled);
+                }}
+                role="switch"
+                aria-checked={cardHoverExpandEnabled}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  cardHoverExpandEnabled ? 'bg-sky-500' : 'bg-white/20'
+                }`}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                    cardHoverExpandEnabled ? 'translate-x-5' : 'translate-x-0'
                   }`}
                 />
               </button>

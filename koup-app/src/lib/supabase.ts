@@ -467,7 +467,7 @@ export function getProxiedImageUrl(
     url = url.replace(/https?:\/\/cdn\.webdrama\.io\/actor\//i, 'https://i.mydramalist.com/');
   }
 
-  // TMDB resolution: vitrin & seri sayfası original kalır, kartlar 480p standardında optimize edilir
+  // TMDB resolution: vitrin & seri sayfası original kalır, kartlar 480p (w342) standardında net ve hafif tutulur
   if (url.includes('image.tmdb.org')) {
     let effectiveSize: string;
 
@@ -475,11 +475,11 @@ export function getProxiedImageUrl(
       // Vitrin / Series Detail / Actor Detail: uncompressed original
       effectiveSize = 'original';
     } else if (type === 'banner') {
-      // Kart sinematik 16:9 geniş arka planı: optimize w300 (300x169)
-      effectiveSize = tmdbSize === 'w780' ? 'w780' : 'w300';
+      // Kart sinematik 16:9 geniş arka planı: optimize w300 veya w780
+      effectiveSize = tmdbSize === 'w300' ? 'w300' : 'w780';
     } else {
-      // Seri kartları, oyuncular, listeler, takvim afişleri: 480p'den %15 daha hafif w185 (185x278)
-      effectiveSize = tmdbSize && tmdbSize !== 'w342' && tmdbSize !== 'w480' ? tmdbSize : 'w185';
+      // Seri kartları, oyuncular, listeler, takvim afişleri: net 480p standardı w342 (342x513)
+      effectiveSize = tmdbSize && tmdbSize !== 'w185' && tmdbSize !== 'w480' ? tmdbSize : 'w342';
     }
 
     return url.replace(
@@ -496,20 +496,16 @@ export function getProxiedImageUrl(
     return `${url}=s192-c`;
   }
 
-  // AniList images: vitrin, seri ve oyuncu sayfasında orijinal kaliteli hali, kartlarda net 480p standartlı large (~230x325px)
+  // AniList images: vitrin ve seri sayfasında orijinal kaliteli hali, kartlarda 480p standardına optimize edilir
   if (url.includes('s4.anilist.co')) {
     if (tmdbSize === 'original') {
       return url;
     }
-    // Kapak görseli ise kartlarda 480p kalitesine denk net large versiyonunu kullan
-    if (url.includes('/cover/')) {
-      return url
-        .replace('/cover/extraLarge/', '/cover/large/')
-        .replace('/cover/small/', '/cover/large/')
-        .replace('/cover/medium/', '/cover/large/');
-    }
-    // AniList banner görseli ise (/banner/), CDN'de küçük versiyon bulunmadığı için
-    // aşağıya düşerek /api/image-proxy üzerinden sharp ile 480p (w780) genişliğine optimize edilmesini sağla.
+    // AniList görsellerini de kartlarda 480p standardına getirmek için image-proxy üzerinden w342 WebP'ye normalize et
+    const aniSize = type === 'banner' ? (tmdbSize === 'w300' ? 'w300' : 'w780') : 'w342';
+    const params = new URLSearchParams({ url, size: aniSize });
+    if (type) params.set('type', type);
+    return `/api/image-proxy?${params.toString()}`;
   }
 
   const params = new URLSearchParams({ url });

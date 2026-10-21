@@ -32,6 +32,7 @@ Thumbs.db
 *.tsbuildinfo
 next-env.d.ts
 scratch/
+graft/
 supabase/.temp/
 
 # R2 Local Bundles & Large Dumps

@@ -205,8 +205,8 @@ function DiscoverContent() {
     async function loadCatalog() {
       const { normalized, raw } = normalizeSearchQuery(debouncedQuery);
       const genresKey = selectedGenres.length > 0 ? selectedGenres.slice().sort().join('-') : 'all';
-      const cacheKey = `kesfet_${typeFilter}_${countryFilter}_${yearFilter}_${genresKey}_${sortBy}_${normalized || 'all'}_p${currentPage}`;
-      const countKey = `kesfet_count_${typeFilter}_${countryFilter}_${yearFilter}_${genresKey}_${normalized || 'all'}`;
+      const cacheKey = `kesfet_v2_${typeFilter}_${countryFilter}_${yearFilter}_${genresKey}_${sortBy}_${normalized || 'all'}_p${currentPage}`;
+      const countKey = `kesfet_count_v2_${typeFilter}_${countryFilter}_${yearFilter}_${genresKey}_${normalized || 'all'}`;
 
       const cached = getCache<MediaItem[]>(cacheKey, true);
       const cachedCount = getCache<number>(countKey, true);
@@ -287,6 +287,10 @@ function DiscoverContent() {
 
             const { data: resData } = await query.range(offset, offset + ITEMS_PER_PAGE - 1);
             return (resData as MediaItem[]) || [];
+          }, (freshItems) => {
+            if (active && Array.isArray(freshItems) && freshItems.length > 0) {
+              setItems(freshItems);
+            }
           }),
           cachedQuery(countKey, 120_000, async () => {
             if (

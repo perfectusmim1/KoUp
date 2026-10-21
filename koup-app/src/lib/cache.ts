@@ -227,7 +227,8 @@ export function resolveQueryTTL(key: string, customTtlMs?: number): number {
 export async function cachedQuery<T>(
   key: string,
   ttlMs: number,
-  fetcher: () => Promise<T>
+  fetcher: () => Promise<T>,
+  onRevalidate?: (freshData: T) => void
 ): Promise<T> {
   const now = Date.now();
   const effectiveTtl = resolveQueryTTL(key, ttlMs);
@@ -263,6 +264,13 @@ export async function cachedQuery<T>(
           };
           setMemoryEntry(key, freshEntry);
           saveToStorage(key, freshEntry);
+          if (typeof onRevalidate === 'function') {
+            try {
+              onRevalidate(freshData);
+            } catch (revErr) {
+              console.warn(`[KoUp Cache] onRevalidate error for ${key}:`, revErr);
+            }
+          }
           return freshData;
         })
         .catch((err) => {

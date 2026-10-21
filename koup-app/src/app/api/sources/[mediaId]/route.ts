@@ -58,6 +58,32 @@ function classifyStreamType(
     p === 'dizilla' ||
     p === 'dbx' ||
     p === 'dizibox' ||
+    p === 'morencius' ||
+    p === 'ev' ||
+    p === 'filemoon' ||
+    p === 'byse' ||
+    p === 'gdriveplayer' ||
+    p === 'gdplayer' ||
+    p === 'upns' ||
+    p === 'streamwish' ||
+    p === 'vidhide' ||
+    p === 'streamruby' ||
+    p === 'dzen' ||
+    u.includes('morencius') ||
+    u.includes('filemoon') ||
+    u.includes('bysesukior') ||
+    u.includes('bysedikamoum') ||
+    u.includes('byse.') ||
+    u.includes('gdriveplayer') ||
+    u.includes('gdplayer') ||
+    u.includes('upns') ||
+    u.includes('streamwish') ||
+    u.includes('ghbrisk') ||
+    u.includes('dhtpre') ||
+    u.includes('streamruby') ||
+    u.includes('dzen.ru') ||
+    u.includes('luluvdo') ||
+    u.includes('lulustream') ||
     u.includes('pichive') ||
     u.includes('dplayer') ||
     u.includes('hotlinger') ||
@@ -76,9 +102,12 @@ function classifyStreamType(
     u.includes('mp4upload') ||
     u.endsWith('.mp4') ||
     u.includes('.mp4?') ||
+    u.includes('ddizi.tel/player/mp4') ||
     p === 'mail.ru' ||
     p === 'mail' ||
-    u.includes('my.mail.ru')
+    u.includes('my.mail.ru') ||
+    u.includes('yadi.sk') ||
+    u.includes('disk.yandex')
   ) {
     return 'mp4';
   }
@@ -128,7 +157,34 @@ function isDeadSource(provider?: string | null, directUrl?: string | null, sourc
     u.includes('rpmplay') ||
     u.includes('uns.bio') ||
     u.includes('playerdkorea.xyz') ||
-    u.includes('video.diziasya.com')
+    u.includes('video.diziasya.com') ||
+    u.includes('parklogic') ||
+    u.includes('vtube.to') ||
+    u.includes('highload.to') ||
+    u.includes('vadshar.com') ||
+    u.includes('viidshar.com') ||
+    u.includes('segavid.com') ||
+    u.includes('upload.do') ||
+    u.includes('lylxan.com') ||
+    u.includes('embedrise.com') ||
+    u.includes('embedgram.com') ||
+    u.includes('openload.co') ||
+    u.includes('streammango.com') ||
+    u.includes('rapidvideo.com') ||
+    u.includes('estream.to') ||
+    u.includes('vid.me') ||
+    u.includes('cloudvideo.tv') ||
+    u.includes('wolfstream.tv') ||
+    u.includes('mystream.to') ||
+    u.includes('vidmoly.me') ||
+    u.includes('fembed.com') ||
+    u.includes('feurl.com') ||
+    u.includes('suzihaza.com') ||
+    u.includes('gounlimited.to') ||
+    u.includes('jetload.net') ||
+    u.includes('supervideo.tv') ||
+    u.includes('upstream.to') ||
+    u.includes('mixdrop')
   ) {
     return true;
   }
@@ -155,7 +211,13 @@ function getDisplaySourceName(
     return 'Dizilla';
   }
   // 3. Scraped native site streams
-  if (p.includes('diziyou') || u.includes('diziyou') || p.includes('dizikorea') || u.includes('dizikorea') || p.includes('hdfilm')) {
+  if (p.includes('diziyou') || u.includes('diziyou')) {
+    if (raw && (raw.includes('Altyaz') || raw.includes('Dublaj'))) {
+      return raw;
+    }
+    return 'Orijinal (Altyazılı)';
+  }
+  if (p.includes('dizikorea') || u.includes('dizikorea') || p.includes('hdfilm')) {
     return 'Orijinal';
   }
   // 4. Tau Video
@@ -201,59 +263,63 @@ function applySourceNumbering<T extends { source_name: string }>(sources: T[]): 
   });
 }
 
-function getProviderPriority(provider: string, directUrl: string, contentType: string): number {
+function getProviderPriority(provider: string, directUrl: string, contentType: string, sourceName?: string): number {
   const p = (provider || '').toLowerCase();
   const u = (directUrl || '').toLowerCase();
+  const s = (sourceName || '').toLowerCase();
 
-  // Top priority: working AsyaWatch, Dizilla, and direct inner HLS streams
+  const hasTrSub = s.includes('altyaz') || u.includes('altyaz') || p.includes('sub');
+  const hasTrDub = s.includes('dublaj') || s.includes('dual') || u.includes('dublaj') || p.includes('dub');
+
+  // Top priority (Tier 0): Verified Turkish subtitled or dubbed players (Rapidrame, Diziyou, HDFilm, DiziKorea, DiziBox, Dizilla)
+  if (p === 'rapidrame' || u.includes('/rplayer/') || (u.includes('rapidrame') && !u.includes('/embed/'))) {
+    return -2;
+  }
+  if (p.includes('diziyou') || u.includes('storage.diziyou')) {
+    return -1;
+  }
   if (
-    p === 'asyawatch' ||
-    u.includes('pichive') ||
-    p === 'dizilla' ||
-    u.includes('dplayer') ||
-    p === 'hdfilm-hls' ||
-    u.includes('master.txt') ||
-    u.includes('.m3u8')
+    hasTrSub ||
+    hasTrDub ||
+    p === 'hdfilm-close' ||
+    u.includes('hdfilmcehennemi.mobi') ||
+    p === 'dizikorea' ||
+    u.includes('playerdkorea') ||
+    p === 'dizibox' ||
+    p === 'dbx' ||
+    p === 'dizilla'
   ) {
     return 0;
   }
 
-  if (contentType === 'anime') {
-    if (p === 'tau-video' || u.includes('tau-video')) return 1;
-    if (p.includes('hls') || u.includes('.m3u8')) return 2;
-  } else {
-    if (
-      p.includes('rapid') ||
-      p.includes('hls') ||
-      p === 'hdfilm-close' ||
-      p === 'close' ||
-      u.includes('rapidrame') ||
-      u.includes('/rplayer/') ||
-      u.includes('/video/embed/') ||
-      p === 'diziyou' ||
-      p === 'dbx' ||
-      p === 'dizibox' ||
-      u.includes('molystream')
-    ) {
-      return 1;
-    }
-    if (p === 'tau-video' || u.includes('tau-video')) return 2;
+  // Tier 1: Clean high-speed players with Turkish or embedded audio (Vidmoly, Uqload, Tau-Video, MP4Upload)
+  if (
+    p === 'vidmoly' || u.includes('vidmoly') ||
+    p === 'tau-video' || u.includes('tau-video') ||
+    p === 'uqload' || u.includes('uqload') ||
+    p === 'mp4upload' || u.includes('mp4upload')
+  ) {
+    return 1;
   }
-  // High-priority native players: Uqload, Vidmoly, Mp4Upload (fast direct stream, 0 ads)
-  if (['uqload', 'vidmoly', 'mp4upload'].includes(p) || u.includes('uqload') || u.includes('vidmoly') || u.includes('mp4upload')) {
+
+  // Tier 2: Multi-resolution social video hosts (Mail.ru, OK.ru, VK)
+  if (
+    ['mail.ru', 'mail', 'vk', 'ok.ru', 'odnoklassniki'].includes(p) ||
+    u.includes('mail.ru') || u.includes('vk.com') || u.includes('ok.ru')
+  ) {
+    return 2;
+  }
+
+  // Tier 3: Direct raw HLS without explicit Turkish subtitles (e.g. Diziyou raw streams)
+  if (p.includes('diziyou') || u.includes('storage.diziyou') || u.includes('.m3u8')) {
     return 3;
   }
-  // Stable multi-resolution players: Mail.ru, OK.ru, VK
-  if (['mail.ru', 'mail', 'vk', 'ok.ru', 'odnoklassniki'].includes(p) || u.includes('mail.ru') || u.includes('vk.com') || u.includes('ok.ru')) {
-    return 4;
-  }
-  // VOE (lower priority due to frequent 404s, so working players appear first)
-  if (p === 'voe' || u.includes('voe.sx') || u.includes('voe.')) {
+
+  // Tier 4: Fragile hosts or iframe fallbacks (Pichive, VOE, Filemoon)
+  if (u.includes('pichive') || p === 'voe' || u.includes('voe.') || p === 'filemoon') {
     return 5;
   }
-  if (['filemoon', 'yourupload', 'dailymotion', 'mega'].includes(p)) {
-    return 6;
-  }
+
   return 8;
 }
 
@@ -376,8 +442,8 @@ export async function GET(
         );
         const sorted = [...filtered].sort(
           (a, b) =>
-            getProviderPriority(a.provider, a.direct_url, cType) -
-            getProviderPriority(b.provider, b.direct_url, cType)
+            getProviderPriority(a.provider, a.direct_url, cType, a.source_name) -
+            getProviderPriority(b.provider, b.direct_url, cType, b.source_name)
         );
 
         const mappedSources = sorted.map((s) => {
@@ -470,36 +536,17 @@ export async function GET(
           fansub: string | null;
         }>;
 
-        // Check if there are other working sources
-        const hasAlternativeSources = rawSources.some(
-          (s) =>
-            s.direct_url &&
-            !s.direct_url.includes('ok.ru') &&
-            !s.direct_url.includes('odnoklassniki') &&
-            s.provider !== 'ok.ru' &&
-            s.provider !== 'odnoklassniki'
-        );
-
         const seenUrls = new Set<string>();
         const processed = rawSources
           .filter((s) => {
             if (!s.direct_url || seenUrls.has(s.direct_url)) return false;
-            // Omit blocked ok.ru / odnoklassniki when other sources exist
-            if (
-              hasAlternativeSources &&
-              (s.provider === 'ok.ru' ||
-                s.provider === 'odnoklassniki' ||
-                s.direct_url.includes('ok.ru') ||
-                s.direct_url.includes('odnoklassniki'))
-            ) {
-              return false;
-            }
+            if (isDeadSource(s.provider, s.direct_url, s.source_name)) return false;
             seenUrls.add(s.direct_url);
             return true;
           })
           .map((s) => {
             const stype = classifyStreamType(s.provider, s.direct_url);
-            const prio = getProviderPriority(s.provider, s.direct_url, contentType);
+            const prio = getProviderPriority(s.provider, s.direct_url, contentType, s.source_name);
 
             const isNative = stype === 'hls' || stype === 'tau' || stype === 'mp4' || s.provider === 'diziyou-hls' || s.provider === 'hdfilm-hls' || s.provider === 'asyawatch' || s.direct_url.includes('pichive');
             const cleanName = getDisplaySourceName(s.provider, s.source_name, s.direct_url, s.site);
@@ -619,6 +666,18 @@ export async function GET(
         if (sDiff !== 0) return sDiff;
         return (a.episode_number || 1) - (b.episode_number || 1);
       });
+    }
+
+    // Sort episode sources by provider priority & re-number
+    for (const ep of episodes) {
+      if (Array.isArray(ep.sources) && ep.sources.length > 1) {
+        ep.sources.sort((a, b) => {
+          const prioA = getProviderPriority(a.provider, a.direct_url, '', a.source_name);
+          const prioB = getProviderPriority(b.provider, b.direct_url, '', b.source_name);
+          return prioA - prioB;
+        });
+        ep.sources = applySourceNumbering(ep.sources);
+      }
     }
 
     return NextResponse.json(

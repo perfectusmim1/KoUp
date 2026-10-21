@@ -12,7 +12,7 @@ import re
 import ssl
 import urllib.request
 import urllib.error
-from datetime import datetime
+from datetime import datetime, timezone
 
 from scrapers.multisite import find_in_index, norm_title, tag_site, unique_slug, clean_episode_title, clean_scraped_slug
 from scrapers.translator import (
@@ -188,6 +188,15 @@ def emit_live_item(item_dict: dict):
     print(f"__ITEM__ {json.dumps(item_dict, ensure_ascii=False)}", flush=True)
 
 
+
+_RECENT_ADDED_DRAMAS = []
+
+def pop_recent_added_dramas():
+    global _RECENT_ADDED_DRAMAS
+    items = list(_RECENT_ADDED_DRAMAS)
+    _RECENT_ADDED_DRAMAS = []
+    return items
+
 def match_or_create_enriched_drama(
     conn,
     cur,
@@ -346,7 +355,7 @@ def match_or_create_enriched_drama(
             c_cover,
             c_backdrop,
             c_overview,
-            source_url,
+            source_url or f"https://koup.tv/seri/{final_slug}",
             c_tmdb,
             c_imdb,
             c_ani_id,
@@ -356,13 +365,26 @@ def match_or_create_enriched_drama(
     did = cur.lastrowid
     tag_site(cur, did, site_tag)
     conn.commit()
+    _RECENT_ADDED_DRAMAS.append({
+        "id": did,
+        "title": clean_t,
+        "slug": final_slug,
+        "cover_image": c_cover,
+        "content_type": content_type,
+        "country_code": c_code,
+        "country_name": c_name,
+        "release_year": c_year,
+        "site": site_tag,
+        "added_at": datetime.now().isoformat(),
+    })
 
     # Sync new media row to Supabase with exact same ID
-    sb_payload = {
+    now_iso = datetime.now(timezone.utc).isoformat()
+    clean_payload = {
         "id": did,
         "slug": final_slug,
         "title": clean_t,
-        "original_title": c_orig,
+        "native_title": c_orig,
         "content_type": content_type,
         "country_code": c_code,
         "country_name": c_name,
@@ -374,18 +396,20 @@ def match_or_create_enriched_drama(
         "source_url": source_url,
         "tmdb_id": c_tmdb,
         "imdb_id": c_imdb,
-        "tmdb_rating": meta.get("tmdb_rating") if meta else None,
         "imdb_rating": meta.get("imdb_rating") if meta else None,
         "anilist_id": c_ani_id,
         "anilist_url": c_ani_url,
-        "cast_json": meta.get("cast_json") if meta else [],
+        "created_at": now_iso,
+        "updated_at": now_iso,
     }
-    sb_request(
+    media_res = sb_request(
         "POST",
         "/rest/v1/media?on_conflict=id",
-        body=sb_payload,
-        prefer="resolution=merge-duplicates,return=minimal",
+        body=clean_payload,
+        prefer="resolution=merge-duplicates,return=representation",
     )
+    if isinstance(media_res, dict) and media_res.get("_error"):
+        print(f"[SUPABASE_MEDIA_INSERT_ERROR] #{did} {clean_t}: {media_res}", flush=True)
 
     if log_fn:
         log_fn(
@@ -396,9 +420,52 @@ def match_or_create_enriched_drama(
     return did, clean_t, final_slug, c_cover
 
 
-def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
-    """Updates SQLite episode_count/sources_count and writes r2_bundles/sources/{drama_id}.json."""
+def ensure_media_synced(conn, cur, drama_id: int):
+    """Defensive self-healing: ensures the drama exists in Supabase public.media before episodes are synced."""
     try:
+        cur.execute("SELECT * FROM dramas WHERE id = ?", (drama_id,))
+        row = cur.fetchone()
+        if not row:
+            return False
+        cols = [d[0] for d in cur.description]
+        d = dict(zip(cols, row))
+        now_iso = datetime.now(timezone.utc).isoformat()
+        clean_payload = {
+            "id": d["id"],
+            "slug": d["slug"],
+            "title": d["title"],
+            "native_title": d.get("native_title") or d["title"],
+            "content_type": d.get("content_type") or "dizi",
+            "country_code": d.get("country") or "KR",
+            "country_name": d.get("country_name") or "Güney Kore",
+            "release_year": int(d.get("release_year") or datetime.now().year),
+            "status_broadcast": d.get("status_broadcast") or "Devam Ediyor",
+            "cover_image": d.get("cover_image") or "/logo-dark.png",
+            "backdrop_image": d.get("backdrop_image") or d.get("cover_image") or "/logo-dark.png",
+            "overview": d.get("overview") or "",
+            "source_url": d.get("source_url") or None,
+            "tmdb_id": d.get("tmdb_id") or None,
+            "imdb_id": d.get("imdb_id") or None,
+            "anilist_id": d.get("anilist_id") or None,
+            "anilist_url": d.get("anilist_url") or None,
+            "episode_count": int(d.get("episode_count") or 0),
+            "sources_count": int(d.get("sources_count") or 0),
+            "updated_at": now_iso,
+        }
+        res = sb_request("POST", "/rest/v1/media?on_conflict=id", body=clean_payload, prefer="resolution=merge-duplicates,return=representation")
+        if isinstance(res, dict) and res.get("_error"):
+            print(f"[ENSURE_MEDIA_SYNC_ERROR] Drama #{drama_id}: {res}", flush=True)
+            return False
+        return True
+    except Exception as e:
+        print(f"[ENSURE_MEDIA_SYNC_EXCEPTION] Drama #{drama_id}: {e}", flush=True)
+        return False
+
+
+def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
+    """Updates SQLite episode_count/sources_count, uploads R2 bundle, and syncs Supabase media & episodes."""
+    try:
+        ensure_media_synced(conn, cur, drama_id)
         cur.execute(
             """
             UPDATE dramas
@@ -491,11 +558,19 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
             # 1. Immediately upload bundle to Cloudflare R2 bucket so Cloud and Edge CDN are 100% updated
             upload_to_r2(bundle_path, f"sources/{drama_id}.json")
 
-            # 2. Update Supabase media episode_count
+            # 2. Update Supabase media counts and latest publish timestamps
+            now_iso = datetime.now(timezone.utc).isoformat()
+            max_ep = max((ep.get("episode_number") or 1 for ep in ep_out), default=1)
             sb_request(
                 "PATCH",
                 f"/rest/v1/media?id=eq.{drama_id}",
-                body={"episode_count": len(ep_out)},
+                body={
+                    "episode_count": len(ep_out),
+                    "episodes_available": len([e for e in ep_out if not e.get("pending")]),
+                    "last_published_episode": max_ep,
+                    "last_published_at": now_iso,
+                    "updated_at": now_iso,
+                },
                 prefer="return=minimal",
             )
 
@@ -513,6 +588,7 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
                     "episode_name": ep.get("episode_name") or f"Bölüm {e_num}",
                     "episode_type": ep.get("episode_type") or "normal",
                     "status": "pending_source" if is_pend else "published",
+                    "published_at": now_iso,
                     "video_sources": ep.get("sources") or [],
                 }
                 # If duplicate season/episode exists in SQLite, keep the one with sources

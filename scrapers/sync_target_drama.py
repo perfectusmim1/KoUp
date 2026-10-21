@@ -18,6 +18,7 @@ import argparse
 import urllib.request
 import urllib.parse
 from datetime import datetime
+from difflib import SequenceMatcher
 from bs4 import BeautifulSoup
 import sqlite3
 
@@ -334,11 +335,21 @@ def sync_dizikorea_target(conn, cur, drama, target_url=None):
         try:
             s_html = fetch_html(f"https://dizikorea3.com/?s={q}", referer="https://dizikorea3.com/")
             soup = BeautifulSoup(s_html, 'html.parser')
+            best_match = None
+            best_sim = 0.0
+            clean_q = norm_title(title)
             for a in soup.find_all('a', href=True):
                 h = a['href']
-                if '/dizi/' in h:
-                    detail_url = h
-                    break
+                txt = a.get_text(strip=True)
+                if '/dizi/' in h and not any(skip in h for skip in ['/kategori/', '/tur/', '/yil/']):
+                    sim_txt = SequenceMatcher(None, clean_q, norm_title(txt)).ratio()
+                    sim_slug = SequenceMatcher(None, clean_q, norm_title(h.rstrip('/').split('/')[-1])).ratio()
+                    max_sim = max(sim_txt, sim_slug)
+                    if max_sim > best_sim and max_sim >= 0.45:
+                        best_sim = max_sim
+                        best_match = h
+            if best_match:
+                detail_url = best_match
         except Exception:
             pass
 
@@ -392,6 +403,94 @@ def sync_dizikorea_target(conn, cur, drama, target_url=None):
 
         reconcile_episode(cur, ep_id, is_placeholder=is_ph)
         safe_commit(conn)
+
+    return episodes_added, sources_added
+
+def sync_bldrama_target(conn, cur, drama, target_url=None):
+    title = drama['title']
+    episodes_added = 0
+    sources_added = 0
+    log("BLDrama", f'BLDrama motoru devrede: "{title}"')
+
+    d_dict = dict(drama) if hasattr(drama, 'keys') else drama
+    detail_url = target_url
+    if not detail_url and d_dict.get('source_url'):
+        src = d_dict['source_url']
+        if 'webdramaturkey' in src or 'bldrama' in src:
+            detail_url = re.sub(r'https?://(?:www\.)?webdramaturkey\d*\.com', 'https://bldramaturkey.co', src)
+
+    if not detail_url:
+        cand_slug = re.sub(r'[^a-zA-Z0-9]+', '-', title).strip('-').lower()
+        test_url = f"https://bldramaturkey.co/dizi/{cand_slug}"
+        try:
+            h = fetch_html(test_url)
+            if 'bolum' in h or 'sezon' in h:
+                detail_url = test_url
+        except Exception:
+            pass
+
+    if not detail_url:
+        log("BLDrama", "Uygun BLDrama sayfası bulunamadı.")
+        return 0, 0
+
+    try:
+        detail_html = fetch_html(detail_url)
+        soup = BeautifulSoup(detail_html, 'html.parser')
+
+        ep_links = []
+        seen = set()
+        for a in soup.find_all('a', href=True):
+            h = a['href']
+            if '-bolum' in h or '/bolum-' in h:
+                if h not in seen:
+                    seen.add(h)
+                    s_num, e_num = parse_season_and_episode(h, a.get_text())
+                    ep_links.append((s_num, e_num, h))
+
+        ep_links.sort(key=lambda x: (x[0], x[1]))
+        log("BLDrama", f"{len(ep_links)} adet bölüm tespit edildi.")
+
+        for s_num, e_num, ep_url in ep_links:
+            clean_name = clean_episode_title(f"{s_num}. Sezon {e_num}. Bölüm", s_num, e_num)
+            ep_id, created = match_or_create_episode(cur, drama['id'], s_num, e_num, clean_name, ep_url)
+            if created:
+                episodes_added += 1
+
+            try:
+                ep_html = fetch_html(ep_url, referer=detail_url)
+                ep_soup = BeautifulSoup(ep_html, 'html.parser')
+                for el in ep_soup.find_all(attrs={'data-embed': True}):
+                    embed_id = el.get('data-embed')
+                    sname = el.get_text().strip() or 'BLDrama'
+                    if not embed_id:
+                        continue
+                    try:
+                        resp = requests.post('https://bldramaturkey.co/ajax/embed', data={'id': embed_id}, headers={
+                            'User-Agent': 'Mozilla/5.0',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Referer': ep_url
+                        }, timeout=8)
+                        m = re.search(r'hash=([a-zA-Z0-9]+)', resp.text)
+                        if m:
+                            v_res = requests.get(f'https://bldramaturkey.co/video.php?hash={m.group(1)}', headers={
+                                'User-Agent': 'Mozilla/5.0',
+                                'Referer': ep_url
+                            }, timeout=8)
+                            for ifr in re.findall(r'<iframe[^>]+src=["\']([^"\']+)["\']', v_res.text):
+                                prov = 'vidmoly' if 'vidmoly' in ifr else ('vk' if 'vk.com' in ifr else 'bldrama')
+                                if add_source(cur, ep_id, sname, ifr, prov, 'bldrama'):
+                                    sources_added += 1
+                                    safe_commit(conn)
+                                    log("BLDrama", f"S{s_num}E{e_num} -> {sname} ({prov}) eklendi.")
+                    except Exception:
+                        pass
+            except Exception as e:
+                log("BLDrama", f"S{s_num}E{e_num} hata: {e}")
+
+            reconcile_episode(cur, ep_id, is_placeholder=False)
+            safe_commit(conn)
+    except Exception as e:
+        log("BLDrama", f"Genel hata: {e}")
 
     return episodes_added, sources_added
 
@@ -727,6 +826,8 @@ def main():
                 chosen_provider = 'dizilla'
             elif 'animecix' in existing_sites:
                 chosen_provider = 'animecix'
+            elif 'bldrama' in existing_sites or 'webdramaturkey' in existing_sites or 'bldrama' in (drama.get('source_url') or '') or 'webdramaturkey' in (drama.get('source_url') or ''):
+                chosen_provider = 'bldrama'
             elif 'ddizi' in existing_sites:
                 chosen_provider = 'ddizi'
             else:
@@ -756,6 +857,8 @@ def main():
         total_eps_added, total_srcs_added = sync_animecix_target(conn, cur, drama, manual_url)
     elif chosen_provider == 'ddizi':
         total_eps_added, total_srcs_added = sync_ddizi_target(conn, cur, drama, manual_url)
+    elif chosen_provider == 'bldrama':
+        total_eps_added, total_srcs_added = sync_bldrama_target(conn, cur, drama, manual_url)
     elif chosen_provider == 'asyawatch':
         idx = build_drama_index(cur)
         total_srcs_added, _ = scan_asyawatch(conn, cur, idx, limit=60, target=drama['title'])

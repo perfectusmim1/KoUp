@@ -156,6 +156,9 @@ export function preloadImage(url?: string | null, onDecoded?: () => void) {
 export function preloadMediaImages(items?: (MediaItem | null | undefined)[]) {
   if (typeof window === 'undefined' || !items || items.length === 0) return;
   if (window.innerWidth < 768) return;
+  try {
+    if (localStorage.getItem('koup_pref_card_hover_expand') === 'false') return;
+  } catch {}
   // Stagger-preload the first 6 visible cards' w780 backdrops during idle time
   // (pauses automatically while any card is actively expanding)
   const slice = items.slice(0, 6);
@@ -166,7 +169,7 @@ export function preloadMediaImages(items?: (MediaItem | null | undefined)[]) {
       item.backdrop_image,
       item.cover_image,
       item.title,
-      'w300',
+      'w780',
       'banner',
       item.tmdb_id,
       mediaType
@@ -214,6 +217,7 @@ function AccordionMediaCardComponent({
   const isFollowed = useKoUpSelector((s) => Boolean((s.user || s.authLoading) && s.followedMediaIds.includes(item.id)));
   const isTrailerMuted = useKoUpSelector((s) => s.isTrailerMuted);
   const autoCardTrailerEnabled = useKoUpSelector((s) => s.autoCardTrailerEnabled);
+  const cardHoverExpandEnabled = useKoUpSelector((s) => s.cardHoverExpandEnabled);
 
   const [isHovered, setIsHovered] = useState(false);
   const [mountBackdrop, setMountBackdrop] = useState(false);
@@ -260,12 +264,12 @@ function AccordionMediaCardComponent({
       ? 0
       : Math.max(Number(item.episode_count || 0), Number(item.episodes_available || 0));
 
-  // Optimized tier (-15% from 480p): w185 (185x278) for vertical posters, w300 for widescreen backdrops
+  // 480p standard: w342 (342x513) for vertical posters, w780 for widescreen backdrops
   const posterSrc = getProxiedImageUrl(
     effectiveCover,
     item.poster_fallback_url || null,
     item.title,
-    'w185',
+    'w342',
     'poster',
     item.tmdb_id,
     mediaType
@@ -276,7 +280,7 @@ function AccordionMediaCardComponent({
       effectiveBackdrop !== effectiveCover
   );
   const backdropSrc = hasDistinctBackdrop
-    ? getProxiedImageUrl(effectiveBackdrop, effectiveCover, item.title, 'w300', 'banner', item.tmdb_id, mediaType)
+    ? getProxiedImageUrl(effectiveBackdrop, effectiveCover, item.title, 'w780', 'banner', item.tmdb_id, mediaType)
     : posterSrc;
 
   const countryCode = item.country_code || item.country;
@@ -404,6 +408,14 @@ function AccordionMediaCardComponent({
     if (isDragLocked) return;
 
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      return;
+    }
+
+    if (!cardHoverExpandEnabled) {
+      if (!prefetchRef.current) {
+        prefetchRef.current = true;
+        router.prefetch(`/seri/${item.slug}`);
+      }
       return;
     }
 
@@ -584,7 +596,7 @@ function AccordionMediaCardComponent({
     [item.slug, router, getStore]
   );
 
-  const isAccordionExpanded = !fluidWidth && isHovered;
+  const isAccordionExpanded = !fluidWidth && isHovered && cardHoverExpandEnabled;
   const isTrailerActive = isAccordionExpanded && showTrailerVideo && isTrailerReady;
 
   return (
@@ -673,7 +685,7 @@ function AccordionMediaCardComponent({
           />
 
       {/* LAYER 2: 16:9 Widescreen Backdrop Image (Mounted once, GPU opacity crossfade only) */}
-      {!fluidWidth && mountBackdrop && hasDistinctBackdrop && (
+      {!fluidWidth && cardHoverExpandEnabled && mountBackdrop && hasDistinctBackdrop && (
         <img
           src={backdropSrc}
           alt=""

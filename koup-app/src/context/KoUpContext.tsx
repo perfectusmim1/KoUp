@@ -42,18 +42,13 @@ export interface ConfirmDialogOptions {
   icon?: 'trash' | 'alert' | 'help';
 }
 
-export interface ToastNotification {
-  id: string;
-  title: string;
-  body: string;
-  type: 'episode' | 'actor' | 'reply' | 'system' | 'info' | 'success';
-  linkUrl?: string;
-  imageUrl?: string;
-  createdAt: string;
-  isRead: boolean;
-  mediaId?: number;
-  personId?: number;
-}
+import {
+  ToastNotification,
+  compareNotifications,
+  dedupeAndSortNotifications,
+} from '@/lib/notifications';
+
+export type { ToastNotification } from '@/lib/notifications';
 
 export type NavbarBehavior = 'floating' | 'sticky' | 'static';
 
@@ -84,6 +79,8 @@ export interface KoUpContextValue {
   setFloatingNavbarEnabled: (v: boolean) => void;
   autoCardTrailerEnabled: boolean;
   setAutoCardTrailerEnabled: (v: boolean) => void;
+  cardHoverExpandEnabled: boolean;
+  setCardHoverExpandEnabled: (v: boolean) => void;
   isSearchOpen: boolean;
   setIsSearchOpen: (v: boolean) => void;
   isAuthModalOpen: boolean;
@@ -295,21 +292,21 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     setNavbarBehavior(enabled ? 'floating' : 'sticky');
   }, [setNavbarBehavior]);
 
-  const [autoCardTrailerEnabled, setAutoCardTrailerEnabledState] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return true;
-    try {
-      const saved = localStorage.getItem('koup_pref_auto_card_trailer');
-      if (saved !== null) {
-        return saved === 'true';
-      }
-    } catch {}
-    return true;
-  });
+  const [autoCardTrailerEnabled, setAutoCardTrailerEnabledState] = useState<boolean>(true);
 
   const setAutoCardTrailerEnabled = useCallback((enabled: boolean) => {
     setAutoCardTrailerEnabledState(enabled);
     try {
       localStorage.setItem('koup_pref_auto_card_trailer', String(enabled));
+    } catch {}
+  }, []);
+
+  const [cardHoverExpandEnabled, setCardHoverExpandEnabledState] = useState<boolean>(true);
+
+  const setCardHoverExpandEnabled = useCallback((enabled: boolean) => {
+    setCardHoverExpandEnabledState(enabled);
+    try {
+      localStorage.setItem('koup_pref_card_hover_expand', String(enabled));
     } catch {}
   }, []);
 
@@ -328,6 +325,11 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       const savedTrailer = localStorage.getItem('koup_pref_auto_card_trailer');
       if (savedTrailer !== null) {
         setAutoCardTrailerEnabledState(savedTrailer === 'true');
+      }
+
+      const savedHoverExpand = localStorage.getItem('koup_pref_card_hover_expand');
+      if (savedHoverExpand !== null) {
+        setCardHoverExpandEnabledState(savedHoverExpand === 'true');
       }
     } catch {}
   }, []);
@@ -472,6 +474,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
                     createdAt: row.created_at
                       ? new Date(row.created_at).toLocaleDateString('tr-TR')
                       : 'Şimdi',
+                    rawCreatedAt: row.created_at || undefined,
                     isRead: Boolean(row.is_read),
                   };
                 })
@@ -511,10 +514,20 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
                 // 1. Process formatted (from DB, latest first)
                 formatted.forEach((n) => {
                   const contentKey = `${(n.title || '').trim()}::${(n.body || '').trim()}`;
+                  // If prev already had this notification marked as read, preserve it
+                  const prevMatch = prev.find(
+                    (p) =>
+                      p.id === n.id ||
+                      (p.linkUrl && n.linkUrl && p.linkUrl.toLowerCase().trim() === n.linkUrl.toLowerCase().trim()) ||
+                      `${(p.title || '').trim()}::${(p.body || '').trim()}` === contentKey
+                  );
+                  const isRead = n.isRead || Boolean(prevMatch?.isRead);
+
                   if (!mapById.has(n.id) && !seenContent.has(contentKey)) {
-                    mapById.set(n.id, n);
+                    const finalN = { ...n, isRead };
+                    mapById.set(n.id, finalN);
                     seenContent.add(contentKey);
-                    result.push(n);
+                    result.push(finalN);
                   }
                 });
 
@@ -536,7 +549,9 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
                   }
                 });
 
-                const merged = result.slice(0, 50);
+                // Deterministically sort so consecutive episode notifications are ordered highest-to-lowest
+                // and order never shifts randomly across F5 refreshes
+                const merged = result.sort(compareNotifications).slice(0, 50);
                 try {
                   localStorage.setItem('koup_notifs_v1', JSON.stringify(merged));
                 } catch {}
@@ -762,9 +777,10 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
                 }
                 return ['episode', 'actor', 'reply', 'system'].includes(n.type);
               });
-              setNotifications(cleaned.slice(0, 50));
+              const sortedCleaned = cleaned.sort(compareNotifications).slice(0, 50);
+              setNotifications(sortedCleaned);
               try {
-                localStorage.setItem('koup_notifs_v1', JSON.stringify(cleaned.slice(0, 50)));
+                localStorage.setItem('koup_notifs_v1', JSON.stringify(sortedCleaned));
               } catch {}
             }
           }
@@ -930,6 +946,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
             linkUrl: row.link_url || undefined,
             imageUrl: row.image_url || undefined,
             createdAt: 'Şimdi',
+            rawCreatedAt: row.created_at || new Date().toISOString(),
             isRead: Boolean(row.is_read),
           };
 
@@ -952,13 +969,14 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
               if (prev.some((n) => `${(n.title || '').trim()}::${(n.body || '').trim()}` === contentKey)) {
                 return prev;
               }
-              next = [item, ...prev].slice(0, 50);
+              next = [item, ...prev];
             }
 
+            const sortedNext = next.sort(compareNotifications).slice(0, 50);
             try {
-              localStorage.setItem('koup_notifs_v1', JSON.stringify(next));
+              localStorage.setItem('koup_notifs_v1', JSON.stringify(sortedNext));
             } catch {}
-            return next;
+            return sortedNext;
           });
 
           setActiveToast(item);
@@ -1081,6 +1099,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         linkUrl,
         imageUrl: extra?.imageUrl,
         createdAt: 'Şimdi',
+        rawCreatedAt: new Date().toISOString(),
         isRead: false,
         mediaId: extra?.mediaId,
         personId: extra?.personId,
@@ -1092,11 +1111,11 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           return prev;
         }
         const filtered = prev.filter((n) => n.id !== item.id);
-        const next = [item, ...filtered].slice(0, 50);
+        const sortedNext = [item, ...filtered].sort(compareNotifications).slice(0, 50);
         try {
-          localStorage.setItem('koup_notifs_v1', JSON.stringify(next));
+          localStorage.setItem('koup_notifs_v1', JSON.stringify(sortedNext));
         } catch {}
-        return next;
+        return sortedNext;
       });
 
       setActiveToast(item);
@@ -2427,6 +2446,8 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       setFloatingNavbarEnabled,
       autoCardTrailerEnabled,
       setAutoCardTrailerEnabled,
+      cardHoverExpandEnabled,
+      setCardHoverExpandEnabled,
     };
   }, [
     isTrailerMuted,
@@ -2438,6 +2459,8 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     setFloatingNavbarEnabled,
     autoCardTrailerEnabled,
     setAutoCardTrailerEnabled,
+    cardHoverExpandEnabled,
+    setCardHoverExpandEnabled,
     user,
     authLoading,
     progressMap,

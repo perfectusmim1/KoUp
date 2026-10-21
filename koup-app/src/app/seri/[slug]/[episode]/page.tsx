@@ -72,7 +72,7 @@ export default function EpisodeWatchPage({
   const router = useRouter();
   const searchParams = useSearchParams();
   const { slug, episode } = use(params);
-  const currentEpNum = Number(episode) || 1;
+  const currentEpNum = Number.isNaN(Number(episode)) ? 1 : Number(episode);
   const urlSeason = searchParams.get('season');
   const urlSeasonNum = urlSeason ? Number(urlSeason) : null;
 
@@ -475,7 +475,7 @@ export default function EpisodeWatchPage({
         if (user) {
           const existingProg = progressMap[mediaItem.id];
           const urlSeekSec = Number(searchParams.get('t')) || 0;
-          const targetEpNum = currentEp?.episode_number || currentEpNum;
+          const targetEpNum = currentEp?.episode_number !== undefined ? currentEp.episode_number : currentEpNum;
           const savedEpProg = getEpisodeProgress(
             existingProg,
             mediaItem.id,
@@ -591,7 +591,7 @@ export default function EpisodeWatchPage({
 
   // Track per-episode view with anti-F5 protection and live count sync
   useEffect(() => {
-    if (!media?.id || !activeEpNum) return;
+    if (!media?.id || activeEpNum === undefined || activeEpNum === null) return;
     const mId = media.id;
     const sNum = currentSeason || 1;
     const eNum = activeEpNum;
@@ -910,9 +910,29 @@ export default function EpisodeWatchPage({
         className="fixed inset-0 pointer-events-none -z-10 overflow-hidden"
       >
         <img
-          src={getProxiedImageUrl(media.backdrop_image || media.cover_image, media.title)}
+          src={getProxiedImageUrl(
+            media.backdrop_image || media.cover_image,
+            media.cover_image,
+            media.title,
+            'w300',
+            'banner',
+            media.tmdb_id,
+            media.content_type === 'film' ? 'movie' : 'tv',
+            media.release_year,
+            media.native_title
+          )}
           alt=""
           aria-hidden="true"
+          onError={(e) => {
+            const target = e.currentTarget;
+            if (!target.dataset.triedPoster && media.cover_image) {
+              target.dataset.triedPoster = 'true';
+              target.src = getProxiedImageUrl(media.cover_image, null, media.title, 'w300', 'poster', media.tmdb_id);
+            } else if (!target.dataset.triedProxy && media.title) {
+              target.dataset.triedProxy = 'true';
+              target.src = `/api/image-proxy?tmdbId=${encodeURIComponent(String(media.tmdb_id || ''))}&title=${encodeURIComponent(media.title)}&type=banner`;
+            }
+          }}
           style={{ transform: 'translateZ(0)', backfaceVisibility: 'hidden' }}
           className="w-full h-full object-cover filter blur-[120px] scale-125 transition-opacity duration-700 opacity-35 brightness-105 saturate-140"
         />

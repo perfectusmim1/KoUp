@@ -13,6 +13,7 @@ on:
         type: choice
         options:
           - all
+          - series_automation
           - pending_resolver
           - animecix
           - hdfilm
@@ -71,7 +72,9 @@ jobs:
           TARGET="${TARGET_SITE:-all}"
           PLIMIT="${PENDING_LIMIT:-150}"
           BDRAMAS="${BATCH_DRAMAS:-30}"
+          TRIGGER="${{ github.event_name }}"
           python scripts/cron_sync_pipeline.py \
             --target "$TARGET" \
             --pending-limit "$PLIMIT" \
-            --batch-dramas "$BDRAMAS"
+            --batch-dramas "$BDRAMAS" \
+            --trigger "${TRIGGER:-cron}"

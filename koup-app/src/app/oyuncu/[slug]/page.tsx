@@ -623,9 +623,6 @@ export default function PersonDetailPage({
         <section>
           <div className="flex items-end justify-between mb-4">
             <div>
-              <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-sky-400">
-                Filmografi & Karakter Bağlantıları
-              </div>
               <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
                 <Film className="w-5 h-5 text-sky-400" />
                 <span>Yer Aldığı Yapımlar ({credits.length})</span>
@@ -677,12 +674,9 @@ export default function PersonDetailPage({
       {coStars.length > 0 && (
         <section>
           <div className="mb-4">
-            <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-amber-300">
-              İlişkisel Ağ · Ortak Kadro Bağlantıları
-            </div>
             <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
               <Users className="w-5 h-5 text-amber-300" />
-              <span>Birlikte Rol Aldığı Oyuncular & Karakterler</span>
+              <span>Birlikte Rol Aldığı Oyuncular</span>
             </h2>
           </div>
 
@@ -720,17 +714,12 @@ export default function PersonDetailPage({
         <section className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-rose-400 font-bold">
-                  AsyaMag · Canlı Magazin & Dedikodu
-                </span>
+              <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
+                <Newspaper className="w-5 h-5 text-rose-400" />
+                <span>Oyuncuyla İlgili ({magazinePosts.length})</span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-rose-500/15 text-rose-300 border border-rose-400/30">
                   {person.name} Gündemi
                 </span>
-              </div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
-                <Newspaper className="w-5 h-5 text-rose-400" />
-                <span>Oyuncuyla İlgili Magazin Haberleri ({magazinePosts.length})</span>
               </h2>
             </div>
             <Link

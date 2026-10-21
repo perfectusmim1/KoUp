@@ -17,6 +17,7 @@ import {
   Megaphone,
 } from 'lucide-react';
 import { useKoUpSelector, ToastNotification } from '@/context/KoUpContext';
+import { dedupeAndSortNotifications } from '@/lib/notifications';
 import { getProxiedImageUrl } from '@/lib/supabase';
 
 type CategoryFilter = 'all' | 'episode' | 'actor' | 'reply' | 'system';
@@ -154,33 +155,9 @@ export default function NotificationsPage() {
   const [selectedFilter, setSelectedFilter] = useState<CategoryFilter>('all');
   const [unreadOnly, setUnreadOnly] = useState<boolean>(false);
 
-  // Fully deduplicated notifications list (prioritizing DB record over temporary optimistic ID)
+  // Fully deduplicated & deterministically sorted notifications list (prioritizing DB record over temporary optimistic ID)
   const uniqueNotifications = useMemo(() => {
-    const seenIds = new Set<string>();
-    const seenFingerprints = new Set<string>();
-    const result: ToastNotification[] = [];
-
-    const sorted = [...notifications].sort((a, b) => {
-      const aIsDb = !a.id.startsWith('notif-');
-      const bIsDb = !b.id.startsWith('notif-');
-      if (aIsDb && !bIsDb) return -1;
-      if (!aIsDb && bIsDb) return 1;
-      return 0;
-    });
-
-    for (const n of sorted) {
-      if (!n || !n.id) continue;
-      if (seenIds.has(n.id)) continue;
-      const title = (n.title || '').trim();
-      const body = (n.body || '').trim();
-      const fp = `${title}::${body}`;
-      if (fp.length > 2 && seenFingerprints.has(fp)) continue;
-
-      seenIds.add(n.id);
-      if (fp.length > 2) seenFingerprints.add(fp);
-      result.push(n);
-    }
-    return result;
+    return dedupeAndSortNotifications(notifications);
   }, [notifications]);
 
   // Effective unread count derived from deduplicated list

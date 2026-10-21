@@ -305,7 +305,6 @@ export async function GET(req: NextRequest) {
     'sendvid.com',
     'drive.google.com',
     'docs.google.com',
-    'playerdkorea.xyz',
     'pixeldrain.com',
     'pixeldrain',
     '4meplayer',
@@ -515,7 +514,14 @@ export async function GET(req: NextRequest) {
       console.warn('AsyaWatch / Dizilla native stream extraction error:', err?.message || err);
     }
 
-    // Fallback if extraction failed
+    // Fallback if extraction failed - never return dead pichive/asyawatch iframe that refuses connection
+    if (lowerUrl.includes('pichive') || lowerUrl.includes('dplayer')) {
+      return NextResponse.json(
+        { error: 'Pichive / DPlayer akışı doğrudan çözülemedi', isDead: true },
+        { status: 410, headers: CACHE_HEADERS }
+      );
+    }
+
     return NextResponse.json(
       {
         mode: 'iframe',
@@ -742,9 +748,15 @@ export async function GET(req: NextRequest) {
 
       // Embed page (e.g. Close Player https://hdfilmcehennemi.mobi/video/embed/... or Rapidrame https://www.hdfilmcehennemi.nl/rplayer/...)
       if (url.includes('hdfilmcehennemi.mobi/video/embed/') || url.includes('/video/embed/') || url.includes('/rplayer/')) {
+        let embedFetchUrl = url;
+        const rapidParamMatch = url.match(/rapidrame_id=([a-zA-Z0-9_-]+)/);
+        if (rapidParamMatch?.[1]) {
+          embedFetchUrl = `https://www.hdfilmcehennemi.nl/rplayer/${rapidParamMatch[1]}/`;
+        }
+
         let html = '';
         try {
-          const embedResp = await fetch(url, {
+          const embedResp = await fetch(embedFetchUrl, {
             headers: {
               'User-Agent':
                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -765,7 +777,7 @@ export async function GET(req: NextRequest) {
                 'python',
                 [
                   '-c',
-                  `import sys; from curl_cffi import requests; sys.stdout.reconfigure(encoding='utf-8'); r = requests.get(${JSON.stringify(url)}, headers={'Referer': 'https://www.hdfilmcehennemi.nl/'}, impersonate='chrome', timeout=8); print(r.text if r.status_code == 200 else '')`,
+                  `import sys; from curl_cffi import requests; sys.stdout.reconfigure(encoding='utf-8'); r = requests.get(${JSON.stringify(embedFetchUrl)}, headers={'Referer': 'https://www.hdfilmcehennemi.nl/'}, impersonate='chrome', timeout=8); print(r.text if r.status_code == 200 else '')`,
                 ],
                 { maxBuffer: 10 * 1024 * 1024, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } },
                 (err, stdout) => (err ? reject(err) : resolve(stdout))
@@ -787,7 +799,7 @@ export async function GET(req: NextRequest) {
                   '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
                   '--connect-timeout', '6',
                   '--max-time', '10',
-                  url,
+                  embedFetchUrl,
                 ],
                 { maxBuffer: 10 * 1024 * 1024 },
                 (err, stdout) => (err ? reject(err) : resolve(stdout))
@@ -798,10 +810,10 @@ export async function GET(req: NextRequest) {
 
         if (html) {
           // 1. Extract WebVTT subtitles (deduplicated & normalized)
-          const embedOrigin = url.includes('/rplayer/')
+          const embedOrigin = embedFetchUrl.includes('/rplayer/')
             ? 'https://www.hdfilmcehennemi.nl'
-            : new URL(url).origin;
-          const subRef = url.includes('/rplayer/')
+            : new URL(embedFetchUrl).origin;
+          const subRef = embedFetchUrl.includes('/rplayer/')
             ? 'https://www.hdfilmcehennemi.nl/'
             : 'https://hdfilmcehennemi.mobi/';
           const subtitles = extractHdfilmSubtitles(html, embedOrigin, subRef);
@@ -816,7 +828,7 @@ export async function GET(req: NextRequest) {
               const createProxy = () => new Proxy(() => createProxy(), { get: (t, p) => p === 'then' ? undefined : createProxy(), apply: () => createProxy() });
               var window = new Proxy({
                 lastCheckPoint: 0,
-                location: { href: '${url}' },
+                location: { href: '${embedFetchUrl}' },
                 addEventListener: () => {},
                 removeEventListener: () => {},
                 navigator: { userAgent: 'Mozilla/5.0' },
@@ -864,7 +876,7 @@ export async function GET(req: NextRequest) {
 
           if (masterHlsUrl) {
             const streamReferer =
-              url.includes('/rplayer/') || masterHlsUrl.includes('rapidrame')
+              embedFetchUrl.includes('/rplayer/') || masterHlsUrl.includes('rapidrame')
                 ? 'https://www.hdfilmcehennemi.nl/'
                 : 'https://hdfilmcehennemi.mobi/';
             const proxiedMaster = `/api/stream-proxy?url=${encodeURIComponent(masterHlsUrl)}&ref=${encodeURIComponent(streamReferer)}`;
@@ -954,15 +966,33 @@ export async function GET(req: NextRequest) {
 
   // Diziyou direct HLS (storage.diziyou.one has access-control-allow-origin: * open CORS)
   if (url.includes('storage.diziyou') || url.includes('diziyou.one') || provider === 'diziyou-hls') {
-    return NextResponse.json(
-      {
-        mode: 'native_hls',
-        streamUrl: url,
-        qualities: [{ label: '1080p', url: url }],
-        fallbackIframe: url,
-      },
-      { headers: CACHE_HEADERS }
-    );
+    const epMatch = url.match(/\/episodes\/(\d+)\//);
+    const subtitles: Array<{ label: string; lang: string; url: string; default?: boolean }> = [];
+    if (epMatch?.[1]) {
+      const epId = epMatch[1];
+      subtitles.push({
+        label: 'Türkçe',
+        lang: 'tr',
+        url: `https://storage.diziyou.one/subtitles/${epId}/tr.vtt`,
+        default: true,
+      });
+      subtitles.push({
+        label: 'English',
+        lang: 'en',
+        url: `https://storage.diziyou.one/subtitles/${epId}/en.vtt`,
+        default: false,
+      });
+    }
+
+    const payload = {
+      mode: 'native_hls' as const,
+      streamUrl: url,
+      qualities: [{ label: '1080p', url: url }],
+      subtitles: subtitles.length > 0 ? subtitles : undefined,
+      fallbackIframe: url,
+    };
+    setCachedStream(url, payload);
+    return NextResponse.json(payload, { headers: CACHE_HEADERS });
   }
 
   // 2. Direct HLS / MP4 pass-through (with stream-proxy for CDNs and CORS protection)

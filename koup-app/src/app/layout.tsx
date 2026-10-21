@@ -5,7 +5,6 @@ import { KoUpProvider } from '@/context/KoUpContext';
 import Navbar from '@/components/Navbar';
 import CookieConsentBanner from '@/components/CookieConsentBanner';
 import ScrollRestoration from '@/components/ScrollRestoration';
-import BenchmarkRunner from '@/components/BenchmarkRunner';
 import PageTransition from '@/components/PageTransition';
 import Link from 'next/link';
 
@@ -84,7 +83,6 @@ export default function RootLayout({
           </main>
           <Footer />
           <CookieConsentBanner />
-          <BenchmarkRunner />
         </KoUpProvider>
       </body>
     </html>

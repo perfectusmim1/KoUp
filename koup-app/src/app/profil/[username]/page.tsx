@@ -806,7 +806,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                       currentDisplayProfile.avatar_url,
                       currentDisplayProfile.display_name || currentDisplayProfile.username,
                       null,
-                      'w185',
+                      'w342',
                       'person'
                     )}
                     alt={currentDisplayProfile.display_name || currentDisplayProfile.username}

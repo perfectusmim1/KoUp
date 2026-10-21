@@ -344,9 +344,33 @@ export default function SeriesDetailPage({
             .order('billing_order', { ascending: true })
             .limit(24);
 
+          let rawCast = (castRows as CastMember[]) || [];
+          if (rawCast.length === 0 || !rawCast.some((c) => c.role_type === 'lead')) {
+            try {
+              const castRes = await fetch(
+                `/api/media/cast?mediaId=${mData.id}&tmdbId=${mData.tmdb_id || ''}&type=${mData.content_type || ''}&title=${encodeURIComponent(mData.title || '')}`
+              );
+              if (castRes.ok) {
+                const castJson = await castRes.json();
+                if (castJson.cast && castJson.cast.length > 0) {
+                  rawCast = castJson.cast;
+                }
+              }
+            } catch (e) {
+              console.error('Failed to resolve cast on-the-fly:', e);
+            }
+          }
+
+          const sortedCast = [...rawCast].sort((a, b) => {
+            const aLead = a.role_type === 'lead' ? 0 : 1;
+            const bLead = b.role_type === 'lead' ? 0 : 1;
+            if (aLead !== bLead) return aLead - bLead;
+            return (a.billing_order || 999) - (b.billing_order || 999);
+          });
+
           return {
             media: mData as MediaItem,
-            cast: (castRows as CastMember[]) || [],
+            cast: sortedCast,
           };
         });
 
@@ -786,7 +810,7 @@ export default function SeriesDetailPage({
     media.backdrop_image || media.cover_image,
     media.cover_image,
     media.title,
-    'original',
+    'w300',
     'banner',
     media.tmdb_id,
     media.content_type === 'film' ? 'movie' : 'tv',
@@ -814,6 +838,16 @@ export default function SeriesDetailPage({
           <img
             src={backdropSrc}
             alt={media.title}
+            onError={(e) => {
+              const target = e.currentTarget;
+              if (!target.dataset.triedPoster && posterSrc) {
+                target.dataset.triedPoster = 'true';
+                target.src = posterSrc;
+              } else if (!target.dataset.triedProxy && media.title) {
+                target.dataset.triedProxy = 'true';
+                target.src = `/api/image-proxy?tmdbId=${encodeURIComponent(String(media.tmdb_id || ''))}&title=${encodeURIComponent(media.title)}&type=banner&size=w300`;
+              }
+            }}
             className="w-full h-full object-cover filter blur-2xl scale-110 opacity-75"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-[#080808]/50 to-black/20" />
@@ -842,6 +876,18 @@ export default function SeriesDetailPage({
               loading="eager"
               fetchPriority="high"
               decoding="async"
+              onError={(e) => {
+                const target = e.currentTarget;
+                if (!target.dataset.triedFallback && media.poster_fallback_url && media.poster_fallback_url !== media.cover_image) {
+                  target.dataset.triedFallback = 'true';
+                  target.src = media.poster_fallback_url;
+                } else if (!target.dataset.triedProxy && media.title) {
+                  target.dataset.triedProxy = 'true';
+                  target.src = `/api/image-proxy?tmdbId=${encodeURIComponent(String(media.tmdb_id || ''))}&title=${encodeURIComponent(media.title)}&type=poster`;
+                } else {
+                  target.src = '/logo-dark.png';
+                }
+              }}
               className="relative z-10 w-full h-full object-cover object-top transition-opacity duration-300"
             />
           </div>

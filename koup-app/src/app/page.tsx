@@ -36,7 +36,6 @@ import {
   getProxiedImageUrl,
   formatContentTypeTR,
   getEpisodeProgressStats,
-  getEpisodeProgress,
   cleanEpisodeName,
   cleanOverviewText,
   cleanMediaTitle,
@@ -251,13 +250,16 @@ export default function HomePage() {
 
   useEffect(() => {
     // 1. Instantly populate on client mount from memory or localStorage cache for 0ms transition
-    const cached = memoryHomeBundle || getCache<HomeDataBundle>('home_catalog_bundle_v7');
+    const cached = memoryHomeBundle || getCache<HomeDataBundle>('home_catalog_bundle_v8');
     if (cached) {
       applyBundle(cached);
     }
 
     async function fetchHomeData() {
-      const homeData = await cachedQuery('home_catalog_bundle_v7', 300_000, async () => {
+      const homeData = await cachedQuery(
+        'home_catalog_bundle_v8',
+        60_000,
+        async () => {
         const [
           featRes,
           kdRes,
@@ -310,6 +312,7 @@ export default function HomePage() {
               'id, media_id, season_number, episode_number, episode_name, published_at, status, scheduled_release_at, translation_note, react_fire'
             )
             .eq('status', 'published')
+            .order('published_at', { ascending: false, nullsFirst: false })
             .order('id', { ascending: false })
             .limit(250),
           supabase
@@ -406,6 +409,8 @@ export default function HomePage() {
             : ((top10SeriesRes.data as MediaItem[]) || []),
           top10Movies: movieItems,
         };
+      }, (freshBundle) => {
+        applyBundle(freshBundle);
       });
 
       applyBundle(homeData);
@@ -1525,15 +1530,13 @@ export default function HomePage() {
                 if (!m) return null;
                 const seasonNum = ep.season_number || 1;
                 const epNum = ep.episode_number || 1;
-                const userProg = progressMap[m.id];
-                const epProg = getEpisodeProgress(userProg, m.id, seasonNum, epNum);
                 const isFilmItem = m.content_type === 'film' || m.content_type === 'movie';
                 const timeLabel = formatRelativeTime(ep.published_at);
-                const barPct = epProg.isWatched
-                  ? 100
-                  : epProg.position > 15
-                  ? Math.max(6, epProg.percent)
-                  : 0;
+                const episodeLabel = isFilmItem
+                  ? 'Film Eklendi'
+                  : seasonNum > 1
+                  ? `S${seasonNum} • ${epNum}. Bölüm Eklendi`
+                  : `${epNum}. Bölüm Eklendi`;
 
                 return (
                   <Link
@@ -1563,28 +1566,18 @@ export default function HomePage() {
 
                     {/* Card Content Overlay pinned to bottom */}
                     <div className="absolute inset-x-0 bottom-0 z-10 p-3.5 sm:p-4 flex flex-col justify-end">
-                      <div className="flex items-center justify-between gap-2 mb-2 sm:mb-2.5">
+                      <div className="flex items-center justify-between gap-2">
                         <div className="flex flex-col min-w-0 pr-2">
                           <span className="text-white font-bold text-xs sm:text-[14px] truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
                             {cleanMediaTitle(m.title)}
                           </span>
                           <span className="text-[10px] sm:text-[11px] text-sky-400 font-semibold tracking-wide mt-0.5 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] truncate">
-                            {isFilmItem
-                              ? 'Yeni Film'
-                              : `S${seasonNum} • ${epNum}. Bölüm`}
+                            {episodeLabel}
                           </span>
                         </div>
                         <span className="text-[10px] sm:text-[11px] font-mono text-white/80 shrink-0 px-2 py-0.5 rounded-lg bg-black/80 border border-white/15 shadow-sm">
                           {timeLabel}
                         </span>
-                      </div>
-
-                      {/* Floating Inset Progress Bar (Kenarlara yapışık değil, yüzer vaziyette) */}
-                      <div className="w-full h-1.5 rounded-full bg-white/30 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.95)] transition-all duration-500"
-                          style={{ width: `${barPct}%` }}
-                        />
                       </div>
                     </div>
                   </Link>
@@ -1655,7 +1648,7 @@ export default function HomePage() {
 
                   <div className="relative z-10 w-36 sm:w-44 md:w-52 min-w-[144px] sm:min-w-[176px] md:min-w-[208px] aspect-[2/3] rounded-xl sm:rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 group-hover:border-white/30 shadow-[0_20px_45px_rgba(0,0,0,0.85)] transition-all duration-300 flex flex-col justify-end p-3 sm:p-4">
                     <img
-                      src={getProxiedImageUrl(item.cover_image, item.title, null, 'w92', 'poster')}
+                      src={getProxiedImageUrl(item.cover_image, item.title, null, 'w342', 'poster')}
                       alt={item.title}
                       loading="lazy"
                       decoding="async"
@@ -1739,7 +1732,7 @@ export default function HomePage() {
 
                   <div className="relative z-10 w-36 sm:w-44 md:w-52 min-w-[144px] sm:min-w-[176px] md:min-w-[208px] aspect-[2/3] rounded-xl sm:rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 group-hover:border-white/30 shadow-[0_20px_45px_rgba(0,0,0,0.85)] transition-all duration-300 flex flex-col justify-end p-3 sm:p-4">
                     <img
-                      src={getProxiedImageUrl(item.cover_image, item.title, null, 'w92', 'poster')}
+                      src={getProxiedImageUrl(item.cover_image, item.title, null, 'w342', 'poster')}
                       alt={item.title}
                       loading="lazy"
                       decoding="async"

@@ -247,7 +247,11 @@ def scan_dizikorea(conn, cur, idx, limit=10, target=None):
             for a in soup.find_all('a', href=True):
                 h = a['href']
                 if '/dizi/' in h and ('-izle' in h or '-dq' in h):
-                    series_links.append((a.get_text(strip=True), h))
+                    t_name = a.get_text(strip=True)
+                    s_core = re.sub(r'[^a-z0-9]', '', h.split('/dizi/')[-1].split('/')[0].lower())
+                    q_core = re.sub(r'[^a-z0-9]', '', target.lower())
+                    if q_core in s_core or s_core in q_core or norm_title(target) in norm_title(t_name) or norm_title(t_name) in norm_title(target):
+                        series_links.append((t_name, h))
         except Exception as e:
             log("UYARI", f"Arama hatası: {e}")
     else:
@@ -1159,11 +1163,7 @@ def scan_dizifon(conn, cur, idx, limit=10, target=None):
                     if nt_target in norm_title(txt) or norm_title(txt) in nt_target:
                         target_series_url = h
                         break
-            if not target_series_url:
-                for a in soup.find_all('a', href=True):
-                    if '/dizi/' in a['href']:
-                        target_series_url = a['href']
-                        break
+            # Do not blindly fallback to random /dizi/ link if not matching target
 
             if target_series_url:
                 log("BULUNDU", f"Hedef dizi sayfası: {target_series_url}")

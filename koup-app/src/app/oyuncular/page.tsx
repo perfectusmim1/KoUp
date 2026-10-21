@@ -193,7 +193,7 @@ export default function ActorsLeaderboardPage() {
                   <div className="relative aspect-square rounded-2xl overflow-hidden mb-3 bg-black/50 border border-white/10 group-hover:border-white/30 transition-colors">
                     <Link href={`/oyuncu/${person.slug}`}>
                       <img
-                        src={getProxiedImageUrl(person.image_url, person.name, null, 'w92', 'person')}
+                        src={getProxiedImageUrl(person.image_url, person.name, null, 'w342', 'person', person.tmdb_id)}
                         alt={person.name}
                         loading="lazy"
                         decoding="async"

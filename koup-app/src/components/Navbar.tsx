@@ -46,6 +46,7 @@ import {
   formatContentTypeTR,
   cleanMediaTitle,
 } from '@/lib/supabase';
+import { dedupeAndSortNotifications } from '@/lib/notifications';
 import { useKoUpSelector } from '@/context/KoUpContext';
 import AuthModal from '@/components/AuthModal';
 import { cachedQuery, registerMediaItems } from '@/lib/cache';
@@ -186,26 +187,7 @@ export default function Navbar() {
   const floatingNavbarEnabled = useKoUpSelector((s) => s.floatingNavbarEnabled);
 
   const dedupedNotifications = React.useMemo(() => {
-    const seenIds = new Set<string>();
-    const seenFps = new Set<string>();
-    const deduped: typeof notifications = [];
-    const sorted = [...notifications].sort((a, b) => {
-      const aIsDb = !a.id.startsWith('notif-');
-      const bIsDb = !b.id.startsWith('notif-');
-      if (aIsDb && !bIsDb) return -1;
-      if (!aIsDb && bIsDb) return 1;
-      return 0;
-    });
-    for (const n of sorted) {
-      if (!n || !n.id) continue;
-      if (seenIds.has(n.id)) continue;
-      const fp = `${(n.title || '').trim()}::${(n.body || '').trim()}`;
-      if (fp.length > 2 && seenFps.has(fp)) continue;
-      seenIds.add(n.id);
-      if (fp.length > 2) seenFps.add(fp);
-      deduped.push(n);
-    }
-    return deduped;
+    return dedupeAndSortNotifications(notifications);
   }, [notifications]);
 
   const [query, setQuery] = useState('');

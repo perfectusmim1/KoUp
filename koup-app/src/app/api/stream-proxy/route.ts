@@ -87,8 +87,14 @@ export async function GET(req: NextRequest) {
       referer = 'https://diziyou.one/';
       origin = 'https://diziyou.one';
     } else if (targetUrl.includes('dizibox') || targetUrl.includes('molystream')) {
-      referer = 'https://dizibox.tv/';
-      origin = 'https://dizibox.tv';
+      referer = 'https://dbx.molystream.org/';
+      origin = 'https://dbx.molystream.org';
+    } else if (targetUrl.includes('morencius')) {
+      referer = 'https://morencius.com/';
+      origin = 'https://morencius.com';
+    } else if (targetUrl.includes('gdriveplayer') || targetUrl.includes('stream121')) {
+      referer = 'https://gdriveplayer.to/';
+      origin = 'https://gdriveplayer.to';
     } else if (targetUrl.includes('ciner') || targetUrl.includes('showtv')) {
       referer = 'https://www.showtv.com.tr/';
       origin = 'https://www.showtv.com.tr';
@@ -350,6 +356,7 @@ export async function GET(req: NextRequest) {
 
     if (
       targetUrl.includes('.ts') ||
+      (targetUrl.includes('.png') && (targetUrl.includes('/1080p/') || targetUrl.includes('/720p/') || targetUrl.includes('/480p/') || targetUrl.includes('/sheila') || targetUrl.includes('/v/'))) ||
       (targetUrl.includes('.jpg') && (targetUrl.includes('/f/') || targetUrl.includes('/o/a/') || targetUrl.includes('/m/a/') || targetUrl.includes('/dual')))
     ) {
       responseHeaders.set('content-type', 'video/mp2t');

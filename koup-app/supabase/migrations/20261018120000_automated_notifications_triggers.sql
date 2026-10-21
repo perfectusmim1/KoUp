@@ -145,7 +145,7 @@ BEGIN
       '/seri/' || v_media.slug || '/' || NEW.episode_number,
       v_media.cover_image,
       false,
-      now()
+      clock_timestamp() + (COALESCE(NEW.episode_number, 1) * interval '10 milliseconds')
     );
   END LOOP;
 

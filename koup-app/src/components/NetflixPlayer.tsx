@@ -2528,6 +2528,15 @@ export default function NetflixPlayer({
                 )}
                 alt=""
                 aria-hidden="true"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (!target.dataset.triedCover && media.cover_image) {
+                    target.dataset.triedCover = 'true';
+                    target.src = getProxiedImageUrl(media.cover_image, null, media.title, 'w500');
+                  } else {
+                    target.style.display = 'none';
+                  }
+                }}
                 className="absolute inset-0 w-full h-full object-cover opacity-20 filter blur-sm pointer-events-none"
               />
             )}
@@ -2601,6 +2610,15 @@ export default function NetflixPlayer({
                 )}
                 alt=""
                 aria-hidden="true"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (!target.dataset.triedCover && media.cover_image) {
+                    target.dataset.triedCover = 'true';
+                    target.src = getProxiedImageUrl(media.cover_image, null, media.title, 'w500');
+                  } else {
+                    target.style.display = 'none';
+                  }
+                }}
                 className="absolute inset-0 w-full h-full object-cover opacity-20 filter blur-sm pointer-events-none"
               />
             )}
@@ -2673,6 +2691,15 @@ export default function NetflixPlayer({
                     )}
                     alt=""
                     aria-hidden="true"
+                    onError={(e) => {
+                      const target = e.currentTarget;
+                      if (!target.dataset.triedCover && media.cover_image) {
+                        target.dataset.triedCover = 'true';
+                        target.src = getProxiedImageUrl(media.cover_image, null, media.title, 'w500');
+                      } else {
+                        target.style.display = 'none';
+                      }
+                    }}
                     className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-700 ${
                       isTrailerReady ? 'opacity-0' : 'opacity-60'
                     }`}
@@ -3032,7 +3059,7 @@ export default function NetflixPlayer({
                         )}
                       </div>
                     ) : isTouchDevice ? (
-                      <div className="flex items-center gap-2">
+                      <>
                         {isFullscreen && (
                           <button
                             type="button"
@@ -3047,34 +3074,9 @@ export default function NetflixPlayer({
                             <Unlock className="w-4 h-4 sm:w-5 sm:h-5" />
                           </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={toggleFullscreen}
-                          aria-label={isFullscreen ? 'Tam Ekrandan Çık' : 'Tam Ekran'}
-                          className="p-1 text-white/90 hover:text-white active:scale-95 transition-transform cursor-pointer"
-                        >
-                          {isFullscreen ? (
-                            <Minimize className="w-4 h-4 sm:w-5 sm:h-5" />
-                          ) : (
-                            <Maximize className="w-4 h-4 sm:w-5 sm:h-5" />
-                          )}
-                        </button>
-                      </div>
+                      </>
                     ) : (
-                      <div className="w-8 flex justify-end">
-                        <button
-                          type="button"
-                          onClick={toggleFullscreen}
-                          aria-label={isFullscreen ? 'Tam Ekrandan Çık (Esc / F)' : 'Tam Ekran (F)'}
-                          className="p-1.5 text-white/85 hover:text-white hover:scale-110 active:scale-95 transition-transform cursor-pointer"
-                        >
-                          {isFullscreen ? (
-                            <Minimize className="w-5 h-5 stroke-[2.2]" />
-                          ) : (
-                            <Maximize className="w-5 h-5 stroke-[2.2]" />
-                          )}
-                        </button>
-                      </div>
+                      <div className="w-8 flex justify-end" />
                     )}
                   </div>
                 </div>

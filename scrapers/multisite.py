@@ -8,6 +8,7 @@ import re
 import json
 import time
 import sqlite3
+from datetime import datetime
 import unicodedata
 
 try:
@@ -186,12 +187,12 @@ def parse_season_and_episode(url: str = "", text: str = "") -> tuple:
         if 1 <= start_ep < end_ep and (end_ep - start_ep) <= 40:
             return season, start_ep
 
-    # 3. Detect Explicit Episode from URL or Text
-    e_m = re.search(r'(?:^|[^\d])(\d{1,4})\s*\.\s*b[öo]l[üu]m', t) or \
-          re.search(r'/bolum-(\d{1,4})(?:[^\d]|$)', u) or \
-          re.search(r'-(\d{1,4})-bolum(?:[^\d]|$)', u) or \
+    # 3. Detect Explicit Episode (URL has strict priority over HTML text to avoid concatenated badge digits)
+    e_m = re.search(r'/bolum-(\d{1,4})(?:[^\d]|$)', u) or \
           re.search(r'[-_/]bolum[-_/](\d{1,4})(?:[^\d]|$)', u) or \
+          re.search(r'[-_/](\d{1,4})-bolum(?:[^\d]|$)', u) or \
           re.search(r'[-_/]e(\d{1,4})(?:[^\d]|$)', u) or \
+          re.search(r'(?:^|[^\d])(\d{1,4})\s*\.\s*b[öo]l[üu]m', t) or \
           re.search(r'\bepisode\s*(\d{1,4})\b', combined)
 
     if e_m:
@@ -287,6 +288,38 @@ def find_in_index(idx, title, year=None, slug=None, content_type=None, mdl_url=N
                     return item
     return None
 
+
+_RECENT_ADDED_EPISODES = []
+_RECENT_ADDED_SOURCES = []
+_DRAMA_META_CACHE = {}
+
+def get_drama_meta(cur, drama_id):
+    if not drama_id:
+        return ("", "", "")
+    if drama_id in _DRAMA_META_CACHE:
+        return _DRAMA_META_CACHE[drama_id]
+    try:
+        cur.execute("SELECT title, slug, cover_image FROM dramas WHERE id=?", (drama_id,))
+        r = cur.fetchone()
+        if r:
+            _DRAMA_META_CACHE[drama_id] = (r[0] or "", r[1] or "", r[2] or "")
+            return _DRAMA_META_CACHE[drama_id]
+    except Exception:
+        pass
+    return ("", "", "")
+
+def pop_recent_added_episodes():
+    global _RECENT_ADDED_EPISODES
+    items = list(_RECENT_ADDED_EPISODES)
+    _RECENT_ADDED_EPISODES = []
+    return items
+
+def pop_recent_added_sources():
+    global _RECENT_ADDED_SOURCES
+    items = list(_RECENT_ADDED_SOURCES)
+    _RECENT_ADDED_SOURCES = []
+    return items
+
 def match_or_create_episode(cur, drama_id, season, number, name, url):
     season = max(1, int(season or 1))
     number = max(1, int(number or 1))
@@ -305,7 +338,21 @@ def match_or_create_episode(cur, drama_id, season, number, name, url):
         try:
             cur.execute("""INSERT INTO episodes (drama_id, season_number, episode_number, episode_name, episode_url, sources_scraped)
                 VALUES (?, ?, ?, ?, ?, 1)""", (drama_id, season, number, clean_name, url))
-            return cur.lastrowid, True
+            new_ep_id = cur.lastrowid
+            d_title, d_slug, d_cover = get_drama_meta(cur, drama_id)
+            _RECENT_ADDED_EPISODES.append({
+                "id": new_ep_id,
+                "drama_id": drama_id,
+                "drama_title": d_title,
+                "drama_slug": d_slug,
+                "cover_image": d_cover,
+                "season_number": season,
+                "episode_number": number,
+                "episode_name": clean_name,
+                "episode_url": url,
+                "added_at": datetime.now().isoformat(),
+            })
+            return new_ep_id, True
         except sqlite3.IntegrityError:
             # Ayni URL baska drama/numarada kayitli (toplu bolum vb.): mevcut satiri kullan.
             cur.execute("SELECT id FROM episodes WHERE episode_url=?", (url,))
@@ -325,12 +372,12 @@ def add_source(cur, episode_id, source_name, direct_url, provider, site, fansub=
     p_low = (provider or '').lower()
     n_low = (source_name or '').lower()
     if (
-        p_low in ('sibnet', 'sendvid', 'dead', 'googledrive', 'pixeldrain', 'playerdkorea', '4meplayer', 'uns.bio', 'p2pplay', 'rpmplay')
+        p_low in ('sibnet', 'sendvid', 'dead', 'googledrive', 'pixeldrain', '4meplayer', 'uns.bio', 'p2pplay', 'rpmplay')
         or 'sibnet' in n_low
         or 'pixeldrain' in n_low
         or any(dead in u_low for dead in (
             'sibnet.ru', 'sendvid', 'drive.google.com', 'docs.google.com',
-            'short.icu', 'short.ink', 'vudeo.', 'dood', 'playerdkorea.xyz',
+            'short.icu', 'short.ink', 'vudeo.', 'dood',
             'pixeldrain.com', 'pixeldrain', '4meplayer', 'uns.bio', 'p2pplay',
             'rpmplay', 'video.diziasya.com'
         ))
@@ -371,6 +418,31 @@ def add_source(cur, episode_id, source_name, direct_url, provider, site, fansub=
                 direct_url=excluded.direct_url, provider=excluded.provider,
                 source_name=excluded.source_name, fansub=COALESCE(excluded.fansub, episode_sources.fansub)""",
             (episode_id, name, eid, direct_url, provider, site, fansub))
+        new_src_id = cur.lastrowid
+        try:
+            cur.execute("SELECT drama_id, season_number, episode_number, episode_name FROM episodes WHERE id=?", (episode_id,))
+            ep_row = cur.fetchone()
+            if ep_row:
+                d_id, s_num, ep_num, ep_name = ep_row
+                d_title, d_slug, d_cover = get_drama_meta(cur, d_id)
+                _RECENT_ADDED_SOURCES.append({
+                    "id": new_src_id,
+                    "episode_id": episode_id,
+                    "drama_id": d_id,
+                    "drama_title": d_title,
+                    "drama_slug": d_slug,
+                    "season_number": s_num,
+                    "episode_number": ep_num,
+                    "episode_name": ep_name,
+                    "source_name": name,
+                    "provider": provider,
+                    "site": site,
+                    "direct_url": direct_url,
+                    "fansub": fansub,
+                    "added_at": datetime.now().isoformat(),
+                })
+        except Exception:
+            pass
         return True
     return _retry(_op)
 

@@ -34,6 +34,10 @@ interface CustomListRecord {
   created_at: string;
 }
 
+// Module-level cache so lists are instantly ready without re-fetching or showing loading spinner
+let cachedUserLists: CustomListRecord[] | null = null;
+let cachedUserId: string | null = null;
+
 export default function AddToListModal({
   isOpen,
   onClose,
@@ -44,8 +48,15 @@ export default function AddToListModal({
   const triggerSound = useKoUpSelector((s) => s.triggerSound);
   const openAuthModal = useKoUpSelector((s) => s.openAuthModal);
   const [mounted, setMounted] = useState(false);
-  const [lists, setLists] = useState<CustomListRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [lists, setLists] = useState<CustomListRecord[]>(() => {
+    if (user && cachedUserId === user.id && cachedUserLists) {
+      return cachedUserLists;
+    }
+    return [];
+  });
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    return !(user && cachedUserId === user.id && cachedUserLists);
+  });
   const [togglingId, setTogglingId] = useState<number | null>(null);
 
   // New list form
@@ -62,9 +73,18 @@ export default function AddToListModal({
   useEffect(() => {
     if (!isOpen || !user) return;
 
+    // Önbellekte bu kullanıcının listesi varsa hemen göster
+    if (cachedUserId === user.id && cachedUserLists) {
+      setLists(cachedUserLists);
+      setIsLoading(false);
+    }
+
     let isCancelled = false;
     async function fetchUserLists() {
-      setIsLoading(true);
+      // Yalnızca önbellekte henüz veri yoksa spinner göster
+      if (!cachedUserLists || cachedUserId !== user!.id) {
+        setIsLoading(true);
+      }
       try {
         const { data, error } = await supabase
           .from('custom_lists')
@@ -78,6 +98,8 @@ export default function AddToListModal({
             media_ids: Array.isArray(l.media_ids) ? l.media_ids.map(Number) : [],
           }));
           setLists(formatted);
+          cachedUserLists = formatted;
+          cachedUserId = user!.id;
           if (formatted.length === 0) {
             setShowCreateForm(true);
           }
@@ -124,8 +146,8 @@ export default function AddToListModal({
     const action = isCurrentlyIn ? 'remove' : 'add';
 
     // Optimistic UI update
-    setLists((prev) =>
-      prev.map((l) => {
+    setLists((prev) => {
+      const updated = prev.map((l) => {
         if (l.id === list.id) {
           const nextIds = isCurrentlyIn
             ? l.media_ids.filter((id) => id !== mediaIdNum)
@@ -133,8 +155,11 @@ export default function AddToListModal({
           return { ...l, media_ids: nextIds };
         }
         return l;
-      })
-    );
+      });
+      cachedUserLists = updated;
+      if (user) cachedUserId = user.id;
+      return updated;
+    });
 
     try {
       const res = await fetch(`/api/lists/${list.id}`, {
@@ -219,7 +244,12 @@ export default function AddToListModal({
           likes_count: 0,
           created_at: d.list.created_at,
         };
-        setLists((prev) => [newListRecord, ...prev]);
+        setLists((prev) => {
+          const updated = [newListRecord, ...prev];
+          cachedUserLists = updated;
+          if (user) cachedUserId = user.id;
+          return updated;
+        });
         setNewTitle('');
         setShowCreateForm(false);
       } else {
@@ -248,17 +278,17 @@ export default function AddToListModal({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
             onClick={onClose}
             className="fixed inset-0 bg-black/80 cursor-pointer"
           />
 
           {/* Modal Window */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.94, y: 16 }}
+            initial={{ opacity: 0, scale: 0.95, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.94, y: 16 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            exit={{ opacity: 0, scale: 0.95, y: 12 }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
             className="relative z-10 w-full max-w-md rounded-3xl bg-[#121216]/95 border border-white/10 p-6 sm:p-7 shadow-[0_28px_64px_rgba(0,0,0,0.92),0_0_24px_-4px_rgba(41,151,255,0.2)] backdrop-blur-sm text-white"
           >
           {/* Close Button */}

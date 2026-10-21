@@ -44,6 +44,7 @@ import {
   Flame,
   Globe,
   Check,
+  Workflow,
 } from 'lucide-react';
 import { supabase, MediaItem, formatContentTypeTR, getProxiedImageUrl } from '@/lib/supabase';
 import { invalidateCache } from '@/lib/cache';
@@ -51,11 +52,14 @@ import CountryFlag from '@/components/CountryFlag';
 import CustomSelect, { SelectOption } from '@/components/CustomSelect';
 import { useKoUp } from '@/context/KoUpContext';
 import { rankSearchResults } from '@/lib/searchRanking';
+import AdminAutomationCenter from '@/components/AdminAutomationCenter';
+import AdminSeriesAutomation from '@/components/AdminSeriesAutomation';
 
 type AdminTab =
   | 'overview'
   | 'users'
   | 'series'
+  | 'series_automation'
   | 'episodes'
   | 'comments'
   | 'scrapers'
@@ -412,6 +416,16 @@ const SCRAPER_BRAND_INFO: Record<
     category: 'Global & Anime (8900+ Dizi)',
     protocol: 'AES-256 CBC Decrypt + 1080p HLS Çözücü',
   },
+  dizifon: {
+    logoText: 'DiziFon',
+    domain: 'https://www.dizifon.cc',
+    tag: 'HD Asya & Kore',
+    bgGradient: 'from-amber-600/25 via-yellow-600/20 to-amber-950/40',
+    borderGlow: 'border-amber-500/40 group-hover:border-amber-400/80',
+    textColor: 'text-amber-300',
+    category: 'Asya, Çin & K-Drama HD (3500+ Dizi)',
+    protocol: 'OK.ru HD + Vidmoly + YouTube HD Akış Çözücü',
+  },
 };
 
 function ScraperLogoBadge({ siteKey, name }: { siteKey: string; name: string }) {
@@ -614,6 +628,7 @@ export default function AdminDashboardPage() {
           'hdfilm',
           'asyawatch',
           'dizilla',
+          'dizifon',
         ]);
         const filteredScrapers = ((sRes.data as ScraperConfigRow[]) || []).filter((bot) =>
           ACTIVE_SCRAPER_IDS.has(bot.id)
@@ -2201,6 +2216,7 @@ export default function AdminDashboardPage() {
           { id: 'overview', label: 'Genel Bakış', icon: Layers, adminOnly: true },
           { id: 'users', label: 'Kullanıcılar', icon: Users, badge: stats.totalUsers },
           { id: 'series', label: 'Seri & Medya', icon: Film, badge: stats.totalMedia, adminOnly: true },
+          { id: 'series_automation', label: 'Seri Otomasyonu', icon: Workflow, adminOnly: true },
           { id: 'episodes', label: 'Bölümler & Kaynaklar', icon: Tv, adminOnly: true },
           { id: 'comments', label: 'Yorum Moderasyonu', icon: MessageSquare, badge: stats.totalComments },
           { id: 'scrapers', label: 'Scraper Botları & Cron', icon: Radio, adminOnly: true },
@@ -3029,6 +3045,11 @@ export default function AdminDashboardPage() {
             />
           </div>
         </div>
+      )}
+
+      {/* ================= TAB: SERİ OTOMASYONU (SERIES AUTOMATION) ================= */}
+      {activeTab === 'series_automation' && (
+        <AdminSeriesAutomation />
       )}
 
       {/* ================= TAB 4: BÖLÜMLER & KAYNAKLAR (EPISODES) ================= */}
@@ -3946,122 +3967,17 @@ export default function AdminDashboardPage() {
         }
 
         return (
-          /* SCRAPER CARDS LIST VIEW WITH BRAND BADGES & DIRECT ACTIONS */
-          <section className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/15 space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                  <Radio className="w-5 h-5 text-emerald-400" />
-                  <span>Otomatik Scraper Botları & Cron Saat Yönetimi</span>
-                </h2>
-                <p className="text-xs text-white/55 mt-0.5">
-                  GitHub Actions Cron + Cloudflare Edge Cron + 24 Saat Rolling Verification Watchdog
-                </p>
-              </div>
-
-              <div className="text-xs font-mono text-white/60 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 shrink-0">
-                Toplam <span className="text-white font-bold">{scrapers.length}</span> Aktif Bot Motoru
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {scrapers.map((bot) => {
-                const isRunning = runningScraperId === bot.id;
-                const brand = SCRAPER_BRAND_INFO[bot.id];
-
-                return (
-                  <div
-                    key={bot.id}
-                    className="p-5 rounded-3xl bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 hover:border-white/20 transition-all flex flex-col justify-between gap-5 group"
-                  >
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-3">
-                          <ScraperLogoBadge siteKey={bot.id} name={bot.name} />
-                          <div>
-                            <h3 className="text-sm font-bold text-white group-hover:text-sky-300 transition-colors">
-                              {bot.name}
-                            </h3>
-                            {brand?.category && (
-                              <span className="text-[10px] font-mono text-white/50 block">
-                                {brand.category}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => toggleScraperActive(bot)}
-                            className={`px-3 py-1 rounded-full text-[11px] font-mono font-semibold transition-all cursor-pointer border ${
-                              bot.is_enabled
-                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40 hover:bg-emerald-500/30'
-                                : 'bg-rose-500/20 text-rose-300 border-rose-400/40 hover:bg-rose-500/30'
-                            }`}
-                          >
-                            {bot.is_enabled ? 'Aktif' : 'Devre Dışı'}
-                          </button>
-                        </div>
-                      </div>
-
-                      <p className="text-xs text-white/60 leading-relaxed">
-                        {bot.notes || brand?.protocol}
-                      </p>
-
-                      {brand?.domain && (
-                        <div className="flex items-center gap-2">
-                          <a
-                            href={brand.domain}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 text-[11px] font-mono text-sky-400 hover:text-sky-300 transition-colors"
-                          >
-                            <Globe className="w-3 h-3" />
-                            <span>{brand.domain.replace('https://', '')}</span>
-                            <ExternalLink className="w-2.5 h-2.5 opacity-60" />
-                          </a>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="pt-3 border-t border-white/[0.06] flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-mono text-white/50">Cron:</span>
-                        <span className="px-2 py-0.5 rounded-lg bg-black/70 border border-white/15 text-xs font-mono text-amber-300">
-                          {bot.cron_schedule}
-                        </span>
-                        <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-white/10 text-white/80">
-                          {bot.items_synced.toLocaleString('tr-TR')} Senkron
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openScraperDetail(bot.id)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs transition-all cursor-pointer"
-                        >
-                          <Terminal className="w-3.5 h-3.5 text-sky-400" />
-                          <span>Detay & Canlı Konsol</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => triggerScraperNow(bot.id, bot.name)}
-                          disabled={isRunning}
-                          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white text-black font-bold text-xs hover:bg-white/90 transition-all cursor-pointer disabled:opacity-50 shadow-md"
-                        >
-                          <RefreshCw className={`w-3.5 h-3.5 ${isRunning ? 'animate-spin' : ''}`} />
-                          <span>{isRunning ? 'Taranıyor...' : 'Şimdi Tara'}</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
+          <AdminAutomationCenter
+            scrapers={scrapers}
+            onOpenScraperDetail={openScraperDetail}
+            onRunSingleScraper={(botId) => {
+              const bot = scrapers.find((b) => b.id === botId);
+              triggerScraperNow(botId, bot?.name || botId);
+            }}
+            runningScraperId={runningScraperId}
+            isAdmin={isAdmin}
+            pushNotification={pushNotification}
+          />
         );
       })()}
 
