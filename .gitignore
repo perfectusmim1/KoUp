@@ -39,5 +39,6 @@ supabase/.temp/
 r2_bundles/
 scrapers/ddizi_catalog.json
 scripts/reports/
+audit_reports/
 *.log
 .agents/
