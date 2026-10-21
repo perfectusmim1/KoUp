@@ -383,7 +383,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { scraperId, targetSeries } = body as { scraperId: string; targetSeries?: string };
+    const { scraperId, targetSeries, limit } = body as { scraperId: string; targetSeries?: string; limit?: number };
 
     if (!scraperId || !SCRAPER_METAS[scraperId]) {
       return NextResponse.json({ error: 'Geçersiz veya desteklenmeyen scraper ID' }, { status: 400 });
@@ -396,7 +396,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Tarama motoru betiği bulunamadı' }, { status: 500 });
     }
 
-    const args = ['-u', scriptPath, '--provider', scraperId, '--limit', '10'];
+    const scanLimit = typeof limit === 'number' && limit > 0 ? limit : 30;
+    const args = ['-u', scriptPath, '--provider', scraperId, '--limit', scanLimit.toString()];
     if (targetSeries && targetSeries.trim().length > 0) {
       args.push('--target', targetSeries.trim());
     }

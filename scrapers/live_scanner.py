@@ -112,7 +112,7 @@ def fetch_url(url: str, headers: dict = None, timeout: int = 12) -> str:
 # =========================================================================
 # SCANNER: DIZIBOX
 # =========================================================================
-def scan_dizibox(conn, cur, idx, limit=10, target=None):
+def scan_dizibox(conn, cur, idx, limit=30, target=None):
     log("BAŞLATILDI", "DiziBox canlı tarama motoru devrede (https://www.dizibox.live)...")
     headers = {'Referer': 'https://www.dizibox.live/'}
 
@@ -233,7 +233,7 @@ def scan_dizibox(conn, cur, idx, limit=10, target=None):
 # =========================================================================
 # SCANNER: DIZIKOREA
 # =========================================================================
-def scan_dizikorea(conn, cur, idx, limit=10, target=None):
+def scan_dizikorea(conn, cur, idx, limit=30, target=None):
     log("BAŞLATILDI", "DiziKorea canlı tarama motoru devrede (https://dizikorea3.com)...")
     headers = {'Referer': 'https://dizikorea3.com/'}
     series_links = []
@@ -299,7 +299,8 @@ def scan_dizikorea(conn, cur, idx, limit=10, target=None):
             if not ep_anchors:
                 ep_anchors = [("1. Bölüm", s_url)]
 
-            for ep_txt, ep_url in ep_anchors[:3]:
+            anchors_to_scan = ep_anchors if target else ep_anchors[:5]
+            for ep_txt, ep_url in anchors_to_scan:
                 season_num, ep_num = parse_season_and_episode(ep_url, ep_txt)
                 clean_name = clean_episode_title(ep_txt or f"{season_num}. Sezon {ep_num}. Bölüm", season_num, ep_num)
                 ep_id, _ = match_or_create_episode(cur, did, season_num, ep_num, clean_name, ep_url)
@@ -367,7 +368,7 @@ def scan_dizikorea(conn, cur, idx, limit=10, target=None):
 # =========================================================================
 # SCANNER: DDIZI
 # =========================================================================
-def scan_ddizi(conn, cur, idx, limit=10, target=None):
+def scan_ddizi(conn, cur, idx, limit=30, target=None):
     log("BAŞLATILDI", "DDizi canlı tarama motoru devrede (https://www.ddizi.tel)...")
     headers = {'Referer': 'https://www.ddizi.tel/'}
     ep_links = []
@@ -541,7 +542,7 @@ def fetch_animecix_json(endpoint: str, qs: str, retries: int = 3):
             time.sleep(0.5)
     return None
 
-def scan_animecix(conn, cur, idx, limit=10, target=None):
+def scan_animecix(conn, cur, idx, limit=30, target=None):
     log("BAŞLATILDI", "AnimeciX canlı tarama motoru devrede...")
     synced_items = []
     touched_dramas = set()
@@ -666,7 +667,7 @@ def scan_animecix(conn, cur, idx, limit=10, target=None):
 # =========================================================================
 # SCANNER: HDFILM (Direct Inner HLS Only)
 # =========================================================================
-def scan_hdfilm(conn, cur, idx, limit=10, target=None):
+def scan_hdfilm(conn, cur, idx, limit=30, target=None):
     log("BAŞLATILDI", "HDFilmcehennemi canlı tarama motoru devrede (Doğrudan HLS Çözücü)...")
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -734,7 +735,8 @@ def scan_hdfilm(conn, cur, idx, limit=10, target=None):
                                 if m:
                                     ep_links.append((int(m.group(1)), int(m.group(2)), h))
                     ep_links.sort(key=lambda x: (x[0], x[1]))
-                    for s_num, e_num, ep_url in ep_links[:5]:
+                    links_to_scan = ep_links if target else ep_links[:5]
+                    for s_num, e_num, ep_url in links_to_scan:
                         ep_html = fetch_url(ep_url, headers={'Referer': item_url})
                         is_ph = page_is_placeholder(ep_html)
                         streams = resolve_hdfilm_streams(ep_url, ep_html)
@@ -876,7 +878,7 @@ def scan_hdfilm(conn, cur, idx, limit=10, target=None):
 # =========================================================================
 # SCANNER: ASYAWATCH
 # =========================================================================
-def scan_asyawatch(conn, cur, idx, limit=10, target=None):
+def scan_asyawatch(conn, cur, idx, limit=30, target=None):
     log("BAŞLATILDI", "AsyaWatch canlı tarama motoru devrede (https://asyawatch.com)...")
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -919,7 +921,8 @@ def scan_asyawatch(conn, cur, idx, limit=10, target=None):
                     flat_eps.append(s)
             log("BÖLÜMLER", f'"{clean_title}" için {len(flat_eps)} bölüm bulundu. Kaynaklar taranıyor...')
 
-            for ep in flat_eps[:limit]:
+            eps_to_scan = flat_eps if target else flat_eps[:limit]
+            for ep in eps_to_scan:
                 s_num = ep.get('season_no', 1) or 1
                 e_num = ep.get('episode_no', 1) or 1
                 ep_slug = ep.get('used_slug', f"dizi/{target_slug}/sezon-{s_num}/bolum-{e_num}")
@@ -1003,7 +1006,7 @@ def scan_asyawatch(conn, cur, idx, limit=10, target=None):
 # =========================================================================
 # SCANNER: DIZILLA
 # =========================================================================
-def scan_dizilla(conn, cur, idx, limit=10, target=None):
+def scan_dizilla(conn, cur, idx, limit=30, target=None):
     log("BAŞLATILDI", "Dizilla canlı tarama motoru devrede (https://dizilla.now)...")
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -1055,7 +1058,8 @@ def scan_dizilla(conn, cur, idx, limit=10, target=None):
                     flat_eps.append(s)
             log("BÖLÜMLER", f'"{clean_title}" için {len(flat_eps)} bölüm bulundu. Kaynaklar taranıyor...')
 
-            for ep in flat_eps[:limit]:
+            eps_to_scan = flat_eps if target else flat_eps[:limit]
+            for ep in eps_to_scan:
                 s_num = ep.get('season_no', 1) or 1
                 e_num = ep.get('episode_no', 1) or 1
                 ep_slug = ep.get('used_slug', f"{target_slug}-{s_num}-sezon-{e_num}-bolum")
@@ -1139,7 +1143,7 @@ def scan_dizilla(conn, cur, idx, limit=10, target=None):
 # =========================================================================
 # SCANNER: DIZIFON (Asya, Kore, Çin & Hint Arşivi)
 # =========================================================================
-def scan_dizifon(conn, cur, idx, limit=10, target=None):
+def scan_dizifon(conn, cur, idx, limit=30, target=None):
     log("BAŞLATILDI", "DiziFon canlı tarama motoru devrede (https://www.dizifon.cc)...")
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -1200,7 +1204,8 @@ def scan_dizifon(conn, cur, idx, limit=10, target=None):
                         ep_links.append((ea.get_text(strip=True), eh))
 
                 log("BÖLÜMLER", f'"{clean_title}" için {len(ep_links)} bölüm bulundu. Kaynaklar çözümleniyor...')
-                for txt, ep_url in ep_links[:limit]:
+                eps_to_scan = ep_links if target else ep_links[:limit]
+                for txt, ep_url in eps_to_scan:
                     m_s = re.search(r'(\d+)-sezon', ep_url)
                     m_e = re.search(r'(\d+)-bolum', ep_url)
                     s_num = int(m_s.group(1)) if m_s else 1
@@ -1341,7 +1346,7 @@ def scan_dizifon(conn, cur, idx, limit=10, target=None):
 def main():
     parser = argparse.ArgumentParser(description="KoUp Live Scraper Engine")
     parser.add_argument("--provider", required=True, choices=["dizibox", "dizikorea", "ddizi", "animecix", "hdfilm", "asyawatch", "dizilla", "dizifon"])
-    parser.add_argument("--limit", type=int, default=10)
+    parser.add_argument("--limit", type=int, default=30)
     parser.add_argument("--target", type=str, default=None)
     args = parser.parse_args()
 

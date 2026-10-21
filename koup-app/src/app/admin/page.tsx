@@ -1048,7 +1048,7 @@ export default function AdminDashboardPage() {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ scraperId, targetSeries }),
+        body: JSON.stringify({ scraperId, targetSeries, limit: 30 }),
       });
 
       if (!resp.ok) {
