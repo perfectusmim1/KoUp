@@ -429,6 +429,21 @@ function isLikelyUrl(val?: string | null): boolean {
   );
 }
 
+const SCRAPER_BLOCK_HOSTS = [
+  'hdfilmcehennemi',
+  'dizifon',
+  'dizikorea',
+  'ddizi',
+  'dizibox',
+  'asyaanimeleri',
+  'asyaluna',
+  'asyadizi',
+  'turkanime',
+  'asyaking',
+  'diziyou',
+  'dizilla',
+];
+
 export function getProxiedImageUrl(
   url?: string | null,
   fallbackOrTitle?: string | null,
@@ -438,7 +453,8 @@ export function getProxiedImageUrl(
   tmdbId?: number | string | null,
   mediaType?: 'tv' | 'movie' | null,
   year?: number | string | null,
-  nativeTitle?: string | null
+  nativeTitle?: string | null,
+  mediaId?: number | string | null
 ): string {
   const isFallbackUrl = isLikelyUrl(fallbackOrTitle);
   const resolvedTitle = titleHint || (!isFallbackUrl ? fallbackOrTitle : null);
@@ -446,18 +462,32 @@ export function getProxiedImageUrl(
   const mtQuery = mediaType ? `&mediaType=${mediaType}` : '';
   const yrQuery = year ? `&year=${encodeURIComponent(String(year))}` : '';
   const ntQuery = nativeTitle ? `&nativeTitle=${encodeURIComponent(nativeTitle.trim())}` : '';
+  const mIdQuery = mediaId ? `&mediaId=${encodeURIComponent(String(mediaId))}` : '';
 
   if (!url || !url.trim() || url === '/logo-dark.png') {
     if (isFallbackUrl && fallbackOrTitle) {
-      return getProxiedImageUrl(fallbackOrTitle, null, resolvedTitle, tmdbSize, type, tmdbId, mediaType, year, nativeTitle);
+      return getProxiedImageUrl(fallbackOrTitle, null, resolvedTitle, tmdbSize, type, tmdbId, mediaType, year, nativeTitle, mediaId);
     }
     if (tmdbId) {
-      return `/api/image-proxy?tmdbId=${encodeURIComponent(String(tmdbId))}${typeQuery}${mtQuery}${yrQuery}${ntQuery}`;
+      return `/api/image-proxy?tmdbId=${encodeURIComponent(String(tmdbId))}${typeQuery}${mtQuery}${yrQuery}${ntQuery}${mIdQuery}&size=${tmdbSize}`;
     }
     if (resolvedTitle && resolvedTitle.trim()) {
-      return `/api/image-proxy?title=${encodeURIComponent(resolvedTitle.trim())}${typeQuery}${mtQuery}${yrQuery}${ntQuery}`;
+      return `/api/image-proxy?title=${encodeURIComponent(resolvedTitle.trim())}${typeQuery}${mtQuery}${yrQuery}${ntQuery}${mIdQuery}&size=${tmdbSize}`;
     }
     return type === 'person' ? '/logo-dark.png' : '/logo-dark.png';
+  }
+
+  // Fast-track: Turkish scraper hosts block direct server fetching (Cloudflare/DDoS-Guard).
+  // Immediately bypass to TMDB resolver to avoid 4.5s fetch timeout stall.
+  const lowerUrl = url ? url.toLowerCase() : '';
+  const isScraperUrl = Boolean(lowerUrl && SCRAPER_BLOCK_HOSTS.some((h) => lowerUrl.includes(h)));
+  if (isScraperUrl) {
+    if (tmdbId) {
+      return `/api/image-proxy?tmdbId=${encodeURIComponent(String(tmdbId))}${typeQuery}${mtQuery}${yrQuery}${ntQuery}${mIdQuery}&size=${tmdbSize}`;
+    }
+    if (resolvedTitle && resolvedTitle.trim()) {
+      return `/api/image-proxy?title=${encodeURIComponent(resolvedTitle.trim())}${typeQuery}${mtQuery}${yrQuery}${ntQuery}${mIdQuery}&size=${tmdbSize}&fallback=${encodeURIComponent(url)}`;
+    }
   }
 
   if (url.startsWith('/') || url.startsWith('data:')) return url;
@@ -532,6 +562,9 @@ export function getProxiedImageUrl(
   }
   if (nativeTitle && nativeTitle.trim()) {
     params.set('nativeTitle', nativeTitle.trim());
+  }
+  if (mediaId) {
+    params.set('mediaId', String(mediaId));
   }
   return `/api/image-proxy?${params.toString()}`;
 }

@@ -249,11 +249,26 @@ def match_or_create_enriched_drama(
             did = row[0]
 
     if did:
-        cur.execute("SELECT id, title, slug, cover_image FROM dramas WHERE id = ?", (did,))
+        cur.execute("SELECT id, title, slug, cover_image, backdrop_image, tmdb_id FROM dramas WHERE id = ?", (did,))
         row = cur.fetchone()
         if row:
             tag_site(cur, row[0], site_tag)
-            return row[0], row[1], row[2], row[3] or "/logo-dark.png"
+            cover = row[3]
+            backdrop = row[4]
+            tmdb_id = row[5]
+            if not cover or cover == "/logo-dark.png" or any(h in (cover or "").lower() for h in ["dizifon", "dizikorea", "ddizi", "dizibox", "asyaanimeleri"]):
+                try:
+                    meta = resolve_tmdb_metadata(clean_t, year=year_hint, country_hint=country_hint, content_type=content_type)
+                    if meta and meta.get("cover_image") and "image.tmdb.org" in meta["cover_image"]:
+                        cover = meta["cover_image"]
+                        backdrop = meta.get("backdrop_image") or backdrop or cover
+                        tmdb_id = meta.get("tmdb_id") or tmdb_id
+                        cur.execute("UPDATE dramas SET cover_image = ?, backdrop_image = COALESCE(?, backdrop_image), tmdb_id = COALESCE(?, tmdb_id) WHERE id = ?", (cover, backdrop, tmdb_id, row[0]))
+                        conn.commit()
+                        sb_request("PATCH", f"/rest/v1/media?id=eq.{row[0]}", body={"cover_image": cover, "backdrop_image": backdrop, "tmdb_id": tmdb_id})
+                except Exception:
+                    pass
+            return row[0], row[1], row[2], cover or "/logo-dark.png"
 
     # 2. Not found by string -> Resolve TMDB / AniList metadata first so we can check external IDs in DB!
     meta = None

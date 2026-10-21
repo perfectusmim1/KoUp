@@ -678,8 +678,11 @@ export default function SeriesDetailPage({
   const isFavorited = Boolean(isUserActive && (userProg?.is_favorite || userProg?.is_favorited));
   const isFollowed = Boolean(isUserActive && followedMediaIds.includes(media.id));
   const totalEpCount = Math.max(media.episode_count || 0, episodes.length, 1);
-  const resumeEp = isUserActive ? getNextEpisodeNumber(userProg, totalEpCount) : 1;
-  const resumeSeason = (isUserActive && userProg?.last_season_num) || 1;
+  const firstAvailableEp = episodes[0];
+  const defaultEpNum = firstAvailableEp?.episode_number ?? 1;
+  const defaultSeasonNum = firstAvailableEp?.season_number ?? 1;
+  const resumeEp = isUserActive ? getNextEpisodeNumber(userProg, totalEpCount) : defaultEpNum;
+  const resumeSeason = (isUserActive && userProg?.last_season_num) || defaultSeasonNum;
   const watchedEpCount = Array.isArray(userProg?.watched_episodes)
     ? userProg.watched_episodes.length
     : 0;

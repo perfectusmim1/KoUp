@@ -1,7 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
+import { supabaseAdmin } from '@/lib/supabase';
 
 const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB max to prevent memory exhaustion
+
+const SCRAPER_BLOCK_HOSTS = [
+  'hdfilmcehennemi',
+  'dizifon',
+  'dizikorea',
+  'ddizi',
+  'dizibox',
+  'asyaanimeleri',
+  'asyaluna',
+  'asyadizi',
+  'turkanime',
+  'asyaking',
+  'diziyou',
+  'dizilla',
+];
+
+function isScraperHost(urlStr?: string | null): boolean {
+  if (!urlStr) return false;
+  const low = urlStr.toLowerCase();
+  return SCRAPER_BLOCK_HOSTS.some((h) => low.includes(h));
+}
+
+function persistEnrichedCoverToSupabase(mediaId?: string | number | null, posterUrl?: string | null, tmdbId?: string | number | null) {
+  if (!mediaId || !posterUrl || !posterUrl.startsWith('https://image.tmdb.org/')) return;
+  const mId = typeof mediaId === 'number' ? mediaId : parseInt(String(mediaId), 10);
+  if (isNaN(mId) || mId <= 0) return;
+
+  const payload: Record<string, any> = {
+    cover_image: posterUrl,
+    updated_at: new Date().toISOString(),
+  };
+  if (tmdbId) {
+    const tId = typeof tmdbId === 'number' ? tmdbId : parseInt(String(tmdbId), 10);
+    if (!isNaN(tId) && tId > 0) payload.tmdb_id = tId;
+  }
+
+  void Promise.resolve(
+    supabaseAdmin
+      .from('media')
+      .update(payload)
+      .eq('id', mId)
+  ).catch(() => {});
+}
 
 const BLOCKED_HOST_PATTERNS = [
   /^localhost$/i,
@@ -655,6 +699,7 @@ export async function GET(req: NextRequest) {
     const fallbackUrl = searchParams.get('fallback');
     const titleParam = searchParams.get('title');
     const tmdbIdParam = searchParams.get('tmdbId');
+    const mediaIdParam = searchParams.get('mediaId');
     const mediaTypeParam = searchParams.get('mediaType') as 'tv' | 'movie' | null;
     const typeParam = searchParams.get('type'); // 'person' | 'character' | 'media' | null
     const yearParam = searchParams.get('year') || searchParams.get('release_year');
@@ -675,8 +720,8 @@ export async function GET(req: NextRequest) {
       // If it's already an official CDN URL, stream directly
       if (targetUrl.includes('image.tmdb.org') || targetUrl.includes('s4.anilist.co') || targetUrl.includes('i.mydramalist.com')) {
         urlsToTry.push(targetUrl);
-      } else if (!targetUrl.toLowerCase().includes('hdfilmcehennemi')) {
-        // hdfilmcehennemi blocks Node.js runtime with Cloudflare 403, handled via slug fallback below
+      } else if (!isScraperHost(targetUrl)) {
+        // Scraper hosts block Node.js with Cloudflare/DDoS-Guard 403, immediately handled via TMDB fallback below
         const uncroppedMaster = targetUrl
           .replace(/-\d{2,4}x\d{2,4}(?=\.(?:jpe?g|png|webp|avif)(?:\?.*)?$)/i, '')
           .replace(/[?&](?:resize|fit|w|h)=[^&]+/gi, '');
@@ -691,7 +736,7 @@ export async function GET(req: NextRequest) {
       fallbackUrl &&
       !urlsToTry.includes(fallbackUrl) &&
       (fallbackUrl.startsWith('http://') || fallbackUrl.startsWith('https://')) &&
-      !fallbackUrl.toLowerCase().includes('hdfilmcehennemi')
+      !isScraperHost(fallbackUrl)
     ) {
       urlsToTry.push(fallbackUrl);
     }
@@ -762,6 +807,9 @@ export async function GET(req: NextRequest) {
         const isBanner = typeParam === 'banner' || typeParam === 'backdrop';
         const tmdbPoster = await fetchTmdbPosterById(tmdbIdParam, mediaTypeParam, titleParam, isBanner);
         if (tmdbPoster) {
+          if (!isBanner) {
+            persistEnrichedCoverToSupabase(mediaIdParam, tmdbPoster, tmdbIdParam);
+          }
           const streamed = await fetchAndStreamImage(tmdbPoster, sizeParam);
           if (streamed) return streamed;
         }
@@ -804,6 +852,7 @@ export async function GET(req: NextRequest) {
         nativeTitleParam
       );
       if (posterUrl) {
+        persistEnrichedCoverToSupabase(mediaIdParam, posterUrl);
         const streamed = await fetchAndStreamImage(posterUrl, sizeParam);
         if (streamed) return streamed;
       }

@@ -210,15 +210,24 @@ export default function HomePage() {
         ...(cds || []).filter((m) => m.content_type !== 'film').slice(0, 2),
       ]);
     }
-    if (top10Movies && top10Movies.length > 0) {
+    if (top10Movies && top10Movies.length >= 10) {
       setTop10MoviesItems(top10Movies.slice(0, 10));
+    } else if (top10Movies && top10Movies.length > 0) {
+      setTop10MoviesItems((prev) => {
+        const seen = new Set(top10Movies.map((m) => m.id));
+        const combined = [...top10Movies, ...prev.filter((m) => !seen.has(m.id))];
+        return combined.slice(0, 10);
+      });
     } else {
-      const fallbackFilms = [...(kds || []), ...(ans || []), ...(cds || []), ...(gls || [])].filter(
-        (m) => m.content_type === 'film' || m.content_type === 'movie'
-      );
-      if (fallbackFilms.length > 0) {
-        setTop10MoviesItems(fallbackFilms.slice(0, 10));
-      }
+      setTop10MoviesItems((prev) => {
+        if (prev.length >= 10) return prev;
+        const fallbackFilms = [...(kds || []), ...(ans || []), ...(cds || []), ...(gls || [])].filter(
+          (m) => m.content_type === 'film' || m.content_type === 'movie'
+        );
+        const seen = new Set(prev.map((m) => m.id));
+        const combined = [...prev, ...fallbackFilms.filter((m) => !seen.has(m.id))];
+        return combined.length > 0 ? combined.slice(0, 10) : prev;
+      });
     }
     if (kds) setKdramaItems(kds);
     if (cds) setCdramaItems(cds);
@@ -1648,10 +1657,33 @@ export default function HomePage() {
 
                   <div className="relative z-10 w-36 sm:w-44 md:w-52 min-w-[144px] sm:min-w-[176px] md:min-w-[208px] aspect-[2/3] rounded-xl sm:rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 group-hover:border-white/30 shadow-[0_20px_45px_rgba(0,0,0,0.85)] transition-all duration-300 flex flex-col justify-end p-3 sm:p-4">
                     <img
-                      src={getProxiedImageUrl(item.cover_image, item.title, null, 'w342', 'poster')}
+                      src={getProxiedImageUrl(
+                        item.cover_image,
+                        item.poster_fallback_url || null,
+                        item.title,
+                        'w342',
+                        'poster',
+                        item.tmdb_id,
+                        item.content_type === 'film' ? 'movie' : 'tv',
+                        item.release_year,
+                        item.native_title,
+                        item.id
+                      )}
                       alt={item.title}
                       loading="lazy"
                       decoding="async"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (!target.dataset.triedFallback && item.poster_fallback_url && item.poster_fallback_url !== item.cover_image) {
+                          target.dataset.triedFallback = 'true';
+                          target.src = getProxiedImageUrl(item.poster_fallback_url, null, item.title, 'w342', 'poster', item.tmdb_id);
+                        } else if (!target.dataset.triedProxy && item.title) {
+                          target.dataset.triedProxy = 'true';
+                          target.src = `/api/image-proxy?mediaId=${item.id}&tmdbId=${encodeURIComponent(String(item.tmdb_id || ''))}&title=${encodeURIComponent(item.title)}&mediaType=tv&type=poster`;
+                        } else {
+                          target.src = '/logo-dark.png';
+                        }
+                      }}
                       className="absolute inset-0 w-full h-full object-cover"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-black/40 to-transparent" />
@@ -1732,10 +1764,33 @@ export default function HomePage() {
 
                   <div className="relative z-10 w-36 sm:w-44 md:w-52 min-w-[144px] sm:min-w-[176px] md:min-w-[208px] aspect-[2/3] rounded-xl sm:rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 group-hover:border-white/30 shadow-[0_20px_45px_rgba(0,0,0,0.85)] transition-all duration-300 flex flex-col justify-end p-3 sm:p-4">
                     <img
-                      src={getProxiedImageUrl(item.cover_image, item.title, null, 'w342', 'poster')}
+                      src={getProxiedImageUrl(
+                        item.cover_image,
+                        item.poster_fallback_url || null,
+                        item.title,
+                        'w342',
+                        'poster',
+                        item.tmdb_id,
+                        item.content_type === 'film' ? 'movie' : 'tv',
+                        item.release_year,
+                        item.native_title,
+                        item.id
+                      )}
                       alt={item.title}
                       loading="lazy"
                       decoding="async"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (!target.dataset.triedFallback && item.poster_fallback_url && item.poster_fallback_url !== item.cover_image) {
+                          target.dataset.triedFallback = 'true';
+                          target.src = getProxiedImageUrl(item.poster_fallback_url, null, item.title, 'w342', 'poster', item.tmdb_id);
+                        } else if (!target.dataset.triedProxy && item.title) {
+                          target.dataset.triedProxy = 'true';
+                          target.src = `/api/image-proxy?mediaId=${item.id}&tmdbId=${encodeURIComponent(String(item.tmdb_id || ''))}&title=${encodeURIComponent(item.title)}&mediaType=movie&type=poster`;
+                        } else {
+                          target.src = '/logo-dark.png';
+                        }
+                      }}
                       className="absolute inset-0 w-full h-full object-cover"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-black/40 to-transparent" />

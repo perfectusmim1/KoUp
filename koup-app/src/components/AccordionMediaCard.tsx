@@ -272,7 +272,10 @@ function AccordionMediaCardComponent({
     'w342',
     'poster',
     item.tmdb_id,
-    mediaType
+    mediaType,
+    item.release_year,
+    item.native_title,
+    item.id
   );
   const hasDistinctBackdrop = Boolean(
     effectiveBackdrop &&
@@ -280,7 +283,18 @@ function AccordionMediaCardComponent({
       effectiveBackdrop !== effectiveCover
   );
   const backdropSrc = hasDistinctBackdrop
-    ? getProxiedImageUrl(effectiveBackdrop, effectiveCover, item.title, 'w780', 'banner', item.tmdb_id, mediaType)
+    ? getProxiedImageUrl(
+        effectiveBackdrop,
+        effectiveCover,
+        item.title,
+        'w780',
+        'banner',
+        item.tmdb_id,
+        mediaType,
+        item.release_year,
+        item.native_title,
+        item.id
+      )
     : posterSrc;
 
   const countryCode = item.country_code || item.country;
@@ -670,7 +684,7 @@ function AccordionMediaCardComponent({
                 target.src = getProxiedImageUrl(item.poster_fallback_url, null, item.title, 'w342', 'poster', item.tmdb_id, mediaType);
               } else if (!target.dataset.triedProxy && item.title) {
                 target.dataset.triedProxy = 'true';
-                target.src = `/api/image-proxy?tmdbId=${encodeURIComponent(String(item.tmdb_id || ''))}&title=${encodeURIComponent(item.title)}&mediaType=${mediaType}&type=poster`;
+                target.src = `/api/image-proxy?mediaId=${item.id}&tmdbId=${encodeURIComponent(String(item.tmdb_id || ''))}&title=${encodeURIComponent(item.title)}&mediaType=${mediaType}&type=poster`;
               } else {
                 target.src = '/logo-dark.png';
               }
