@@ -1471,7 +1471,7 @@ export default function HomePage() {
                         item.backdrop_image || item.cover_image,
                         item.title,
                         null,
-                        'w780',
+                        'w1280',
                         'banner',
                         item.tmdb_id,
                         item.content_type === 'film' ? 'movie' : 'tv'
@@ -1605,7 +1605,7 @@ export default function HomePage() {
                         m.backdrop_image || m.cover_image,
                         m.title,
                         null,
-                        'w780',
+                        'w1280',
                         'banner',
                         m.tmdb_id,
                         m.content_type === 'film' ? 'movie' : 'tv'
@@ -1808,7 +1808,7 @@ export default function HomePage() {
                         item.cover_image,
                         item.poster_fallback_url || null,
                         item.title,
-                        'w342',
+                        'w500',
                         'poster',
                         item.tmdb_id,
                         item.content_type === 'film' ? 'movie' : 'tv',
@@ -1823,7 +1823,7 @@ export default function HomePage() {
                         const target = e.currentTarget;
                         if (!target.dataset.triedFallback && item.poster_fallback_url && item.poster_fallback_url !== item.cover_image) {
                           target.dataset.triedFallback = 'true';
-                          target.src = getProxiedImageUrl(item.poster_fallback_url, null, item.title, 'w342', 'poster', item.tmdb_id);
+                          target.src = getProxiedImageUrl(item.poster_fallback_url, null, item.title, 'w500', 'poster', item.tmdb_id);
                         } else if (!target.dataset.triedProxy && item.title) {
                           target.dataset.triedProxy = 'true';
                           target.src = `/api/image-proxy?mediaId=${item.id}&tmdbId=${encodeURIComponent(String(item.tmdb_id || ''))}&title=${encodeURIComponent(item.title)}&mediaType=tv&type=poster`;
@@ -1915,7 +1915,7 @@ export default function HomePage() {
                         item.cover_image,
                         item.poster_fallback_url || null,
                         item.title,
-                        'w342',
+                        'w500',
                         'poster',
                         item.tmdb_id,
                         item.content_type === 'film' ? 'movie' : 'tv',
@@ -1930,7 +1930,7 @@ export default function HomePage() {
                         const target = e.currentTarget;
                         if (!target.dataset.triedFallback && item.poster_fallback_url && item.poster_fallback_url !== item.cover_image) {
                           target.dataset.triedFallback = 'true';
-                          target.src = getProxiedImageUrl(item.poster_fallback_url, null, item.title, 'w342', 'poster', item.tmdb_id);
+                          target.src = getProxiedImageUrl(item.poster_fallback_url, null, item.title, 'w500', 'poster', item.tmdb_id);
                         } else if (!target.dataset.triedProxy && item.title) {
                           target.dataset.triedProxy = 'true';
                           target.src = `/api/image-proxy?mediaId=${item.id}&tmdbId=${encodeURIComponent(String(item.tmdb_id || ''))}&title=${encodeURIComponent(item.title)}&mediaType=movie&type=poster`;

@@ -778,7 +778,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                       currentDisplayProfile.avatar_url,
                       currentDisplayProfile.display_name || currentDisplayProfile.username,
                       null,
-                      'w342',
+                      'w500',
                       'person'
                     )}
                     alt={currentDisplayProfile.display_name || currentDisplayProfile.username}
@@ -1613,7 +1613,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                               media.cover_image,
                               media.title,
                               null,
-                              'w342',
+                              'w500',
                               'poster'
                             )
                           : person?.image_url
@@ -1621,7 +1621,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                               person.image_url,
                               person.name,
                               null,
-                              'w342',
+                              'w500',
                               'person'
                             )
                           : mag?.featured_image

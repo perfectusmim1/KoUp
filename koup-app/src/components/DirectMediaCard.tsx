@@ -34,7 +34,7 @@ function DirectMediaCardComponent({
     item.cover_image,
     item.poster_fallback_url || null,
     item.title,
-    'w342',
+    'w500',
     'poster',
     item.tmdb_id,
     mediaType,
@@ -107,7 +107,7 @@ function DirectMediaCardComponent({
               item.poster_fallback_url,
               null,
               item.title,
-              'w342',
+              'w500',
               'poster',
               item.tmdb_id
             );

@@ -646,10 +646,12 @@ async function processImageBuffer(
         ? 500
         : sizeParam === 'w780'
         ? 780
-        : 342;
+        : sizeParam === 'w1280'
+        ? 1280
+        : 500;
     const resized = await sharp(inputBuf)
       .resize({ width: targetWidth, withoutEnlargement: true })
-      .webp({ quality: 76 })
+      .webp({ quality: 80 })
       .toBuffer();
     return { buf: new Uint8Array(resized), contentType: 'image/webp' };
   } catch {
@@ -704,7 +706,7 @@ export async function GET(req: NextRequest) {
     const typeParam = searchParams.get('type'); // 'person' | 'character' | 'media' | null
     const yearParam = searchParams.get('year') || searchParams.get('release_year');
     const nativeTitleParam = searchParams.get('nativeTitle') || searchParams.get('native_title');
-    const sizeParam = searchParams.get('size') || (typeParam === 'banner' ? 'w780' : 'w342');
+    const sizeParam = searchParams.get('size') || (typeParam === 'banner' ? 'w1280' : 'w500');
 
     const isPerson = typeParam === 'person' || typeParam === 'character';
 

@@ -2664,17 +2664,17 @@ export default function NetflixPlayer({
       {ambientLightingEnabled && !isFullscreen && !isTrailerMode && (
         <div
           aria-hidden="true"
-          className={`ambient-light-aura absolute pointer-events-none select-none -z-10 transition-opacity duration-1000 ease-out -top-24 sm:-top-32 md:-top-44 lg:-top-56 -bottom-24 sm:-bottom-32 md:-bottom-44 lg:-bottom-56 -left-20 sm:-left-32 md:-left-48 lg:-left-64 xl:-left-72 ${
+          className={`ambient-light-aura absolute pointer-events-none select-none -z-10 transition-opacity duration-1000 ease-out -top-28 sm:-top-36 md:-top-48 lg:-top-64 xl:-top-72 -bottom-36 sm:-bottom-52 md:-bottom-72 lg:-bottom-[460px] xl:-bottom-[560px] -left-24 sm:-left-36 md:-left-56 lg:-left-72 xl:-left-[360px] ${
             hasRail
-              ? '-right-20 sm:-right-32 md:-right-48 lg:-right-[520px] xl:-right-[600px]'
-              : '-right-20 sm:-right-32 md:-right-48 lg:-right-64 xl:-right-72'
+              ? '-right-28 sm:-right-40 md:-right-60 lg:-right-[580px] xl:-right-[720px]'
+              : '-right-24 sm:-right-36 md:-right-56 lg:-right-72 xl:-right-[360px]'
           }`}
           style={{
             opacity: isPlaying ? 0.95 : 0.45,
             transform: 'translateZ(0)',
             backfaceVisibility: 'hidden',
-            maskImage: `radial-gradient(ellipse 94% 90% at ${hasRail ? '44% 50%' : '50% 50%'}, black 35%, rgba(0,0,0,0.68) 68%, transparent 100%)`,
-            WebkitMaskImage: `radial-gradient(ellipse 94% 90% at ${hasRail ? '44% 50%' : '50% 50%'}, black 35%, rgba(0,0,0,0.68) 68%, transparent 100%)`,
+            maskImage: `radial-gradient(ellipse 48% 44% at ${hasRail ? '41% 38%' : '50% 38%'}, black 0%, black 16%, rgba(0,0,0,0.85) 28%, rgba(0,0,0,0.60) 44%, rgba(0,0,0,0.35) 60%, rgba(0,0,0,0.16) 74%, rgba(0,0,0,0.05) 86%, rgba(0,0,0,0.01) 94%, transparent 100%)`,
+            WebkitMaskImage: `radial-gradient(ellipse 48% 44% at ${hasRail ? '41% 38%' : '50% 38%'}, black 0%, black 16%, rgba(0,0,0,0.85) 28%, rgba(0,0,0,0.60) 44%, rgba(0,0,0,0.35) 60%, rgba(0,0,0,0.16) 74%, rgba(0,0,0,0.05) 86%, rgba(0,0,0,0.01) 94%, transparent 100%)`,
           }}
         >
           {/* Dual-buffer real-time ambient canvases with fluid 1200ms crossfade and organic wave motion */}

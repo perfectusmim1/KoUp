@@ -449,7 +449,7 @@ export function getProxiedImageUrl(
   url?: string | null,
   fallbackOrTitle?: string | null,
   titleHint?: string | null,
-  tmdbSize: 'w92' | 'w154' | 'w185' | 'w300' | 'w342' | 'w480' | 'w500' | 'w780' | 'w1280' | 'original' = 'w342',
+  tmdbSize: 'w92' | 'w154' | 'w185' | 'w300' | 'w342' | 'w480' | 'w500' | 'w780' | 'w1280' | 'original' = 'w500',
   type?: 'media' | 'person' | 'character' | 'banner' | 'poster',
   tmdbId?: number | string | null,
   mediaType?: 'tv' | 'movie' | null,
@@ -498,7 +498,7 @@ export function getProxiedImageUrl(
     url = url.replace(/https?:\/\/cdn\.webdrama\.io\/actor\//i, 'https://i.mydramalist.com/');
   }
 
-  // TMDB resolution: vitrin & seri sayfası original kalır, kartlar 480p (w342) standardında net ve hafif tutulur
+  // TMDB resolution: vitrin & seri sayfası original kalır, kartlar 720p (w500 dikey / w1280 banner) standardında net tutulur
   if (url.includes('image.tmdb.org')) {
     let effectiveSize: string;
 
@@ -506,11 +506,11 @@ export function getProxiedImageUrl(
       // Vitrin / Series Detail / Actor Detail: uncompressed original
       effectiveSize = 'original';
     } else if (type === 'banner') {
-      // Kart sinematik 16:9 geniş arka planı: optimize w300 veya w780
-      effectiveSize = tmdbSize === 'w300' ? 'w300' : 'w780';
+      // Kart sinematik 16:9 geniş arka planı: optimize w300 (ambiyans) veya w1280 (720p HD banner)
+      effectiveSize = tmdbSize === 'w300' ? 'w300' : 'w1280';
     } else {
-      // Seri kartları, oyuncular, listeler, takvim afişleri: net 480p standardı w342 (342x513)
-      effectiveSize = tmdbSize && tmdbSize !== 'w185' && tmdbSize !== 'w480' ? tmdbSize : 'w342';
+      // Seri kartları, oyuncular, listeler, takvim afişleri: net 720p standardı w500 (500x750)
+      effectiveSize = tmdbSize && tmdbSize !== 'w185' && tmdbSize !== 'w342' && tmdbSize !== 'w480' ? tmdbSize : 'w500';
     }
 
     return url.replace(
@@ -527,13 +527,13 @@ export function getProxiedImageUrl(
     return `${url}=s192-c`;
   }
 
-  // AniList images: vitrin ve seri sayfasında orijinal kaliteli hali, kartlarda 480p standardına optimize edilir
+  // AniList images: vitrin ve seri sayfasında orijinal kaliteli hali, kartlarda 720p standardına optimize edilir
   if (url.includes('s4.anilist.co')) {
     if (tmdbSize === 'original') {
       return url;
     }
-    // AniList görsellerini de kartlarda 480p standardına getirmek için image-proxy üzerinden w342 WebP'ye normalize et
-    const aniSize = type === 'banner' ? (tmdbSize === 'w300' ? 'w300' : 'w780') : 'w342';
+    // AniList görsellerini de kartlarda 720p standardına getirmek için image-proxy üzerinden w500 / w1280 WebP'ye normalize et
+    const aniSize = type === 'banner' ? (tmdbSize === 'w300' ? 'w300' : 'w1280') : 'w500';
     const params = new URLSearchParams({ url, size: aniSize });
     if (type) params.set('type', type);
     return `/api/image-proxy?${params.toString()}`;

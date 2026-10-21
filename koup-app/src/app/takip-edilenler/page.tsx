@@ -640,7 +640,7 @@ export default function FollowedPage() {
                               person.image_url,
                               person.name,
                               null,
-                              'w342',
+                              'w500',
                               'person',
                               person.tmdb_id
                             )}

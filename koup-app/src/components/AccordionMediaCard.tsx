@@ -161,7 +161,7 @@ export function preloadMediaImages(items?: (MediaItem | null | undefined)[]) {
   try {
     if (localStorage.getItem('koup_pref_card_hover_expand') === 'false') return;
   } catch {}
-  // Stagger-preload the first 6 visible cards' w780 backdrops during idle time
+  // Stagger-preload the first 6 visible cards' w1280 backdrops during idle time
   // (pauses automatically while any card is actively expanding)
   const slice = items.slice(0, 6);
   slice.forEach((item, idx) => {
@@ -171,7 +171,7 @@ export function preloadMediaImages(items?: (MediaItem | null | undefined)[]) {
       item.backdrop_image,
       item.cover_image,
       item.title,
-      'w780',
+      'w1280',
       'banner',
       item.tmdb_id,
       mediaType
@@ -267,12 +267,12 @@ function AccordionMediaCardComponent({
       ? 0
       : Math.max(Number(item.episode_count || 0), Number(item.episodes_available || 0));
 
-  // 480p standard: w342 (342x513) for vertical posters, w780 for widescreen backdrops
+  // 720p standard: w500 (500x750) for vertical posters, w1280 for widescreen backdrops
   const posterSrc = getProxiedImageUrl(
     effectiveCover,
     item.poster_fallback_url || null,
     item.title,
-    'w342',
+    'w500',
     'poster',
     item.tmdb_id,
     mediaType,
@@ -290,7 +290,7 @@ function AccordionMediaCardComponent({
         effectiveBackdrop,
         effectiveCover,
         item.title,
-        'w780',
+        'w1280',
         'banner',
         item.tmdb_id,
         mediaType,
@@ -694,7 +694,7 @@ function AccordionMediaCardComponent({
               const target = e.currentTarget;
               if (!target.dataset.triedFallback && item.poster_fallback_url && item.poster_fallback_url !== effectiveCover) {
                 target.dataset.triedFallback = 'true';
-                target.src = getProxiedImageUrl(item.poster_fallback_url, null, item.title, 'w342', 'poster', item.tmdb_id, mediaType);
+                target.src = getProxiedImageUrl(item.poster_fallback_url, null, item.title, 'w500', 'poster', item.tmdb_id, mediaType);
               } else if (!target.dataset.triedProxy && item.title) {
                 target.dataset.triedProxy = 'true';
                 target.src = `/api/image-proxy?mediaId=${item.id}&tmdbId=${encodeURIComponent(String(item.tmdb_id || ''))}&title=${encodeURIComponent(item.title)}&mediaType=${mediaType}&type=poster`;

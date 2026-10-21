@@ -312,7 +312,7 @@ function RecentEpisodesContent() {
                     m.backdrop_image || m.cover_image,
                     m.title,
                     null,
-                    'w780',
+                    'w1280',
                     'banner',
                     m.tmdb_id,
                     m.content_type === 'film' ? 'movie' : 'tv'
