@@ -442,6 +442,13 @@ def main():
         line = f"[{now_str}] {msg}"
         captured_logs.append(line)
         print(line, flush=True)
+        try:
+            log_dir = os.path.join(_ROOT, "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            with open(os.path.join(log_dir, "automation.log"), "a", encoding="utf-8") as f:
+                f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+        except Exception:
+            pass
 
     record_log(f"KoUp 12 Saatlik Otomasyon Pipeline Başlatıldı — Hedef: {target} (Tetikleyici: {trigger_type})")
 
