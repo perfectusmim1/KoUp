@@ -215,6 +215,10 @@ def main():
 
         if al_data:
             al_id = al_data.get('id')
+            existing_al = cur.execute("SELECT id, title FROM dramas WHERE anilist_id = ? AND id != ?", (al_id, did)).fetchone()
+            if existing_al:
+                print(f"[{idx}/{total_unmatched}] ANILIST DUPLICATE GUARD -> ID {did} '{title}' matches existing #{existing_al[0]} '{existing_al[1]}' (AniList ID {al_id}). Skipping assignment.")
+                continue
             al_img = al_data.get('coverImage', {}).get('extraLarge') or al_data.get('coverImage', {}).get('large')
             al_banner = al_data.get('bannerImage')
             al_desc = al_data.get('description')
@@ -241,6 +245,10 @@ def main():
         tmdb_res = search_tmdb(q, year, country, ctype)
         if tmdb_res:
             tmdb_id, mtype, cand = tmdb_res
+            existing_tmdb = cur.execute("SELECT id, title FROM dramas WHERE tmdb_id = ? AND id != ?", (tmdb_id, did)).fetchone()
+            if existing_tmdb:
+                print(f"[{idx}/{total_unmatched}] TMDB DUPLICATE GUARD -> ID {did} '{title}' matches existing #{existing_tmdb[0]} '{existing_tmdb[1]}' (TMDb ID {tmdb_id}). Skipping assignment.")
+                continue
             details = fetch_tmdb_details(tmdb_id, mtype) or cand
             imdb_id = details.get('external_ids', {}).get('imdb_id') or details.get('imdb_id')
             poster = f"https://image.tmdb.org/t/p/w500{details.get('poster_path')}" if details.get('poster_path') else None

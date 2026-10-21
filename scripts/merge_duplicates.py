@@ -6,6 +6,11 @@ import sys
 from collections import defaultdict
 from difflib import SequenceMatcher
 
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace', line_buffering=True)
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace', line_buffering=True)
+
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
@@ -202,7 +207,8 @@ def score_drama(d):
 
 def run_merge():
     db_path = os.path.join(_ROOT, 'webdrama_archive.db')
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=60.0)
+    conn.execute("PRAGMA busy_timeout = 60000;")
     cur = conn.cursor()
 
     print("[Merge Duplicates] Arşivdeki tüm seriler taranıyor...", flush=True)
@@ -321,9 +327,17 @@ def run_merge():
             d_slug = dup[2]
             print(f"  --> Duplicate #{d_id} '{d_title}' (slug: {d_slug}, eps: {dup[13]}, srcs: {dup[14]}) birleştiriliyor...", flush=True)
 
-            # Add title to tags if missing
+            # Add title and tags to p_tags
             if d_title and d_title not in p_tags:
                 p_tags.append(d_title)
+            if dup[10]:
+                try:
+                    d_parsed_tags = json.loads(dup[10]) if isinstance(dup[10], str) else list(dup[10])
+                except Exception:
+                    d_parsed_tags = [s.strip() for s in str(dup[10]).split(',') if s.strip()]
+                for t_item in d_parsed_tags:
+                    if t_item and t_item not in p_tags:
+                        p_tags.append(t_item)
 
             # Add alt_sites from duplicate
             if dup[11]:
@@ -333,6 +347,8 @@ def run_merge():
                     p_alt_sites.update(s.strip() for s in str(dup[11]).split(',') if s.strip())
 
             # Backfill primary missing metadata from duplicate
+            if not primary[9] and dup[9]: # native_title
+                cur.execute("UPDATE dramas SET native_title = ? WHERE id = ?", (dup[9], p_id))
             if not primary[6] and dup[6]: # anilist_id
                 cur.execute("UPDATE dramas SET anilist_id = ? WHERE id = ?", (dup[6], p_id))
             if not primary[7] and dup[7]: # imdb_id
@@ -381,6 +397,16 @@ def run_merge():
                     migrated_episodes_count += 1
 
             # Delete remaining duplicate records from SQLite
+            try:
+                cur.execute("UPDATE OR IGNORE drama_actors SET drama_id = ? WHERE drama_id = ?", (p_id, d_id))
+                cur.execute("DELETE FROM drama_actors WHERE drama_id = ?", (d_id,))
+            except Exception:
+                pass
+            try:
+                cur.execute("DELETE FROM series_automations WHERE media_id = ?", (d_id,))
+            except Exception:
+                pass
+
             cur.execute("DELETE FROM episode_sources WHERE episode_id IN (SELECT id FROM episodes WHERE drama_id = ?)", (d_id,))
             cur.execute("DELETE FROM episodes WHERE drama_id = ?", (d_id,))
             cur.execute("DELETE FROM dramas WHERE id = ?", (d_id,))
@@ -405,15 +431,31 @@ def run_merge():
         cur.execute("UPDATE dramas SET alt_sites = ?, tags = ? WHERE id = ?", (final_alt_sites, final_tags, p_id))
         conn.commit()
 
+        # Update aka_titles in Supabase so search finds primary under duplicate names
+        try:
+            sb_media = sb_request("GET", f"/rest/v1/media?id=eq.{p_id}&select=aka_titles")
+            existing_aka = []
+            if isinstance(sb_media, list) and sb_media and sb_media[0].get("aka_titles"):
+                existing_aka = list(sb_media[0]["aka_titles"])
+            for dup in duplicates:
+                d_t = dup[1]
+                if d_t and d_t not in existing_aka and d_t != p_title:
+                    existing_aka.append(d_t)
+            if existing_aka:
+                sb_request("PATCH", f"/rest/v1/media?id=eq.{p_id}", body={"aka_titles": existing_aka})
+                print(f"    [Supabase] Updated aka_titles with aliases for #{p_id}", flush=True)
+        except Exception as e:
+            print(f"    [Supabase aka_titles Error] #{p_id}: {e}", flush=True)
+
         # Re-sync primary bundle and counts to SQLite, R2, and Supabase
         sync_drama_bundle_and_counts(conn, cur, p_id)
         print(f"    [Primary Sync] Re-synced and uploaded bundle for #{p_id}", flush=True)
 
     print(f"\n=======================================================", flush=True)
-    print(f"✅ DUPLICATE MERGE TAMAMLANDI!", flush=True)
-    print(f"Toplu Temizlenen Duplicate Seri Sayısı: {merged_count}", flush=True)
-    print(f"Aktarılan/Birleştirilen Bölüm Sayısı: {migrated_episodes_count}", flush=True)
-    print(f"Aktarılan/Birleştirilen Kaynak Sayısı: {migrated_sources_count}", flush=True)
+    print(f"[SUCCESS] DUPLICATE MERGE TAMAMLANDI!", flush=True)
+    print(f"Toplu Temizlenen Duplicate Seri Sayisi: {merged_count}", flush=True)
+    print(f"Aktarilan/Birlestirilen Bolum Sayisi: {migrated_episodes_count}", flush=True)
+    print(f"Aktarilan/Birlestirilen Kaynak Sayisi: {migrated_sources_count}", flush=True)
     print(f"=======================================================", flush=True)
 
     # SQLite WAL Checkpoint & Full R2 Backup (Rule 11)

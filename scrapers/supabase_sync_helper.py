@@ -291,14 +291,30 @@ def match_or_create_enriched_drama(
         meta = resolve_tmdb_metadata(
             clean_t, year=year_hint, country_hint=hint_c, content_type=content_type
         )
+        if content_type != "film":
+            ani = resolve_anilist_metadata(clean_t, year=year_hint)
+            if ani and ani.get("anilist_id"):
+                meta = meta or {}
+                meta["anilist_id"] = ani.get("anilist_id")
+                meta.setdefault("anilist_url", ani.get("anilist_url"))
+                meta.setdefault("original_title", ani.get("original_title"))
+                meta.setdefault("cover_image", ani.get("cover_image"))
+                meta.setdefault("backdrop_image", ani.get("backdrop_image"))
+                meta.setdefault("overview", ani.get("overview"))
 
     # 3. Check if resolved tmdb_id, imdb_id, or anilist_id already exists in SQLite dramas!
     if meta:
         if meta.get("tmdb_id"):
-            cur.execute(
-                "SELECT id, title, slug, cover_image FROM dramas WHERE tmdb_id = ? AND content_type = ? LIMIT 1",
-                (meta["tmdb_id"], content_type),
-            )
+            if content_type == "film":
+                cur.execute(
+                    "SELECT id, title, slug, cover_image FROM dramas WHERE tmdb_id = ? AND content_type = 'film' LIMIT 1",
+                    (meta["tmdb_id"],),
+                )
+            else:
+                cur.execute(
+                    "SELECT id, title, slug, cover_image FROM dramas WHERE tmdb_id = ? AND content_type != 'film' LIMIT 1",
+                    (meta["tmdb_id"],),
+                )
             row = cur.fetchone()
             if row:
                 tag_site(cur, row[0], site_tag)
@@ -445,6 +461,24 @@ def ensure_media_synced(conn, cur, drama_id: int):
         cols = [d[0] for d in cur.description]
         d = dict(zip(cols, row))
         now_iso = datetime.now(timezone.utc).isoformat()
+        parsed_tags = None
+        if d.get("tags"):
+            try:
+                parsed_tags = json.loads(d["tags"]) if isinstance(d["tags"], str) else d["tags"]
+            except Exception:
+                parsed_tags = [x.strip() for x in str(d["tags"]).split(",") if x.strip()]
+            if not isinstance(parsed_tags, list):
+                parsed_tags = [str(parsed_tags)]
+
+        parsed_alt_sites = None
+        if d.get("alt_sites"):
+            try:
+                parsed_alt_sites = json.loads(d["alt_sites"]) if isinstance(d["alt_sites"], str) else d["alt_sites"]
+            except Exception:
+                parsed_alt_sites = [x.strip() for x in str(d["alt_sites"]).split(",") if x.strip()]
+            if not isinstance(parsed_alt_sites, list):
+                parsed_alt_sites = [str(parsed_alt_sites)]
+
         clean_payload = {
             "id": d["id"],
             "slug": d["slug"],
@@ -465,6 +499,8 @@ def ensure_media_synced(conn, cur, drama_id: int):
             "anilist_url": d.get("anilist_url") or None,
             "episode_count": int(d.get("episode_count") or 0),
             "sources_count": int(d.get("sources_count") or 0),
+            "tags": parsed_tags,
+            "alt_sites": parsed_alt_sites,
             "updated_at": now_iso,
         }
         res = sb_request("POST", "/rest/v1/media?on_conflict=id", body=clean_payload, prefer="resolution=merge-duplicates,return=representation")
@@ -637,9 +673,9 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
                             prefer="resolution=merge-duplicates,return=minimal",
                         )
 
-        # Checkpoint SQLite WAL so changes flush directly into webdrama_archive.db
+        # Checkpoint SQLite WAL non-blocking so changes flush into webdrama_archive.db
         try:
-            cur.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+            cur.execute("PRAGMA wal_checkpoint(PASSIVE);")
         except Exception:
             pass
     except Exception as e:

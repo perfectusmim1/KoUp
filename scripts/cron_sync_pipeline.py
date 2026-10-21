@@ -578,6 +578,15 @@ def main():
         if target in ("all", "watchdog_24h"):
             run_scraper_step("watchdog_24h", "24h Watchdog", run_watchdog_check)
 
+        # Otomasyon sirasinda yeni seriler eklendiyse otomatik duplicate kontrolu ve birlestirme
+        if all_dramas:
+            try:
+                from scripts.merge_duplicates import run_merge
+                record_log(f"[Deduplication] {len(all_dramas)} yeni seri eklendi, duplicate kontrolu calistiriliyor...")
+                run_merge()
+            except Exception as e:
+                record_log(f"[Deduplication] Hata: {e}")
+
         # Database Checkpoint & R2 Backup
         try:
             conn = get_connection()
