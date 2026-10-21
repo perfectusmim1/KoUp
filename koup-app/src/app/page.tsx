@@ -384,7 +384,7 @@ export default function HomePage() {
             .from('media')
             .select('*')
             .order('id', { ascending: false })
-            .limit(24),
+            .limit(16),
         ]);
 
         let featItems = (featRes.data as MediaItem[]) || [];
@@ -1075,7 +1075,7 @@ export default function HomePage() {
         } else if (countryCode !== 'ALL') {
           query = query.eq('country_code', countryCode);
         }
-        const { data, error } = await query.order('id', { ascending: false }).limit(24);
+        const { data, error } = await query.order('id', { ascending: false }).limit(16);
         if (!error && data) {
           const items = data as MediaItem[];
           recentMediaCacheRef.current[countryCode] = items;
@@ -1731,7 +1731,7 @@ export default function HomePage() {
                 onMouseEnter={() => preloadMediaImages(recentMediaItems)}
                 onMouseLeave={() => requestAccordionHover(null)}
               >
-                {recentMediaItems.map((item, idx) => (
+                {recentMediaItems.slice(0, 16).map((item, idx) => (
                   <AccordionMediaCard key={item.id} item={item} priority={idx < 4} />
                 ))}
               </div>
