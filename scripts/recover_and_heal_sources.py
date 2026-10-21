@@ -241,19 +241,17 @@ def run_recovery(limit=30, category='all', only_empty=False, drama_id=None):
         except Exception as e:
             log("ERROR", f"-> #{did} '{title}' onarım hatası: {e}")
 
-        # Periodic checkpoint and R2 backup every 10 series
+        # Lightweight passive commit every 10 series (no blocking R2 upload during loop)
         if idx % 10 == 0:
             try:
                 conn.commit()
                 conn.execute("PRAGMA wal_checkpoint(PASSIVE);")
-                backup_db_to_r2()
-                log("R2_SYNC", f"Geçici checkpoint ve R2 senkronizasyonu tamamlandı ({idx}/{len(candidates)}).")
-            except Exception as e:
-                log("R2_SYNC", f"R2 senkronizasyon uyarısı: {e}")
+            except Exception:
+                pass
 
-    # Final commit and full WAL checkpoint
+    # Final commit and passive WAL checkpoint
     conn.commit()
-    conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+    conn.execute("PRAGMA wal_checkpoint(PASSIVE);")
     conn.close()
 
     try:

@@ -104,12 +104,15 @@ def fetch_html(url: str, referer: str = None, timeout: int = 15) -> str:
             pass
 
     # Last fallback to urllib
-    req = urllib.request.Request(url, headers=h)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read().decode('utf-8', errors='replace')
+    try:
+        req = urllib.request.Request(url, headers=h)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read().decode('utf-8', errors='replace')
+    except Exception:
+        return ""
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=60.0)
     conn.execute("PRAGMA busy_timeout=60000;")
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.row_factory = sqlite3.Row
