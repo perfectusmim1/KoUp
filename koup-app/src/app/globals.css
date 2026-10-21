@@ -1039,19 +1039,30 @@ input[type="range"].netflix-volume-slider:focus-visible {
 
 /* Ambient Lighting Wave Motion (Sinematik Işıklandırma Akıcı Dalgalı Yayılım) */
 @keyframes ambientWave {
-  0%, 100% {
-    transform: scale(1.12) translate3d(0, 0, 0);
-    opacity: 0.82;
+  0% {
+    transform: scale(1.16) translate3d(0, 0, 0);
   }
-  50% {
-    transform: scale(1.20) translate3d(0, 4px, 0);
-    opacity: 0.98;
+  33% {
+    transform: scale(1.25) translate3d(6px, -4px, 0);
+  }
+  66% {
+    transform: scale(1.20) translate3d(-6px, 4px, 0);
+  }
+  100% {
+    transform: scale(1.16) translate3d(0, 0, 0);
   }
 }
 
 .animate-ambient-wave {
-  animation: ambientWave 7.5s ease-in-out infinite;
-  will-change: transform, opacity;
+  animation: ambientWave 10s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-ambient-wave {
+    animation: none;
+    transform: scale(1.18) translate3d(0, 0, 0);
+  }
 }
 
 /* Fast, silky-smooth page entry transition (ends at transform: none so fixed modals aren't trapped) */

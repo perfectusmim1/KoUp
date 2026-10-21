@@ -845,8 +845,10 @@ export default function NetflixPlayer({
     }, 1100);
   }, []);
 
-  // Sinematik Işıklandırma (YouTube-style Ambient Lighting)
-  const ambientCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Sinematik Işıklandırma (YouTube-style Dual-Buffer Ambient Lighting)
+  const ambientCanvasRefA = useRef<HTMLCanvasElement | null>(null);
+  const ambientCanvasRefB = useRef<HTMLCanvasElement | null>(null);
+  const activeAmbientBufferRef = useRef<0 | 1>(0);
   const [internalAmbientLighting, setInternalAmbientLighting] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
     try {
@@ -915,46 +917,62 @@ export default function NetflixPlayer({
     }
   }, [isMuted, volume]);
 
-  // Ambient lighting canvas frame sampling loop with temporal exponential smoothing (wave-like color flow)
+  // Ambient lighting canvas frame sampling loop with dual-buffer fluid crossfade (wave-like color flow)
   useEffect(() => {
     if (!ambientLightingEnabled || !isPlaying || isFullscreen || isTrailerMode) return;
-    const canvas = ambientCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d', { willReadFrequently: false });
-    if (!ctx) return;
+    const canvasA = ambientCanvasRefA.current;
+    const canvasB = ambientCanvasRefB.current;
+    if (!canvasA || !canvasB) return;
 
-    let isInitialFrame = true;
+    const ctxA = canvasA.getContext('2d', { willReadFrequently: false });
+    const ctxB = canvasB.getContext('2d', { willReadFrequently: false });
+    if (!ctxA || !ctxB) return;
+
     let timerId: NodeJS.Timeout | null = null;
     let isCancelled = false;
 
-    const sampleFrame = () => {
+    // Instant sample on mount / seek so lighting responds without delay
+    const sampleInstant = () => {
+      const v = videoRef.current;
+      if (v && v.readyState >= 2) {
+        try {
+          ctxA.drawImage(v, 0, 0, 32, 18);
+          ctxB.drawImage(v, 0, 0, 32, 18);
+          canvasA.style.opacity = '1';
+          canvasB.style.opacity = '0';
+          activeAmbientBufferRef.current = 0;
+        } catch {}
+      }
+    };
+    sampleInstant();
+
+    // Silky smooth cross-fade loop (650ms sampling cadence with 1200ms GPU opacity blend)
+    const sampleCrossfade = () => {
       if (isCancelled) return;
       if (typeof document !== 'undefined' && document.hidden) return;
       const v = videoRef.current;
-      if (v && v.readyState >= 2 && !v.paused) {
-        requestAnimationFrame(() => {
-          if (isCancelled) return;
-          try {
-            if (isInitialFrame) {
-              ctx.globalAlpha = 1.0;
-              ctx.drawImage(v, 0, 0, 32, 18);
-              isInitialFrame = false;
-            } else {
-              // Smooth exponential temporal blend
-              ctx.globalCompositeOperation = 'source-over';
-              ctx.globalAlpha = 0.35;
-              ctx.drawImage(v, 0, 0, 32, 18);
-            }
-          } catch {}
-        });
-      }
+      if (!v || v.readyState < 2 || v.paused) return;
+
+      requestAnimationFrame(() => {
+        if (isCancelled) return;
+        try {
+          const nextBuffer: 0 | 1 = activeAmbientBufferRef.current === 0 ? 1 : 0;
+          const targetCanvas = nextBuffer === 1 ? canvasB : canvasA;
+          const currentCanvas = nextBuffer === 1 ? canvasA : canvasB;
+          const targetCtx = nextBuffer === 1 ? ctxB : ctxA;
+
+          targetCtx.drawImage(v, 0, 0, 32, 18);
+          targetCanvas.style.opacity = '1';
+          currentCanvas.style.opacity = '0';
+          activeAmbientBufferRef.current = nextBuffer;
+        } catch {}
+      });
     };
 
-    timerId = setInterval(sampleFrame, 350);
+    timerId = setInterval(sampleCrossfade, 650);
 
     const handleSeeked = () => {
-      isInitialFrame = true;
-      sampleFrame();
+      sampleInstant();
     };
     const vEl = videoRef.current;
     vEl?.addEventListener('seeked', handleSeeked);
@@ -2592,29 +2610,50 @@ export default function NetflixPlayer({
 
   return (
     <div className={isTrailerMode ? "w-full h-full flex items-center justify-center overflow-hidden" : "relative"}>
-      {/* SİNEMATİK IŞIKLANDIRMA (YouTube-Style Ambient Lighting Aura with Theater Stage Spread) */}
+      {/* SİNEMATİK IŞIKLANDIRMA (YouTube-Style Volumetric Ambient Diffusion with Liquid Wave Motion) */}
       {ambientLightingEnabled && !isFullscreen && !isTrailerMode && (
         <div
           aria-hidden="true"
-          className={`ambient-light-aura absolute pointer-events-none select-none -z-10 transition-opacity duration-700 ease-out ${
-            isMovie
-              ? '-top-12 sm:-top-16 -bottom-16 sm:-bottom-20 -left-6 sm:-left-12 -right-6 sm:-right-12'
-              : '-top-12 sm:-top-16 -bottom-16 sm:-bottom-20 -left-6 sm:-left-12 -right-6 lg:-right-[320px] xl:-right-[340px]'
-          }`}
-          style={{ opacity: isPlaying ? 0.9 : 0.4, transform: 'translateZ(0)', backfaceVisibility: 'hidden' }}
+          className="ambient-light-aura absolute pointer-events-none select-none -z-10 transition-opacity duration-1000 ease-out -inset-10 sm:-inset-16 md:-inset-24 lg:-inset-32"
+          style={{
+            opacity: isPlaying ? 0.95 : 0.45,
+            transform: 'translateZ(0)',
+            backfaceVisibility: 'hidden',
+            maskImage: 'radial-gradient(ellipse 75% 70% at 50% 50%, black 35%, transparent 100%)',
+            WebkitMaskImage: 'radial-gradient(ellipse 75% 70% at 50% 50%, black 35%, transparent 100%)',
+          }}
         >
-          {/* Real-time ambient canvas sampled directly from active video with wave animation */}
-          <canvas
-            ref={ambientCanvasRef}
-            width={32}
-            height={18}
-            style={{ transform: 'translateZ(0)', backfaceVisibility: 'hidden' }}
-            className="w-full h-full object-cover filter blur-[28px] sm:blur-[44px] md:blur-[56px] scale-[1.05] saturate-[1.25] brightness-[1.05] rounded-[24px]"
-          />
+          {/* Dual-buffer real-time ambient canvases with fluid 1200ms crossfade and organic wave motion */}
+          <div className="w-full h-full relative animate-ambient-wave filter blur-[52px] sm:blur-[76px] md:blur-[104px] saturate-[1.4] brightness-[1.12]">
+            <canvas
+              ref={ambientCanvasRefA}
+              width={32}
+              height={18}
+              style={{
+                transition: 'opacity 1200ms cubic-bezier(0.25, 1, 0.5, 1)',
+                opacity: 1,
+                transform: 'translateZ(0)',
+                backfaceVisibility: 'hidden',
+              }}
+              className="absolute inset-0 w-full h-full object-cover rounded-[36px]"
+            />
+            <canvas
+              ref={ambientCanvasRefB}
+              width={32}
+              height={18}
+              style={{
+                transition: 'opacity 1200ms cubic-bezier(0.25, 1, 0.5, 1)',
+                opacity: 0,
+                transform: 'translateZ(0)',
+                backfaceVisibility: 'hidden',
+              }}
+              className="absolute inset-0 w-full h-full object-cover rounded-[36px]"
+            />
+          </div>
 
           {/* Ambient radiant fallback aura blending smoothly into website glass background */}
           <div
-            className="absolute inset-0 filter blur-[28px] sm:blur-[48px] scale-[1.08] opacity-30 rounded-[24px] -z-10"
+            className="absolute inset-0 filter blur-[48px] sm:blur-[72px] md:blur-[96px] scale-[1.15] opacity-35 rounded-[36px] -z-10"
             style={{
               backgroundImage:
                 media?.backdrop_image || media?.cover_image
