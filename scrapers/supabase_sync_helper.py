@@ -555,7 +555,25 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
                 """
                 SELECT id, source_name, provider, direct_url, embed_id, fansub, site
                 FROM episode_sources
-                WHERE episode_id = ? AND direct_url IS NOT NULL AND direct_url != ''
+                WHERE episode_id = ? 
+                  AND direct_url IS NOT NULL 
+                  AND direct_url != ''
+                  AND direct_url != 'dead'
+                  AND provider != 'dead'
+                  AND provider != 'sibnet'
+                  AND provider != 'sendvid'
+                  AND provider NOT LIKE '%sibnet%'
+                  AND direct_url NOT LIKE '%sibnet%'
+                  AND direct_url NOT LIKE '%sendvid%'
+                  AND direct_url NOT LIKE '%uns.bio%'
+                  AND direct_url NOT LIKE '%playerdkorea.xyz%'
+                  AND direct_url NOT LIKE '%asyaanim.upns.one%'
+                  AND direct_url NOT LIKE '%upns.one%'
+                  AND direct_url NOT LIKE '%upns.live%'
+                  AND direct_url NOT LIKE '%vidmoly.me%'
+                  AND direct_url NOT LIKE '%embed-7fm0wb9yzf4m.html%'
+                  AND direct_url NOT LIKE 'javascript:%'
+                  AND direct_url NOT LIKE '%void(0)%'
                 ORDER BY id ASC
                 """,
                 (ep_id,),
@@ -576,7 +594,7 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
                     "direct_url": durl,
                     "embed_id": eid or "",
                     "site": site or "",
-                    "fansub": fsub or None,
+                    "fansub": None,
                     "quality_label": "1080p",
                 })
 

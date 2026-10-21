@@ -303,9 +303,27 @@ export default function EpisodeWatchPage({
     let isCancelled = false;
     const decodedSlug = decodeURIComponent(slug);
     const cachedMedia = getMediaFromCache(decodedSlug);
-    const cachedEpisodes = cachedMedia
+    const cachedEpisodesRaw = cachedMedia
       ? getCache<EpisodeData[]>(`episodes_${cachedMedia.id}`, true) || []
       : [];
+    const cachedEpisodes = cachedEpisodesRaw.map((ep) => ({
+      ...ep,
+      sources: (ep.sources || []).filter(
+        (s) =>
+          s?.direct_url &&
+          s.direct_url.startsWith('http') &&
+          !s.direct_url.includes('javascript:') &&
+          !s.direct_url.includes('void(0)') &&
+          !s.direct_url.includes('embed-7fm0wb9yzf4m.html') &&
+          !s.direct_url.includes('playerdkorea.xyz') &&
+          !s.direct_url.includes('asyaanim.upns.one') &&
+          !s.direct_url.includes('vidmoly.me') &&
+          s.provider !== 'dead' &&
+          s.provider !== 'sibnet' &&
+          s.provider !== 'sendvid' &&
+          s.provider !== 'pixeldrain'
+      ),
+    }));
 
     if (cachedMedia) {
       setMedia(cachedMedia);

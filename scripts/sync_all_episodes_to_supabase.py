@@ -83,11 +83,22 @@ def sync_episodes():
               AND s.direct_url != 'dead'
               AND s.direct_url != ''
               AND s.provider != 'dead'
+              AND s.provider != 'sibnet'
+              AND s.provider != 'sendvid'
+              AND s.direct_url NOT LIKE '%sibnet%'
               AND s.direct_url NOT LIKE '%sendvid%'
+              AND s.direct_url NOT LIKE '%pixeldrain%'
               AND s.direct_url NOT LIKE '%drive.google.com%'
               AND s.direct_url NOT LIKE '%docs.google.com%'
               AND s.direct_url NOT LIKE '%uns.bio%'
               AND s.direct_url NOT LIKE '%playerdkorea.xyz%'
+              AND s.direct_url NOT LIKE '%asyaanim.upns.one%'
+              AND s.direct_url NOT LIKE '%upns.one%'
+              AND s.direct_url NOT LIKE '%upns.live%'
+              AND s.direct_url NOT LIKE '%vidmoly.me%'
+              AND s.direct_url NOT LIKE '%embed-7fm0wb9yzf4m.html%'
+              AND s.direct_url NOT LIKE 'javascript:%'
+              AND s.direct_url NOT LIKE '%void(0)%'
         ),
         capped AS (
             SELECT episode_id, source_name, direct_url, provider, site,
@@ -95,12 +106,13 @@ def sync_episodes():
                     PARTITION BY episode_id
                     ORDER BY 
                         CASE 
+                            WHEN provider = 'tau-video' OR direct_url LIKE '%tau-video%' THEN 0
                             WHEN direct_url LIKE '%.m3u8%' THEN 1
                             WHEN provider = 'asyawatch' OR direct_url LIKE '%pichive%' THEN 2
                             WHEN provider = 'dizilla' OR direct_url LIKE '%dplayer%' THEN 3
                             WHEN provider = 'rapidrame' OR provider = 'hdfilm-close' THEN 4
                             WHEN provider = 'vidmoly' THEN 5
-                            WHEN provider = 'sibnet' THEN 6
+                            WHEN provider = 'uqload' THEN 6
                             WHEN provider = 'youtube' THEN 7
                             ELSE 8 
                         END
@@ -121,11 +133,12 @@ def sync_episodes():
         stype = "hls" if (".m3u8" in durl or (prov and "hls" in prov)) else ("youtube" if (prov == "youtube" or "youtube" in durl) else "mp4")
         ql = "1080p Doğrudan Akış" if stype == "hls" else ("YouTube HD" if stype == "youtube" else "HD")
         sources_by_ep.setdefault(eid, []).append({
-            "source_name": sname or (prov.capitalize() if prov else "Kaynak"),
+            "source_name": clean_source_name(sname or (prov.capitalize() if prov else "Kaynak")),
             "direct_url": durl,
             "embed_id": durl,
             "provider": prov or "other",
             "site": site or "web",
+            "fansub": None,
             "stream_type": stype,
             "quality_label": ql,
         })

@@ -125,11 +125,13 @@ def export_all(drama_id: int = None):
           AND provider != 'dead'
           AND provider != 'sibnet'
           AND provider != 'sendvid'
+          AND provider != 'pixeldrain'
           AND provider NOT LIKE '%sibnet%'
           AND provider NOT LIKE '%gdrive%'
           AND provider NOT LIKE '%google%'
           AND direct_url NOT LIKE '%sibnet.ru%'
           AND direct_url NOT LIKE '%sendvid%'
+          AND direct_url NOT LIKE '%pixeldrain%'
           AND direct_url NOT LIKE '%drive.google.com%'
           AND direct_url NOT LIKE '%docs.google.com%'
           AND direct_url NOT LIKE '%4meplayer%'
@@ -139,7 +141,12 @@ def export_all(drama_id: int = None):
           AND direct_url NOT LIKE '%playerdkorea.xyz%'
           AND direct_url NOT LIKE '%video.diziasya.com%'
           AND direct_url NOT LIKE '%asyaanim.upns.one%'
+          AND direct_url NOT LIKE '%upns.one%'
+          AND direct_url NOT LIKE '%upns.live%'
+          AND direct_url NOT LIKE '%vidmoly.me%'
           AND direct_url NOT LIKE '%embed-7fm0wb9yzf4m.html%'
+          AND direct_url NOT LIKE 'javascript:%'
+          AND direct_url NOT LIKE '%void(0)%'
     """
 
     count = 0
@@ -182,27 +189,57 @@ def export_all(drama_id: int = None):
                     or p_low in ("diziyou-hls", "hdfilm-hls", "asyawatch")
                     or "pichive" in u_low
                 )
-                clean_fansub = clean_fansub_name(fansub)
 
-                if p_low == "asyawatch" or (site or "").lower() == "asyawatch" or "pichive" in u_low:
-                    clean_name = "Orijinal"
-                    clean_fansub = None
+                if p_low == "asyawatch" or (site or "").lower() == "asyawatch" or "pichive" in u_low or "molystream" in u_low:
+                    display_name = "Orijinal"
                 elif p_low == "dizilla" or (site or "").lower() == "dizilla" or "dplayer" in u_low or "hotlinger" in u_low:
-                    clean_name = "Dizilla"
-                    clean_fansub = None
-                elif is_native:
-                    clean_name = "Orijinal"
-                elif "dizikorea" in clean_name.lower() or "diziyou" in clean_name.lower():
-                    clean_name = "Orijinal"
+                    display_name = "Dizilla"
+                elif "diziyou" in p_low or "diziyou" in u_low:
+                    if clean_name and ("altyaz" in clean_name.lower() or "dublaj" in clean_name.lower()):
+                        display_name = clean_name
+                    else:
+                        display_name = "Orijinal (Altyazılı)"
+                elif "dizikorea" in p_low or "dizikorea" in u_low or "hdfilm" in p_low:
+                    display_name = "Orijinal"
+                elif p_low == "tau-video" or "tau-video" in u_low:
+                    display_name = "Tau Video"
+                elif p_low == "vk" or "vk.com" in u_low:
+                    display_name = "VK"
+                elif p_low in ("mail.ru", "mail") or "mail.ru" in u_low:
+                    display_name = "Mail.ru"
+                elif p_low == "uqload" or "uqload" in u_low:
+                    display_name = "Uqload"
+                elif p_low == "voe" or "voe.sx" in u_low or "voe." in u_low:
+                    display_name = "VOE"
+                elif p_low in ("ok.ru", "odnoklassniki") or "ok.ru" in u_low:
+                    display_name = "OK.ru"
+                elif p_low == "filemoon" or "bysesukior" in u_low or "filemoon" in u_low:
+                    display_name = "Filemoon"
+                elif p_low == "streamwish" or "ghbrisk" in u_low or "streamwish" in u_low:
+                    display_name = "Streamwish"
+                elif p_low == "yourupload" or "yourupload" in u_low:
+                    display_name = "YourUpload"
+                elif p_low == "vidmoly" or "vidmoly" in u_low:
+                    display_name = "Vidmoly"
+                elif p_low == "dailymotion" or "dailymotion" in u_low:
+                    display_name = "Dailymotion"
+                elif p_low == "mp4upload" or "mp4upload" in u_low:
+                    display_name = "Mp4Upload"
+                elif p_low == "mega" or "mega.nz" in u_low:
+                    display_name = "Mega"
+                elif clean_name and clean_name.lower() not in ("kaynak", "other", "default", "varsayılan", "vip", "vi̇p"):
+                    display_name = clean_name
+                else:
+                    display_name = provider.upper() if provider and provider != "other" else "Kaynak"
 
                 is_hq = is_native or p_low in ("asyawatch", "dizilla") or "pichive" in u_low or "dplayer" in u_low
                 processed.append({
-                    "source_name": clean_name,
+                    "source_name": display_name,
                     "embed_id": embed_id,
                     "direct_url": direct_url,
                     "provider": provider or "other",
                     "site": site or "webdrama",
-                    "fansub": clean_fansub,
+                    "fansub": None,
                     "stream_type": stype,
                     "quality_label": "1080p" if is_hq else "HD Embed",
                     "_prio": prio
@@ -211,13 +248,17 @@ def export_all(drama_id: int = None):
             processed.sort(key=lambda x: x["_prio"])
             processed = processed[:18]
 
-            orig_count = 0
+            # Apply clean numbering per base name (e.g. "Tau Video", "Tau Video 2")
+            counts = {}
+            for item in processed:
+                counts[item["source_name"]] = counts.get(item["source_name"], 0) + 1
+            seen_counts = {}
             for item in processed:
                 item.pop("_prio", None)
-                if item["source_name"].startswith("Orijinal"):
-                    orig_count += 1
-                    if orig_count > 1:
-                        item["source_name"] = f"Orijinal {orig_count}"
+                base = item["source_name"]
+                seen_counts[base] = seen_counts.get(base, 0) + 1
+                if counts[base] > 1 and seen_counts[base] > 1:
+                    item["source_name"] = f"{base} {seen_counts[base]}"
 
             # Clean episode name
             raw_ep_name = ep_name or ""

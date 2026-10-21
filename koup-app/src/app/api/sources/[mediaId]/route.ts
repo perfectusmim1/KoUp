@@ -149,7 +149,11 @@ function isDeadSource(provider?: string | null, directUrl?: string | null, sourc
     u.includes('sendvid') ||
     u.includes('pixeldrain.com') ||
     u.includes('asyaanim.upns.one') ||
+    u.includes('upns.one') ||
+    u.includes('upns.live') ||
     u.includes('embed-7fm0wb9yzf4m.html') ||
+    u.includes('playerdkorea.xyz') ||
+    u.includes('vidmoly.me') ||
     p.includes('gdrive') ||
     p.includes('google') ||
     u.includes('drive.google.com') ||
@@ -462,7 +466,7 @@ export async function GET(
           return {
             ...s,
             source_name: displayName,
-            fansub: cleanFansubName(s.fansub),
+            fansub: null,
             stream_type: stype,
             quality_label: isNative ? '1080p' : s.quality_label || 'HD Embed',
           };
@@ -532,7 +536,11 @@ export async function GET(
            AND direct_url NOT LIKE '%rpmplay%'
             AND direct_url NOT LIKE '%uns.bio%'
             AND direct_url NOT LIKE '%playerdkorea.xyz%'
-            AND direct_url NOT LIKE '%video.diziasya.com%'`
+            AND direct_url NOT LIKE '%video.diziasya.com%'
+            AND direct_url NOT LIKE '%vidmoly.me%'
+            AND direct_url NOT LIKE '%upns.one%'
+            AND direct_url NOT LIKE '%upns.live%'
+            AND direct_url NOT LIKE '%embed-7fm0wb9yzf4m.html%'`
       );
 
       episodes = epRows.map((ep) => {
@@ -559,8 +567,6 @@ export async function GET(
 
             const isNative = stype === 'hls' || stype === 'tau' || stype === 'mp4' || s.provider === 'diziyou-hls' || s.provider === 'hdfilm-hls' || s.provider === 'asyawatch' || s.direct_url.includes('pichive');
             const cleanName = getDisplaySourceName(s.provider, s.source_name, s.direct_url, s.site);
-            const isOriginalSite = s.provider === 'asyawatch' || s.site === 'asyawatch' || s.direct_url.includes('pichive');
-            const cleanFansub = isOriginalSite ? null : cleanFansubName(s.fansub);
 
             return {
               source_name: cleanName,
@@ -568,7 +574,7 @@ export async function GET(
               direct_url: s.direct_url,
               provider: s.provider || 'other',
               site: s.site || 'webdrama',
-              fansub: cleanFansub,
+              fansub: null,
               stream_type: stype,
               quality_label:
                 isNative || s.provider === 'asyawatch' || s.provider === 'dizilla' || s.direct_url.includes('pichive') || s.direct_url.includes('dplayer')
