@@ -44,6 +44,7 @@ import {
 } from '@/lib/supabase';
 import { useKoUpSelector } from '@/context/KoUpContext';
 import AccordionMediaCard, { requestAccordionHover, preloadMediaImages } from '@/components/AccordionMediaCard';
+import DirectMediaCard from '@/components/DirectMediaCard';
 import Top10Numeral from '@/components/Top10Numeral';
 import { cachedQuery, getCache, registerMediaItems } from '@/lib/cache';
 import {
@@ -2002,13 +2003,6 @@ const DeferredSection = memo(function DeferredSection({
   );
 });
 
-function getOverlayAnchor(colIdx: number, cols: number): 'left' | 'right' | 'center' {
-  if (cols <= 2) return colIdx === 0 ? 'left' : 'right';
-  if (colIdx <= 1) return 'left';
-  if (colIdx >= cols - 2) return 'right';
-  return 'center';
-}
-
 interface PersonalizedRecommendationsSectionProps {
   items: MediaItem[];
   onConfigureTaste?: () => void;
@@ -2027,7 +2021,6 @@ const PersonalizedRecommendationsSection = memo(function PersonalizedRecommendat
   const sectionRef = useRef<HTMLElement | null>(null);
   const { isMounted, ref: deferredRef } = useDeferredMount(order);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [hoveredCardId, setHoveredCardId] = useState<number | null>(null);
 
   // Responsive columns: mobile 2, tablet 3-4, desktop 5-6
   const [cols, setCols] = useState(6);
@@ -2070,7 +2063,7 @@ const PersonalizedRecommendationsSection = memo(function PersonalizedRecommendat
         sectionRef.current = el;
         deferredRef(el);
       }}
-      className="w-full px-4 sm:px-6 md:px-14 max-w-full overflow-visible"
+      className="w-full px-4 sm:px-6 md:px-14 max-w-full overflow-hidden"
     >
       <div className="flex flex-col gap-1 mb-4 sm:mb-6">
         <div className="flex items-center justify-between min-h-[24px]">
@@ -2108,30 +2101,16 @@ const PersonalizedRecommendationsSection = memo(function PersonalizedRecommendat
       {!isMounted ? (
         <div className="w-full h-[320px] sm:h-[400px] my-2" />
       ) : (
-        <div className="w-full flex flex-col overflow-visible">
-          {/* Initial Grid (Stationary Fixed Slots — Zero Jitter / Zero Shift) */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 w-full overflow-visible">
-            {initialItems.map((item, idx) => {
-              const colIdx = idx % cols;
-              const anchor = getOverlayAnchor(colIdx, cols);
-              const isHovered = hoveredCardId === item.id;
-              return (
-                <div
-                  key={item.id}
-                  className="relative w-full h-[250px] sm:h-[280px] md:h-[300px] overflow-visible"
-                  style={{ zIndex: isHovered ? 40 : 1 }}
-                  onMouseEnter={() => setHoveredCardId(item.id)}
-                  onMouseLeave={() => setHoveredCardId((curr) => (curr === item.id ? null : curr))}
-                >
-                  <AccordionMediaCard
-                    item={item}
-                    priority={idx < 4}
-                    fluidWidth={!isDesktop}
-                    overlayAnchor={anchor}
-                  />
-                </div>
-              );
-            })}
+        <div className="w-full flex flex-col">
+          {/* Initial Grid (Lightweight, Direct-Click Poster Cards) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 w-full">
+            {initialItems.map((item, idx) => (
+              <DirectMediaCard
+                key={item.id}
+                item={item}
+                priority={idx < 4}
+              />
+            ))}
           </div>
 
           {/* Extra Grid with Fluid Height/Opacity Spring Accordion Animation */}
@@ -2143,30 +2122,16 @@ const PersonalizedRecommendationsSection = memo(function PersonalizedRecommendat
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
                 transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-                className="overflow-visible mt-3 sm:mt-4"
+                className="overflow-hidden mt-3 sm:mt-4"
               >
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 w-full overflow-visible py-1">
-                  {extraItems.map((item, idx) => {
-                    const colIdx = idx % cols;
-                    const anchor = getOverlayAnchor(colIdx, cols);
-                    const isHovered = hoveredCardId === item.id;
-                    return (
-                      <div
-                        key={item.id}
-                        className="relative w-full h-[250px] sm:h-[280px] md:h-[300px] overflow-visible"
-                        style={{ zIndex: isHovered ? 40 : 1 }}
-                        onMouseEnter={() => setHoveredCardId(item.id)}
-                        onMouseLeave={() => setHoveredCardId((curr) => (curr === item.id ? null : curr))}
-                      >
-                        <AccordionMediaCard
-                          item={item}
-                          priority={false}
-                          fluidWidth={!isDesktop}
-                          overlayAnchor={anchor}
-                        />
-                      </div>
-                    );
-                  })}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 w-full py-1">
+                  {extraItems.map((item) => (
+                    <DirectMediaCard
+                      key={item.id}
+                      item={item}
+                      priority={false}
+                    />
+                  ))}
                 </div>
               </motion.div>
             )}
