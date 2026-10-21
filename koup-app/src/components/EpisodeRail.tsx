@@ -309,10 +309,10 @@ function EpisodeRailComponent({
             ? ({ '--player-height': `${playerHeight}px` } as React.CSSProperties)
             : undefined
         }
-        className={`rounded-3xl border shadow-xl flex flex-col transition-[height,padding,background-color,border-color] duration-300 min-h-0 overflow-hidden player-synced-height ${
+        className={`rounded-3xl border flex flex-col transition-[height,padding,background-color,border-color,box-shadow] duration-300 min-h-0 overflow-hidden player-synced-height ${
           ambientLightingEnabled
-            ? 'bg-[#0b0b0f]/90 backdrop-blur-sm border-white/15'
-            : 'bg-[#0e0e12] border-white/10'
+            ? 'bg-[#0a0a0f]/45 backdrop-blur-xl border-white/12 shadow-[0_8px_32px_rgba(0,0,0,0.36),inset_0_1px_1px_rgba(255,255,255,0.08)]'
+            : 'bg-[#0e0e12] border-white/10 shadow-xl'
         } ${
           cinemaLightsOff
             ? 'p-2 sm:p-2.5 h-[380px] sm:h-[420px]'

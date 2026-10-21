@@ -418,6 +418,7 @@ export interface NetflixPlayerProps {
   isTrailerMode?: boolean;
   trailerYoutubeId?: string | null;
   onCloseTrailer?: () => void;
+  hasRail?: boolean;
 }
 
 type ActivePanel = 'episodes' | 'speed' | 'sources' | 'audio_subtitles' | 'quality' | null;
@@ -448,6 +449,7 @@ export default function NetflixPlayer({
   isTrailerMode = false,
   trailerYoutubeId: propTrailerYoutubeId,
   onCloseTrailer,
+  hasRail = false,
 }: NetflixPlayerProps) {
   const router = useRouter();
   const progressMap = useKoUpSelector((s) => s.progressMap);
@@ -2610,21 +2612,25 @@ export default function NetflixPlayer({
 
   return (
     <div className={isTrailerMode ? "w-full h-full flex items-center justify-center overflow-hidden" : "relative"}>
-      {/* SİNEMATİK IŞIKLANDIRMA (YouTube-Style Volumetric Ambient Diffusion with Liquid Wave Motion) */}
+      {/* SİNEMATİK IŞIKLANDIRMA (Volumetric Ambient Lighting with Organic Spread & Silk Diffusion) */}
       {ambientLightingEnabled && !isFullscreen && !isTrailerMode && (
         <div
           aria-hidden="true"
-          className="ambient-light-aura absolute pointer-events-none select-none -z-10 transition-opacity duration-1000 ease-out -inset-10 sm:-inset-16 md:-inset-24 lg:-inset-32"
+          className={`ambient-light-aura absolute pointer-events-none select-none -z-10 transition-opacity duration-1000 ease-out -top-24 sm:-top-32 md:-top-44 lg:-top-56 -bottom-24 sm:-bottom-32 md:-bottom-44 lg:-bottom-56 -left-20 sm:-left-32 md:-left-48 lg:-left-64 xl:-left-72 ${
+            hasRail
+              ? '-right-20 sm:-right-32 md:-right-48 lg:-right-[520px] xl:-right-[600px]'
+              : '-right-20 sm:-right-32 md:-right-48 lg:-right-64 xl:-right-72'
+          }`}
           style={{
             opacity: isPlaying ? 0.95 : 0.45,
             transform: 'translateZ(0)',
             backfaceVisibility: 'hidden',
-            maskImage: 'radial-gradient(ellipse 75% 70% at 50% 50%, black 35%, transparent 100%)',
-            WebkitMaskImage: 'radial-gradient(ellipse 75% 70% at 50% 50%, black 35%, transparent 100%)',
+            maskImage: `radial-gradient(ellipse 94% 90% at ${hasRail ? '44% 50%' : '50% 50%'}, black 35%, rgba(0,0,0,0.68) 68%, transparent 100%)`,
+            WebkitMaskImage: `radial-gradient(ellipse 94% 90% at ${hasRail ? '44% 50%' : '50% 50%'}, black 35%, rgba(0,0,0,0.68) 68%, transparent 100%)`,
           }}
         >
           {/* Dual-buffer real-time ambient canvases with fluid 1200ms crossfade and organic wave motion */}
-          <div className="w-full h-full relative animate-ambient-wave filter blur-[52px] sm:blur-[76px] md:blur-[104px] saturate-[1.4] brightness-[1.12]">
+          <div className="w-full h-full relative animate-ambient-wave filter blur-[64px] sm:blur-[88px] md:blur-[116px] lg:blur-[140px] saturate-[1.45] brightness-[1.14]">
             <canvas
               ref={ambientCanvasRefA}
               width={32}
@@ -2635,7 +2641,7 @@ export default function NetflixPlayer({
                 transform: 'translateZ(0)',
                 backfaceVisibility: 'hidden',
               }}
-              className="absolute inset-0 w-full h-full object-cover rounded-[36px]"
+              className="absolute inset-0 w-full h-full object-cover rounded-[48px]"
             />
             <canvas
               ref={ambientCanvasRefB}
@@ -2647,13 +2653,13 @@ export default function NetflixPlayer({
                 transform: 'translateZ(0)',
                 backfaceVisibility: 'hidden',
               }}
-              className="absolute inset-0 w-full h-full object-cover rounded-[36px]"
+              className="absolute inset-0 w-full h-full object-cover rounded-[48px]"
             />
           </div>
 
           {/* Ambient radiant fallback aura blending smoothly into website glass background */}
           <div
-            className="absolute inset-0 filter blur-[48px] sm:blur-[72px] md:blur-[96px] scale-[1.15] opacity-35 rounded-[36px] -z-10"
+            className="absolute inset-0 filter blur-[56px] sm:blur-[80px] md:blur-[108px] lg:blur-[130px] scale-[1.12] opacity-35 rounded-[48px] -z-10"
             style={{
               backgroundImage:
                 media?.backdrop_image || media?.cover_image

@@ -935,10 +935,10 @@ export default function EpisodeWatchPage({
         style={cinemaStageStyle}
         className="relative z-40 mx-auto px-3 sm:px-6 mb-2 sm:mb-2.5 w-full transition-[max-width,padding] duration-300"
       >
-        <div className={`flex flex-wrap items-center justify-between gap-2.5 rounded-2xl sm:rounded-3xl border shadow-xl p-3 sm:px-5 sm:py-3 transition-[background-color,border-color] duration-300 ${
+        <div className={`flex flex-wrap items-center justify-between gap-2.5 rounded-2xl sm:rounded-3xl border transition-[background-color,border-color,box-shadow] duration-300 p-3 sm:px-5 sm:py-3 ${
           ambientLightingEnabled
-            ? 'bg-[#0b0b0f]/90 backdrop-blur-sm border-white/15'
-            : 'bg-[#0e0e12] border-white/10'
+            ? 'bg-[#0a0a0f]/45 backdrop-blur-xl border-white/12 shadow-[0_8px_32px_rgba(0,0,0,0.36),inset_0_1px_1px_rgba(255,255,255,0.08)]'
+            : 'bg-[#0e0e12] border-white/10 shadow-xl'
         }`}>
           {/* Left: Back to series or film detail */}
           <Link
@@ -1102,6 +1102,7 @@ export default function EpisodeWatchPage({
                 onToggleAmbientLighting={handleToggleAmbientLighting}
                 autoNextEnabled={autoNextEnabled}
                 onToggleAutoNext={handleToggleAutoNext}
+                hasRail={!isMovie}
                 initialSeekTime={(() => {
                   const urlT = Number(searchParams.get('t')) || 0;
                   if (urlT > 0) return urlT;
@@ -1121,10 +1122,10 @@ export default function EpisodeWatchPage({
             </div>
 
             {/* Quick Navigation, Reactions & Report Under Player */}
-            <div className={`relative z-20 rounded-2xl sm:rounded-3xl border shadow-xl flex flex-wrap items-center justify-between gap-2 p-3 sm:p-4 transition-[background-color,border-color] duration-300 ${
+            <div className={`relative z-20 rounded-2xl sm:rounded-3xl border flex flex-wrap items-center justify-between gap-2 p-3 sm:p-4 transition-[background-color,border-color,box-shadow] duration-300 ${
               ambientLightingEnabled
-                ? 'bg-[#0b0b0f]/90 backdrop-blur-sm border-white/15'
-                : 'bg-[#0e0e12] border-white/10'
+                ? 'bg-[#0a0a0f]/45 backdrop-blur-xl border-white/12 shadow-[0_8px_32px_rgba(0,0,0,0.36),inset_0_1px_1px_rgba(255,255,255,0.08)]'
+                : 'bg-[#0e0e12] border-white/10 shadow-xl'
             }`}>
               {/* Previous / Next / Mark Watched buttons */}
               <div className="flex flex-wrap items-center gap-2">
