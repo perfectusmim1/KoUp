@@ -902,70 +902,84 @@ export async function GET(req: NextRequest) {
   }
 
   // 1. Tau-Video Direct MP4/HLS Quality Resolver (for AnimeciX / Tau-Video sources)
-  if (provider === 'tau-video' || url.includes('tau-video.xyz')) {
+  if (
+    provider === 'tau-video' ||
+    provider.includes('tau') ||
+    url.includes('tau-video.xyz') ||
+    url.includes('tau-video')
+  ) {
     try {
-      const m = url.match(/\/embed\/([a-zA-Z0-9_-]+)/) || url.match(/video\/([a-zA-Z0-9_-]+)/);
-      const code = m?.[1];
+      const hexMatch = url.match(/([a-f0-9]{24})/i);
+      const code =
+        hexMatch?.[1] ||
+        url.match(/\/embed\/([a-zA-Z0-9_-]+)/)?.[1] ||
+        url.split('/').pop()?.split('?')[0];
+
       if (code) {
-        const apiResp = await fetch(`https://tau-video.xyz/api/video/${code}`, {
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-            Referer: 'https://tau-video.xyz/',
-            Accept: 'application/json',
-          },
-          signal: AbortSignal.timeout(6000),
-          next: { revalidate: 3600 },
-        });
-        if (apiResp.ok) {
-          const data = await apiResp.json();
-          const urls: Array<{ label: string; url: string; size?: number }> =
-            data?.urls || [];
-          if (urls.length > 0) {
-            const sorted = [...urls].sort((a, b) => {
-              const qa = parseInt(a.label || '0', 10);
-              const qb = parseInt(b.label || '0', 10);
-              return qb - qa;
-            });
-            return NextResponse.json(
-              {
-                mode: 'native_mp4',
-                qualities: sorted.map((q) => ({
-                  label: q.label || '1080p',
-                  url: q.url,
-                })),
-                streamUrl: sorted[0].url,
-                fallbackIframe: url,
-              },
-              { headers: CACHE_HEADERS }
-            );
+        let tauData: any = null;
+
+        // Primary: Cloudflare Edge Worker (runs directly in Cloudflare network, bypassing WAF blocks on Vercel IPs)
+        try {
+          const edgeRes = await fetch(
+            `https://koup-edge-worker.caganhuseyinerdil.workers.dev/tau?key=${encodeURIComponent(code)}`,
+            {
+              signal: AbortSignal.timeout(4500),
+              headers: { Accept: 'application/json' },
+            }
+          );
+          if (edgeRes.ok) {
+            const edgeJson = await edgeRes.json();
+            if (edgeJson?.urls && edgeJson.urls.length > 0) {
+              tauData = edgeJson;
+            }
           }
+        } catch {}
+
+        // Secondary fallback: Direct tau-video API if edge worker did not respond
+        if (!tauData) {
+          try {
+            const apiResp = await fetch(`https://tau-video.xyz/api/video/${code}`, {
+              headers: {
+                'User-Agent':
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                Referer: 'https://tau-video.xyz/',
+                Accept: 'application/json',
+              },
+              signal: AbortSignal.timeout(4000),
+            });
+            if (apiResp.ok) {
+              const apiJson = await apiResp.json();
+              if (apiJson?.urls && apiJson.urls.length > 0) {
+                tauData = apiJson;
+              }
+            }
+          } catch {}
+        }
+
+        if (tauData?.urls && tauData.urls.length > 0) {
+          const urls: Array<{ label: string; url: string; size?: number }> = tauData.urls;
+          const sorted = [...urls].sort((a, b) => {
+            const qa = parseInt(a.label || '0', 10);
+            const qb = parseInt(b.label || '0', 10);
+            return qb - qa;
+          });
+
+          const payload = {
+            mode: 'native_mp4' as const,
+            qualities: sorted.map((q) => ({
+              label: q.label || '1080p',
+              url: q.url,
+            })),
+            streamUrl: sorted[0].url,
+            thumbnails: tauData.thumbnails || undefined,
+            fallbackIframe: url,
+          };
+          setCachedStream(url, payload, 4 * 60 * 60 * 1000);
+          return NextResponse.json(payload, { headers: CACHE_HEADERS });
         }
       }
     } catch {
-      // Edge Fallback: query Cloudflare Edge Worker
-      try {
-        const edgeRes = await fetch(
-          `https://koup-edge-worker.caganhuseyinerdil.workers.dev/tau?key=${url.split('/').pop()}`,
-          { signal: AbortSignal.timeout(4000), next: { revalidate: 3600 } }
-        );
-        if (edgeRes.ok) {
-          const edgeData = await edgeRes.json();
-          if (edgeData?.urls?.length > 0) {
-            return NextResponse.json(
-              {
-                mode: 'native_mp4',
-                qualities: edgeData.urls,
-                streamUrl: edgeData.urls[0].url,
-                fallbackIframe: url,
-              },
-              { headers: CACHE_HEADERS }
-            );
-          }
-        }
-      } catch {
-        // proceed to iframe fallback
-      }
+      // proceed to iframe fallback
     }
   }
 
@@ -1732,15 +1746,14 @@ export async function GET(req: NextRequest) {
           const m3u8Url = dmData?.qualities?.auto?.[0]?.url;
           if (m3u8Url && typeof m3u8Url === 'string') {
             const proxiedHls = `/api/stream-proxy?url=${encodeURIComponent(m3u8Url)}&ref=${encodeURIComponent('https://www.dailymotion.com/')}`;
-            return NextResponse.json(
-              {
-                mode: 'native_hls',
-                streamUrl: proxiedHls,
-                qualities: [{ label: '1080p HLS', url: proxiedHls }],
-                fallbackIframe: url,
-              },
-              { headers: CACHE_HEADERS }
-            );
+            const payload = {
+              mode: 'native_hls' as const,
+              streamUrl: proxiedHls,
+              qualities: [{ label: '1080p HLS', url: proxiedHls }],
+              fallbackIframe: url,
+            };
+            setCachedStream(url, payload, 2 * 60 * 60 * 1000);
+            return NextResponse.json(payload, { headers: CACHE_HEADERS });
           }
         } else if (dmResp.status === 404 || dmResp.status === 410) {
           return NextResponse.json(

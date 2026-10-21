@@ -124,6 +124,7 @@ export interface CastMember {
 }
 
 export interface EpisodeSource {
+  id?: number;
   source_name: string;
   embed_id: string;
   direct_url: string;

@@ -667,12 +667,9 @@ export default function NetflixPlayer({
   const [currentTime, setCurrentTime] = useState<number>(initialCalculatedResume);
   const [isResumeReady, setIsResumeReady] = useState<boolean>(initialCalculatedResume <= 3);
   const [duration, setDuration] = useState<number>(() => {
-    return (
-      (media.duration_minutes ? media.duration_minutes * 60 : 0) ||
-      progressMap[media.id]?.resume_duration_sec ||
-      (isTrailerMode ? 180 : 3600)
-    );
+    return isTrailerMode ? 180 : 0;
   });
+  const [deadSourceKeys, setDeadSourceKeys] = useState<Set<string>>(() => new Set());
   const [bufferedPercent, setBufferedPercent] = useState(0);
 
   // Progress ticker for smooth trailer seekbar
@@ -1103,9 +1100,10 @@ export default function NetflixPlayer({
     if (prevEpKeyRef.current !== key) {
       prevEpKeyRef.current = key;
       trackedTimeRef.current = targetResume;
-      trackedDurationRef.current = mediaTotalDuration;
+      trackedDurationRef.current = 0;
       setCurrentTime(targetResume);
-      setDuration(mediaTotalDuration);
+      setDuration(isTrailerMode ? 180 : 0);
+      durationRef.current = 0;
       setIsResumeReady(targetResume <= 3);
       hasRealTelemetryRef.current = false;
       setActivePanel(null);
@@ -1262,13 +1260,23 @@ export default function NetflixPlayer({
         if (cancelled) return;
 
         if (resp.status === 410 || data.isDead) {
-          if (selectedSourceIdx + 1 < filteredSources.length) {
+          const deadKey = activeSource?.id ? String(activeSource.id) : (activeSource?.direct_url || activeSourceUrl);
+          setDeadSourceKeys((prev) => new Set(prev).add(deadKey));
+
+          const nextWorkingIdx = filteredSources.findIndex(
+            (s, idx) =>
+              idx !== selectedSourceIdx &&
+              !deadSourceKeys.has(s.id ? String(s.id) : (s.direct_url || '')) &&
+              s.direct_url !== activeSourceUrl
+          );
+
+          if (nextWorkingIdx !== -1) {
             pushNotification(
               'Otomatik Yedek Kaynağa Geçildi',
-              `${activeSource?.source_name || 'Kaynak'} kullanılamıyor, sıradaki kaynağa geçiliyor.`,
+              `${activeSource?.source_name || 'Kaynak'} yayından kaldırılmış, çalışan başka bir kaynağa geçiliyor.`,
               'info'
             );
-            setSelectedSourceIdx(selectedSourceIdx + 1);
+            setSelectedSourceIdx(nextWorkingIdx);
             return;
           }
           setResolvedMode('error');
@@ -1379,8 +1387,10 @@ export default function NetflixPlayer({
             const hls = new Hls({
               enableWorker: true,
               lowLatencyMode: false,
-              maxBufferLength: 30,
-              maxMaxBufferLength: 60,
+              maxBufferLength: 15,
+              maxMaxBufferLength: 30,
+              maxBufferSize: 30 * 1000 * 1000,
+              capLevelToPlayerSize: true,
               startPosition: resumeSec > 3 ? resumeSec : -1,
             });
             hls.subtitleDisplay = false;
@@ -2478,8 +2488,8 @@ export default function NetflixPlayer({
   };
 
   const effectiveTime = isScrubbing ? scrubTime : currentTime;
-  const safeDuration = duration > 0 ? duration : isTrailerMode ? 180 : mediaTotalDuration || 100;
-  const remainingSec = Math.max(0, safeDuration - effectiveTime);
+  const safeDuration = duration > 0 ? duration : isTrailerMode ? 180 : 0;
+  const remainingSec = duration > 0 ? Math.max(0, duration - effectiveTime) : 0;
 
   const isMovie = media.content_type === 'film' || media.content_type === 'movie';
   const cleanTitle = cleanMediaTitle(media.title);
@@ -2799,6 +2809,7 @@ export default function NetflixPlayer({
               <video
                 ref={videoRef}
                 playsInline
+                preload="auto"
                 muted={isMuted}
                 style={
                   brightness !== 100
@@ -2909,10 +2920,41 @@ export default function NetflixPlayer({
                 }
               }}
               onError={() => {
+                const v = videoRef.current;
+                // Ignore if video element has no active src or is tearing down
+                if (!v || !v.currentSrc || v.currentSrc === '' || v.currentSrc === window.location.href) {
+                  return;
+                }
+                // If native MP4 failed on direct URL, attempt stream-proxy before giving up to iframe
+                if (resolvedMode === 'native_mp4' && streamUrl && !v.src.includes('/api/stream-proxy')) {
+                  const proxied = `/api/stream-proxy?url=${encodeURIComponent(streamUrl)}&ref=${encodeURIComponent('https://tau-video.xyz/')}`;
+                  v.src = proxied;
+                  v.load();
+                  v.play().catch(() => {});
+                  return;
+                }
+                // If there is another non-dead source, advance automatically
+                const nextWorkingIdx = filteredSources.findIndex(
+                  (s, idx) =>
+                    idx !== selectedSourceIdx &&
+                    !deadSourceKeys.has(s.id ? String(s.id) : (s.direct_url || '')) &&
+                    s.direct_url !== activeSourceUrl
+                );
+                if (nextWorkingIdx !== -1) {
+                  pushNotification(
+                    'Kaynak Değiştirildi',
+                    `${activeSource?.source_name || 'Kaynak'} yüklenemedi, alternatif kaynağa bağlanılıyor.`,
+                    'info'
+                  );
+                  setSelectedSourceIdx(nextWorkingIdx);
+                  return;
+                }
                 if (fallbackIframeUrl) {
                   setStreamUrl(fallbackIframeUrl);
+                  setResolvedMode('iframe');
+                } else {
+                  setResolvedMode('error');
                 }
-                setResolvedMode('iframe');
               }}
               className={`w-full h-full object-contain pointer-events-none transition-opacity duration-300 ${
                 isResumeReady || targetResumeRef.current <= 3 ? 'opacity-100' : 'opacity-0'
@@ -3217,7 +3259,7 @@ export default function NetflixPlayer({
                           seekBy(-10, true);
                         }}
                         aria-label="10 Saniye Geri Sar"
-                        className={`text-white hover:scale-115 active:scale-85 transition-all duration-150 ease-out hover:drop-shadow-[0_0_18px_rgba(255,255,255,0.45)] cursor-pointer p-1 sm:p-2 focus:outline-none ${
+                        className={`text-white hover:scale-110 active:scale-90 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] hover:drop-shadow-[0_0_20px_rgba(255,255,255,0.45)] cursor-pointer p-1 sm:p-2 focus:outline-none ${
                           showOverlay
                             ? 'opacity-100 pointer-events-auto'
                             : 'opacity-0 pointer-events-none'
@@ -3239,7 +3281,7 @@ export default function NetflixPlayer({
                           togglePlayPause();
                         }}
                         aria-label={isPlaying ? 'Duraklat' : 'Oynat'}
-                        className={`text-white hover:scale-115 active:scale-85 transition-all duration-150 ease-out hover:drop-shadow-[0_0_24px_rgba(255,255,255,0.5)] cursor-pointer p-1 sm:p-2 focus:outline-none flex items-center justify-center ${
+                        className={`text-white hover:scale-110 active:scale-90 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] hover:drop-shadow-[0_0_26px_rgba(255,255,255,0.55)] cursor-pointer p-1 sm:p-2 focus:outline-none flex items-center justify-center ${
                           showOverlay
                             ? 'opacity-100 pointer-events-auto'
                             : 'opacity-0 pointer-events-none'
@@ -3263,7 +3305,7 @@ export default function NetflixPlayer({
                           seekBy(10, true);
                         }}
                         aria-label="10 Saniye İleri Sar"
-                        className={`text-white hover:scale-115 active:scale-85 transition-all duration-150 ease-out hover:drop-shadow-[0_0_18px_rgba(255,255,255,0.45)] cursor-pointer p-1 sm:p-2 focus:outline-none ${
+                        className={`text-white hover:scale-110 active:scale-90 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] hover:drop-shadow-[0_0_20px_rgba(255,255,255,0.45)] cursor-pointer p-1 sm:p-2 focus:outline-none ${
                           showOverlay
                             ? 'opacity-100 pointer-events-auto'
                             : 'opacity-0 pointer-events-none'
@@ -3473,7 +3515,7 @@ export default function NetflixPlayer({
                       )}
 
                       {/* PC Hover Timestamp Tooltip */}
-                      {!isTouchDevice && hoverTime !== null && (
+                      {!isTouchDevice && hoverTime !== null && safeDuration > 0 && (
                         <div
                           style={{
                             left: `${Math.min(94, Math.max(6, hoverPercent))}%`,
@@ -3488,24 +3530,30 @@ export default function NetflixPlayer({
                         ref={scrubberRef}
                         type="range"
                         min={0}
-                        max={safeDuration}
+                        max={safeDuration > 0 ? safeDuration : 100}
                         step={0.1}
-                        value={effectiveTime}
+                        value={safeDuration > 0 ? effectiveTime : 0}
                         aria-label="Video ilerleme çubuğu"
-                        aria-valuetext={`${formatTime(effectiveTime)} / ${formatTime(safeDuration)}`}
+                        aria-valuetext={
+                          safeDuration > 0
+                            ? `${formatTime(effectiveTime)} / ${formatTime(safeDuration)}`
+                            : `${formatTime(effectiveTime)} / --:--`
+                        }
                         style={
                           {
                             '--attr-min': 0,
-                            '--attr-max': safeDuration,
-                            '--control-value': effectiveTime,
-                            '--buffered-progress': `${bufferedPercent}%`,
+                            '--attr-max': safeDuration > 0 ? safeDuration : 100,
+                            '--control-value': safeDuration > 0 ? effectiveTime : 0,
+                            '--buffered-progress': safeDuration > 0 ? `${bufferedPercent}%` : '0%',
                           } as React.CSSProperties
                         }
                         onPointerDown={() => {
+                          if (safeDuration <= 0) return;
                           setIsScrubbing(true);
                           setScrubTime(currentTime);
                         }}
                         onChange={(e) => {
+                          if (safeDuration <= 0) return;
                           const val = Number(e.target.value);
                           setScrubTime(val);
                           currentTimeRef.current = Math.floor(val);
@@ -3517,6 +3565,7 @@ export default function NetflixPlayer({
                           }
                         }}
                         onPointerUp={(e) => {
+                          if (safeDuration <= 0) return;
                           const val = Number((e.target as HTMLInputElement).value);
                           if (isTrailerMode) {
                             sendSeekToIframe(val);
@@ -3538,9 +3587,17 @@ export default function NetflixPlayer({
                       aria-label="Süre görünümünü değiştir"
                       className="text-[11px] sm:text-xs font-medium text-white/95 hover:text-white tabular-nums shrink-0 cursor-pointer [text-shadow:0_1px_2px_rgba(0,0,0,0.9)] transition-colors text-right select-none"
                     >
-                      {showRemainingTime
-                        ? formatTime(remainingSec)
-                        : `${formatTime(effectiveTime)} / ${formatTime(safeDuration)}`}
+                      {showRemainingTime ? (
+                        safeDuration > 0 ? (
+                          `-${formatTime(remainingSec)}`
+                        ) : (
+                          '--:--'
+                        )
+                      ) : safeDuration > 0 ? (
+                        `${formatTime(effectiveTime)} / ${formatTime(safeDuration)}`
+                      ) : (
+                        `${formatTime(effectiveTime)} / --:--`
+                      )}
                     </button>
                   </div>
 
