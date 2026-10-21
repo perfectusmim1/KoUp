@@ -121,6 +121,12 @@ export function cleanSourceName(raw: string | null | undefined): string {
   s = s.replace(/\b\d+p\b/gi, '');
   s = s.replace(/\b(?:FHD|UHD|4K|HQ)\b/gi, '');
   s = s.replace(/\bHD\b/gi, '');
+
+  // Strip fansub/translator trailers while preserving Turkish translation types like (Altyazılı), (Dublaj), Dual, Türkçe
+  s = s.replace(/\s*[·•|\-]\s*(?:çeviri|çevirmen|encoder|uploader)[\w\s]*$/gi, '');
+  s = s.replace(/\s*\(?(?:çeviri|çevirmen|encoder|uploader):[^\)]+\)?/gi, '');
+  s = s.replace(/\s*[·•|\-]\s*(?!(?:altyaz[ıi]|dublaj|türkçe|dual|orijinal)\b)[a-zA-Z0-9ğüşıöçĞÜŞİÖÇ_]+$/i, '');
+
   s = s.replace(/\s+/g, ' ').trim();
 
   return s || 'Kaynak';

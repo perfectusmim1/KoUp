@@ -25,8 +25,9 @@ from scrapers.supabase_sync_helper import (
 
 def heal_all_gaps():
     db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "webdrama_archive.db")
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=60.0)
     cur = conn.cursor()
+    cur.execute("PRAGMA busy_timeout = 60000;")
 
     dramas_to_resync = set()
 

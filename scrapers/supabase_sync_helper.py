@@ -15,6 +15,7 @@ import urllib.error
 from datetime import datetime, timezone
 
 from scrapers.multisite import find_in_index, norm_title, tag_site, unique_slug, clean_episode_title, clean_scraped_slug
+from scrapers.clean_fansub import clean_source_name
 from scrapers.translator import (
     COUNTRY_CODE_TO_NAME,
     resolve_anilist_metadata,
@@ -567,9 +568,10 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
                 if key in seen:
                     continue
                 seen.add(key)
+                c_sname = clean_source_name(sname or prov or "Kaynak")
                 srcs.append({
                     "id": sid,
-                    "source_name": sname or prov or "Kaynak",
+                    "source_name": c_sname,
                     "provider": prov or "other",
                     "direct_url": durl,
                     "embed_id": eid or "",
@@ -577,6 +579,23 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
                     "fansub": fsub or None,
                     "quality_label": "1080p",
                 })
+
+            def _src_priority(s):
+                p = (s.get("provider") or "").lower()
+                n = (s.get("source_name") or "").lower()
+                u = (s.get("direct_url") or "").lower()
+                if "tau-video" in p or "tau" in n or "tau-video" in u:
+                    return -5
+                if "rapidrame" in p or "diziyou" in p:
+                    return -4
+                if "tr-dublaj" in p or "tr-altyazi" in p or "player" in p or "hls" in p:
+                    return -3
+                if "uqload" in p or "uqload" in u:
+                    return -2
+                if "vidmoly" in p or "vidmoly" in u:
+                    return -1
+                return 0
+            srcs.sort(key=_src_priority)
             is_pending = (src_status == "pending")
             if srcs or is_pending:
                 clean_name = clean_episode_title(ep_name, s_num or 1, e_num)

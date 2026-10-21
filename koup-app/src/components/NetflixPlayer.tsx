@@ -31,6 +31,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ExternalLink,
+  Cast as CastIcon,
 } from 'lucide-react';
 import {
   MediaItem,
@@ -45,7 +46,7 @@ import {
   getEpisodeProgress,
 } from '@/lib/supabase';
 import { useKoUp, useKoUpSelector } from '@/context/KoUpContext';
-import { cleanFansubName, cleanSourceName } from '@/lib/cleanFansub';
+import { cleanSourceName } from '@/lib/cleanFansub';
 import NetflixEpisodePopover from '@/components/NetflixEpisodePopover';
 import { buildCleanTrailerEmbedUrl, watchYouTubeIframe } from '@/lib/youtubeTrailer';
 
@@ -407,7 +408,6 @@ export interface NetflixPlayerProps {
   cast?: CastMember[];
   selectedSourceIdx?: number;
   onSelectSourceIdx?: (idx: number) => void;
-  selectedFansub?: string;
   cinemaLightsOff?: boolean;
   onToggleCinemaLights?: () => void;
   ambientLightingEnabled?: boolean;
@@ -438,7 +438,6 @@ export default function NetflixPlayer({
   onSelectEpisode = () => {},
   selectedSourceIdx: propSelectedSourceIdx,
   onSelectSourceIdx,
-  selectedFansub: propSelectedFansub = 'all',
   cinemaLightsOff: propCinemaLightsOff,
   onToggleCinemaLights,
   ambientLightingEnabled: propAmbientLightingEnabled,
@@ -492,29 +491,56 @@ export default function NetflixPlayer({
     episodes[0];
 
   const availableSources: EpisodeSource[] = currentEpObj?.sources || [];
+  const filteredSources = availableSources;
 
-  // Source selection state
+  // Source selection state with sticky memory across episodes
   const [internalSourceIdx, setInternalSourceIdx] = useState(0);
   const selectedSourceIdx =
     propSelectedSourceIdx !== undefined ? propSelectedSourceIdx : internalSourceIdx;
+
   const setSelectedSourceIdx = useCallback(
     (idx: number) => {
+      const src = filteredSources[idx];
+      if (src) {
+        const prov = src.provider || src.source_name;
+        if (prov && typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('koup_preferred_provider', prov);
+          } catch {}
+        }
+      }
       if (onSelectSourceIdx) onSelectSourceIdx(idx);
       else setInternalSourceIdx(idx);
     },
-    [onSelectSourceIdx]
+    [filteredSources, onSelectSourceIdx]
   );
-
-  const safePropFansub = cleanFansubName(propSelectedFansub) || propSelectedFansub;
-  const filteredSources =
-    propSelectedFansub === 'all'
-      ? availableSources
-      : availableSources.filter(
-          (s) => (cleanFansubName(s.fansub) || s.fansub) === safePropFansub
-        );
 
   const activeSource: EpisodeSource | undefined =
     filteredSources[selectedSourceIdx] || availableSources[0];
+
+  const selectPreferredSourceForEpisode = useCallback(() => {
+    if (typeof window === 'undefined' || filteredSources.length === 0) {
+      if (onSelectSourceIdx) onSelectSourceIdx(0);
+      else setInternalSourceIdx(0);
+      return;
+    }
+    const savedProvider = localStorage.getItem('koup_preferred_provider')?.toLowerCase().trim();
+
+    if (savedProvider) {
+      const matchIdx = filteredSources.findIndex((s) => {
+        const sProv = (s.provider || '').toLowerCase();
+        const sName = (s.source_name || '').toLowerCase();
+        return sProv === savedProvider || sName.includes(savedProvider) || savedProvider.includes(sName);
+      });
+      if (matchIdx !== -1) {
+        if (onSelectSourceIdx) onSelectSourceIdx(matchIdx);
+        else setInternalSourceIdx(matchIdx);
+        return;
+      }
+    }
+    if (onSelectSourceIdx) onSelectSourceIdx(0);
+    else setInternalSourceIdx(0);
+  }, [filteredSources, onSelectSourceIdx]);
 
   // Dedicated YouTube watch state
   const [forceEmbedYouTube, setForceEmbedYouTube] = useState(false);
@@ -543,6 +569,59 @@ export default function NetflixPlayer({
   const [internalTrailerYtId, setInternalTrailerYtId] = useState<string | null>(
     propTrailerYoutubeId || null
   );
+
+  // Google Cast / Remote Playback API
+  const [isCasting, setIsCasting] = useState(false);
+  const [isCastSupported, setIsCastSupported] = useState(false);
+
+  useEffect(() => {
+    const video = videoRef.current as any;
+    if (!video) return;
+
+    if (video.remote) {
+      setIsCastSupported(true);
+      const updateCastState = () => {
+        setIsCasting(video.remote.state === 'connected' || video.remote.state === 'connecting');
+      };
+      video.remote.addEventListener('connecting', updateCastState);
+      video.remote.addEventListener('connect', updateCastState);
+      video.remote.addEventListener('disconnect', updateCastState);
+      return () => {
+        video.remote?.removeEventListener?.('connecting', updateCastState);
+        video.remote?.removeEventListener?.('connect', updateCastState);
+        video.remote?.removeEventListener?.('disconnect', updateCastState);
+      };
+    } else if (typeof window !== 'undefined' && ('chrome' in window || 'WebKitPlaybackTargetAvailabilityEvent' in window)) {
+      setIsCastSupported(true);
+    }
+  }, [resolvedMode]);
+
+  const handleCastPrompt = useCallback(async () => {
+    const video = videoRef.current as any;
+    if (video?.remote && typeof video.remote.prompt === 'function') {
+      try {
+        await video.remote.prompt();
+      } catch (err: any) {
+        if (err.name !== 'NotFoundError' && err.name !== 'NotAllowedError') {
+          console.warn('Cast prompt error:', err);
+        }
+      }
+      return;
+    }
+    if (video?.webkitShowPlaybackTargetPicker) {
+      try {
+        video.webkitShowPlaybackTargetPicker();
+      } catch (err) {
+        console.warn('AirPlay prompt error:', err);
+      }
+      return;
+    }
+    pushNotification(
+      'TV / Ekrana Yansıt',
+      'Tarayıcı menünüzden (Üç Nokta -> Yayınla / Cast) videoyu televizyonunuza veya Chromecast cihazınıza aktarabilirsiniz.',
+      'info'
+    );
+  }, [pushNotification]);
 
   useEffect(() => {
     if (propTrailerYoutubeId) {
@@ -1093,7 +1172,7 @@ export default function NetflixPlayer({
     isScrubbingRef.current = isScrubbing;
   }, [isScrubbing]);
 
-  // When episode changes, reset telemetry refs, source idx and close drawers
+  // When episode changes, reset telemetry refs, restore sticky preferred source and close drawers
   const prevEpKeyRef = useRef<string>(`${currentSeason}_${currentEpisode}`);
   useEffect(() => {
     const key = `${currentSeason}_${currentEpisode}`;
@@ -1107,9 +1186,9 @@ export default function NetflixPlayer({
       setIsResumeReady(targetResume <= 3);
       hasRealTelemetryRef.current = false;
       setActivePanel(null);
-      setSelectedSourceIdx(0);
+      selectPreferredSourceForEpisode();
     }
-  }, [currentSeason, currentEpisode, mediaTotalDuration, targetResume, setSelectedSourceIdx]);
+  }, [currentSeason, currentEpisode, mediaTotalDuration, targetResume, selectPreferredSourceForEpisode]);
 
   const sendSeekToIframe = useCallback((timeSec: number) => {
     if (!iframeRef.current?.contentWindow) return;
@@ -1135,11 +1214,11 @@ export default function NetflixPlayer({
     } catch {}
   }, []);
 
-  // Reset internal source index when episode changes
+  // Sync sticky preferred source and clear countdown when episode changes
   useEffect(() => {
-    setInternalSourceIdx(0);
+    selectPreferredSourceForEpisode();
     setNextCountdown(null);
-  }, [currentSeason, currentEpisode]);
+  }, [currentSeason, currentEpisode, selectPreferredSourceForEpisode]);
 
   // Fullscreen change synchronization
   useEffect(() => {
@@ -3743,7 +3822,35 @@ export default function NetflixPlayer({
                             </button>
                           )}
 
-                          {/* Tam Ekran Butonu */}
+                          {/* Mobil Google Cast / TV Yansıt Butonu */}
+                          <button
+                            type="button"
+                            onClick={handleCastPrompt}
+                            aria-label={isCasting ? "TV'ye Yansıtılıyor" : "TV'ye Yansıt (Chromecast)"}
+                            className={`flex items-center gap-1 py-1 text-xs font-medium cursor-pointer shrink-0 transition-all ${
+                              isCasting ? 'text-[#E50914] animate-pulse' : 'text-white/90 hover:text-white'
+                            }`}
+                          >
+                            <CastIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                            <span>{isCasting ? 'Yansıtılıyor' : 'Yansıt'}</span>
+                          </button>
+
+                          {/* Google Cast / TV Yansıt Butonu */}
+                        <button
+                          type="button"
+                          onClick={handleCastPrompt}
+                          aria-label={isCasting ? "TV'ye Yansıtılıyor" : "TV'ye Yansıt (Chromecast)"}
+                          title={isCasting ? "TV'ye Yansıtılıyor" : "TV'ye Yansıt (Chromecast)"}
+                          className={`p-1 shrink-0 transition-all duration-150 cursor-pointer ${
+                            isCasting
+                              ? 'text-[#E50914] scale-110 drop-shadow-[0_0_8px_rgba(229,9,20,0.6)] animate-pulse'
+                              : 'text-white/80 hover:text-white hover:scale-110 active:scale-95'
+                          }`}
+                        >
+                          <CastIcon className="w-5 h-5" />
+                        </button>
+
+                        {/* Tam Ekran Butonu */}
                           <button
                             type="button"
                             onClick={toggleFullscreen}
@@ -4124,6 +4231,21 @@ export default function NetflixPlayer({
                             )}
                           </>
                         )}
+
+                        {/* Google Cast / TV Yansıt Butonu */}
+                        <button
+                          type="button"
+                          onClick={handleCastPrompt}
+                          aria-label={isCasting ? "TV'ye Yansıtılıyor" : "TV'ye Yansıt (Chromecast)"}
+                          title={isCasting ? "TV'ye Yansıtılıyor" : "TV'ye Yansıt (Chromecast)"}
+                          className={`p-1 shrink-0 transition-all duration-150 cursor-pointer ${
+                            isCasting
+                              ? 'text-[#E50914] scale-110 drop-shadow-[0_0_8px_rgba(229,9,20,0.6)] animate-pulse'
+                              : 'text-white/80 hover:text-white hover:scale-110 active:scale-95'
+                          }`}
+                        >
+                          <CastIcon className="w-5 h-5" />
+                        </button>
 
                         {/* Tam Ekran Butonu */}
                         <button

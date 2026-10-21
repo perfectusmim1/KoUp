@@ -52,6 +52,10 @@ from scrapers.pending_sources import (
     page_is_placeholder,
     reconcile_episode,
 )
+from scrapers.live_scanner import (
+    fetch_animecix_json,
+    clean_animecix_provider,
+)
 
 DB_PATH = os.path.join(_ROOT, 'webdrama_archive.db')
 
@@ -528,68 +532,152 @@ def sync_animecix_target(conn, cur, drama, target_url=None):
     sources_added = 0
 
     log("AnimeciX", f'AnimeciX motoru devrede: "{title}"')
-    q = urllib.parse.quote(title)
+
+    # Detect target season from drama title if applicable (e.g. "[Oshi no Ko] 3.Sezon")
+    season_match = re.search(r'(\d+)\.\s*sezon|season\s*(\d+)', title, flags=re.I)
+    explicit_season = int(season_match.group(1) or season_match.group(2)) if season_match else None
+
+    # Clean query for search (remove brackets/parentheses and season tags)
+    clean_search = re.sub(r'[\[\]\(\)]', ' ', title)
+    clean_search = re.sub(r'(\d+)\.\s*sezon|season\s*(\d+)', '', clean_search, flags=re.I)
+    clean_search = re.sub(r'[\-_]?(anime|izle|\d{1,4})+$', '', clean_search, flags=re.I).strip()
+    clean_search = re.sub(r'\s+', ' ', clean_search).strip()
+    if not clean_search:
+        clean_search = title
+
     try:
-        api_url = f"https://animecix.net/secure/search/videos?name={q}&limit=5"
-        res_text = fetch_html(api_url, referer='https://animecix.net/')
-        data = json.loads(res_text)
-        results = data.get('results', [])
-        if not results:
-            log("AnimeciX", "AnimeciX üzerinde eşleşen anime bulunamadı.")
-            return 0, 0
+        anime_id = None
+        target_name = None
 
-        clean_q = norm_title(title)
-        best_match = None
-        best_sim = 0.0
-        for r in results:
-            r_name = r.get('name') or ''
-            sim = SequenceMatcher(None, clean_q, norm_title(r_name)).ratio()
-            if sim > best_sim:
-                best_sim = sim
-                best_match = r
+        # 1. If target_url has an ID, use it
+        if target_url and '/titles/' in target_url:
+            m = re.search(r'/titles/(\d+)', target_url)
+            if m:
+                anime_id = int(m.group(1))
+                target_name = f"AnimeciX #{anime_id}"
 
-        if not best_match or best_sim < 0.45:
-            log("AnimeciX", f"AnimeciX üzerinde yeterli benzerlikte eşleşme bulunamadı (En iyi: {best_sim:.2f}).")
-            return 0, 0
+        # 2. Search AnimeciX titles via AESGCM API
+        if not anime_id:
+            q_enc = urllib.parse.quote(clean_search.strip())
+            qs = f"query={q_enc}&onlyStreamable=true&page=1&perPage=10"
+            data = fetch_animecix_json("titles", qs)
+            if not data or 'pagination' not in data:
+                log("AnimeciX", "AnimeciX API yanıt vermedi.")
+                return 0, 0
 
-        target_anime = best_match
-        anime_id = target_anime.get('id')
-        log("AnimeciX", f"Hedef anime bulundu: {target_anime.get('name')} (ID: {anime_id}, Benzerlik: {best_sim:.2f})")
+            results = data['pagination'].get('data', [])
+            if not results:
+                log("AnimeciX", f"AnimeciX üzerinde '{clean_search}' için sonuç bulunamadı.")
+                return 0, 0
 
-        # Fetch episodes
-        ep_api = f"https://animecix.net/secure/titles/{anime_id}/episodes"
-        ep_data = json.loads(fetch_html(ep_api, referer='https://animecix.net/'))
-        ep_list = ep_data.get('episodes', [])
-        log("AnimeciX", f"{len(ep_list)} adet bölüm bulundu.")
+            clean_q = norm_title(clean_search)
+            best_match = None
+            best_sim = 0.0
+            for r in results:
+                r_name = r.get('name') or ''
+                sim = SequenceMatcher(None, clean_q, norm_title(r_name)).ratio()
+                if sim > best_sim:
+                    best_sim = sim
+                    best_match = r
 
-        for ep in ep_list:
-            s_num = int(ep.get('season_number', 1) or 1)
-            e_num = int(ep.get('episode_number', 1) or 1)
+            if not best_match or best_sim < 0.35:
+                log("AnimeciX", f"AnimeciX üzerinde yeterli benzerlikte eşleşme bulunamadı (En iyi: {best_sim:.2f}).")
+                return 0, 0
 
-            ep_url = f"https://animecix.net/titles/{anime_id}/season/{s_num}/episode/{e_num}"
-            ep_id, created = match_or_create_episode(cur, drama['id'], s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_url)
-            if created:
-                episodes_added += 1
+            anime_id = best_match.get('id')
+            target_name = best_match.get('name')
+            log("AnimeciX", f"Hedef anime bulundu: {target_name} (ID: {anime_id}, Benzerlik: {best_sim:.2f})")
 
-            if not created:
-                cur.execute("SELECT id FROM episode_sources WHERE episode_id = ? LIMIT 1", (ep_id,))
-                if cur.fetchone():
-                    reconcile_episode(cur, ep_id, is_placeholder=False)
-                    safe_commit(conn)
+        # 3. Check existing episodes for this drama
+        cur.execute("SELECT id, season_number, episode_number FROM episodes WHERE drama_id = ?", (drama['id'],))
+        ep_rows = cur.fetchall()
+        ep_map = {}
+        for r in ep_rows:
+            ep_map[(r[1], r[2])] = r[0]
+
+        db_seasons = set(r[1] for r in ep_rows)
+        single_season_in_db = (len(db_seasons) == 1 and 1 in db_seasons)
+
+        # 4. Fetch all videos for this title from AnimeciX
+        page = 1
+        video_count = 0
+        while page <= 25:
+            v_qs = f"titleId={anime_id}&page={page}&perPage=100"
+            v_data = fetch_animecix_json("videos", v_qs)
+            if not v_data or 'pagination' not in v_data:
+                break
+            videos = v_data['pagination'].get('data', [])
+            if not videos:
+                break
+
+            for v in videos:
+                v_url = (v.get('url') or '').strip()
+                if not v_url:
+                    continue
+                v_low = v_url.lower()
+                if any(dead in v_low for dead in [
+                    'sibnet.ru', 'sibnet', 'sendvid', 'drive.google.com', 'docs.google.com',
+                    'dood', 'short.icu', 'pixeldrain', '4meplayer', 'asyaanim.upns.one', 'upns.one'
+                ]):
                     continue
 
-            v_list = ep.get('videos', [])
-            for v in v_list:
-                v_url = v.get('url')
-                p_name = v.get('name', 'Tau Video')
-                if v_url:
-                    if add_source(cur, ep_id, f"AnimeciX ({p_name})", v_url, 'animecix', 'animecix'):
-                        sources_added += 1
-                        safe_commit(conn)
-                        log("AnimeciX", f"S{s_num}E{e_num} -> {p_name} eklendi.")
+                v_snum = v.get('season_num') or 1
+                v_enum = v.get('episode_num') or 1
 
-            reconcile_episode(cur, ep_id)
-            safe_commit(conn)
+                # Match season
+                if explicit_season and single_season_in_db:
+                    if v_snum != explicit_season:
+                        continue
+                    target_s = 1
+                    target_e = v_enum
+                elif explicit_season:
+                    if v_snum != explicit_season:
+                        continue
+                    target_s = explicit_season
+                    target_e = v_enum
+                else:
+                    target_s = v_snum
+                    target_e = v_enum
+
+                prov = clean_animecix_provider(v.get('name'), v_url)
+                if prov == 'tau-video':
+                    clean_pname = 'Tau Video'
+                elif prov == 'uqload':
+                    clean_pname = 'Uqload'
+                elif prov == 'mp4upload':
+                    clean_pname = 'Mp4Upload'
+                else:
+                    clean_pname = prov.capitalize()
+
+                v_name = (v.get('name') or '').strip()
+                if 'dublaj' in v_name.lower():
+                    clean_pname += ' (Türkçe Dublaj)'
+                elif 'altyazı' in v_name.lower():
+                    clean_pname += ' (Türkçe Altyazılı)'
+
+                ep_id = ep_map.get((target_s, target_e))
+                if not ep_id:
+                    ep_url = f"https://animecix.tv/titles/{anime_id}/season/{v_snum}/episode/{v_enum}"
+                    ep_id, created = match_or_create_episode(
+                        cur, drama['id'], target_s, target_e,
+                        f"{target_s}. Sezon {target_e}. Bölüm", ep_url
+                    )
+                    if created:
+                        episodes_added += 1
+                        ep_map[(target_s, target_e)] = ep_id
+
+                if add_source(cur, ep_id, clean_pname, v_url, prov, 'animecix'):
+                    sources_added += 1
+                    safe_commit(conn)
+                    log("AnimeciX", f"S{target_s}E{target_e} -> {clean_pname} eklendi.")
+
+                reconcile_episode(cur, ep_id, is_placeholder=False)
+                safe_commit(conn)
+                video_count += 1
+
+            page += 1
+
+        log("AnimeciX", f"Tamamlandı: {episodes_added} yeni bölüm, {sources_added} yeni çalışan kaynak eklendi.")
     except Exception as e:
         log("AnimeciX", f"Hata: {e}")
 

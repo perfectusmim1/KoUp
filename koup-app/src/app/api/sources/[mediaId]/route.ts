@@ -148,6 +148,8 @@ function isDeadSource(provider?: string | null, directUrl?: string | null, sourc
     u.includes('sibnet.ru') ||
     u.includes('sendvid') ||
     u.includes('pixeldrain.com') ||
+    u.includes('asyaanim.upns.one') ||
+    u.includes('embed-7fm0wb9yzf4m.html') ||
     p.includes('gdrive') ||
     p.includes('google') ||
     u.includes('drive.google.com') ||
@@ -271,16 +273,21 @@ function getProviderPriority(provider: string, directUrl: string, contentType: s
   const hasTrSub = s.includes('altyaz') || u.includes('altyaz') || p.includes('sub');
   const hasTrDub = s.includes('dublaj') || s.includes('dual') || u.includes('dublaj') || p.includes('dub');
 
-  // Top priority (Tier 0): Verified Turkish subtitled or dubbed players (Rapidrame, Diziyou, HDFilm, DiziKorea, DiziBox, Dizilla)
+  // Priority #1: Tau-Video (Fastest ultra-responsive native MP4 player stream for KoUp Netflix Player)
+  if (p === 'tau-video' || u.includes('tau-video')) {
+    return -5;
+  }
+
+  // Priority #2: Direct native HLS players (Rapidrame, Diziyou)
   if (p === 'rapidrame' || u.includes('/rplayer/') || (u.includes('rapidrame') && !u.includes('/embed/'))) {
-    return -2;
+    return -4;
   }
   if (p.includes('diziyou') || u.includes('storage.diziyou')) {
-    return -1;
+    return -3;
   }
+
+  // Priority #3: Verified Turkish subtitled/dubbed players (HDFilm, DiziKorea, DiziBox, Dizilla, DBX)
   if (
-    hasTrSub ||
-    hasTrDub ||
     p === 'hdfilm-close' ||
     u.includes('hdfilmcehennemi.mobi') ||
     p === 'dizikorea' ||
@@ -289,15 +296,17 @@ function getProviderPriority(provider: string, directUrl: string, contentType: s
     p === 'dbx' ||
     p === 'dizilla'
   ) {
-    return 0;
+    return -2;
   }
 
-  // Tier 1: Clean high-speed players with Turkish or embedded audio (Vidmoly, Uqload, Tau-Video, MP4Upload)
+  if (hasTrSub || hasTrDub) {
+    return -1;
+  }
+
+  // Tier 1: High-speed reliable players (Uqload, Vidmoly)
   if (
-    p === 'vidmoly' || u.includes('vidmoly') ||
-    p === 'tau-video' || u.includes('tau-video') ||
     p === 'uqload' || u.includes('uqload') ||
-    p === 'mp4upload' || u.includes('mp4upload')
+    p === 'vidmoly' || u.includes('vidmoly')
   ) {
     return 1;
   }
@@ -310,14 +319,14 @@ function getProviderPriority(provider: string, directUrl: string, contentType: s
     return 2;
   }
 
-  // Tier 3: Direct raw HLS without explicit Turkish subtitles (e.g. Diziyou raw streams)
-  if (p.includes('diziyou') || u.includes('storage.diziyou') || u.includes('.m3u8')) {
+  // Tier 3: Direct raw HLS without explicit Turkish subtitles
+  if (u.includes('.m3u8')) {
     return 3;
   }
 
-  // Tier 4: Fragile hosts or iframe fallbacks (Pichive, VOE, Filemoon)
-  if (u.includes('pichive') || p === 'voe' || u.includes('voe.') || p === 'filemoon') {
-    return 5;
+  // Tier 4: Fallbacks (Mp4Upload, VOE, Filemoon)
+  if (p === 'mp4upload' || u.includes('mp4upload') || p === 'voe' || u.includes('voe.') || p === 'filemoon') {
+    return 4;
   }
 
   return 8;

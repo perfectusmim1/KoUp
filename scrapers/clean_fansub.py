@@ -86,6 +86,14 @@ def clean_source_name(name):
     s = re.sub(r'https?://\S+', '', s, flags=re.I)
     s = re.sub(r'(?:www\.)?discord(?:\.gg|app\.com|\.com|\.me)/[^\s|]+', '', s, flags=re.I)
     s = re.sub(r'\bwww\.[a-zA-Z0-9\-_.]+\.[a-zA-Z]{2,}[^\s|]*', '', s, flags=re.I)
+    
+    # Strip site wrapper like "AnimeciX (Tau Video)" -> "Tau Video"
+    m_wrapper = re.match(r'^[a-zA-Z0-9_-]+\s*\(([^)]+)\)$', s)
+    if m_wrapper:
+        s = m_wrapper.group(1).strip()
+
+    # Strip fansub suffix like " - AMT", " · AMT", " | AMT"
+    s = re.sub(r'\s*[-·|•]\s*(?:[A-Za-z0-9_]{2,15}|[A-Za-z0-9_]+\s*Fansub|Çeviri)\s*$', '', s, flags=re.I)
     s = re.sub(r'\s+', ' ', s).strip()
 
     return s or "Kaynak"

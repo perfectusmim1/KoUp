@@ -909,10 +909,10 @@ export async function GET(req: NextRequest) {
     url.includes('tau-video')
   ) {
     try {
-      const hexMatch = url.match(/([a-f0-9]{24})/i);
       const code =
-        hexMatch?.[1] ||
         url.match(/\/embed\/([a-zA-Z0-9_-]+)/)?.[1] ||
+        url.match(/\/video\/([a-zA-Z0-9_-]+)/)?.[1] ||
+        url.match(/([a-f0-9]{24,64})/i)?.[1] ||
         url.split('/').pop()?.split('?')[0];
 
       if (code) {
@@ -923,7 +923,7 @@ export async function GET(req: NextRequest) {
           const edgeRes = await fetch(
             `https://koup-edge-worker.caganhuseyinerdil.workers.dev/tau?key=${encodeURIComponent(code)}`,
             {
-              signal: AbortSignal.timeout(4500),
+              signal: AbortSignal.timeout(3000),
               headers: { Accept: 'application/json' },
             }
           );
@@ -945,7 +945,7 @@ export async function GET(req: NextRequest) {
                 Referer: 'https://tau-video.xyz/',
                 Accept: 'application/json',
               },
-              signal: AbortSignal.timeout(4000),
+              signal: AbortSignal.timeout(3500),
             });
             if (apiResp.ok) {
               const apiJson = await apiResp.json();
@@ -964,13 +964,19 @@ export async function GET(req: NextRequest) {
             return qb - qa;
           });
 
+          // Proxy raw MP4 through stream-proxy to ensure CORS headers, byte-range scrubbing and prevent black screen
+          const proxiedQualities = sorted.map((q) => {
+            const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(q.url)}&ref=${encodeURIComponent('https://tau-video.xyz/')}`;
+            return {
+              label: q.label || '1080p',
+              url: proxiedUrl,
+            };
+          });
+
           const payload = {
             mode: 'native_mp4' as const,
-            qualities: sorted.map((q) => ({
-              label: q.label || '1080p',
-              url: q.url,
-            })),
-            streamUrl: sorted[0].url,
+            qualities: proxiedQualities,
+            streamUrl: proxiedQualities[0].url,
             thumbnails: tauData.thumbnails || undefined,
             fallbackIframe: url,
           };
@@ -1257,6 +1263,12 @@ export async function GET(req: NextRequest) {
     try {
       const parsedU = new URL(url);
       const host = parsedU.host;
+      if (host.includes('asyaanim')) {
+        return NextResponse.json(
+          { error: 'AsyaAnim videosu silinmiş veya bulunamadı', isDead: true },
+          { status: 200 }
+        );
+      }
       const hashMatch = url.match(/[#\/]([a-zA-Z0-9_-]{5,12})$/);
       const hashId = hashMatch?.[1];
       if (hashId) {
@@ -1271,6 +1283,11 @@ export async function GET(req: NextRequest) {
           };
           setCachedStream(url, result, 8 * 60 * 1000);
           return NextResponse.json(result, { headers: CACHE_HEADERS });
+        } else {
+          return NextResponse.json(
+            { error: 'UPNS videosu silinmiş veya bulunamadı', isDead: true },
+            { status: 200 }
+          );
         }
       }
     } catch {}
@@ -1680,7 +1697,7 @@ export async function GET(req: NextRequest) {
       if (!resp.ok && (resp.status === 404 || resp.status === 410)) {
         return NextResponse.json(
           { error: 'Mp4Upload videosu bulunamadı (404)', isDead: true },
-          { status: 410 }
+          { status: 200 }
         );
       }
 
@@ -1692,11 +1709,12 @@ export async function GET(req: NextRequest) {
         lowHtml.includes('file not found') ||
         lowHtml.includes('video not found') ||
         lowHtml.includes('no video found') ||
-        lowHtml.includes('file is no longer available')
+        lowHtml.includes('file is no longer available') ||
+        html.trim() === 'File was deleted'
       ) {
         return NextResponse.json(
           { error: 'Mp4Upload videosu silinmiş veya kaldırılmış', isDead: true },
-          { status: 410 }
+          { status: 200 }
         );
       }
 

@@ -44,7 +44,7 @@ import {
 import { trackMediaView } from '@/lib/viewTracker';
 import { cachedQuery, getCache, getMediaFromCache, registerMediaItem, updateCachedMedia } from '@/lib/cache';
 import { recordTasteSignal } from '@/lib/tasteProfile';
-import { cleanFansubName, cleanSourceName } from '@/lib/cleanFansub';
+import { cleanSourceName } from '@/lib/cleanFansub';
 import dynamic from 'next/dynamic';
 import { useKoUpSelector } from '@/context/KoUpContext';
 import NetflixPlayer from '@/components/NetflixPlayer';
@@ -99,8 +99,7 @@ export default function EpisodeWatchPage({
   const [isLoading, setIsLoading] = useState(true);
 
   const [selectedSourceIdx, setSelectedSourceIdx] = useState(0);
-  const [selectedFansub, setSelectedFansub] = useState('all');
-  const preferredSourceRef = useRef<{ provider?: string; source_name?: string; fansub?: string | null }>({});
+  const preferredSourceRef = useRef<{ provider?: string; source_name?: string }>({});
   const [liveEpisodeViews, setLiveEpisodeViews] = useState<Record<string, number>>({});
 
   const handleSelectSourceIdx = useCallback((idx: number) => {
@@ -166,32 +165,16 @@ export default function EpisodeWatchPage({
       setActiveEpNum(targetEpNum);
       if (s) setCurrentSeason(targetSeason);
 
-      // Smart source persistence: match previous active source or fansub in target episode
+      // Smart source persistence: match previous active source provider or source name in target episode
       const targetEp = episodes.find(
         (ep) => (ep.season_number || 1) === targetSeason && ep.episode_number === targetEpNum
       );
 
       const pref = preferredSourceRef.current;
       if (targetEp && Array.isArray(targetEp.sources) && targetEp.sources.length > 0) {
-        // 1. Fansub preservation
-        let nextFansub = 'all';
-        if (pref.fansub && pref.fansub !== 'all') {
-          const hasFansub = targetEp.sources.some(
-            (src) => cleanFansubName(src.fansub) === pref.fansub
-          );
-          if (hasFansub) nextFansub = pref.fansub;
-        }
-        setSelectedFansub(nextFansub);
+        const candidates = targetEp.sources;
 
-        // 2. Candidate sources filtered by fansub
-        const candidates =
-          nextFansub === 'all'
-            ? targetEp.sources
-            : targetEp.sources.filter(
-                (src) => cleanFansubName(src.fansub) === nextFansub
-              );
-
-        // 3. Find matching source index (exact provider + source_name, then same provider, then same source_name)
+        // Find matching source index (exact provider + source_name, then same provider, then same source_name)
         let matchIdx = candidates.findIndex((src) => {
           const pMatch = pref.provider && src.provider && src.provider.toLowerCase() === pref.provider.toLowerCase();
           const nMatch = pref.source_name && src.source_name && cleanSourceName(src.source_name).toLowerCase() === pref.source_name.toLowerCase();
@@ -213,7 +196,6 @@ export default function EpisodeWatchPage({
         setSelectedSourceIdx(matchIdx >= 0 ? matchIdx : 0);
       } else {
         setSelectedSourceIdx(0);
-        setSelectedFansub('all');
       }
 
       const targetSlug = media?.slug || slug;
@@ -315,7 +297,6 @@ export default function EpisodeWatchPage({
   // Reset source selection on episode change
   useEffect(() => {
     setSelectedSourceIdx(0);
-    setSelectedFansub('all');
   }, [activeEpNum]);
 
   useEffect(() => {
@@ -669,16 +650,9 @@ export default function EpisodeWatchPage({
   const availableSources: EpisodeSource[] = rawSources.map((s) => ({
     ...s,
     source_name: cleanSourceName(s.source_name),
-    fansub: cleanFansubName(s.fansub),
   }));
-  const uniqueFansubs = Array.from(
-    new Set(availableSources.map((s) => s.fansub).filter(Boolean))
-  ) as string[];
 
-  const filteredSources =
-    selectedFansub === 'all'
-      ? availableSources
-      : availableSources.filter((s) => s.fansub === selectedFansub);
+  const filteredSources = availableSources;
 
   const activeSource: EpisodeSource | undefined =
     filteredSources[selectedSourceIdx] || availableSources[0];
@@ -689,10 +663,9 @@ export default function EpisodeWatchPage({
       preferredSourceRef.current = {
         provider: activeSource.provider,
         source_name: activeSource.source_name,
-        fansub: activeSource.fansub || selectedFansub,
       };
     }
-  }, [activeSource?.provider, activeSource?.source_name, activeSource?.fansub, selectedFansub]);
+  }, [activeSource?.provider, activeSource?.source_name]);
 
 
 
@@ -974,16 +947,10 @@ export default function EpisodeWatchPage({
                       s.stream_type === 'hls' ||
                       s.stream_type === 'tau' ||
                       s.stream_type === 'mp4';
-                    let baseName = cleanSourceName(s.source_name || `Kaynak ${idx + 1}`);
-                    const isExternalFansub =
-                      s.fansub &&
-                      !['varsayılan', 'asyawatch', 'dizilla', 'orijinal', 'koup', 'webdrama'].includes(
-                        s.fansub.toLowerCase()
-                      );
-                    const label = `${baseName}${isExternalFansub ? ` · ${s.fansub}` : ''}`;
+                    const baseName = cleanSourceName(s.source_name || `Kaynak ${idx + 1}`);
                     return {
                       value: String(idx),
-                      label,
+                      label: baseName,
                       icon: (
                         <span
                           className={`w-2 h-2 rounded-full ${
@@ -1005,25 +972,6 @@ export default function EpisodeWatchPage({
               </span>
             ) : (
               <span className="text-xs text-white/40 font-mono">Kaynak Hazırlanıyor...</span>
-            )}
-
-            {uniqueFansubs.length > 1 && (
-              <div className="hidden md:block">
-                <CustomSelect
-                  value={selectedFansub}
-                  onChange={(val) => {
-                    setSelectedFansub(val);
-                    setSelectedSourceIdx(0);
-                  }}
-                  variant="dark"
-                  size="sm"
-                  portal={true}
-                  options={[
-                    { value: 'all', label: 'Tüm Çeviriler' },
-                    ...uniqueFansubs.map((f) => ({ value: f, label: f })),
-                  ]}
-                />
-              </div>
             )}
           </div>
 
@@ -1132,7 +1080,6 @@ export default function EpisodeWatchPage({
                 onSelectEpisode={handleSelectEpisode}
                 selectedSourceIdx={selectedSourceIdx}
                 onSelectSourceIdx={handleSelectSourceIdx}
-                selectedFansub={selectedFansub}
                 ambientLightingEnabled={ambientLightingEnabled}
                 onToggleAmbientLighting={handleToggleAmbientLighting}
                 autoNextEnabled={autoNextEnabled}

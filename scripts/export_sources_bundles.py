@@ -66,38 +66,21 @@ def get_provider_priority(provider: str, direct_url: str, content_type: str) -> 
     p = (provider or "").lower()
     u = (direct_url or "").lower()
 
-    if p == "asyawatch" or "pichive" in u or p == "dizilla" or "dplayer" in u:
+    if p == "tau-video" or "tau-video" in u:
         return 0
-    if p == "hdfilm-close" or "/video/embed/" in u:
-        return 10
-
-    if content_type == "anime":
-        if p == "tau-video" or "tau-video" in u:
-            return 1
-        if "hls" in p or ".m3u8" in u:
-            return 2
-    else:
-        if (
-            "rapid" in p
-            or "hls" in p
-            or "rapidrame" in u
-            or p in ("diziyou", "dbx", "dizibox")
-            or "molystream" in u
-            or ".m3u8" in u
-        ):
-            return 1
-        if p == "tau-video" or "tau-video" in u:
-            return 2
-
-    if p in ("vidmoly", "filemoon", "yourupload", "morencius", "ev"):
+    if p in ("rapidrame", "diziyou-hls") or "rplayer" in u or "storage.diziyou" in u:
+        return 1
+    if p in ("hdfilm-close", "dizikorea", "dizibox", "dbx", "dizilla", "asyawatch") or "pichive" in u or "dplayer" in u:
+        return 2
+    if p in ("vidmoly", "uqload") or "vidmoly" in u or "uqload" in u:
         return 3
-    if p in ("ok.ru", "odnoklassniki", "mail.ru", "mail", "vk", "dailymotion", "gdriveplayer") or "ok.ru" in u or "mail.ru" in u or "gdriveplayer" in u:
+    if p in ("ok.ru", "odnoklassniki", "mail.ru", "mail", "vk", "dailymotion"):
         return 4
-    if p in ("mp4upload", "voe"):
+    if ".m3u8" in u:
         return 5
-    if p == "uqload" or "uqload" in u:
+    if p in ("mp4upload", "voe", "filemoon"):
         return 6
-    return 7
+    return 8
 
 def export_all(drama_id: int = None):
     if not DB_PATH.exists():
@@ -155,6 +138,8 @@ def export_all(drama_id: int = None):
           AND direct_url NOT LIKE '%uns.bio%'
           AND direct_url NOT LIKE '%playerdkorea.xyz%'
           AND direct_url NOT LIKE '%video.diziasya.com%'
+          AND direct_url NOT LIKE '%asyaanim.upns.one%'
+          AND direct_url NOT LIKE '%embed-7fm0wb9yzf4m.html%'
     """
 
     count = 0
