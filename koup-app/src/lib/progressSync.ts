@@ -429,24 +429,57 @@ export function reconcileProgressMaps(
         localIsNewer = true;
       }
 
-      const mergedEpisodePositions = {
-        ...(db.episode_positions || {}),
-        ...(local.episode_positions || {}),
-      };
+      const dbWatched = Array.isArray(db.watched_episodes) ? db.watched_episodes : [];
+      const localWatched = Array.isArray(local.watched_episodes) ? local.watched_episodes : [];
+      const mergedWatchedEpisodes = Array.from(new Set([...dbWatched, ...localWatched]))
+        .map(Number)
+        .filter((n) => !Number.isNaN(n) && n > 0)
+        .sort((a, b) => a - b);
 
-      if (localIsNewer) {
+      const dbEpMap = db.episode_positions || {};
+      const localEpMap = local.episode_positions || {};
+      const allEpKeys = new Set([...Object.keys(dbEpMap), ...Object.keys(localEpMap)]);
+      const mergedEpisodePositions: Record<string, any> = {};
+
+      allEpKeys.forEach((epKey) => {
+        const dEp = dbEpMap[epKey];
+        const lEp = localEpMap[epKey];
+        if (dEp && !lEp) {
+          mergedEpisodePositions[epKey] = dEp;
+        } else if (lEp && !dEp) {
+          mergedEpisodePositions[epKey] = lEp;
+        } else if (dEp && lEp) {
+          const dTime = dEp.updated_at ? new Date(dEp.updated_at).getTime() : 0;
+          const lTime = lEp.updated_at ? new Date(lEp.updated_at).getTime() : 0;
+          if (dTime !== lTime) {
+            mergedEpisodePositions[epKey] = dTime > lTime ? dEp : lEp;
+          } else {
+            mergedEpisodePositions[epKey] = (dEp.position || 0) >= (lEp.position || 0) ? dEp : lEp;
+          }
+        }
+      });
+
+      const watchedUnionGrew = mergedWatchedEpisodes.length > dbWatched.length;
+
+      if (localIsNewer || watchedUnionGrew) {
+        const base = localIsNewer ? local : db;
         const reconciled: UserMediaProgress = {
-          ...local,
+          ...base,
+          watched_episodes: mergedWatchedEpisodes,
           episode_positions: mergedEpisodePositions,
           user_id: activeUserId,
           media: db.media || local.media,
-          updated_at: local.updated_at || new Date().toISOString(),
+          updated_at:
+            localIsNewer && local.updated_at
+              ? local.updated_at
+              : db.updated_at || new Date().toISOString(),
         };
         mergedMap[id] = reconciled;
         itemsToSyncToSupabase.push(sanitizeProgressDbPayload(reconciled, activeUserId));
       } else {
         mergedMap[id] = {
           ...db,
+          watched_episodes: mergedWatchedEpisodes,
           episode_positions: mergedEpisodePositions,
           media: db.media || local.media,
         };
@@ -455,6 +488,19 @@ export function reconcileProgressMaps(
 
     const current = mergedMap[id];
     if (current) {
+      if (typeof window !== 'undefined' && current.episode_positions) {
+        try {
+          Object.entries(current.episode_positions).forEach(([epKey, epVal]: [string, any]) => {
+            if (epVal && typeof epVal.position === 'number') {
+              localStorage.setItem(
+                `koup_ep_pos_${id}_${epKey}`,
+                JSON.stringify({ position: epVal.position, duration: epVal.duration || 3600 })
+              );
+            }
+          });
+        } catch {}
+      }
+
       const isFilm =
         current.media?.content_type === 'film' || current.media?.content_type === 'movie';
       const pos = current.resume_position_sec || 0;

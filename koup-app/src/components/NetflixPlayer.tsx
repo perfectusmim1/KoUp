@@ -860,6 +860,26 @@ export default function NetflixPlayer({
   showOverlayRef.current = showOverlay;
   const [isScreenLocked, setIsScreenLocked] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [videoZoomScale, setVideoZoomScale] = useState<number>(1);
+  const pinchStateRef = useRef<{
+    active: boolean;
+    startDist: number;
+    startScale: number;
+    triggeredInGesture: boolean;
+    lastPinchEndTime: number;
+  }>({
+    active: false,
+    startDist: 0,
+    startScale: 1,
+    triggeredInGesture: false,
+    lastPinchEndTime: 0,
+  });
+
+  useEffect(() => {
+    if (!isFullscreen) {
+      setVideoZoomScale(1);
+    }
+  }, [isFullscreen]);
   const [activePanel, _setActivePanel] = useState<ActivePanel>(null);
   const activePanelRef = useRef<ActivePanel>(null);
 
@@ -2510,6 +2530,64 @@ export default function NetflixPlayer({
     revealControls,
   ]);
 
+  const handleStageTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!isFullscreen || isScreenLocked || isTrailerMode) return;
+    if (e.touches.length === 2) {
+      const t0 = e.touches[0];
+      const t1 = e.touches[1];
+      const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+      pinchStateRef.current = {
+        active: true,
+        startDist: Math.max(10, dist),
+        startScale: videoZoomScale,
+        triggeredInGesture: false,
+        lastPinchEndTime: Date.now(),
+      };
+      if (singleClickTimerRef.current) {
+        clearTimeout(singleClickTimerRef.current);
+        singleClickTimerRef.current = null;
+      }
+    }
+  };
+
+  const handleStageTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!pinchStateRef.current.active || e.touches.length < 2) return;
+    const t0 = e.touches[0];
+    const t1 = e.touches[1];
+    const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+    const ratio = dist / pinchStateRef.current.startDist;
+    pinchStateRef.current.lastPinchEndTime = Date.now();
+
+    if (!pinchStateRef.current.triggeredInGesture) {
+      if (ratio > 1.12) {
+        pinchStateRef.current.triggeredInGesture = true;
+        const nextScale = pinchStateRef.current.startScale < 1.13 ? 1.15 : 1.24;
+        setVideoZoomScale(nextScale);
+        triggerHudToast(
+          nextScale === 1.15
+            ? 'Yakınlaştırıldı (Siyah Barlar Gizlendi)'
+            : 'Tam Ekran Dolduruldu'
+        );
+      } else if (ratio < 0.88) {
+        pinchStateRef.current.triggeredInGesture = true;
+        const nextScale = pinchStateRef.current.startScale > 1.2 ? 1.15 : 1;
+        setVideoZoomScale(nextScale);
+        triggerHudToast(
+          nextScale === 1
+            ? 'Orijinal Boyut'
+            : 'Yakınlaştırıldı (Siyah Barlar Gizlendi)'
+        );
+      }
+    }
+  };
+
+  const handleStageTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (pinchStateRef.current.active && e.touches.length < 2) {
+      pinchStateRef.current.active = false;
+      pinchStateRef.current.lastPinchEndTime = Date.now();
+    }
+  };
+
   const handleStagePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.pointerType === 'touch') {
       touchStartPosRef.current = { x: e.clientX, y: e.clientY };
@@ -2518,6 +2596,13 @@ export default function NetflixPlayer({
 
   // Handle stage surface pointer click / double-click / mobile double-tap
   const handleStagePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (
+      pinchStateRef.current.active ||
+      Date.now() - pinchStateRef.current.lastPinchEndTime < 350
+    ) {
+      return;
+    }
+
     // Ignore if user clicked inside an interactive control or open drawer
     if ((e.target as HTMLElement).closest('[data-netflix-control="true"]')) {
       return;
@@ -2932,6 +3017,9 @@ export default function NetflixPlayer({
           <div
             onPointerDown={handleStagePointerDown}
             onPointerUp={handleStagePointerUp}
+            onTouchStart={handleStageTouchStart}
+            onTouchMove={handleStageTouchMove}
+            onTouchEnd={handleStageTouchEnd}
             className="relative w-full h-full bg-black flex items-center justify-center overflow-hidden"
           >
             {resolvedMode === 'trailer' ? (
@@ -2983,11 +3071,13 @@ export default function NetflixPlayer({
                 playsInline
                 preload="auto"
                 muted={isMuted}
-                style={
-                  brightness !== 100
-                    ? { filter: `brightness(${brightness}%)` }
-                    : undefined
-                }
+                style={{
+                  ...(brightness !== 100 ? { filter: `brightness(${brightness}%)` } : {}),
+                  ...(isFullscreen && videoZoomScale !== 1
+                    ? { transform: `scale(${videoZoomScale})` }
+                    : {}),
+                  transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), opacity 300ms ease',
+                }}
                 onPlay={() => {
                   setIsPlaying(true);
                   setIsBuffering(false);
@@ -3352,7 +3442,19 @@ export default function NetflixPlayer({
                         )}
                       </div>
                     ) : isTouchDevice ? (
-                      <>
+                      <div className="flex items-center gap-2.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={handleCastPrompt}
+                          aria-label={isCasting ? "TV'ye Yansıtılıyor" : "TV'ye Yansıt (Chromecast)"}
+                          className={`p-1 shrink-0 transition-all duration-150 cursor-pointer ${
+                            isCasting
+                              ? 'text-[#E50914] scale-110 drop-shadow-[0_0_8px_rgba(229,9,20,0.6)] animate-pulse'
+                              : 'text-white/90 hover:text-white active:scale-95'
+                          }`}
+                        >
+                          <CastIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+                        </button>
                         {isFullscreen && (
                           <button
                             type="button"
@@ -3367,7 +3469,7 @@ export default function NetflixPlayer({
                             <Unlock className="w-4 h-4 sm:w-5 sm:h-5" />
                           </button>
                         )}
-                      </>
+                      </div>
                     ) : (
                       <div className="w-8 flex justify-end" />
                     )}
@@ -3915,35 +4017,7 @@ export default function NetflixPlayer({
                             </button>
                           )}
 
-                          {/* Mobil Google Cast / TV Yansıt Butonu */}
-                          <button
-                            type="button"
-                            onClick={handleCastPrompt}
-                            aria-label={isCasting ? "TV'ye Yansıtılıyor" : "TV'ye Yansıt (Chromecast)"}
-                            className={`flex items-center gap-1 py-1 text-xs font-medium cursor-pointer shrink-0 transition-all ${
-                              isCasting ? 'text-[#E50914] animate-pulse' : 'text-white/90 hover:text-white'
-                            }`}
-                          >
-                            <CastIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                            <span>{isCasting ? 'Yansıtılıyor' : 'Yansıt'}</span>
-                          </button>
-
-                          {/* Google Cast / TV Yansıt Butonu */}
-                        <button
-                          type="button"
-                          onClick={handleCastPrompt}
-                          aria-label={isCasting ? "TV'ye Yansıtılıyor" : "TV'ye Yansıt (Chromecast)"}
-                          title={isCasting ? "TV'ye Yansıtılıyor" : "TV'ye Yansıt (Chromecast)"}
-                          className={`p-1 shrink-0 transition-all duration-150 cursor-pointer ${
-                            isCasting
-                              ? 'text-[#E50914] scale-110 drop-shadow-[0_0_8px_rgba(229,9,20,0.6)] animate-pulse'
-                              : 'text-white/80 hover:text-white hover:scale-110 active:scale-95'
-                          }`}
-                        >
-                          <CastIcon className="w-5 h-5" />
-                        </button>
-
-                        {/* Tam Ekran Butonu */}
+                          {/* Tam Ekran Butonu */}
                           <button
                             type="button"
                             onClick={toggleFullscreen}

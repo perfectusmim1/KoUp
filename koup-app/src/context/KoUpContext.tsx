@@ -1205,6 +1205,50 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user]);
 
+  // Cross-device account sync: Realtime listener + window focus/visibility sync
+  const lastLibraryRefreshRef = useRef<number>(0);
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const triggerThrottledRefresh = () => {
+      const now = Date.now();
+      if (now - lastLibraryRefreshRef.current < 4000) return;
+      lastLibraryRefreshRef.current = now;
+      void refreshUserLibrary();
+    };
+
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        triggerThrottledRefresh();
+      }
+    };
+
+    window.addEventListener('focus', triggerThrottledRefresh);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    const progChannel = supabase
+      .channel(`realtime:user_media_progress:${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_media_progress',
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          triggerThrottledRefresh();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      window.removeEventListener('focus', triggerThrottledRefresh);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      supabase.removeChannel(progChannel);
+    };
+  }, [user?.id, refreshUserLibrary]);
+
   const updateEpisodeProgress = useCallback(
     (
       media: MediaItem,
@@ -1234,7 +1278,9 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           media,
         };
 
-        const watchedSet = new Set(existing.watched_episodes || []);
+        const prevWatchedList = Array.isArray(existing.watched_episodes) ? existing.watched_episodes : [];
+        const wasAlreadyWatched = prevWatchedList.includes(episodeNum);
+        const watchedSet = new Set(prevWatchedList);
         const isFilm = media.content_type === 'film' || media.content_type === 'movie';
         const isCompletedNow = markCompletedEpisode || (roundedDur > 0 && roundedPos / roundedDur >= 0.85);
         if (isCompletedNow) {
@@ -1242,6 +1288,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         } else if (isFilm && roundedPos > 15 && roundedDur > 0 && roundedPos / roundedDur < 0.85) {
           watchedSet.delete(episodeNum);
         }
+        const newlyCompletedEpisode = !wasAlreadyWatched && watchedSet.has(episodeNum);
 
         const watchedArr = Array.from(watchedSet).sort((a, b) => a - b);
         const maxWatched = watchedArr.length > 0 ? Math.max(...watchedArr) : 0;
@@ -1310,18 +1357,10 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         } catch {}
 
         // Smart Supabase Egress Optimization:
-        let lastSync = lastSyncedProgressRef.current[media.id];
-        if (!lastSync) {
-          lastSync = {
-            positionSec: nextResumePos,
-            seasonNum,
-            episodeNum: nextLastEp,
-            status: updated.status,
-            watchedCount: watchedArr.length,
-            syncedAt: Date.now(),
-          };
-          lastSyncedProgressRef.current[media.id] = lastSync;
-        }
+        const lastSync = lastSyncedProgressRef.current[media.id];
+        const effectiveOptions: ProgressSyncOptions = newlyCompletedEpisode
+          ? { ...options, forceSync: true, reason: 'completed' }
+          : options || {};
 
         const shouldSync = shouldSyncToSupabase(
           nextResumePos,
@@ -1330,7 +1369,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           updated.status,
           watchedArr.length,
           lastSync,
-          options
+          effectiveOptions
         );
 
         if (user && shouldSync) {
@@ -1344,7 +1383,16 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           };
 
           const payload = sanitizeProgressDbPayload({ ...updated, user_id: user.id }, user.id);
-          void syncProgressRecordToSupabase(payload, { keepalive: options?.keepalive });
+          void syncProgressRecordToSupabase(payload, { keepalive: effectiveOptions?.keepalive });
+        } else if (!lastSync) {
+          lastSyncedProgressRef.current[media.id] = {
+            positionSec: existing.resume_position_sec ?? 0,
+            seasonNum: existing.last_season_num ?? seasonNum,
+            episodeNum: existing.last_episode_num ?? episodeNum,
+            status: existing.status,
+            watchedCount: prevWatchedList.length,
+            syncedAt: Date.now(),
+          };
         }
 
         return next;
@@ -1369,13 +1417,15 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           const delta = lastSync
             ? Math.abs((item.resume_position_sec || 0) - lastSync.positionSec)
             : item.resume_position_sec || 0;
+          const watchedCount = (item.watched_episodes || []).length;
 
           if (
             !lastSync ||
             delta >= SIGNIFICANT_DELTA_SEC ||
             lastSync.seasonNum !== item.last_season_num ||
             lastSync.episodeNum !== item.last_episode_num ||
-            lastSync.status !== item.status
+            lastSync.status !== item.status ||
+            lastSync.watchedCount !== watchedCount
           ) {
             toSync.push(sanitizeProgressDbPayload({ ...item, user_id: user.id }, user.id));
             lastSyncedProgressRef.current[item.media_id] = {
@@ -1383,7 +1433,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
               seasonNum: item.last_season_num || 1,
               episodeNum: item.last_episode_num || 1,
               status: item.status,
-              watchedCount: (item.watched_episodes || []).length,
+              watchedCount,
               syncedAt: Date.now(),
             };
           }
