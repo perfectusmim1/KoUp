@@ -1531,7 +1531,7 @@ export default function NetflixPlayer({
               if (pData?.status === 'success' && pData.streamUrl) {
                 const masterUrl = pData.streamUrl;
                 const origin = 'https://four.pichive.online';
-                const proxiedMaster = `/api/stream-proxy?url=${encodeURIComponent(masterUrl)}&ref=${encodeURIComponent(origin + '/')}`;
+                const proxiedMaster = `https://koup-edge-worker.caganhuseyinerdil.workers.dev/pichive-proxy?url=${encodeURIComponent(masterUrl)}`;
                 const subtitles = (pData.subtitles || []).map((s: any) => {
                   const rawFile = String(s.file || '');
                   const fullSubUrl = rawFile.startsWith('http')
@@ -1542,7 +1542,7 @@ export default function NetflixPlayer({
                   return {
                     label: s.label || 'Türkçe',
                     lang: s.lang || 'tr',
-                    url: `/api/stream-proxy?url=${encodeURIComponent(fullSubUrl)}&ref=${encodeURIComponent(origin + '/')}`,
+                    url: `https://koup-edge-worker.caganhuseyinerdil.workers.dev/pichive-proxy?url=${encodeURIComponent(fullSubUrl)}`,
                     default: !!s.default,
                   };
                 });

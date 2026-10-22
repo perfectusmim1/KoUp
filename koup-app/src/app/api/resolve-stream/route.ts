@@ -439,7 +439,7 @@ export async function GET(req: NextRequest) {
             try {
               origin = new URL(iframeUrl).origin;
             } catch {}
-            const proxiedMaster = `/api/stream-proxy?url=${encodeURIComponent(masterStreamUrl)}&ref=${encodeURIComponent(origin + '/')}`;
+            const proxiedMaster = `https://koup-edge-worker.caganhuseyinerdil.workers.dev/pichive-proxy?url=${encodeURIComponent(masterStreamUrl)}`;
             const subtitles = (edgeData.subtitles || []).map((s: any) => {
               const rawFile = String(s.file || '');
               const fullSubUrl = rawFile.startsWith('http')
@@ -450,7 +450,7 @@ export async function GET(req: NextRequest) {
               return {
                 label: s.label || 'Türkçe',
                 lang: s.lang || 'tr',
-                url: `/api/stream-proxy?url=${encodeURIComponent(fullSubUrl)}&ref=${encodeURIComponent(origin + '/')}`,
+                url: `https://koup-edge-worker.caganhuseyinerdil.workers.dev/pichive-proxy?url=${encodeURIComponent(fullSubUrl)}`,
                 default: !!s.default,
               };
             });
