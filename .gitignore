@@ -35,6 +35,11 @@ scratch/
 graft/
 supabase/.temp/
 
+# AI Coding Instructions & Private Prompts
+GEMINI.md
+GEMINI.MD
+database.py
+
 # R2 Local Bundles & Large Dumps
 r2_bundles/
 scrapers/ddizi_catalog.json
