@@ -29,7 +29,12 @@ ctx = ssl.create_default_context()
 def _load_supabase_creds():
     env_path = os.path.join(_ROOT, "koup-app", ".env.local")
     url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "")
-    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "") or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY", "")
+    key = (
+        os.environ.get("SUPABASE_SECRET_KEY", "")
+        or os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+        or os.environ.get("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "")
+        or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY", "")
+    )
     if os.path.exists(env_path):
         try:
             with open(env_path, "r", encoding="utf-8") as f:
@@ -37,9 +42,11 @@ def _load_supabase_creds():
                     line = line.strip()
                     if line.startswith("NEXT_PUBLIC_SUPABASE_URL="):
                         url = line.split("=", 1)[1].strip().strip('"').strip("'")
-                    elif line.startswith("SUPABASE_SERVICE_ROLE_KEY="):
+                    elif line.startswith("SUPABASE_SECRET_KEY="):
                         key = line.split("=", 1)[1].strip().strip('"').strip("'")
-                    elif line.startswith("NEXT_PUBLIC_SUPABASE_ANON_KEY=") and not key:
+                    elif line.startswith("SUPABASE_SERVICE_ROLE_KEY=") and not key:
+                        key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    elif (line.startswith("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=") or line.startswith("NEXT_PUBLIC_SUPABASE_ANON_KEY=")) and not key:
                         key = line.split("=", 1)[1].strip().strip('"').strip("'")
         except Exception:
             pass

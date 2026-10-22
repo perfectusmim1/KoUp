@@ -174,7 +174,10 @@ export async function syncProgressRecordToSupabase(
 
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://aocvcotmikzlwbaezdpl.supabase.co';
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  const supabaseAnonKey =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    '';
 
   // 3. Keepalive sync for page unload / tab close
   if (options?.keepalive && typeof window !== 'undefined') {
