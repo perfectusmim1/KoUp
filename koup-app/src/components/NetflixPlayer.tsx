@@ -1502,6 +1502,70 @@ export default function NetflixPlayer({
           }
         }
 
+        // Direct Client-Side / Local Edge Resolution for AsyaWatch & Pichive / DPlayer (bypasses Vercel AWS Lambda WAF checks)
+        const isPichiveSource =
+          activeSourceProvider === 'asyawatch' ||
+          activeSourceProvider.toLowerCase().includes('asyawatch') ||
+          activeSourceProvider.toLowerCase().includes('pichive') ||
+          activeSourceProvider.toLowerCase().includes('dplayer') ||
+          activeSourceUrl.toLowerCase().includes('pichive.online') ||
+          activeSourceUrl.toLowerCase().includes('dplayer82.site') ||
+          activeSourceUrl.toLowerCase().includes('dplayer') ||
+          activeSourceUrl.toLowerCase().includes('sn.hotlinger.com');
+
+        if (!data && isPichiveSource) {
+          try {
+            const edgePichiveResp = await fetch(
+              `https://koup-edge-worker.caganhuseyinerdil.workers.dev/pichive?url=${encodeURIComponent(activeSourceUrl)}`,
+              {
+                headers: { Accept: 'application/json' },
+                signal: AbortSignal.timeout(6000),
+              }
+            );
+
+            if (edgePichiveResp.status === 410) {
+              respStatus = 410;
+              data = { isDead: true };
+            } else if (edgePichiveResp.ok) {
+              const pData = await edgePichiveResp.json();
+              if (pData?.status === 'success' && pData.streamUrl) {
+                const masterUrl = pData.streamUrl;
+                const origin = 'https://four.pichive.online';
+                const proxiedMaster = `/api/stream-proxy?url=${encodeURIComponent(masterUrl)}&ref=${encodeURIComponent(origin + '/')}`;
+                const subtitles = (pData.subtitles || []).map((s: any) => {
+                  const rawFile = String(s.file || '');
+                  const fullSubUrl = rawFile.startsWith('http')
+                    ? rawFile
+                    : rawFile.startsWith('//')
+                    ? `https:${rawFile}`
+                    : `${origin}${rawFile.startsWith('/') ? '' : '/'}${rawFile}`;
+                  return {
+                    label: s.label || 'Türkçe',
+                    lang: s.lang || 'tr',
+                    url: `/api/stream-proxy?url=${encodeURIComponent(fullSubUrl)}&ref=${encodeURIComponent(origin + '/')}`,
+                    default: !!s.default,
+                  };
+                });
+
+                data = {
+                  mode: 'native_hls',
+                  streamUrl: proxiedMaster,
+                  streamType: 'hls',
+                  directUrl: masterUrl,
+                  posterImage: pData.poster || null,
+                  subtitles,
+                  qualities: [
+                    { label: '1080p (Orijinal)', url: proxiedMaster },
+                  ],
+                  fallbackIframe: activeSourceUrl,
+                };
+              }
+            }
+          } catch (err) {
+            console.warn('Direct Pichive edge resolution error:', err);
+          }
+        }
+
         if (!data) {
           const params = new URLSearchParams({
             url: activeSourceUrl,

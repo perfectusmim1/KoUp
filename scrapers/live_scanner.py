@@ -1009,21 +1009,19 @@ def scan_asyawatch(conn, cur, idx, limit=30, target=None):
 
             eps_to_scan = flat_eps if target else flat_eps[:limit]
             for ep in eps_to_scan:
-                s_num = ep.get('season_no', 1) or 1
-                e_num = ep.get('episode_no', 1) or 1
+                s_num = ep.get('season_no') if ep.get('season_no') is not None else 1
+                e_num = ep.get('episode_no') if ep.get('episode_no') is not None else 1
+                ep_text = ep.get('episode_text') or f"{s_num}. Sezon {e_num}. Bölüm"
                 ep_slug = ep.get('used_slug', f"dizi/{target_slug}/sezon-{s_num}/bolum-{e_num}")
-                ep_page_url = f"https://asyawatch.com/{ep_slug}"
+                ep_page_url = f"https://asyawatch.com/{ep_slug.lstrip('/')}"
 
                 try:
-                    ep_json_url = f"https://asyawatch.com/_next/data/{build_id}/{ep_slug}.json"
+                    ep_json_url = f"https://asyawatch.com/_next/data/{build_id}/{ep_slug.lstrip('/')}.json"
                     edata = json.loads(fetch_url(ep_json_url, headers=headers))
                     esec = json.loads(base64.b64decode(edata['pageProps']['secureData']).decode('utf-8'))
                     esources = esec.get('RelatedResults', {}).get('getEpisodeSources', {}).get('result', [])
 
-                    for s in esources:
-                        s_content = s.get('source_content', '')
-                        m_iframe = re.search(r'src=["\']([^"\']+)["\']', s_content)
-                    ep_id, _ = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_page_url)
+                    ep_id, _ = match_or_create_episode(cur, did, s_num, e_num, ep_text, ep_page_url)
                     for s in esources:
                         s_content = s.get('source_content', '')
                         m_iframe = re.search(r'src=["\']([^"\']+)["\']', s_content)
@@ -1036,7 +1034,7 @@ def scan_asyawatch(conn, cur, idx, limit=30, target=None):
                             item_obj = {
                                 'id': f"asyawatch-{did}-{s_num}-{e_num}",
                                 'title': clean_title,
-                                'subtitle': f"{s_num}. Sezon {e_num}. Bölüm (Asyawatch 1080p)",
+                                'subtitle': f"{ep_text} (Asyawatch 1080p)",
                                 'image': cover_img,
                                 'link': f"/seri/{drama_slug}/{e_num}",
                                 'date': datetime.now().isoformat(),

@@ -422,6 +422,58 @@ export async function GET(req: NextRequest) {
         ? 'https://asyawatch.com/'
         : 'https://dizilla.now/';
 
+      // 1. Primary: Global Cloudflare Edge Worker stream resolver (instant, edge-cached, works on Vercel AWS Lambda)
+      try {
+        const edgeResp = await fetch(
+          `https://koup-edge-worker.caganhuseyinerdil.workers.dev/pichive?url=${encodeURIComponent(iframeUrl)}`,
+          {
+            headers: { Accept: 'application/json' },
+            signal: AbortSignal.timeout(5000),
+          }
+        );
+        if (edgeResp.ok) {
+          const edgeData = await edgeResp.json();
+          if (edgeData?.status === 'success' && edgeData.streamUrl) {
+            const masterStreamUrl = edgeData.streamUrl;
+            let origin = 'https://four.pichive.online';
+            try {
+              origin = new URL(iframeUrl).origin;
+            } catch {}
+            const proxiedMaster = `/api/stream-proxy?url=${encodeURIComponent(masterStreamUrl)}&ref=${encodeURIComponent(origin + '/')}`;
+            const subtitles = (edgeData.subtitles || []).map((s: any) => {
+              const rawFile = String(s.file || '');
+              const fullSubUrl = rawFile.startsWith('http')
+                ? rawFile
+                : rawFile.startsWith('//')
+                ? `https:${rawFile}`
+                : `${origin}${rawFile.startsWith('/') ? '' : '/'}${rawFile}`;
+              return {
+                label: s.label || 'Türkçe',
+                lang: s.lang || 'tr',
+                url: `/api/stream-proxy?url=${encodeURIComponent(fullSubUrl)}&ref=${encodeURIComponent(origin + '/')}`,
+                default: !!s.default,
+              };
+            });
+
+            return NextResponse.json(
+              {
+                mode: 'native_hls',
+                streamUrl: proxiedMaster,
+                streamType: 'hls',
+                directUrl: masterStreamUrl,
+                posterImage: edgeData.poster || null,
+                subtitles,
+                qualities: [{ label: '1080p (Orijinal)', url: proxiedMaster }],
+                fallbackIframe: iframeUrl,
+              },
+              { headers: CACHE_HEADERS }
+            );
+          }
+        }
+      } catch (edgeErr) {
+        console.warn('Edge Worker pichive extraction failed, falling back:', edgeErr);
+      }
+
       const { execFile } = await import('child_process');
       const iframeHtml = await new Promise<string>((resolve, reject) => {
         execFile(

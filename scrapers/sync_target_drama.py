@@ -924,23 +924,25 @@ def sync_asyawatch_target(conn, cur, drama, target_url=None):
     for s in season_results:
         if isinstance(s, dict) and 'episodes' in s:
             for ep in s['episodes']:
-                s_no = ep.get('season_no') or s.get('season_no') or 1
-                e_no = ep.get('episode_no') or 1
+                s_no = ep.get('season_no') if ep.get('season_no') is not None else (s.get('season_no') or 1)
+                e_no = ep.get('episode_no') if ep.get('episode_no') is not None else 1
+                ep_text = ep.get('episode_text') or f"{s_no}. Sezon {e_no}. Bölüm"
                 ep_slug = ep.get('used_slug') or f"dizi/{matched_slug}/sezon-{s_no}/bolum-{e_no}"
-                flat_eps.append((int(s_no), int(e_no), ep_slug))
+                flat_eps.append((int(s_no), int(e_no), ep_slug, ep_text))
         elif isinstance(s, dict):
-            s_no = s.get('season_no') or 1
-            e_no = s.get('episode_no') or 1
+            s_no = s.get('season_no') if s.get('season_no') is not None else 1
+            e_no = s.get('episode_no') if s.get('episode_no') is not None else 1
+            ep_text = s.get('episode_text') or f"{s_no}. Sezon {e_no}. Bölüm"
             ep_slug = s.get('used_slug') or f"dizi/{matched_slug}/sezon-{s_no}/bolum-{e_no}"
-            flat_eps.append((int(s_no), int(e_no), ep_slug))
+            flat_eps.append((int(s_no), int(e_no), ep_slug, ep_text))
 
     flat_eps.sort(key=lambda x: (x[0], x[1]))
     log("AsyaWatch", f"{len(flat_eps)} adet bölüm tespit edildi ({matched_slug}).")
 
-    for s_num, e_num, ep_slug in flat_eps:
+    for s_num, e_num, ep_slug, ep_title in flat_eps:
         ep_slug_clean = ep_slug.lstrip('/')
         ep_page_url = f"https://asyawatch.com/{ep_slug_clean}"
-        ep_id, created = match_or_create_episode(cur, d['id'], s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_page_url)
+        ep_id, created = match_or_create_episode(cur, d['id'], s_num, e_num, ep_title, ep_page_url)
         if created:
             episodes_added += 1
 

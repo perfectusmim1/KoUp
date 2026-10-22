@@ -88,6 +88,14 @@ export default {
         });
       }
 
+      // Edge Cache (1 hour cache to prevent Cloudflare 1015 rate limiting)
+      const cacheKey = new Request(url.toString(), request);
+      const cache = caches.default;
+      try {
+        const cached = await cache.match(cacheKey);
+        if (cached) return cached;
+      } catch {}
+
       try {
         let iframeUrl = targetIframe;
         if (iframeUrl.startsWith('//')) iframeUrl = 'https:' + iframeUrl;
@@ -96,12 +104,25 @@ export default {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
             'Referer': 'https://asyawatch.com/',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Sec-Fetch-Dest': 'iframe',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'cross-site',
+            'Upgrade-Insecure-Requests': '1',
           },
         });
 
         if (!iframeResp.ok) {
-          return new Response(JSON.stringify({ error: `Iframe HTTP ${iframeResp.status}`, isDead: true }), {
+          const errBody = await iframeResp.text();
+          return new Response(JSON.stringify({
+            error: `Iframe HTTP ${iframeResp.status}`,
+            isDead: true,
+            status: iframeResp.status,
+            bodySnippet: errBody.slice(0, 300),
+            cfRay: iframeResp.headers.get('cf-ray'),
+            server: iframeResp.headers.get('server')
+          }), {
             status: iframeResp.status,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
@@ -152,7 +173,7 @@ export default {
           } catch {}
         }
 
-        return new Response(
+        const edgeResp = new Response(
           JSON.stringify({
             status: 'success',
             streamUrl: masterStreamUrl,
@@ -164,10 +185,15 @@ export default {
             headers: {
               ...corsHeaders,
               'Content-Type': 'application/json',
-              'Cache-Control': 'public, max-age=3600',
+              'Cache-Control': 'public, max-age=3600, s-maxage=7200',
             },
           }
         );
+
+        if (ctx && ctx.waitUntil) {
+          ctx.waitUntil(cache.put(cacheKey, edgeResp.clone()));
+        }
+        return edgeResp;
       } catch (err) {
         return new Response(JSON.stringify({ error: String(err), isDead: true }), {
           status: 500,
