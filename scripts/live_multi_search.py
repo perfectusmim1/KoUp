@@ -103,31 +103,33 @@ def query_matches(q: str, slug: str, title: str) -> bool:
 
 
 def search_asyawatch(q: str):
-    url = f"https://asyawatch.com/?s={urllib.parse.quote(q)}"
-    req = urllib.request.Request(url, headers=HEADERS)
+    url = f"https://asyawatch.com/api/bg/searchContent?searchterm={urllib.parse.quote(q)}"
+    req = urllib.request.Request(
+        url,
+        data=b"",
+        headers={'Referer': 'https://asyawatch.com/', 'Origin': 'https://asyawatch.com', **HEADERS},
+        method="POST",
+    )
     results = []
     try:
         with urllib.request.urlopen(req, context=ctx, timeout=8) as r:
-            html = r.read().decode('utf-8', errors='ignore')
-            soup = BeautifulSoup(html, 'html.parser')
-            seen = set()
-            for a in soup.find_all('a', href=True):
-                h = a['href']
-                if '/dizi/' in h:
-                    part = h.split('/dizi/')[-1].strip('/')
-                    slug = part.split('/')[0] if part else ''
+            data = json.loads(r.read().decode('utf-8', errors='ignore'))
+            s_raw = data.get('response', '')
+            if s_raw:
+                dec = json.loads(base64.b64decode(s_raw).decode('utf-8', errors='ignore'))
+                seen = set()
+                for itm in dec.get('result', []):
+                    used_slug = (itm.get('used_slug') or '').strip('/')
+                    if not used_slug.startswith('dizi/'):
+                        continue
+                    slug = used_slug.split('dizi/')[-1].strip('/')
                     if not slug or slug in seen:
                         continue
-                    
-                    raw_title = a.get_text(strip=True) or ''
+                    raw_title = itm.get('object_name') or ''
                     clean_t = clean_display_title(raw_title) or slug.replace('-', ' ').title()
-
                     if not query_matches(q, slug, clean_t):
                         continue
-
                     seen.add(slug)
-                    img = a.find('img')
-                    img_src = img.get('src') if img else None
                     results.append({
                         "site": "asyawatch",
                         "site_name": "AsyaWatch",
@@ -135,7 +137,7 @@ def search_asyawatch(q: str):
                         "title": clean_t,
                         "slug": slug,
                         "url": f"https://asyawatch.com/dizi/{slug}",
-                        "cover_image": img_src,
+                        "cover_image": itm.get('object_poster_url'),
                     })
                     if len(results) >= 6:
                         break

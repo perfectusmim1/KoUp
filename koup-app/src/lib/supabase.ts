@@ -845,6 +845,15 @@ export function cleanEpisodeName(
   if (!rawName) return episodeNum ? `${episodeNum}. Bölüm` : '';
   let s = sanitizeMojibake(String(rawName)).trim();
 
+  // Strip play symbols, bullets, arrows and button residue (e.g. '▶', '►', '▸', '▶️', '▷', '⏯', '⏵', '•', '·')
+  s = s.replace(/[\u25b6\u25ba\u25b8\u25c0\u25c4\u25bc\u25b2\u25b7\u25bd\u25c1\u25c5\u27a4\u25e6\u2022\u00b7\ufe0f]+/g, ' ').trim();
+
+  // Strip scraper noise e.g. "izle", "full hd", "tek parça", "türkçe altyazılı"
+  s = s.replace(
+    /\s*\b(?:izle|dizi\s*izle|film\s*izle|full\s*hd|1080p|720p|tek\s*par[çc]a|t[üu]rk[çc]e\s*altyaz[ıi]l[ıi]|t[üu]rk[çc]e\s*dublaj(?:l[ıi])?)\b.*$/gi,
+    ''
+  ).trim();
+
   // Strip dates e.g. "1 Ocak 2020", "15 Mart 2021", "January 1, 2020"
   s = s.replace(
     /\s*\d{1,2}\s+(?:Ocak|Şubat|Mart|Nisan|Mayıs|Haziran|Temmuz|Ağustos|Eylül|Ekim|Kasım|Aralık|Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{4}\b/gi,
@@ -862,8 +871,8 @@ export function cleanEpisodeName(
   s = s.replace(/^S\d+[:\s]*B\d+\s*[-:•]?\s*/i, '').trim();
   s = s.replace(/^Bölüm\s*\d+\s*[-:•]?\s*/i, '').trim();
 
-  // Strip leading punctuation
-  s = s.replace(/^[-:•|~–—\s]+/, '').trim();
+  // Strip leading & trailing punctuation
+  s = s.replace(/^[-:•|~–—\s.,;!?_/\\]+/, '').trim();
 
   // Handle collapsed parentheses like "(Tremor)" or "(Part 1)"
   const parenMatch = s.match(/^\(([^)]+)\)$/);
@@ -871,13 +880,14 @@ export function cleanEpisodeName(
     s = parenMatch[1].trim();
   }
 
-  // Strip trailing punctuation
-  s = s.replace(/[-:•|~–—\s]+$/, '').trim();
+  // Strip trailing punctuation & quotes
+  s = s.replace(/[-:•|~–—\s.,;!?_/\\]+$/, '').trim();
   s = s.replace(/^["'“”«»`]+|["'“”«»`]+$/g, '').trim();
 
-  // If the extracted subtitle is empty, generic, or just repeats the episode number
+  // If the extracted subtitle is empty, generic, repeats the episode number, or has no alphanumeric characters
   if (
     !s ||
+    !/[a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF]/.test(s) ||
     /^(?:bölüm|episode|part)\s*\d*$/i.test(s) ||
     s === `${episodeNum}` ||
     s === `${episodeNum}. Bölüm`
@@ -898,7 +908,10 @@ export function formatEpisodeTitle(
   options?: { includeSeasonPrefix?: boolean; includeEpisodeNum?: boolean }
 ): string {
   const subtitle = cleanEpisodeName(rawName, seasonNum, episodeNum);
-  const isGeneric = !subtitle || subtitle === `${episodeNum}. Bölüm`;
+  const isGeneric =
+    !subtitle ||
+    subtitle === `${episodeNum}. Bölüm` ||
+    !/[a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF]/.test(subtitle);
 
   if (options?.includeSeasonPrefix) {
     const prefix = `S${seasonNum}:B${episodeNum}`;

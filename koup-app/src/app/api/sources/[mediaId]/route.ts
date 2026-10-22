@@ -535,7 +535,6 @@ export async function GET(
            AND direct_url NOT LIKE '%p2pplay%'
            AND direct_url NOT LIKE '%rpmplay%'
             AND direct_url NOT LIKE '%uns.bio%'
-            AND direct_url NOT LIKE '%playerdkorea.xyz%'
             AND direct_url NOT LIKE '%video.diziasya.com%'
             AND direct_url NOT LIKE '%vidmoly.me%'
             AND direct_url NOT LIKE '%upns.one%'
@@ -646,8 +645,13 @@ export async function GET(
           if (le.intro_start_sec != null) existing.intro_start_sec = le.intro_start_sec;
           if (le.intro_end_sec != null) existing.intro_end_sec = le.intro_end_sec;
           if (le.status === 'pending_source') {
-            existing.status = 'pending_source';
-            existing.pending = true;
+            if (!existing.sources || existing.sources.length === 0) {
+              existing.status = 'pending_source';
+              existing.pending = true;
+            } else {
+              existing.status = 'published';
+              existing.pending = false;
+            }
           } else if (le.status === 'scheduled' && existing.sources.length === 0) {
             existing.status = 'scheduled';
             existing.scheduled_release_at = le.scheduled_release_at;

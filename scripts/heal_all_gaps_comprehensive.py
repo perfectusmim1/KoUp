@@ -2,15 +2,17 @@
 Comprehensive Archive Sequence Gap Healer
 -----------------------------------------
 1. Normalizes title-number false outliers (e.g. 304, 501, 999).
-2. Detects ALL sequence gaps across all series and seasons where max_ep <= 200.
+2. Detects ALL sequence gaps across all series and seasons (including long series > 200 eps).
 3. Inserts pending placeholder episodes for every missing episode number (1..max_ep).
 4. Re-syncs bundles to local disk, Cloudflare R2 (sources/{id}.json), and Supabase public.episodes.
 """
 
 import sys
 import os
+import re
 import sqlite3
 import json
+import argparse
 from collections import defaultdict
 
 # Add root directory to sys.path
@@ -23,7 +25,7 @@ from scrapers.supabase_sync_helper import (
     upload_to_r2,
 )
 
-def heal_all_gaps():
+def heal_all_gaps(no_remote_sync=False):
     db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "webdrama_archive.db")
     conn = sqlite3.connect(db_path, timeout=60.0)
     cur = conn.cursor()
@@ -151,13 +153,15 @@ def heal_all_gaps():
     print("=" * 60)
 
     cur.execute("""
-        SELECT e.drama_id, COALESCE(e.season_number, 1), e.episode_number
+        SELECT e.drama_id, d.title, COALESCE(e.season_number, 1), e.episode_number
         FROM episodes e
         JOIN dramas d ON e.drama_id = d.id
         ORDER BY e.drama_id, COALESCE(e.season_number, 1), e.episode_number
     """)
     drama_seasons = defaultdict(lambda: defaultdict(set))
-    for d_id, s_num, e_num in cur.fetchall():
+    drama_titles = {}
+    for d_id, d_title, s_num, e_num in cur.fetchall():
+        drama_titles[d_id] = d_title or ""
         if e_num is not None:
             drama_seasons[d_id][s_num].add(e_num)
 
@@ -166,6 +170,7 @@ def heal_all_gaps():
 
     for d_id, seasons in drama_seasons.items():
         series_touched = False
+        d_title = drama_titles.get(d_id, "")
         for s_num, ep_nums in seasons.items():
             if not ep_nums:
                 continue
@@ -176,19 +181,20 @@ def heal_all_gaps():
             min_ep = min(ep_nums)
             max_ep = max(ep_nums)
 
-            # Cap max_ep at 200 for regular seasons
-            if max_ep > 200:
+            # Guard only against false 4-digit year outliers (> 2500); allow all long series
+            if max_ep > 2500:
                 continue
 
-            # In normal TV seasons, episodes run from 1 to max_ep
-            expected = set(range(1, max_ep + 1))
+            # If a seasonal entry uses absolute episode numbering starting > 50, start at min_ep
+            start_ep = min_ep if (min_ep > 50 and re.search(r'(\d+)\.\s*sezon|season\s*(\d+)', d_title, re.I)) else 1
+            expected = set(range(start_ep, max_ep + 1))
             missing = expected - ep_nums
 
             if missing:
                 series_touched = True
                 for m_ep in sorted(missing):
                     cur.execute("""
-                        INSERT INTO episodes (drama_id, season_number, episode_number, episode_name, episode_url, source_status)
+                        INSERT OR IGNORE INTO episodes (drama_id, season_number, episode_number, episode_name, episode_url, source_status)
                         VALUES (?, ?, ?, ?, ?, 'pending')
                     """, (d_id, s_num, m_ep, f"{m_ep}. Bölüm", f"pending://gap/{d_id}/{s_num}/{m_ep}"))
                     total_placeholders += 1
@@ -200,31 +206,36 @@ def heal_all_gaps():
     conn.commit()
     print(f"Filled {total_placeholders} missing episode placeholders across {gapped_series_count} series!")
 
-    print("\n" + "=" * 60)
-    print(f"STEP 3: RE-SYNCING BUNDLES, CLOUDFLARE R2 & SUPABASE ({len(dramas_to_resync)} SERIES)")
-    print("=" * 60)
-
     synced_count = 0
-    for idx, d_id in enumerate(sorted(dramas_to_resync), 1):
-        try:
-            sync_drama_bundle_and_counts(conn, cur, d_id)
-            synced_count += 1
-            if idx % 25 == 0 or idx == len(dramas_to_resync):
-                print(f"  [{idx}/{len(dramas_to_resync)}] Synced Drama ID {d_id} to R2 & Supabase...")
-        except Exception as e:
-            print(f"  [ERROR] Syncing drama {d_id}: {e}")
+    if not no_remote_sync:
+        print("\n" + "=" * 60)
+        print(f"STEP 3: RE-SYNCING BUNDLES, CLOUDFLARE R2 & SUPABASE ({len(dramas_to_resync)} SERIES)")
+        print("=" * 60)
+
+        for idx, d_id in enumerate(sorted(dramas_to_resync), 1):
+            try:
+                sync_drama_bundle_and_counts(conn, cur, d_id)
+                synced_count += 1
+                if idx % 25 == 0 or idx == len(dramas_to_resync):
+                    print(f"  [{idx}/{len(dramas_to_resync)}] Synced Drama ID {d_id} to R2 & Supabase...")
+            except Exception as e:
+                print(f"  [ERROR] Syncing drama {d_id}: {e}")
 
     # Checkpoint SQLite WAL
     try:
-        cur.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+        cur.execute("PRAGMA wal_checkpoint(PASSIVE);")
         print("\nSQLite WAL checkpointed successfully.")
     except Exception as e:
         print(f"WAL checkpoint note: {e}")
 
     conn.close()
     print("\n" + "=" * 60)
-    print(f"ALL DONE! {total_placeholders} placeholders filled, {synced_count} series synced to R2 & Supabase.")
+    print(f"ALL DONE! {total_placeholders} placeholders filled across {len(dramas_to_resync)} series.")
     print("=" * 60)
+    return sorted(list(dramas_to_resync))
 
 if __name__ == "__main__":
-    heal_all_gaps()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--no-remote-sync", action="store_true", help="Skip R2 and Supabase sync")
+    args = parser.parse_args()
+    heal_all_gaps(no_remote_sync=args.no_remote_sync)

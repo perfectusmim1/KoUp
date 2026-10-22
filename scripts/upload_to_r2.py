@@ -1,5 +1,6 @@
 import os
 import glob
+import json
 import time
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -45,12 +46,25 @@ def upload_file(s3_client, local_path, s3_key):
         return False, s3_key, str(e)
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--ids-file", type=str, default=None, help="JSON file containing list of drama IDs to upload")
+    parser.add_argument("--workers", type=int, default=40)
+    args = parser.parse_args()
+
     print(f"Checking sources directory: {SOURCES_DIR}")
     if not os.path.exists(SOURCES_DIR):
         print(f"ERROR: Directory not found: {SOURCES_DIR}")
         sys.exit(1)
 
-    files = glob.glob(os.path.join(SOURCES_DIR, "*.json"))
+    if args.ids_file and os.path.exists(args.ids_file):
+        with open(args.ids_file, "r", encoding="utf-8") as f:
+            target_ids = set(json.load(f))
+        files = [os.path.join(SOURCES_DIR, f"{did}.json") for did in target_ids if os.path.exists(os.path.join(SOURCES_DIR, f"{did}.json"))]
+        print(f"Filtered {len(files)} JSON bundles from IDs file '{args.ids_file}'...")
+    else:
+        files = glob.glob(os.path.join(SOURCES_DIR, "*.json"))
+
     total_files = len(files)
     print(f"Found {total_files} JSON bundle files to upload to R2 bucket '{R2_BUCKET}'...")
 
@@ -73,8 +87,8 @@ def main():
     uploaded_count = 0
     failed_count = 0
 
-    print(f"Starting parallel upload with 30 worker threads...")
-    with ThreadPoolExecutor(max_workers=30) as executor:
+    print(f"Starting parallel upload with {args.workers} worker threads...")
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
         futures = {}
         for fpath in files:
             fname = os.path.basename(fpath)

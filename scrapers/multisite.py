@@ -118,6 +118,9 @@ def clean_episode_title(name: str, season: int = 1, number: int = 1) -> str:
         except Exception:
             pass
 
+    # Strip play symbols, bullets, arrows and button residue (e.g. '▶', '►', '▸', '▶️', '▷', '⏯', '⏵', '•', '·')
+    s = re.sub(r'[\u25b6\u25ba\u25b8\u25c0\u25c4\u25bc\u25b2\u25b7\u25bd\u25c1\u25c5\u27a4\u25e6\u2022\u00b7\ufe0f]+', ' ', s).strip()
+
     # Remove Turkish/English dates
     s = re.sub(r'\s*\d{1,2}\s+(?:Ocak|Şubat|Mart|Nisan|Mayıs|Haziran|Temmuz|Ağustos|Eylül|Ekim|Kasım|Aralık|Oca|Şub|Mar|Nis|May|Haz|Tem|Ağu|Eyl|Eki|Kas|Ara|Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b(?:\s+\d{4})?', '', s, flags=re.I)
     s = re.sub(r'\s*\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b', '', s)
@@ -133,15 +136,19 @@ def clean_episode_title(name: str, season: int = 1, number: int = 1) -> str:
     sub_title = re.sub(r'^(?:\d+\s*\.?\s*Sezon\s*)?(?:\d+\s*\.?\s*B[öo]l[üu]m\s*[-:•]?\s*)', '', s, flags=re.I).strip()
     sub_title = re.sub(r'^(?:Season\s*\d+\s*)?(?:Episode\s*\d+\s*[-:•]?\s*)', '', sub_title, flags=re.I).strip()
     sub_title = re.sub(r'^S\d+[:\s]*B\d+\s*[-:•]?\s*', '', sub_title, flags=re.I).strip()
-    sub_title = re.sub(r'^[-:•|~–—\s]+|[-:•|~–—\s]+$', '', sub_title).strip()
+    sub_title = re.sub(r'^[-:•|~–—\s.,;!?_/\\]+|[-:•|~–—\s.,;!?_/\\]+$', '', sub_title).strip()
 
     # Handle parentheses like (Tremor)
     m_paren = re.match(r'^\(([^)]+)\)$', sub_title)
     if m_paren:
         sub_title = m_paren.group(1).strip()
 
-    # If there is a meaningful episode subtitle
-    if sub_title and not re.match(r'^(?:b[öo]l[üu]m|episode|part)\s*\d*$', sub_title, re.I) and sub_title != str(number):
+    # Strip trailing punctuation again after paren unwrapping
+    sub_title = re.sub(r'^[-:•|~–—\s.,;!?_/\\]+|[-:•|~–—\s.,;!?_/\\]+$', '', sub_title).strip()
+
+    # If there is a meaningful episode subtitle (with real alphanumeric words)
+    has_alpha = bool(re.search(r'[a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF]', sub_title))
+    if sub_title and has_alpha and not re.match(r'^(?:b[öo]l[üu]m|episode|part)\s*\d*$', sub_title, re.I) and sub_title != str(number):
         if re.search(r'\b\d+\.?\s*b[öo]l[üu]m\b', sub_title, re.I):
             return f"Bölüm {number}" if season == 1 else f"{season}. Sezon {number}. Bölüm"
         return sub_title

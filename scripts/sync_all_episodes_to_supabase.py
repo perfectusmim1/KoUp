@@ -91,7 +91,6 @@ def sync_episodes():
               AND s.direct_url NOT LIKE '%drive.google.com%'
               AND s.direct_url NOT LIKE '%docs.google.com%'
               AND s.direct_url NOT LIKE '%uns.bio%'
-              AND s.direct_url NOT LIKE '%playerdkorea.xyz%'
               AND s.direct_url NOT LIKE '%asyaanim.upns.one%'
               AND s.direct_url NOT LIKE '%upns.one%'
               AND s.direct_url NOT LIKE '%upns.live%'

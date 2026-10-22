@@ -2491,7 +2491,7 @@ export default function AdminDashboardPage() {
             {/* Featured Items Grid with Thumbnails & Reordering */}
             {featuredMedia.length === 0 ? (
               <div className="p-8 rounded-2xl bg-white/[0.02] border border-dashed border-white/10 text-center text-xs text-white/50">
-                Henüz vitrine yapım eklenmedi. Yukarıdaki arama kutusundan dizi veya film arayarak ilk 4 sırayı belirleyebilirsiniz.
+                Henüz vitrine yapım eklenmedi. Yukarıdaki arama kutusundan dizi veya film arayarak ilk 5 sırayı belirleyebilirsiniz.
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
@@ -2511,7 +2511,7 @@ export default function AdminDashboardPage() {
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30" />
                         <div className="absolute top-2 left-2">
                           <span className="px-2 py-0.5 rounded-full bg-amber-400 text-black font-mono text-[10px] font-black shadow-md">
-                            #{i + 1} {i < 4 ? '• VİTRİN' : ''}
+                            #{i + 1} {i < 5 ? '• VİTRİN' : ''}
                           </span>
                         </div>
                         {m.mdl_rating && (

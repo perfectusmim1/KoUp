@@ -292,14 +292,14 @@ export default function HomePage() {
 
   useEffect(() => {
     // 1. Instantly populate on client mount from memory or localStorage cache for 0ms transition
-    const cached = memoryHomeBundle || getCache<HomeDataBundle>('home_catalog_bundle_v10');
+    const cached = memoryHomeBundle || getCache<HomeDataBundle>('home_catalog_bundle_v11');
     if (cached) {
       applyBundle(cached);
     }
 
     async function fetchHomeData() {
       const homeData = await cachedQuery(
-        'home_catalog_bundle_v10',
+        'home_catalog_bundle_v11',
         60_000,
         async () => {
         const [
@@ -357,7 +357,7 @@ export default function HomePage() {
             .eq('status', 'published')
             .order('published_at', { ascending: false, nullsFirst: false })
             .order('id', { ascending: false })
-            .limit(250),
+            .limit(2000),
           supabase
             .from('people')
             .select('*')
@@ -388,7 +388,7 @@ export default function HomePage() {
         ]);
 
         let featItems = (featRes.data as MediaItem[]) || [];
-        if (featItems.length < 4) {
+        if (featItems.length < 5) {
           const { data: fallbackFeats } = await supabase
             .from('media')
             .select('*')
@@ -1358,7 +1358,7 @@ export default function HomePage() {
                   ref={heroThumbnailsRef}
                   className="flex items-center gap-2 sm:gap-2.5 glass-pill-dark p-1.5 rounded-2xl shadow-[0_20px_45px_rgba(0,0,0,0.85)] max-w-full overflow-x-auto no-scrollbar scroll-smooth [-webkit-overflow-scrolling:touch]"
                 >
-                  {heroItems.slice(0, 4).map((hItem, idx) => {
+                  {heroItems.slice(0, 5).map((hItem, idx) => {
                     const active = idx === heroIdx;
                     return (
                       <button
@@ -1370,11 +1370,14 @@ export default function HomePage() {
                         }}
                         aria-label={cleanMediaTitle(hItem.title)}
                         title={cleanMediaTitle(hItem.title)}
-                        className={`relative w-16 h-10 sm:w-20 sm:h-12 rounded-xl overflow-hidden cursor-pointer transition-opacity duration-200 shrink-0 ${
+                        className={`relative w-16 h-10 sm:w-20 sm:h-12 rounded-xl overflow-hidden cursor-pointer transition-all duration-300 shrink-0 p-0 border-2 bg-transparent select-none focus:outline-none ${
                           active
-                            ? 'ring-2 ring-white opacity-100 shadow-[0_0_20px_rgba(255,255,255,0.45)] z-10'
-                            : 'opacity-40 hover:opacity-85 ring-1 ring-white/15'
+                            ? 'border-white opacity-100 shadow-[0_0_18px_rgba(255,255,255,0.45)] z-10'
+                            : 'border-white/10 opacity-40 hover:opacity-85 hover:border-white/35'
                         }`}
+                        style={{
+                          WebkitMaskImage: '-webkit-radial-gradient(white, black)',
+                        }}
                       >
                         <img
                           src={getProxiedImageUrl(
@@ -1392,11 +1395,8 @@ export default function HomePage() {
                               target.src = getProxiedImageUrl(hItem.cover_image, null, hItem.title);
                             }
                           }}
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-cover rounded-[9px]"
                         />
-                        {active && (
-                          <div className="absolute inset-0 ring-1 ring-inset ring-white/30 pointer-events-none" />
-                        )}
                       </button>
                     );
                   })}

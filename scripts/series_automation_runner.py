@@ -392,10 +392,13 @@ def sync_single_series(drama_id: int) -> dict:
     return result_payload
 
 
-def sync_all_active_series():
+def sync_all_active_series(limit: int = 10) -> int:
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT media_id, title FROM series_automations WHERE is_active = 1 ORDER BY last_synced_at ASC NULLS FIRST")
+    if limit and limit > 0:
+        cur.execute("SELECT media_id, title FROM series_automations WHERE is_active = 1 ORDER BY last_synced_at ASC NULLS FIRST LIMIT ?", (limit,))
+    else:
+        cur.execute("SELECT media_id, title FROM series_automations WHERE is_active = 1 ORDER BY last_synced_at ASC NULLS FIRST")
     rows = cur.fetchall()
     conn.close()
 
@@ -414,6 +417,7 @@ def sync_all_active_series():
             emit_log(f"[HATA] #{did} {dtitle} taranırken hata: {e}")
 
     emit_log(f"🎯 Tüm aktif seriler tamamlandı: Toplam +{total_eps} Bölüm | +{total_srcs} Kaynak.")
+    return len(rows)
 
 
 def add_and_bind_series(

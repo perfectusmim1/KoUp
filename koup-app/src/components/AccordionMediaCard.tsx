@@ -262,10 +262,18 @@ function AccordionMediaCardComponent({
   const effectiveBackdrop = upgradedBackdrop || item.backdrop_image;
 
   const mediaType: 'tv' | 'movie' = item.content_type === 'film' ? 'movie' : 'tv';
-  const effectiveEpCount =
-    item.content_type === 'film'
-      ? 0
-      : Math.max(Number(item.episode_count || 0), Number(item.episodes_available || 0));
+  const totalEps = item.content_type === 'film' ? 0 : Number(item.episode_count || 0);
+  const availEps = item.content_type === 'film' ? 0 : Number(item.episodes_available || 0);
+
+  const epLabel = (() => {
+    if (item.content_type === 'film') return null;
+    if (totalEps > 0 && availEps > 0 && totalEps > availEps) {
+      return `${availEps} / ${totalEps} Bölüm`;
+    }
+    const count = availEps || totalEps;
+    return count > 0 ? `${count} Bölüm` : null;
+  })();
+  const effectiveEpCount = availEps || totalEps;
 
   // 720p standard: w500 (500x750) for vertical posters, w1280 for widescreen backdrops
   const posterSrc = getProxiedImageUrl(
@@ -531,12 +539,12 @@ function AccordionMediaCardComponent({
     postYouTubeCommand(trailerIframeRef.current, 'mute');
     setShowTrailerVideo(false);
     setIsTrailerReady(false);
-    if (fluidWidth) {
+    if (fluidWidth || !cardHoverExpandEnabled) {
       setIsHovered(false);
     } else {
       cancelAccordionHover(cardKey);
     }
-  }, [cardKey, fluidWidth]);
+  }, [cardKey, fluidWidth, cardHoverExpandEnabled]);
 
   const toggleTrailerMute = useCallback(
     (e: React.MouseEvent) => {
@@ -832,16 +840,18 @@ function AccordionMediaCardComponent({
 
       {/* Bottom Content Area */}
       <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-3.5 z-20 flex flex-col justify-end text-left pointer-events-none">
-        {(item.release_year || effectiveEpCount > 0) && (
+        {(item.release_year || epLabel) && (
           <div className="flex items-center gap-1.5 text-[10px] font-medium text-white/65 mb-0.5">
             {item.release_year && (
               <span className="font-mono text-white/75">{item.release_year}</span>
             )}
-            {item.release_year && effectiveEpCount > 0 && (
+            {item.release_year && epLabel && (
               <span className="text-white/40">•</span>
             )}
-            {effectiveEpCount > 0 && (
-              <span className="font-mono text-white/75">{effectiveEpCount} Bölüm</span>
+            {epLabel && (
+              <span className={`font-mono ${totalEps > availEps && availEps > 0 ? 'text-sky-300 font-semibold' : 'text-white/75'}`}>
+                {epLabel}
+              </span>
             )}
             {isAccordionExpanded && item.status_broadcast && (
               <>
@@ -902,7 +912,7 @@ function AccordionMediaCardComponent({
         {/* Quick Action Drawer on Hover */}
         <div
           className={`overflow-hidden pointer-events-auto transition-[max-height,opacity,transform] duration-200 ease-out ${
-            isHovered
+            isHovered && (fluidWidth || cardHoverExpandEnabled)
               ? 'max-h-[44px] opacity-100 translate-y-0'
               : 'max-h-0 opacity-0 translate-y-1'
           }`}

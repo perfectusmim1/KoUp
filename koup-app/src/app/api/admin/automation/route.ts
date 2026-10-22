@@ -46,126 +46,6 @@ export async function GET(req: NextRequest) {
       runs = [];
     }
 
-    // 3. If automation_runs is empty OR if latest run has 0 items, enrich with real recently added items from DB
-    if (!runs || runs.length === 0 || (runs[0] && (runs[0].total_dramas_added === 0 && (!runs[0].dramas_added_list || runs[0].dramas_added_list.length === 0)))) {
-      try {
-        const { data: recentMedia } = await supabase
-          .from('media')
-          .select('id, title, slug, content_type, country_code, country_name, cover_image, release_year, created_at, alt_sites')
-          .order('id', { ascending: false })
-          .limit(20);
-
-        const { data: recentEpisodes } = await supabase
-          .from('episodes')
-          .select('id, media_id, season_number, episode_number, episode_name, published_at, video_sources')
-          .order('id', { ascending: false })
-          .limit(40);
-
-        const mediaMap = new Map((recentMedia || []).map((m) => [m.id, m]));
-
-        const formattedDramas = (recentMedia || []).map((m) => ({
-          id: m.id,
-          title: m.title,
-          slug: m.slug,
-          cover_image: m.cover_image || '/logo-dark.png',
-          content_type: m.content_type || 'dizi',
-          country_code: m.country_code || 'KR',
-          country_name: m.country_name || 'Kore',
-          release_year: m.release_year || 2026,
-          site: Array.isArray(m.alt_sites) && m.alt_sites.length > 0 ? m.alt_sites[0] : 'dizikorea',
-          added_at: m.created_at || new Date().toISOString(),
-        }));
-
-        const formattedEpisodes: any[] = [];
-        const formattedSources: any[] = [];
-
-        for (const ep of recentEpisodes || []) {
-          const m = mediaMap.get(ep.media_id);
-          formattedEpisodes.push({
-            id: ep.id,
-            drama_id: ep.media_id,
-            drama_title: m?.title || `Seri #${ep.media_id}`,
-            drama_slug: m?.slug || '',
-            cover_image: m?.cover_image || '/logo-dark.png',
-            season_number: ep.season_number || 1,
-            episode_number: ep.episode_number || 1,
-            episode_name: ep.episode_name || `${ep.episode_number}. Bölüm`,
-            added_at: ep.published_at || new Date().toISOString(),
-          });
-
-          if (Array.isArray(ep.video_sources)) {
-            for (const s of ep.video_sources) {
-              formattedSources.push({
-                id: s.id || Math.random(),
-                episode_id: ep.id,
-                drama_id: ep.media_id,
-                drama_title: m?.title || `Seri #${ep.media_id}`,
-                drama_slug: m?.slug || '',
-                season_number: ep.season_number || 1,
-                episode_number: ep.episode_number || 1,
-                episode_name: ep.episode_name || `${ep.episode_number}. Bölüm`,
-                source_name: s.source_name || s.provider || 'HD Akış',
-                provider: s.provider || 'Orijinal',
-                site: s.site || 'dizikorea',
-                added_at: ep.published_at || new Date().toISOString(),
-              });
-            }
-          }
-        }
-
-        const baselineRun = {
-          run_id: `run_cron_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`,
-          trigger_type: 'cron',
-          status: 'completed',
-          target: 'all',
-          started_at: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
-          completed_at: new Date(Date.now() - 1000 * 60 * 8).toISOString(),
-          duration_seconds: 240,
-          total_dramas_added: formattedDramas.length,
-          total_episodes_added: formattedEpisodes.length,
-          total_sources_added: formattedSources.length,
-          dramas_added_list: formattedDramas,
-          episodes_added_list: formattedEpisodes,
-          sources_added_list: formattedSources,
-          scrapers_summary: {
-            animecix: { label: 'AnimeciX', status: 'healthy', dramas_added: 4, episodes_added: 12, sources_added: 18, duration_seconds: 22 },
-            dizikorea: { label: 'DiziKorea', status: 'healthy', dramas_added: 6, episodes_added: 14, sources_added: 26, duration_seconds: 35 },
-            dizibox: { label: 'DiziBox', status: 'healthy', dramas_added: 3, episodes_added: 8, sources_added: 12, duration_seconds: 28 },
-            hdfilm: { label: 'HDFilmcehennemi', status: 'healthy', dramas_added: 5, episodes_added: 5, sources_added: 10, duration_seconds: 40 },
-            ddizi: { label: 'DDizi Yerli', status: 'healthy', dramas_added: 2, episodes_added: 6, sources_added: 8, duration_seconds: 15 },
-          },
-          logs: [
-            '[SİSTEM] 12 Saatlik KoUp Otomasyon Pipeline başlatıldı.',
-            '[HAZIRLIK] Supabase ve Cloudflare R2 veritabanı eşitliği doğrulandı.',
-            `[SONUÇ] Otomasyon başarıyla tamamlandı: +${formattedDramas.length} Seri, +${formattedEpisodes.length} Bölüm, +${formattedSources.length} Kaynak sisteme işlendi.`,
-          ],
-        };
-
-        if (runs && runs.length > 0) {
-          // Update existing run with realistic items
-          await supabase
-            .from('automation_runs')
-            .update(baselineRun)
-            .eq('id', runs[0].id);
-          runs[0] = { ...runs[0], ...baselineRun };
-        } else {
-          const { data: insertedRun } = await supabase
-            .from('automation_runs')
-            .insert(baselineRun)
-            .select('*')
-            .single();
-
-          if (insertedRun) {
-            runs = [insertedRun];
-          } else {
-            runs = [{ id: 1, ...baselineRun }];
-          }
-        }
-      } catch (err) {
-        console.error('Error enriching baseline automation run:', err);
-      }
-    }
-
     const latestRun = runs?.[0] || null;
 
     return NextResponse.json({
@@ -232,18 +112,12 @@ export async function POST(req: NextRequest) {
     if (action === 'trigger_automation') {
       const target = (body.target || 'all').toString().trim();
       const scriptPath = path.resolve(process.cwd(), '..', 'scripts', 'cron_sync_pipeline.py');
-
-      if (!fs.existsSync(scriptPath)) {
-        return NextResponse.json({ error: 'Otomasyon scripti bulunamadı' }, { status: 500 });
-      }
-
-      const args = ['-u', scriptPath, '--target', target, '--trigger', 'admin_trigger'];
+      const isCloudEnv = Boolean(process.env.VERCEL) || !fs.existsSync(scriptPath);
 
       const encoder = new TextEncoder();
       const stream = new ReadableStream({
-        start(controller) {
+        async start(controller) {
           const logs: string[] = [];
-          let stdoutBuf = '';
           let closed = false;
 
           const sendEvent = (obj: any) => {
@@ -252,6 +126,94 @@ export async function POST(req: NextRequest) {
               controller.enqueue(encoder.encode(JSON.stringify(obj) + '\n'));
             } catch (_) {}
           };
+
+          const logMsg = (line: string) => {
+            logs.push(line);
+            sendEvent({ type: 'log', line });
+          };
+
+          // 1. Cloud (Vercel) Environment: Trigger via GitHub Actions API
+          if (isCloudEnv) {
+            const nowStr = new Date().toTimeString().split(' ')[0];
+            logMsg(`[${nowStr}] [SİSTEM] Bulut (Vercel) ortamı algılandı. GitHub Actions Otomasyon Motoru devreye sokuluyor...`);
+
+            const ghToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+            if (!ghToken) {
+              logMsg(`[${nowStr}] [UYARI] GITHUB_TOKEN ortam değişkeni bulunamadı. Vercel ortamında Python doğrudan çalıştırılamadığı için GitHub Actions API çağrısı yapılamadı.`);
+              logMsg(`[${nowStr}] [REHBER] Lütfen Vercel panelinden GITHUB_TOKEN (repo/workflow yetkili Personal Access Token) ekleyin veya otomasyonu yerel/VPS ortamında çalıştırın.`);
+              sendEvent({
+                type: 'result',
+                ok: false,
+                target,
+                logs,
+                error: 'GITHUB_TOKEN ortam değişkeni eksik (Vercel ortamı)',
+              });
+              closed = true;
+              try { controller.close(); } catch (_) {}
+              return;
+            }
+
+            try {
+              logMsg(`[${nowStr}] [GITHUB] 'perfectusmim1/KoUp' deposundaki scraper_cron.yml tetikleniyor (Hedef: ${target})...`);
+              const ghResp = await fetch('https://api.github.com/repos/perfectusmim1/KoUp/actions/workflows/scraper_cron.yml/dispatches', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${ghToken}`,
+                  'Accept': 'application/vnd.github.v3+json',
+                  'Content-Type': 'application/json',
+                  'User-Agent': 'KoUp-Admin-Automation/2.0',
+                },
+                body: JSON.stringify({
+                  ref: 'main',
+                  inputs: {
+                    target_site: target,
+                    pending_limit: '150',
+                    batch_dramas: '30',
+                  },
+                }),
+              });
+
+              if (ghResp.status === 204 || ghResp.ok) {
+                logMsg(`[${nowStr}] [BAŞARILI] GitHub Actions iş akışı başarıyla tetiklendi!`);
+                logMsg(`[${nowStr}] [BİLGİ] Ubuntu runner üzerinde 45 dakika boyunca tüm botlar, seriler ve kaynaklar Cloudflare R2 ile senkronize edilecek.`);
+                logMsg(`[${nowStr}] [CANLI] İlerlemeyi GitHub Actions sekmesinden veya Admin Panelindeki son çalıştırma geçmişinden takip edebilirsiniz.`);
+                sendEvent({
+                  type: 'result',
+                  ok: true,
+                  target,
+                  logs,
+                  message: 'GitHub Actions otomasyonu başarıyla başlatıldı.',
+                });
+              } else {
+                const errText = await ghResp.text();
+                logMsg(`[${nowStr}] [HATA] GitHub API yanıtı (HTTP ${ghResp.status}): ${errText}`);
+                sendEvent({
+                  type: 'result',
+                  ok: false,
+                  target,
+                  logs,
+                  error: `GitHub Actions API hatası (HTTP ${ghResp.status})`,
+                });
+              }
+            } catch (err: any) {
+              logMsg(`[${nowStr}] [HATA] GitHub Actions isteği başarısız: ${err.message}`);
+              sendEvent({
+                type: 'result',
+                ok: false,
+                target,
+                logs,
+                error: err.message,
+              });
+            } finally {
+              closed = true;
+              try { controller.close(); } catch (_) {}
+            }
+            return;
+          }
+
+          // 2. Local / VPS Environment: Run Python Script directly with live subprocess streaming
+          let stdoutBuf = '';
+          const args = ['-u', scriptPath, '--target', target, '--trigger', 'admin_trigger'];
 
           const processLine = (rawLine: string) => {
             const line = rawLine.trim();
@@ -273,7 +235,7 @@ export async function POST(req: NextRequest) {
             try {
               child.kill('SIGTERM');
             } catch (_) {}
-          }, 180000); // 3 minutes timeout
+          }, 600000); // 10 minutes timeout
 
           child.stdout.on('data', (chunk: Buffer) => {
             stdoutBuf += chunk.toString('utf-8');

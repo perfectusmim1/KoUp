@@ -3534,7 +3534,7 @@ export default function NetflixPlayer({
                           type="button"
                           onClick={handleCastPrompt}
                           aria-label={isCasting ? "TV'ye Yansıtılıyor" : "TV'ye Yansıt (Chromecast)"}
-                          className={`p-1 shrink-0 transition-all duration-150 cursor-pointer ${
+                          className={`p-1 shrink-0 transition-transform cursor-pointer ${
                             isCasting
                               ? 'text-[#E50914] scale-110 drop-shadow-[0_0_8px_rgba(229,9,20,0.6)] animate-pulse'
                               : 'text-white/90 hover:text-white active:scale-95'
@@ -4169,8 +4169,7 @@ export default function NetflixPlayer({
 
                           return (
                             <div
-                              className="relative flex items-center h-8 shrink-0 select-none transition-[width] duration-200 ease-out"
-                              style={{ width: open ? 116 : 32 }}
+                              className="relative flex items-center shrink-0 select-none"
                               onMouseEnter={() => {
                                 if (volumeHideTimerRef.current) {
                                   clearTimeout(volumeHideTimerRef.current);
@@ -4189,16 +4188,16 @@ export default function NetflixPlayer({
                                 adjustVolume(e.deltaY < 0 ? 0.05 : -0.05);
                               }}
                             >
-                              {/* Speaker Icon Button: Clean white, sized to match play/pause */}
+                              {/* Speaker Icon Button: Sized and animated identically to Fullscreen */}
                               <button
                                 type="button"
                                 onClick={toggleMute}
                                 aria-label={isMuted ? 'Sesi Aç (M)' : 'Sesi Kapat (M)'}
-                                className="w-8 h-8 shrink-0 flex items-center justify-center text-white/95 hover:text-white hover:scale-110 active:scale-95 transition-transform cursor-pointer"
+                                className="text-white/90 hover:text-white hover:scale-110 active:scale-95 transition-transform cursor-pointer p-1 shrink-0"
                               >
                                 <svg
                                   viewBox="0 0 24 24"
-                                  className="w-[26px] h-[26px] shrink-0"
+                                  className="w-5 h-5 shrink-0"
                                   fill="none"
                                 >
                                   {/* Solid white speaker cone */}
@@ -4241,14 +4240,14 @@ export default function NetflixPlayer({
                                 </svg>
                               </button>
 
-                              {/* Horizontal Slider Track: expands to the right without any background */}
+                              {/* Horizontal Slider Track: smoothly expands to the right without displacing the speaker button */}
                               <div
-                                className={`shrink-0 w-[84px] h-full flex items-center pl-2 pr-1 transition-opacity duration-150 ease-out ${
-                                  open ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                                className={`overflow-hidden transition-[max-width,opacity] duration-200 ease-out flex items-center ${
+                                  open ? 'max-w-[88px] opacity-100 pl-1.5 pr-1' : 'max-w-0 opacity-0 pointer-events-none pl-0 pr-0'
                                 }`}
                               >
                                 <div
-                                  className="relative w-[72px] h-8 flex items-center cursor-pointer touch-none"
+                                  className="relative w-[72px] h-8 flex items-center cursor-pointer touch-none shrink-0"
                                   onPointerDown={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
@@ -4486,16 +4485,16 @@ export default function NetflixPlayer({
                           </>
                         )}
 
-                        {/* Google Cast / TV Yansıt Butonu */}
+                        {/* Google Cast / TV Yansıt Butonu: Fullscreen ile birebir odak ve hover animasyonu */}
                         <button
                           type="button"
                           onClick={handleCastPrompt}
                           aria-label={isCasting ? "TV'ye Yansıtılıyor" : "TV'ye Yansıt (Chromecast)"}
                           title={isCasting ? "TV'ye Yansıtılıyor" : "TV'ye Yansıt (Chromecast)"}
-                          className={`p-1 shrink-0 transition-all duration-150 cursor-pointer ${
+                          className={`p-1 shrink-0 transition-transform cursor-pointer ${
                             isCasting
                               ? 'text-[#E50914] scale-110 drop-shadow-[0_0_8px_rgba(229,9,20,0.6)] animate-pulse'
-                              : 'text-white/80 hover:text-white hover:scale-110 active:scale-95'
+                              : 'text-white/90 hover:text-white hover:scale-110 active:scale-95'
                           }`}
                         >
                           <CastIcon className="w-5 h-5" />

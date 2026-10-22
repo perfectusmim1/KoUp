@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'motion/react';
@@ -82,6 +82,10 @@ function RecentEpisodesContent() {
   const [totalCount, setTotalCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
+  // In-memory caches for zero-latency pagination and tab navigation
+  const pageCacheRef = useRef<Map<string, EpisodeItem[]>>(new Map());
+  const countsCacheRef = useRef<Record<string, number>>({});
+
   // Sync state with URL params if changed externally
   useEffect(() => {
     setCurrentPage(initialPage);
@@ -91,16 +95,29 @@ function RecentEpisodesContent() {
     setTypeFilter(initialType);
   }, [initialType]);
 
-  // Fetch 50 episodes per page
+  // Fetch 50 episodes per page (ultra-fast indexed query decoupled from count)
   useEffect(() => {
     let isCancelled = false;
-    async function fetchEpisodes() {
+    const cacheKey = `${typeFilter}_p${currentPage}`;
+
+    // 1. Instant render if cached
+    if (pageCacheRef.current.has(cacheKey)) {
+      setEpisodes(pageCacheRef.current.get(cacheKey)!);
+      setIsLoading(false);
+    } else {
       setIsLoading(true);
+    }
+
+    // 2. Instant total count sync if cached
+    if (typeof countsCacheRef.current[typeFilter] === 'number') {
+      setTotalCount(countsCacheRef.current[typeFilter]);
+    }
+
+    async function fetchEpisodes() {
       const from = (currentPage - 1) * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
 
       try {
-        const joinModifier = typeFilter !== 'ALL' ? '!inner' : '';
         let query = supabase
           .from('episodes')
           .select(
@@ -112,7 +129,7 @@ function RecentEpisodesContent() {
             episode_name,
             published_at,
             status,
-            media:media_id${joinModifier} (
+            media:media_id (
               id,
               slug,
               title,
@@ -121,45 +138,65 @@ function RecentEpisodesContent() {
               content_type,
               tmdb_id
             )
-          `,
-            { count: 'exact' }
+          `
           )
           .eq('status', 'published')
           .order('published_at', { ascending: false, nullsFirst: false })
           .order('id', { ascending: false });
 
         if (typeFilter !== 'ALL') {
-          query = query.eq('media.content_type', typeFilter);
+          query = query.eq('content_type', typeFilter);
         }
 
-        const { data, count, error } = await query.range(from, to);
+        // Fast data range query
+        const { data, error } = await query.range(from, to);
 
         if (error) {
           console.error('[Son Eklenenler] Yükleme hatası:', error.message);
           if (!isCancelled) {
             setEpisodes([]);
-            setTotalCount(0);
           }
         } else if (!isCancelled) {
-          const list = ((data as any[]) || []).map((item) => ({
-            ...item,
-            media: item.media as MediaItem | null,
-          })).filter((item) => item.media);
+          const list = ((data as any[]) || [])
+            .map((item) => ({
+              ...item,
+              media: item.media as MediaItem | null,
+            }))
+            .filter((item) => item.media);
 
+          pageCacheRef.current.set(cacheKey, list);
           setEpisodes(list);
-          if (typeof count === 'number') {
-            setTotalCount(count);
-          }
         }
       } catch (err) {
         console.error('[Son Eklenenler] Beklenmeyen hata:', err);
         if (!isCancelled) {
           setEpisodes([]);
-          setTotalCount(0);
         }
       } finally {
         if (!isCancelled) {
           setIsLoading(false);
+        }
+      }
+
+      // Fast non-blocking count query if not in cache
+      if (typeof countsCacheRef.current[typeFilter] !== 'number') {
+        try {
+          let countQuery = supabase
+            .from('episodes')
+            .select('id', { count: 'exact', head: true })
+            .eq('status', 'published');
+
+          if (typeFilter !== 'ALL') {
+            countQuery = countQuery.eq('content_type', typeFilter);
+          }
+
+          const { count, error: countErr } = await countQuery;
+          if (!countErr && typeof count === 'number' && !isCancelled) {
+            countsCacheRef.current[typeFilter] = count;
+            setTotalCount(count);
+          }
+        } catch {
+          // Count failure does not affect cards display
         }
       }
     }
@@ -209,16 +246,9 @@ function RecentEpisodesContent() {
 
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.05] border border-white/10 text-[11px] font-bold tracking-[0.2em] uppercase text-white/50 mb-3">
-              <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
-              <span>GÜNCEL AKIŞ</span>
-            </div>
             <h1 className="text-2xl sm:text-4xl md:text-5xl font-black text-white tracking-tight">
               Son Eklenen Bölümler
             </h1>
-            <p className="text-sm sm:text-base text-white/60 mt-2 max-w-2xl">
-              KoUp platformuna en son eklenen tüm dizi, anime, film ve program bölümleri. Her sayfada 50 güncel bölüm.
-            </p>
           </div>
 
           {/* Content Type Filter Pills */}
@@ -312,7 +342,7 @@ function RecentEpisodesContent() {
                     m.backdrop_image || m.cover_image,
                     m.title,
                     null,
-                    'w1280',
+                    'w780',
                     'banner',
                     m.tmdb_id,
                     m.content_type === 'film' ? 'movie' : 'tv'

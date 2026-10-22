@@ -14,6 +14,8 @@ import time
 import html
 import re
 import argparse
+import signal
+import threading
 from datetime import datetime, timezone
 import requests
 from bs4 import BeautifulSoup
@@ -468,8 +470,38 @@ def main():
     all_sources = []
     scrapers_summary = {}
 
-    # Helper to run a specific scraper step and gather statistics
-    def run_scraper_step(bot_id: str, label: str, fn, *fn_args, **fn_kwargs):
+    run_finished = False
+
+    def _graceful_shutdown(signum, _frame):
+        nonlocal run_finished
+        if run_finished:
+            return
+        run_finished = True
+        sig_name = "SIGTERM" if signum == getattr(signal, "SIGTERM", 15) else f"SIG({signum})"
+        record_log(f"[SİNYAL] {sig_name} alındı — o ana kadar toplanan veriler Supabase'e kaydediliyor...")
+        dur = int(time.time() - start_time)
+        finish_automation_run(
+            run_id=run_id,
+            status="completed",
+            duration=dur,
+            dramas=all_dramas,
+            episodes=all_episodes,
+            sources=all_sources,
+            scrapers_summary=scrapers_summary,
+            logs=captured_logs,
+            error_msg=None,
+        )
+        os._exit(0)
+
+    for _sig in ("SIGTERM", "SIGINT", "SIGBREAK"):
+        if hasattr(signal, _sig):
+            try:
+                signal.signal(getattr(signal, _sig), _graceful_shutdown)
+            except Exception:
+                pass
+
+    # Helper to run a specific scraper step with per-scraper 45s timeout and try/finally
+    def run_scraper_step(bot_id: str, label: str, fn, *fn_args, timeout_sec: int = 45, **fn_kwargs):
         # Admin control: if bot is disabled in scraper_configs, skip!
         if enabled_map and not enabled_map.get(bot_id, True):
             record_log(f"[{label}] Bot admin panelinde 'Devre Dışı' bırakılmış. Atlanıyor.")
@@ -484,7 +516,7 @@ def main():
             }
             return
 
-        record_log(f"[{label}] Görev başlatılıyor...")
+        record_log(f"[{label}] Görev başlatılıyor (timeout: {timeout_sec}s)...")
         # Clear per-step queues
         pop_recent_added_dramas()
         pop_recent_added_episodes()
@@ -494,44 +526,60 @@ def main():
         err_msg = None
         status = "healthy"
         processed = 0
+        box = {"res": None, "err": None}
+
+        def _target_worker():
+            try:
+                box["res"] = fn(*fn_args, **fn_kwargs)
+            except Exception as ex:
+                box["err"] = ex
 
         try:
-            res = fn(*fn_args, **fn_kwargs)
-            if isinstance(res, (int, float)):
-                processed = int(res)
-            elif isinstance(res, dict):
-                processed = res.get("resolved", 0)
+            worker = threading.Thread(target=_target_worker, daemon=True)
+            worker.start()
+            worker.join(timeout=timeout_sec)
+            if worker.is_alive():
+                err_msg = f"{timeout_sec}s zaman aşımı sınırı aşıldı, sonraki adıma geçildi"
+                record_log(f"[{label}] UYARI: {err_msg}.")
+            elif box["err"] is not None:
+                status = "error"
+                err_msg = str(box["err"])
+                record_log(f"[{label}] HATA: {err_msg}")
+            else:
+                res = box["res"]
+                if isinstance(res, (int, float)):
+                    processed = int(res)
+                elif isinstance(res, dict):
+                    processed = res.get("resolved", 0)
         except Exception as e:
             status = "error"
             err_msg = str(e)
             record_log(f"[{label}] HATA: {e}")
+        finally:
+            step_duration = round(time.time() - step_t0, 1)
+            step_dramas = pop_recent_added_dramas()
+            step_episodes = pop_recent_added_episodes()
+            step_sources = pop_recent_added_sources()
 
-        step_duration = round(time.time() - step_t0, 1)
+            all_dramas.extend(step_dramas)
+            all_episodes.extend(step_episodes)
+            all_sources.extend(step_sources)
 
-        # Collect items added by this step
-        step_dramas = pop_recent_added_dramas()
-        step_episodes = pop_recent_added_episodes()
-        step_sources = pop_recent_added_sources()
+            scrapers_summary[bot_id] = {
+                "label": label,
+                "status": status,
+                "error": err_msg,
+                "duration_seconds": step_duration,
+                "items_processed": processed,
+                "dramas_added": len(step_dramas),
+                "episodes_added": len(step_episodes),
+                "sources_added": len(step_sources),
+            }
 
-        all_dramas.extend(step_dramas)
-        all_episodes.extend(step_episodes)
-        all_sources.extend(step_sources)
-
-        scrapers_summary[bot_id] = {
-            "label": label,
-            "status": status,
-            "error": err_msg,
-            "duration_seconds": step_duration,
-            "items_processed": processed,
-            "dramas_added": len(step_dramas),
-            "episodes_added": len(step_episodes),
-            "sources_added": len(step_sources),
-        }
-
-        update_scraper_status(bot_id, status)
-        record_log(
-            f"[{label}] Tamamlandı ({step_duration}s) — +{len(step_dramas)} Seri | +{len(step_episodes)} Bölüm | +{len(step_sources)} Kaynak."
-        )
+            update_scraper_status(bot_id, status)
+            record_log(
+                f"[{label}] Tamamlandı ({step_duration}s) — +{len(step_dramas)} Seri | +{len(step_episodes)} Bölüm | +{len(step_sources)} Kaynak."
+            )
 
     fatal_error = None
     try:
@@ -568,16 +616,22 @@ def main():
         if target in ("all", "series_automation", "series_auto"):
             try:
                 from scripts.series_automation_runner import sync_all_active_series
-                run_scraper_step("series_automation", "Seri Otomasyonu", sync_all_active_series)
+                run_scraper_step("series_automation", "Seri Otomasyonu", sync_all_active_series, 5)
             except Exception as e:
                 record_log(f"[Seri Otomasyonu] Hata: {e}")
 
         if target in ("all", "calendar", "takvim"):
             try:
-                from sync_real_calendars import sync_dizikorea, sync_dizibox, sync_anilist_airing
+                from scripts.sync_real_calendars import (
+                    sync_dizikorea,
+                    sync_dizibox,
+                    sync_animecix_calendar,
+                    sync_asyaanimeleri_calendar,
+                )
                 sync_dizikorea()
                 sync_dizibox()
-                sync_anilist_airing()
+                sync_animecix_calendar()
+                sync_asyaanimeleri_calendar()
                 record_log("[Takvim] Güncel yayın takvimi başarıyla eşitlendi.")
             except Exception as e:
                 record_log(f"[Takvim] Hata: {e}")
@@ -615,6 +669,7 @@ def main():
         f"KoUp Otomasyon Pipeline tamamlandı ({total_duration}s) — Genel Toplam: +{len(all_dramas)} Seri | +{len(all_episodes)} Bölüm | +{len(all_sources)} Kaynak."
     )
 
+    run_finished = True
     finish_automation_run(
         run_id=run_id,
         status=final_status,

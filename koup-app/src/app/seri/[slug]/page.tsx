@@ -957,10 +957,20 @@ export default function SeriesDetailPage({
                     </span>
                   )
                 ) : (
-                  media.episode_count > 0 && (
-                    <span className="px-3 py-1 rounded-full bg-white/[0.06] border border-white/10 text-xs font-mono text-white/75">
-                      {media.episode_count} Bölüm
-                    </span>
+                  (media.episode_count > 0 || seasonEpisodes.length > 0) && (
+                    seasonEpisodes.length > 0 && media.episode_count > seasonEpisodes.length ? (
+                      <span className="px-3 py-1 rounded-full bg-sky-500/10 border border-sky-400/25 text-xs font-mono text-sky-300 font-semibold inline-flex items-center gap-1.5">
+                        <Sparkles className="w-3 h-3 text-sky-400 shrink-0" />
+                        <span>{seasonEpisodes.length} / {media.episode_count} Bölüm</span>
+                        {media.status_broadcast && (
+                          <span className="text-white/50 text-[11px] font-normal">• {media.status_broadcast}</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="px-3 py-1 rounded-full bg-white/[0.06] border border-white/10 text-xs font-mono text-white/75">
+                        {media.episode_count || seasonEpisodes.length} Bölüm
+                      </span>
+                    )
                   )
                 )}
 
@@ -1623,7 +1633,10 @@ export default function SeriesDetailPage({
               <div className="flex flex-wrap items-center gap-3 relative z-30">
                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
                   <Film className="w-5 h-5 text-sky-400" />
-                  <span>Bölüm Listesi ({seasonEpisodes.length} Bölüm)</span>
+                  <span>
+                    Bölüm Listesi ({seasonEpisodes.length}
+                    {media.episode_count > seasonEpisodes.length ? ` / ${media.episode_count}` : ''} Bölüm)
+                  </span>
                 </h2>
                 {user?.role === 'admin' && (
                   <AdminSeriesSync
@@ -1635,6 +1648,14 @@ export default function SeriesDetailPage({
                   />
                 )}
               </div>
+              {media.episode_count > seasonEpisodes.length && (
+                <div className="mt-2.5 px-3 py-1.5 rounded-xl bg-sky-500/[0.07] border border-sky-400/20 text-xs text-sky-300/90 flex items-center gap-2">
+                  <Sparkles className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <span>
+                    Resmi toplam <strong>{media.episode_count}</strong> bölümdür. Kalan bölümler orijinal yayın takvimine ve Türkçe çeviri sürecine göre eklenmektedir.
+                  </span>
+                </div>
+              )}
               
             </div>
 

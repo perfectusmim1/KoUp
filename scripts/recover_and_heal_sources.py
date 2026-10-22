@@ -28,9 +28,14 @@ if _ROOT not in sys.path:
 from scrapers.sync_target_drama import (
     get_db,
     sync_dizikorea_target,
+    sync_asyawatch_target,
+    sync_dizifon_target,
     sync_bldrama_target,
     sync_dizibox_target,
+    sync_dizilla_target,
+    sync_hdfilm_target,
     sync_animecix_target,
+    sync_asyaanimeleri_target,
     sync_ddizi_target,
     log,
 )
@@ -39,7 +44,54 @@ from scrapers.supabase_sync_helper import (
     backup_db_to_r2,
 )
 
-def find_candidate_dramas(conn, limit=50, category='all', only_empty=False, max_gap_size=50):
+ASIAN_COUNTRIES = {'KR', 'JP', 'CN', 'TH', 'TW', 'HK', 'PH', 'ID', 'MY', 'VN', 'SG', 'IN', 'PK'}
+
+
+def _count_empty_eps(cur, did: int) -> int:
+    cur.execute("SELECT COUNT(*) FROM episodes WHERE drama_id = ?", (did,))
+    total = cur.fetchone()[0]
+    if total == 0:
+        return 1
+    cur.execute("""
+        SELECT COUNT(*) FROM episodes e
+        WHERE e.drama_id = ?
+          AND (e.source_status = 'pending' OR NOT EXISTS (SELECT 1 FROM episode_sources es WHERE es.episode_id = e.id))
+    """, (did,))
+    return cur.fetchone()[0]
+
+
+def _min_sources_per_ep(cur, did: int) -> int:
+    cur.execute("""
+        SELECT MIN(cnt) FROM (
+            SELECT COUNT(es.id) as cnt
+            FROM episodes e
+            LEFT JOIN episode_sources es ON es.episode_id = e.id
+            WHERE e.drama_id = ?
+            GROUP BY e.id
+        )
+    """, (did,))
+    row = cur.fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
+
+
+def _update_local_drama_counts(conn, cur, did: int):
+    cur.execute(
+        """
+        UPDATE dramas
+        SET episode_count = (SELECT COUNT(*) FROM episodes WHERE drama_id = ?),
+            sources_count = (
+                SELECT COUNT(*) FROM episode_sources es
+                JOIN episodes e ON e.id = es.episode_id
+                WHERE e.drama_id = ?
+            )
+        WHERE id = ?
+        """,
+        (did, did, did),
+    )
+    conn.commit()
+
+
+def find_candidate_dramas(conn, limit=50, category='all', only_empty=False, max_gap_size=2500):
     cur = conn.cursor()
     
     # Category filter mapping
@@ -49,25 +101,29 @@ def find_candidate_dramas(conn, limit=50, category='all', only_empty=False, max_
     if category == 'anime':
         cat_sql = "AND LOWER(d.content_type) = 'anime'"
     elif category == 'korea':
-        cat_sql = "AND UPPER(d.country) = 'KR'"
+        cat_sql = "AND UPPER(d.country) = 'KR' AND LOWER(d.content_type) != 'anime'"
     elif category == 'asia':
-        cat_sql = "AND (UPPER(d.country) IN ('KR', 'JP', 'CN', 'TH', 'TW') OR LOWER(d.content_type) = 'anime')"
+        cat_sql = "AND UPPER(d.country) IN ('CN', 'TH', 'JP', 'TW', 'HK', 'PH', 'ID', 'MY', 'IN') AND LOWER(d.content_type) != 'anime'"
+    elif category == 'all_asian':
+        cat_sql = "AND (UPPER(d.country) IN ('KR', 'JP', 'CN', 'TH', 'TW', 'HK', 'PH', 'ID', 'MY', 'IN') OR LOWER(d.content_type) = 'anime')"
     elif category == 'western':
-        cat_sql = "AND UPPER(d.country) IN ('US', 'GB', 'CA', 'AU') AND LOWER(d.content_type) != 'anime'"
+        cat_sql = "AND UPPER(d.country) NOT IN ('KR', 'JP', 'CN', 'TH', 'TW', 'HK', 'PH', 'ID', 'MY', 'IN', 'TR') AND LOWER(d.content_type) != 'anime'"
     elif category == 'turkish':
         cat_sql = "AND UPPER(d.country) = 'TR'"
 
     candidates = []
 
-    # 1. Target shows with empty or pending episodes (HIGHEST PRIORITY)
+    # 1. Target shows with empty or pending episodes or 0 episodes total (HIGHEST PRIORITY)
     cur.execute(f"""
         SELECT d.id, d.title, d.slug, d.content_type, d.country, d.source_url,
                COUNT(DISTINCT e.id) as total_eps,
-               COUNT(DISTINCT CASE WHEN e.source_status = 'pending' 
-                                      OR NOT EXISTS (SELECT 1 FROM episode_sources es WHERE es.episode_id = e.id) 
-                                   THEN e.id END) as empty_eps
+               CASE WHEN COUNT(DISTINCT e.id) = 0 THEN 1
+                    ELSE COUNT(DISTINCT CASE WHEN e.source_status = 'pending' 
+                                                  OR NOT EXISTS (SELECT 1 FROM episode_sources es WHERE es.episode_id = e.id) 
+                                               THEN e.id END)
+               END as empty_eps
         FROM dramas d
-        JOIN episodes e ON e.drama_id = d.id
+        LEFT JOIN episodes e ON e.drama_id = d.id
         WHERE 1=1 {cat_sql}
         GROUP BY d.id
         HAVING empty_eps > 0
@@ -93,7 +149,6 @@ def find_candidate_dramas(conn, limit=50, category='all', only_empty=False, max_
         return candidates[:limit]
 
     # 2. Target shows with sequence gaps if quota remains
-    remaining = limit - len(candidates)
     existing_ids = set(c['id'] for c in candidates)
 
     cur.execute(f"""
@@ -136,60 +191,94 @@ def find_candidate_dramas(conn, limit=50, category='all', only_empty=False, max_
 
     return candidates[:limit]
 
+
 def choose_provider(item):
     source_url = (item.get('source_url') or '').lower()
     country = (item.get('country') or '').upper()
     ctype = (item.get('content_type') or '').lower()
 
-    if 'bldrama' in source_url or 'webdramaturkey' in source_url:
-        return 'bldrama'
     if ctype == 'anime':
         return 'animecix'
-    if country == 'TR':
+    if country == 'TR' or 'ddizi' in source_url:
         return 'ddizi'
-    if country in ('KR', 'JP', 'CN', 'TH', 'TW'):
+    if country in ASIAN_COUNTRIES or any(k in source_url for k in ('dizikorea', 'asyawatch', 'dizifon', 'asyadizi', 'asyaluna', 'asyaking', 'bldrama', 'webdramaturkey')):
         return 'dizikorea'
     return 'dizibox'
 
-def heal_drama(conn, cur, drama_item):
+
+def heal_drama(conn, cur, drama_item, sync_remote=True):
     did = drama_item['id']
-    title = drama_item['title']
-    provider = choose_provider(drama_item)
-    
     cur.execute("SELECT * FROM dramas WHERE id = ?", (did,))
     row = cur.fetchone()
     if not row:
         return 0, 0
     drama = dict(row)
 
-    eps_added, srcs_added = 0, 0
-    if provider == 'animecix':
-        eps_added, srcs_added = sync_animecix_target(conn, cur, drama)
-        if srcs_added == 0:
-            eps_added, srcs_added = sync_dizibox_target(conn, cur, drama)
-    elif provider == 'dizikorea':
-        eps_added, srcs_added = sync_dizikorea_target(conn, cur, drama)
-        if srcs_added == 0:
-            eps_added, srcs_added = sync_bldrama_target(conn, cur, drama)
-        if srcs_added == 0:
-            eps_added, srcs_added = sync_dizibox_target(conn, cur, drama)
-    elif provider == 'bldrama':
-        eps_added, srcs_added = sync_bldrama_target(conn, cur, drama)
-        if srcs_added == 0:
-            eps_added, srcs_added = sync_dizikorea_target(conn, cur, drama)
-    elif provider == 'ddizi':
-        eps_added, srcs_added = sync_ddizi_target(conn, cur, drama)
-    elif provider == 'dizibox':
-        eps_added, srcs_added = sync_dizibox_target(conn, cur, drama)
-        if srcs_added == 0 and drama.get('country') in ('KR', 'CN', 'TH', 'JP'):
-            eps_added, srcs_added = sync_dizikorea_target(conn, cur, drama)
+    source_url = (drama.get('source_url') or '').lower()
+    country = (drama.get('country') or '').upper()
+    ctype = (drama.get('content_type') or '').lower()
 
-    if eps_added > 0 or srcs_added > 0:
-        sync_drama_bundle_and_counts(conn, cur, did)
+    # Build multi-site fallback chain according to content_type & region
+    if ctype == 'anime':
+        chain = [
+            ('animecix', sync_animecix_target),
+            ('asyaanimeleri', sync_asyaanimeleri_target),
+            ('asyawatch', sync_asyawatch_target),
+            ('dizibox', sync_dizibox_target),
+        ]
+    elif country == 'TR' or 'ddizi' in source_url:
+        chain = [
+            ('ddizi', sync_ddizi_target),
+        ]
+    elif country in ASIAN_COUNTRIES or any(k in source_url for k in ('dizikorea', 'asyawatch', 'dizifon', 'asyadizi', 'asyaluna', 'asyaking', 'bldrama', 'webdramaturkey')):
+        chain = [
+            ('dizikorea', sync_dizikorea_target),
+            ('asyawatch', sync_asyawatch_target),
+            ('dizifon', sync_dizifon_target),
+            ('bldrama', sync_bldrama_target),
+            ('dizibox', sync_dizibox_target),
+        ]
+    else:
+        chain = [
+            ('dizibox', sync_dizibox_target),
+            ('dizilla', sync_dizilla_target),
+            ('hdfilm', sync_hdfilm_target),
+        ]
 
-    return eps_added, srcs_added
+    total_eps_added = 0
+    total_srcs_added = 0
 
-def run_recovery(limit=30, category='all', only_empty=False, drama_id=None):
+    for idx, (prov_name, sync_fn) in enumerate(chain):
+        empty_rem = _count_empty_eps(cur, did)
+        min_srcs = _min_sources_per_ep(cur, did)
+        is_native_source = (
+            (prov_name == 'bldrama' and ('bldrama' in source_url or 'webdramaturkey' in source_url))
+            or (prov_name == 'dizifon' and any(d in source_url for d in ('dizifon', 'asyadizi', 'asyaluna', 'asyaking')))
+            or (prov_name == 'asyaanimeleri' and 'asyaanimeleri' in source_url)
+            or (prov_name == 'asyawatch' and 'asyawatch' in source_url)
+            or (prov_name == 'dizibox' and 'dizibox' in source_url)
+        )
+        should_run = (idx == 0) or (empty_rem > 0) or (total_srcs_added == 0) or (is_native_source and min_srcs < 2)
+        if not should_run:
+            continue
+
+        try:
+            e_add, s_add = sync_fn(conn, cur, drama)
+            total_eps_added += e_add
+            total_srcs_added += s_add
+        except Exception as e:
+            log("ERROR", f"#{did} ({prov_name}) hata: {e}")
+
+    if total_eps_added > 0 or total_srcs_added > 0:
+        if sync_remote:
+            sync_drama_bundle_and_counts(conn, cur, did)
+        else:
+            _update_local_drama_counts(conn, cur, did)
+
+    return total_eps_added, total_srcs_added
+
+
+def run_recovery(limit=30, category='all', only_empty=False, drama_id=None, sync_remote=True):
     conn = get_db()
     cur = conn.cursor()
 
@@ -206,7 +295,7 @@ def run_recovery(limit=30, category='all', only_empty=False, drama_id=None):
             'content_type': (row['content_type'] or '').lower(),
             'country': (row['country'] or '').upper(),
             'source_url': row['source_url'] or '',
-            'empty_count': 0,
+            'empty_count': _count_empty_eps(cur, row['id']),
             'total_eps': 0,
             'reason': 'manual_id'
         }]
@@ -230,7 +319,7 @@ def run_recovery(limit=30, category='all', only_empty=False, drama_id=None):
         log("PROGRESS", f"[{idx}/{len(candidates)}] #{did} '{title}' ({provider.upper()}) | Durum: {reason} ({empty_cnt} boş/eksik)")
 
         try:
-            eps_add, srcs_add = heal_drama(conn, cur, item)
+            eps_add, srcs_add = heal_drama(conn, cur, item, sync_remote=sync_remote)
             if eps_add > 0 or srcs_add > 0:
                 healed_count += 1
                 total_eps_recovered += eps_add
@@ -254,15 +343,17 @@ def run_recovery(limit=30, category='all', only_empty=False, drama_id=None):
     conn.execute("PRAGMA wal_checkpoint(PASSIVE);")
     conn.close()
 
-    try:
-        backup_db_to_r2()
-        log("R2_SYNC", "Final veritabanı yedeği Cloudflare R2'ye yüklendi.")
-    except Exception as e:
-        log("R2_SYNC", f"Final R2 yedekleme hatası: {e}")
+    if sync_remote:
+        try:
+            backup_db_to_r2()
+            log("R2_SYNC", "Final veritabanı yedeği Cloudflare R2'ye yüklendi.")
+        except Exception as e:
+            log("R2_SYNC", f"Final R2 yedekleme hatası: {e}")
 
     elapsed = round(time.time() - start_time, 1)
     log("SUMMARY", f"Tamamlandı! Süre: {elapsed}s | Onarılan Seri: {healed_count} | Eklenen Bölüm: {total_eps_recovered} | Eklenen Kaynak: {total_srcs_recovered}")
     return healed_count, total_eps_recovered, total_srcs_recovered
+
 
 def main():
     parser = argparse.ArgumentParser(description="KoUp Universal Source Recovery & Catalog Healing Engine")
@@ -270,9 +361,17 @@ def main():
     parser.add_argument("--limit", type=int, default=30, help="Number of series to heal")
     parser.add_argument("--category", type=str, default="all", choices=["all", "anime", "korea", "asia", "western", "turkish"], help="Category filter")
     parser.add_argument("--only-empty", action="store_true", help="Only target series with empty/pending episodes")
+    parser.add_argument("--no-remote-sync", action="store_true", help="Skip R2 and Supabase sync (local SQLite only)")
     args = parser.parse_args()
 
-    run_recovery(limit=args.limit, category=args.category, only_empty=args.only_empty, drama_id=args.drama_id)
+    run_recovery(
+        limit=args.limit,
+        category=args.category,
+        only_empty=args.only_empty,
+        drama_id=args.drama_id,
+        sync_remote=not args.no_remote_sync,
+    )
+
 
 if __name__ == '__main__':
     main()
