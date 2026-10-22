@@ -14,7 +14,9 @@ function normalizeTurkish(text: string): string {
     .replace(/ı/g, 'i')
     .replace(/ö/g, 'o')
     .replace(/ç/g, 'c')
-    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/[-_]/g, ' ')
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
@@ -33,6 +35,10 @@ export async function GET(req: NextRequest) {
     const cleanId = personId ? Number(personId) : null;
     const normName = normalizeTurkish(cleanName);
 
+    // Variations for hyphenated/spaced Korean romanized names (e.g. "Kim Soo-hyun", "Kim Soo Hyun", "kim-soo-hyun")
+    const spaceName = cleanName.replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+    const hyphenName = spaceName.replace(/\s+/g, '-');
+
     // Slug derived tag guess (e.g. "yoo-in-na-89" -> "yoo-in-na")
     const cleanSlug = (slug || '')
       .replace(/-\d+$/, '')
@@ -50,11 +56,16 @@ export async function GET(req: NextRequest) {
         .order('published_at', { ascending: false })
         .limit(8);
 
+      const conditions: string[] = [
+        `title.ilike.%${cleanName}%`,
+        `title.ilike.%${spaceName}%`,
+        `tags.cs.{${cleanName}}`,
+        `tags.cs.{${spaceName}}`,
+      ];
       if (cleanId) {
-        q = q.or(`related_person_ids.cs.{${cleanId}},title.ilike.%${cleanName}%,tags.cs.{${cleanName}}`);
-      } else {
-        q = q.or(`title.ilike.%${cleanName}%,tags.cs.{${cleanName}}`);
+        conditions.unshift(`related_person_ids.cs.{${cleanId}}`);
       }
+      q = q.or(conditions.join(','));
 
       const { data: dbPosts } = await q;
       if (Array.isArray(dbPosts)) {
@@ -84,7 +95,7 @@ export async function GET(req: NextRequest) {
       };
 
       // Search matching tags on AsyaMag
-      const tagQueries = Array.from(new Set([cleanName, cleanSlug].filter(Boolean)));
+      const tagQueries = Array.from(new Set([cleanName, spaceName, hyphenName, cleanSlug].filter(Boolean)));
       const matchingTagIds = new Set<number>();
 
       for (const tq of tagQueries) {
