@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase, MagazinePost } from '@/lib/supabase';
 import { transformWpPost } from '@/lib/asyamag-live';
+import { fetchLiveKoreZinPosts } from '@/lib/korezin-live';
 
 export const revalidate = 300;
 
@@ -151,6 +152,40 @@ export async function GET(req: NextRequest) {
     } catch (err) {
       console.warn('AsyaMag live fetch error:', err);
     }
+
+    // 4. Query live KoreZin RSS feed for matching actor news & gossip
+    try {
+      const { posts: kzPosts } = await fetchLiveKoreZinPosts(40);
+      if (Array.isArray(kzPosts)) {
+        for (const kp of kzPosts) {
+          const normTitle = normalizeTurkish(kp.title || '');
+          const normExcerpt = normalizeTurkish(kp.excerpt || '');
+          const normContent = normalizeTurkish(kp.content_html || '');
+          const hasTagMatch = (kp.tags || []).some(
+            (t) => normalizeTurkish(t).includes(normName) || normName.includes(normalizeTurkish(t))
+          );
+
+          if (
+            hasTagMatch ||
+            normTitle.includes(normName) ||
+            normExcerpt.includes(normName) ||
+            normContent.includes(normName)
+          ) {
+            if (!seenSlugs.has(kp.slug)) {
+              seenSlugs.add(kp.slug);
+              mergedPosts.push(kp);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('KoreZin live actor search error:', err);
+    }
+
+    // Sort all merged posts by published date (newest first)
+    mergedPosts.sort(
+      (a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime()
+    );
 
     return NextResponse.json({
       posts: mergedPosts.slice(0, 8),

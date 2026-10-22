@@ -202,6 +202,112 @@ export default {
       }
     }
 
+    // 2.6 Pichive / AsyaWatch Stream & Chunk Edge Proxy
+    if (url.pathname === '/pichive-proxy') {
+      const targetUrl = url.searchParams.get('url');
+      if (!targetUrl) {
+        return new Response('Missing url', { status: 400, headers: corsHeaders });
+      }
+
+      try {
+        const customRef = url.searchParams.get('ref') || 'https://four.pichive.online/';
+        const origin = 'https://four.pichive.online';
+
+        const forwardHeaders = {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'Referer': customRef,
+          'Origin': origin,
+          'Accept': '*/*',
+        };
+
+        const range = request.headers.get('Range');
+        if (range) forwardHeaders['Range'] = range;
+
+        const upstreamRes = await fetch(targetUrl, {
+          headers: forwardHeaders,
+        });
+
+        const contentType = upstreamRes.headers.get('content-type') || '';
+        const isPlaylist =
+          contentType.includes('mpegurl') ||
+          contentType.includes('text/plain') ||
+          targetUrl.includes('.m3u8') ||
+          targetUrl.includes('/m.php') ||
+          targetUrl.includes('/l.php') ||
+          targetUrl.includes('/ld.php');
+
+        if (isPlaylist) {
+          const text = await upstreamRes.text();
+          const workerBase = `${url.origin}/pichive-proxy?url=`;
+          const refSuffix = `&ref=${encodeURIComponent(customRef)}`;
+
+          const rewritten = text.split('\n').map((line) => {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) {
+              if (trimmed.startsWith('#EXT-X-STREAM-INF:')) {
+                return trimmed
+                  .replace(/,?\s*CODECS="[^"]*"/i, '')
+                  .replace(/,,+/g, ',')
+                  .replace(/([0-9a-zA-Z_"])RESOLUTION=/g, '$1,RESOLUTION=')
+                  .replace(/([0-9a-zA-Z_"])NAME=/g, '$1,NAME=')
+                  .replace(/,,+/g, ',');
+              }
+              if (trimmed.includes('URI="')) {
+                return trimmed.replace(/URI="([^"]+)"/g, (_, uriVal) => {
+                  try {
+                    const absUri = new URL(uriVal, targetUrl).toString();
+                    return `URI="${workerBase}${encodeURIComponent(absUri)}${refSuffix}"`;
+                  } catch {
+                    return `URI="${uriVal}"`;
+                  }
+                });
+              }
+              return line;
+            }
+
+            try {
+              const abs = new URL(trimmed, targetUrl).toString();
+              return `${workerBase}${encodeURIComponent(abs)}${refSuffix}`;
+            } catch {
+              return line;
+            }
+          }).join('\n');
+
+          return new Response(rewritten, {
+            status: 200,
+            headers: {
+              ...corsHeaders,
+              'Content-Type': 'application/vnd.apple.mpegurl',
+              'Cache-Control': 'public, max-age=60',
+            },
+          });
+        }
+
+        // Binary chunk (.ts or masked .jpg)
+        const resHeaders = new Headers(corsHeaders);
+        for (const h of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'cache-control']) {
+          const val = upstreamRes.headers.get(h);
+          if (val) resHeaders.set(h, val);
+        }
+        if (targetUrl.includes('.ts') || targetUrl.includes('.jpg') || targetUrl.includes('.png')) {
+          resHeaders.set('content-type', 'video/mp2t');
+        }
+        if (!resHeaders.has('cache-control')) {
+          resHeaders.set('cache-control', 'public, max-age=86400, immutable');
+        }
+
+        return new Response(upstreamRes.body, {
+          status: upstreamRes.status,
+          headers: resHeaders,
+        });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: String(err) }), {
+          status: 502,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     // 3. Universal Stream Resolver / Header Bypass (Vidmoly, Sibnet, Ok.ru)
     if (url.pathname === '/resolve') {
       const targetUrl = url.searchParams.get('url');
