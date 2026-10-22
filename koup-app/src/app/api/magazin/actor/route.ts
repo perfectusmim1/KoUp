@@ -61,7 +61,14 @@ export async function GET(req: NextRequest) {
         for (const p of dbPosts) {
           if (!seenSlugs.has(p.slug)) {
             seenSlugs.add(p.slug);
-            mergedPosts.push(p as MagazinePost);
+            const isKz =
+              (p.source_site || '').toLowerCase().includes('korezin') ||
+              p.source_url?.includes('korezin.com') ||
+              p.slug?.startsWith('kz-');
+            mergedPosts.push({
+              ...p,
+              source_site: isKz ? 'KoreZin' : (p.source_site || 'AsyaMag'),
+            } as MagazinePost);
           }
         }
       }

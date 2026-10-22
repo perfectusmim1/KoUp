@@ -777,15 +777,17 @@ export default function PersonDetailPage({
                     )}
                   </div>
                   <div className="pt-2 flex items-center justify-between border-t border-white/10 text-[10px] text-white/45 font-mono">
-                    <span
-                      className={`font-semibold ${
-                        (post.source_site || '').toLowerCase().includes('korezin')
-                          ? 'text-amber-400'
-                          : 'text-rose-400'
-                      }`}
-                    >
-                      {post.source_site || 'AsyaMag'}
-                    </span>
+                    {(() => {
+                      const isKz =
+                        (post.source_site || '').toLowerCase().includes('korezin') ||
+                        post.source_url?.includes('korezin.com') ||
+                        post.slug?.startsWith('kz-');
+                      return (
+                        <span className={`font-semibold ${isKz ? 'text-amber-400' : 'text-rose-400'}`}>
+                          {isKz ? 'KoreZin' : (post.source_site || 'AsyaMag')}
+                        </span>
+                      );
+                    })()}
                     <span>
                       {post.published_at ? new Date(post.published_at).toLocaleDateString('tr-TR') : 'Güncel'}
                     </span>
