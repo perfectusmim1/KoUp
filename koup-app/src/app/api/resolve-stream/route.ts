@@ -427,8 +427,11 @@ export async function GET(req: NextRequest) {
         const edgeResp = await fetch(
           `https://koup-edge-worker.caganhuseyinerdil.workers.dev/pichive?url=${encodeURIComponent(iframeUrl)}`,
           {
-            headers: { Accept: 'application/json' },
-            signal: AbortSignal.timeout(5000),
+            headers: {
+              Accept: 'application/json',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            },
+            signal: AbortSignal.timeout(7000),
           }
         );
         if (edgeResp.ok) {

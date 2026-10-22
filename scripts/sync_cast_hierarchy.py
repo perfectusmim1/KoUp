@@ -40,20 +40,30 @@ def main():
     print("Mevcut oyuncu veritabanı önbelleğe alınıyor...", flush=True)
     people_by_tmdb = {}
     people_by_slug = {}
+    people_by_base_slug = {}
+    people_by_norm_name = {}
     offset = 0
     while True:
         r = requests.get(
-            f"{SUPABASE_URL}/rest/v1/people?select=id,slug,tmdb_id&limit=5000&offset={offset}",
+            f"{SUPABASE_URL}/rest/v1/people?select=id,slug,name,tmdb_id&limit=5000&offset={offset}",
             headers=HEADERS
         )
         data = r.json()
         if not data or not isinstance(data, list):
             break
         for p in data:
+            pid = p['id']
             if p.get('tmdb_id'):
-                people_by_tmdb[p['tmdb_id']] = p['id']
+                people_by_tmdb[p['tmdb_id']] = pid
             if p.get('slug'):
-                people_by_slug[p['slug']] = p['id']
+                people_by_slug[p['slug']] = pid
+                base_s = re.sub(r'-\d+$', '', p['slug'].lower())
+                if base_s not in people_by_base_slug:
+                    people_by_base_slug[base_s] = pid
+            if p.get('name'):
+                norm_n = re.sub(r'[^a-zA-Z0-9]', '', p['name'].lower())
+                if norm_n and norm_n not in people_by_norm_name:
+                    people_by_norm_name[norm_n] = pid
         offset += len(data)
         if len(data) < 5000:
             break
@@ -111,7 +121,13 @@ def main():
                 img_url = f"https://image.tmdb.org/t/p/w500{profile_path}" if profile_path else None
                 order = idx + 1
                 
-                pid = people_by_tmdb.get(tmdb_pid) or people_by_slug.get(pslug)
+                norm_n = re.sub(r'[^a-zA-Z0-9]', '', name.lower())
+                pid = (
+                    people_by_tmdb.get(tmdb_pid)
+                    or people_by_slug.get(pslug)
+                    or people_by_base_slug.get(pslug)
+                    or people_by_norm_name.get(norm_n)
+                )
                 if not pid:
                     new_people_to_insert.append({
                         'name': name,
@@ -148,7 +164,14 @@ def main():
             # Assign resolved person_ids
             media_cast_batch = []
             for cp in cast_plan:
-                pid = cp['pid'] or people_by_tmdb.get(cp['tmdb_pid']) or people_by_slug.get(cp['slug'])
+                norm_n = re.sub(r'[^a-zA-Z0-9]', '', cp['name'].lower())
+                pid = (
+                    cp['pid']
+                    or people_by_tmdb.get(cp['tmdb_pid'])
+                    or people_by_slug.get(cp['slug'])
+                    or people_by_base_slug.get(cp['slug'])
+                    or people_by_norm_name.get(norm_n)
+                )
                 if pid:
                     media_cast_batch.append({
                         'media_id': mid,

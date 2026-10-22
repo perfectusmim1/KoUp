@@ -140,11 +140,14 @@ export async function GET(req: NextRequest) {
 
     for (const actor of parsedCast) {
       const personSlug = slugify(actor.name);
+      const spaceName = actor.name.replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+      const hyphenName = spaceName.replace(/\s+/g, '-');
 
-      // Check if person exists
+      // Check if person exists with comprehensive multi-layer matching
       let personId: number | null = null;
       let existingPerson: any = null;
 
+      // 1. By TMDb ID
       if (actor.tmdb_id) {
         const { data: pByTmdb } = await supabaseAdmin
           .from('people')
@@ -155,28 +158,59 @@ export async function GET(req: NextRequest) {
         if (pByTmdb) existingPerson = pByTmdb;
       }
 
+      // 2. By exact slug
+      if (!existingPerson) {
+        const { data: pBySlug } = await supabaseAdmin
+          .from('people')
+          .select('*')
+          .eq('slug', personSlug)
+          .limit(1)
+          .maybeSingle();
+        if (pBySlug) existingPerson = pBySlug;
+      }
+
+      // 3. By names (raw name, space name, hyphen name)
       if (!existingPerson) {
         const { data: pByName } = await supabaseAdmin
           .from('people')
           .select('*')
-          .ilike('name', actor.name)
+          .or(`name.ilike.%${actor.name}%,name.ilike.%${spaceName}%,name.ilike.%${hyphenName}%`)
           .limit(1)
           .maybeSingle();
         if (pByName) existingPerson = pByName;
       }
 
+      // 4. By slug prefix (e.g. legacy MDL slug "kim-ji-won-56" -> matches "kim-ji-won-%")
+      if (!existingPerson) {
+        const { data: pBySlugPrefix } = await supabaseAdmin
+          .from('people')
+          .select('*')
+          .ilike('slug', `${personSlug}-%`)
+          .order('drama_count', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (pBySlugPrefix) existingPerson = pBySlugPrefix;
+      }
+
       if (existingPerson) {
         personId = existingPerson.id;
-        // Update photo if missing
+        const updates: any = {};
+        if (!existingPerson.tmdb_id && actor.tmdb_id) {
+          updates.tmdb_id = actor.tmdb_id;
+        }
         if (!existingPerson.image_url && actor.profile_url) {
-          await supabaseAdmin
-            .from('people')
-            .update({ image_url: actor.profile_url, tmdb_id: actor.tmdb_id || existingPerson.tmdb_id })
-            .eq('id', personId);
-          existingPerson.image_url = actor.profile_url;
+          updates.image_url = actor.profile_url;
+        }
+        // Upgrade legacy numbered slug e.g. "kim-ji-won-56" to clean "kim-ji-won" if available
+        if (/-\d+$/.test(existingPerson.slug) && existingPerson.slug !== personSlug) {
+          updates.slug = personSlug;
+        }
+        if (Object.keys(updates).length > 0) {
+          await supabaseAdmin.from('people').update(updates).eq('id', personId);
+          existingPerson = { ...existingPerson, ...updates };
         }
       } else {
-        // Insert new person
+        // Insert new person only if no match anywhere
         const { data: newPerson, error: pInsertErr } = await supabaseAdmin
           .from('people')
           .insert({

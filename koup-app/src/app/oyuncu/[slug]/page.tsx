@@ -245,6 +245,19 @@ export default function PersonDetailPage({
               pData = byId.data;
             }
 
+            // Fallback for legacy numbered slugs (e.g. "kim-ji-won-56" -> "kim-ji-won")
+            if (!pData && /-\d+$/.test(decoded)) {
+              const cleanSlug = decoded.replace(/-\d+$/, '');
+              const byClean = await supabase
+                .from('people')
+                .select('*')
+                .eq('slug', cleanSlug)
+                .single();
+              if (byClean.data) {
+                pData = byClean.data;
+              }
+            }
+
             if (!pData) {
               return { person: null, credits: [], coStars: [] };
             }
