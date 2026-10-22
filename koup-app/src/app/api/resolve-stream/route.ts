@@ -964,19 +964,16 @@ export async function GET(req: NextRequest) {
             return qb - qa;
           });
 
-          // Proxy raw MP4 through stream-proxy to ensure CORS headers, byte-range scrubbing and prevent black screen
-          const proxiedQualities = sorted.map((q) => {
-            const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(q.url)}&ref=${encodeURIComponent('https://tau-video.xyz/')}`;
-            return {
-              label: q.label || '1080p',
-              url: proxiedUrl,
-            };
-          });
+          // Use direct Backblaze/Cloudflare CDN MP4 URLs (CORS-enabled & 206 byte-range ready); NetflixPlayer falls back to stream-proxy on error if needed
+          const directQualities = sorted.map((q) => ({
+            label: q.label || '1080p',
+            url: q.url,
+          }));
 
           const payload = {
             mode: 'native_mp4' as const,
-            qualities: proxiedQualities,
-            streamUrl: proxiedQualities[0].url,
+            qualities: directQualities,
+            streamUrl: directQualities[0].url,
             thumbnails: tauData.thumbnails || undefined,
             fallbackIframe: url,
           };

@@ -1418,15 +1418,102 @@ export default function NetflixPlayer({
       setCurrentAudioTrackId(0);
 
       try {
-        const params = new URLSearchParams({
-          url: activeSourceUrl,
-          provider: activeSourceProvider,
-        });
-        const resp = await fetch(`/api/resolve-stream?${params.toString()}`, { cache: 'no-store' });
-        const data = await resp.json();
+        let data: any = null;
+        let respStatus = 200;
+
+        // Direct Client-Side / Local Edge Resolution for Tau Video (bypasses Vercel US-East datacenter WAF blocks on tau-video.xyz)
+        const isTauSource =
+          activeSourceProvider === 'tau-video' ||
+          activeSourceProvider.toLowerCase().includes('tau') ||
+          activeSourceUrl.toLowerCase().includes('tau-video');
+
+        if (isTauSource) {
+          const tauCode =
+            activeSourceUrl.match(/\/embed\/([a-zA-Z0-9_-]+)/)?.[1] ||
+            activeSourceUrl.match(/\/video\/([a-zA-Z0-9_-]+)/)?.[1] ||
+            activeSourceUrl.match(/([a-f0-9]{24,64})/i)?.[1] ||
+            activeSourceUrl.split('/').pop()?.split('?')[0];
+
+          if (tauCode) {
+            let tauJson: any = null;
+            let tauDead = false;
+
+            // 1. Primary: Direct browser fetch to tau-video.xyz API (uses user's residential IP, CORS-enabled '*')
+            try {
+              const directTauResp = await fetch(
+                `https://tau-video.xyz/api/video/${encodeURIComponent(tauCode)}`,
+                {
+                  headers: { Accept: 'application/json' },
+                  signal: AbortSignal.timeout(4500),
+                }
+              );
+              if (directTauResp.status === 404 || directTauResp.status === 410) {
+                tauDead = true;
+              } else if (directTauResp.ok) {
+                const parsed = await directTauResp.json();
+                if (parsed?.urls && Array.isArray(parsed.urls) && parsed.urls.length > 0) {
+                  tauJson = parsed;
+                }
+              }
+            } catch {}
+
+            // 2. Secondary: Local Cloudflare Edge Worker (hits user's nearest TR/EU Cloudflare PoP)
+            if (!tauJson && !tauDead) {
+              try {
+                const edgeTauResp = await fetch(
+                  `https://koup-edge-worker.caganhuseyinerdil.workers.dev/tau?key=${encodeURIComponent(tauCode)}`,
+                  {
+                    headers: { Accept: 'application/json' },
+                    signal: AbortSignal.timeout(4500),
+                  }
+                );
+                if (edgeTauResp.status === 404 || edgeTauResp.status === 410) {
+                  tauDead = true;
+                } else if (edgeTauResp.ok) {
+                  const parsed = await edgeTauResp.json();
+                  if (parsed?.urls && Array.isArray(parsed.urls) && parsed.urls.length > 0) {
+                    tauJson = parsed;
+                  }
+                }
+              } catch {}
+            }
+
+            if (tauDead) {
+              respStatus = 410;
+              data = { isDead: true };
+            } else if (tauJson?.urls && tauJson.urls.length > 0) {
+              const sorted = [...tauJson.urls].sort((a: any, b: any) => {
+                const qa = parseInt(a.label || '0', 10);
+                const qb = parseInt(b.label || '0', 10);
+                return qb - qa;
+              });
+              const directQualities = sorted.map((q: any) => ({
+                label: q.label || '1080p',
+                url: q.url,
+              }));
+              data = {
+                mode: 'native_mp4',
+                qualities: directQualities,
+                streamUrl: directQualities[0].url,
+                thumbnails: tauJson.thumbnails || undefined,
+                fallbackIframe: activeSourceUrl,
+              };
+            }
+          }
+        }
+
+        if (!data) {
+          const params = new URLSearchParams({
+            url: activeSourceUrl,
+            provider: activeSourceProvider,
+          });
+          const resp = await fetch(`/api/resolve-stream?${params.toString()}`, { cache: 'no-store' });
+          respStatus = resp.status;
+          data = await resp.json();
+        }
         if (cancelled) return;
 
-        if (resp.status === 410 || data.isDead) {
+        if (respStatus === 410 || data.isDead) {
           const deadKey = activeSource?.id ? String(activeSource.id) : (activeSource?.direct_url || activeSourceUrl);
           setDeadSourceKeys((prev) => new Set(prev).add(deadKey));
 
