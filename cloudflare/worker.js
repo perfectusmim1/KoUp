@@ -78,6 +78,104 @@ export default {
       });
     }
 
+    // 2.5 Pichive / AsyaWatch Native Stream Extractor
+    if (url.pathname === '/pichive') {
+      const targetIframe = url.searchParams.get('url') || '';
+      if (!targetIframe) {
+        return new Response(JSON.stringify({ error: 'Missing url parameter' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      try {
+        let iframeUrl = targetIframe;
+        if (iframeUrl.startsWith('//')) iframeUrl = 'https:' + iframeUrl;
+
+        const iframeResp = await fetch(iframeUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Referer': 'https://asyawatch.com/',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          },
+        });
+
+        if (!iframeResp.ok) {
+          return new Response(JSON.stringify({ error: `Iframe HTTP ${iframeResp.status}`, isDead: true }), {
+            status: iframeResp.status,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const html = await iframeResp.text();
+        const tokenMatch = html.match(/openPlayer\(\s*['"]([^'"]+)['"]/);
+        if (!tokenMatch?.[1]) {
+          return new Response(JSON.stringify({ error: 'openPlayer token not found in iframe', isDead: true }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const token = tokenMatch[1];
+        const parsedIframe = new URL(iframeUrl);
+        const origin = parsedIframe.origin;
+        const source2Url = `${origin}/source2.php?v=${encodeURIComponent(token)}`;
+
+        const s2Resp = await fetch(source2Url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': iframeUrl,
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+          },
+        });
+
+        if (!s2Resp.ok) {
+          return new Response(JSON.stringify({ error: `source2.php HTTP ${s2Resp.status}`, isDead: true }), {
+            status: s2Resp.status,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const s2Data = await s2Resp.json();
+        const playlistItem = s2Data?.playlist?.[0];
+        let masterStreamUrl = playlistItem?.sources?.[0]?.file;
+        if (masterStreamUrl) {
+          masterStreamUrl = masterStreamUrl.replace('m.php', 'master.m3u8');
+        }
+
+        let subtitles = [];
+        const subMatch = html.match(/\[\s*\{\s*["']file["']\s*:\s*["'][^"']+\.vtt[^"']*["'][\s\S]*?\]/);
+        if (subMatch?.[0]) {
+          try {
+            subtitles = JSON.parse(subMatch[0]);
+          } catch {}
+        }
+
+        return new Response(
+          JSON.stringify({
+            status: 'success',
+            streamUrl: masterStreamUrl,
+            subtitles,
+            poster: playlistItem?.image || null,
+          }),
+          {
+            status: 200,
+            headers: {
+              ...corsHeaders,
+              'Content-Type': 'application/json',
+              'Cache-Control': 'public, max-age=3600',
+            },
+          }
+        );
+      } catch (err) {
+        return new Response(JSON.stringify({ error: String(err), isDead: true }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     // 3. Universal Stream Resolver / Header Bypass (Vidmoly, Sibnet, Ok.ru)
     if (url.pathname === '/resolve') {
       const targetUrl = url.searchParams.get('url');
