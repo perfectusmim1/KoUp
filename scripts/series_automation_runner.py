@@ -317,22 +317,24 @@ def sync_single_series(drama_id: int) -> dict:
         WHERE id = ?
     """, (str(new_episodes_count), new_sources_count, new_status_broadcast, drama_id))
 
-    # Update series_automations status
+    # Update series_automations status (Final series are automatically removed from pool)
     if is_series_final:
         status_summary = f"🎉 Final Yaptı ({new_episodes_count} Bölüm Tamamlandı)"
+        cur.execute("DELETE FROM series_automations WHERE media_id = ?", (drama_id,))
+        conn.commit()
+        emit_log(f"🎉 #{drama_id} {title} Final yaptığı için Seri Otomasyonu listesinden otomatik kaldırıldı.")
     else:
         status_summary = f"+{net_episodes_added} Bölüm | +{net_sources_added} Kaynak ({len(connected_sites)} Site)"
-
-    cur.execute("""
-        UPDATE series_automations
-        SET episode_count = ?, sources_count = ?, status_broadcast = ?,
-            is_active = CASE WHEN ? = 1 THEN 0 ELSE is_active END,
-            last_status = 'healthy',
-            last_message = ?, last_episodes_added = ?, last_sources_added = ?,
-            last_synced_at = datetime('now'), updated_at = datetime('now')
-        WHERE media_id = ?
-    """, (new_episodes_count, new_sources_count, new_status_broadcast, 1 if is_series_final else 0, status_summary, net_episodes_added, net_sources_added, drama_id))
-    conn.commit()
+        cur.execute("""
+            UPDATE series_automations
+            SET episode_count = ?, sources_count = ?, status_broadcast = ?,
+                is_active = 1,
+                last_status = 'healthy',
+                last_message = ?, last_episodes_added = ?, last_sources_added = ?,
+                last_synced_at = datetime('now'), updated_at = datetime('now')
+            WHERE media_id = ?
+        """, (new_episodes_count, new_sources_count, new_status_broadcast, status_summary, net_episodes_added, net_sources_added, drama_id))
+        conn.commit()
 
     # Checkpoint SQLite
     cur.execute("PRAGMA wal_checkpoint(TRUNCATE);")
@@ -360,19 +362,23 @@ def sync_single_series(drama_id: int) -> dict:
         sync_drama_bundle_and_counts(conn2, c2, drama_id)
         conn2.close()
 
-        now_iso = datetime.now(timezone.utc).isoformat()
-        sb_request("PATCH", f"/rest/v1/series_automations?media_id=eq.{drama_id}", body={
-            "episode_count": new_episodes_count,
-            "sources_count": new_sources_count,
-            "status_broadcast": new_status_broadcast,
-            "is_active": False if is_series_final else True,
-            "last_status": "healthy",
-            "last_message": status_summary,
-            "last_episodes_added": net_episodes_added,
-            "last_sources_added": net_sources_added,
-            "last_synced_at": now_iso,
-            "updated_at": now_iso,
-        })
+        if is_series_final:
+            sb_request("DELETE", f"/rest/v1/series_automations?media_id=eq.{drama_id}")
+            emit_log(f"[Supabase Sync] #{drama_id} Supabase series_automations tablosundan silindi.")
+        else:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            sb_request("PATCH", f"/rest/v1/series_automations?media_id=eq.{drama_id}", body={
+                "episode_count": new_episodes_count,
+                "sources_count": new_sources_count,
+                "status_broadcast": new_status_broadcast,
+                "is_active": True,
+                "last_status": "healthy",
+                "last_message": status_summary,
+                "last_episodes_added": net_episodes_added,
+                "last_sources_added": net_sources_added,
+                "last_synced_at": now_iso,
+                "updated_at": now_iso,
+            })
     except Exception as e:
         emit_log(f"[Supabase Sync] Uyarı: {e}")
 
@@ -395,6 +401,25 @@ def sync_single_series(drama_id: int) -> dict:
 def sync_all_active_series(limit: int = 10) -> int:
     conn = get_connection()
     cur = conn.cursor()
+
+    # Pre-clean: Otomasyon havuzundaki Final yapmış yapımları otomatik temizle
+    cur.execute("""
+        SELECT sa.media_id, sa.title 
+        FROM series_automations sa 
+        JOIN dramas d ON sa.media_id = d.id 
+        WHERE d.status_broadcast IN ('Final', 'Tamamlandı', 'Canceled')
+    """)
+    final_rows = cur.fetchall()
+    for f_id, f_title in final_rows:
+        cur.execute("DELETE FROM series_automations WHERE media_id = ?", (f_id,))
+        try:
+            sb_request("DELETE", f"/rest/v1/series_automations?media_id=eq.{f_id}")
+        except Exception:
+            pass
+        emit_log(f"🧹 #{f_id} {f_title} Final yaptığı için Seri Otomasyonundan temizlendi.")
+    if final_rows:
+        conn.commit()
+
     if limit and limit > 0:
         cur.execute("SELECT media_id, title FROM series_automations WHERE is_active = 1 ORDER BY last_synced_at ASC NULLS FIRST LIMIT ?", (limit,))
     else:
@@ -456,6 +481,10 @@ def add_and_bind_series(
         if not row:
             conn.close()
             return {"ok": False, "error": f"Dizi bulunamadı: #{drama_id}"}
+        if row[5] in ("Final", "Tamamlandı", "Canceled"):
+            conn.close()
+            emit_log(f"[UYARI] #{drama_id} '{row[1]}' zaten {row[5]} yapmış. Seri otomasyonuna eklenmedi.")
+            return {"ok": False, "error": f"'{row[1]}' zaten {row[5]} yapmış bir dizi. Seri otomasyonu yalnızca devam eden serileri takip eder."}
         did = row[0]
         dtitle = row[1]
         dslug = row[2]

@@ -648,6 +648,48 @@ def main():
             except Exception as e:
                 record_log(f"[Deduplication] Hata: {e}")
 
+            # Yeni eklenen devam eden serileri otomatik seri otomasyonuna bağla
+            try:
+                from scripts.series_automation_runner import add_and_bind_series
+                for d in all_dramas:
+                    did = d.get("id")
+                    ctype = d.get("content_type", "dizi")
+                    if ctype in ("dizi", "anime"):
+                        record_log(f"[Seri Otomasyonu] Yeni seri algılandı: #{did} {d.get('title')} — Otomasyona dahil ediliyor...")
+                        add_and_bind_series(
+                            drama_id=did,
+                            title=d.get("title", ""),
+                            slug=d.get("slug", ""),
+                            content_type=ctype,
+                            site=d.get("site", "asyawatch"),
+                        )
+            except Exception as e:
+                record_log(f"[Seri Otomasyonu] Yeni seri otomasyon kaydı uyarısı: {e}")
+
+        # Final yapan serileri seri otomasyonundan otomatik temizle
+        try:
+            conn_sa = get_connection()
+            cur_sa = conn_sa.cursor()
+            cur_sa.execute("""
+                SELECT sa.media_id, sa.title 
+                FROM series_automations sa 
+                JOIN dramas d ON sa.media_id = d.id 
+                WHERE d.status_broadcast IN ('Final', 'Tamamlandı', 'Canceled')
+            """)
+            final_rows = cur_sa.fetchall()
+            if final_rows:
+                for f_id, f_title in final_rows:
+                    cur_sa.execute("DELETE FROM series_automations WHERE media_id = ?", (f_id,))
+                    try:
+                        sb_request("DELETE", f"/rest/v1/series_automations?media_id=eq.{f_id}")
+                    except Exception:
+                        pass
+                    record_log(f"[Seri Otomasyonu] Final yapan dizi otomatik kaldırıldı: #{f_id} {f_title}")
+                conn_sa.commit()
+            conn_sa.close()
+        except Exception as e:
+            record_log(f"[Seri Otomasyonu] Final temizleme uyarısı: {e}")
+
         # Database Checkpoint & R2 Backup
         try:
             conn = get_connection()

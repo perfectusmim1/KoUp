@@ -26,6 +26,7 @@ def main():
         'NEXT_PUBLIC_SUPABASE_URL',
         'NEXT_PUBLIC_SUPABASE_ANON_KEY',
         'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+        'SUPABASE_SECRET_KEY',
         'SUPABASE_SERVICE_ROLE_KEY',
         'TMDB_API_KEY',
         'R2_PUBLIC_URL',
@@ -41,19 +42,16 @@ def main():
         v = config.get(k)
         if not v:
             continue
-        env_target = 'production'
-        type_flag = '--type config' if k.startswith('NEXT_PUBLIC_') else ''
-        cmd = f'echo {v} | npx -y vercel env add {k} {env_target} {type_flag}'
+        type_flag = '--no-sensitive' if k.startswith('NEXT_PUBLIC_') else '--sensitive'
+        cmd = f'npx -y vercel env add {k} production,preview,development --value "{v}" --force {type_flag} --yes'
         p = subprocess.run(cmd, shell=True, text=True, capture_output=True, cwd=app_dir)
         out = (p.stdout + p.stderr).strip()
-        if 'already exists' in out:
-            print(f"  = {k} ({env_target}) already exists")
-        elif 'Added' in out:
-            print(f"  + Added {k} ({env_target})")
+        if 'Overrode' in out or 'Added' in out:
+            print(f"  ✓ {k} updated on Vercel")
         else:
-            print(f"  ! {k} ({env_target}): {out[:80]}")
+            print(f"  ! {k}: {out[:80]}")
 
-    print("Vercel environment variables sync completed (production only).")
+    print("Vercel environment variables sync completed.")
 
 if __name__ == '__main__':
     main()

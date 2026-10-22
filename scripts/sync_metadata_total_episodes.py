@@ -15,7 +15,9 @@ if hasattr(sys.stdout, 'reconfigure'):
 if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8')
 
-TMDB_API_KEY = "4c092d2cfd6d9c0e3aa3dab12c7d4756"
+from scrapers.translator import _load_tmdb_key
+
+TMDB_API_KEY = _load_tmdb_key()
 
 def sync_anilist_episodes(conn, cur):
     print("🚀 [AniList] Animelerin resmi toplam bölüm sayıları GraphQL ile çekiliyor...")

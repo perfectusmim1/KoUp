@@ -166,6 +166,11 @@ export async function POST(req: NextRequest) {
       const stmt = db.prepare('SELECT id, title, slug, cover_image, content_type, status_broadcast, episode_count, sources_count FROM dramas WHERE id = ?');
       const d = stmt.get(Number(media_id)) as any;
       if (d) {
+        if (d.status_broadcast === 'Final' || d.status_broadcast === 'Tamamlandı') {
+          return NextResponse.json({
+            error: `"${d.title}" zaten ${d.status_broadcast} yapmış bir dizi. Seri otomasyonu yalnızca devam eden serileri takip eder.`
+          }, { status: 400 });
+        }
         dramaTitle = dramaTitle || d.title;
         dramaSlug = dramaSlug || d.slug;
         dramaPoster = dramaPoster || d.cover_image;
