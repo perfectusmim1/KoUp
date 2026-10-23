@@ -2,8 +2,8 @@ name: KoUp Multi-Site Scraper & Pending Source Auto-Resolver Cron
 
 on:
   schedule:
-    # Her 12 saatte bir (günde 2 kez) yeni bölümleri tara ve eksik kaynakları çöz
-    - cron: '0 */12 * * *'
+    # Her 4 saatte bir (günde 6 kez) yeni bölümleri tara ve eksik kaynakları çöz
+    - cron: '0 */4 * * *'
   workflow_dispatch:
     inputs:
       target_site:

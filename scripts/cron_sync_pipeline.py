@@ -115,7 +115,7 @@ def start_automation_run(trigger_type: str, target: str) -> int | None:
         "episodes_added_list": [],
         "sources_added_list": [],
         "scrapers_summary": {},
-        "logs": [f"[{datetime.now().strftime('%H:%M:%S')}] [BAŞLATILDI] 12 Saatlik KoUp Otomasyon Pipeline devrede (Hedef: {target}, Tetikleyici: {trigger_type})."],
+        "logs": [f"[{datetime.now().strftime('%H:%M:%S')}] [BAŞLATILDI] 4 Saatlik KoUp Otomasyon Pipeline devrede (Hedef: {target}, Tetikleyici: {trigger_type})."],
     }
     try:
         res = sb_request("POST", "/rest/v1/automation_runs", body=payload, prefer="return=representation")
@@ -452,7 +452,7 @@ def main():
         except Exception:
             pass
 
-    record_log(f"KoUp 12 Saatlik Otomasyon Pipeline Başlatıldı — Hedef: {target} (Tetikleyici: {trigger_type})")
+    record_log(f"KoUp 4 Saatlik Otomasyon Pipeline Başlatıldı — Hedef: {target} (Tetikleyici: {trigger_type})")
 
     ensure_database_ready()
 
