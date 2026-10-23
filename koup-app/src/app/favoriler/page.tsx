@@ -250,28 +250,13 @@ export default function FavorilerPage() {
   return (
     <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 space-y-8">
       {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-white/[0.08]">
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-500/10 border border-rose-400/25 text-[11px] font-mono font-bold text-rose-300">
-            <Heart className="w-3.5 h-3.5 text-rose-400 fill-rose-400" />
-            <span>Kişisel Koleksiyon</span>
-          </div>
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-            Favori Serilerim
-          </h1>
-        </div>
-
-        <Link
-          href="/kesfet"
-          onClick={() => triggerSound('click')}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-bold text-white transition-colors self-start md:self-auto cursor-pointer"
-        >
-          <Compass className="w-4 h-4 text-sky-400" />
-          <span>Katalogdan Yapım Keşfet</span>
-        </Link>
+      <div className="pb-6 border-b border-white/[0.08]">
+        <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+          Favori Serilerim
+        </h1>
       </div>
 
-      {/* Metric Breakdown Cards */}
+      {/* Metric Breakdown Cards (Filters) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           {
@@ -313,14 +298,14 @@ export default function FavorilerPage() {
                 setActiveType(item.id);
                 setCurrentPage(1);
               }}
-              className={`p-4 rounded-3xl border transition-colors cursor-pointer text-left ${
+              className={`p-4 rounded-3xl border transition-all cursor-pointer text-left select-none ${
                 isSelected
-                  ? 'bg-white/[0.1] border-rose-400/60 shadow-[0_0_20px_rgba(244,63,94,0.2)]'
+                  ? 'bg-rose-500/10 border-rose-500/50 shadow-[0_0_24px_rgba(244,63,94,0.22)] ring-1 ring-rose-400/30'
                   : 'bg-[#0f0f12]/90 border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04]'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-mono font-medium text-white/50">
+                <span className={`text-[11px] font-mono font-medium ${isSelected ? 'text-white' : 'text-white/50'}`}>
                   {item.label}
                 </span>
                 <Icon className={`w-4 h-4 ${item.color}`} />
@@ -333,92 +318,49 @@ export default function FavorilerPage() {
         })}
       </div>
 
-      {/* Filter, Sort and Search Bar */}
-      <div className="rounded-3xl bg-[#0f0f11] p-4 sm:p-5 border border-white/[0.08] flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl">
-        {/* Content Type Filter */}
-        <div className="flex items-center gap-1 p-1 rounded-full glass-pill-dark border border-white/12 shrink-0 mx-auto md:mx-0">
-          {[
-            { id: 'ALL' as const, label: 'Hepsi' },
-            { id: 'drama' as const, label: 'Dizi' },
-            { id: 'anime' as const, label: 'Anime' },
-            { id: 'movie' as const, label: 'Film' },
-          ].map((tp) => {
-            const active = activeType === tp.id;
-            return (
-              <button
-                key={tp.id}
-                onClick={() => {
-                  triggerSound('click');
-                  setActiveType(tp.id);
-                  setCurrentPage(1);
-                }}
-                className={`relative px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-colors duration-200 cursor-pointer ${
-                  active ? 'text-white' : 'text-white/60 hover:text-white'
-                }`}
-              >
-                {active && (
-                  <motion.span
-                    layoutId="favoriler-type-active-pill"
-                    initial={false}
-                    transition={{
-                      type: 'spring',
-                      stiffness: 480,
-                      damping: 34,
-                      mass: 0.6,
-                    }}
-                    className="absolute inset-0 rounded-full bg-rose-500 shadow-[0_0_12px_rgba(244,63,94,0.45)]"
-                  />
-                )}
-                <span className="relative z-10 font-bold">{tp.label}</span>
-              </button>
-            );
-          })}
+      {/* Sort and Search Bar */}
+      <div className="rounded-3xl bg-[#0f0f11] p-4 sm:p-5 border border-white/[0.08] flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
+        <div className="w-full sm:w-56 shrink-0">
+          <CustomSelect
+            value={sortBy}
+            onChange={(val) => {
+              triggerSound('click');
+              setSortBy((val as SortOption) || 'default');
+              setCurrentPage(1);
+            }}
+            options={SORT_OPTIONS}
+            variant="glass"
+            size="sm"
+            searchable={false}
+            aria-label="Sıralama seçin"
+            className="w-full"
+          />
         </div>
 
-        {/* Right Controls: Sort + Search */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
-          <div className="w-full sm:w-52 shrink-0">
-            <CustomSelect
-              value={sortBy}
-              onChange={(val) => {
-                triggerSound('click');
-                setSortBy((val as SortOption) || 'default');
+        <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-colors duration-200 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] min-w-[220px] flex-1 sm:flex-initial">
+          <Search className="w-3.5 h-3.5 text-white/60 shrink-0" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
+            placeholder="Favorilerde ara..."
+            className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full font-medium"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => {
+                setSearchQuery('');
                 setCurrentPage(1);
               }}
-              options={SORT_OPTIONS}
-              variant="glass"
-              size="sm"
-              searchable={false}
-              aria-label="Sıralama seçin"
-              className="w-full"
-            />
-          </div>
-
-          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-colors duration-200 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] min-w-[220px] flex-1 sm:flex-initial">
-            <Search className="w-3.5 h-3.5 text-white/60 shrink-0" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
-              }}
-              placeholder="Favorilerde ara..."
-              className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full font-medium"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setCurrentPage(1);
-                }}
-                className="text-white/40 hover:text-white transition-colors cursor-pointer"
-                aria-label="Aramayı temizle"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
+              className="text-white/40 hover:text-white transition-colors cursor-pointer"
+              aria-label="Aramayı temizle"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 

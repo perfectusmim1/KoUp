@@ -281,22 +281,10 @@ export default function KutuphanePage() {
   return (
     <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 space-y-8">
       {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-white/[0.08]">
-        <div className="space-y-2">
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-            Kütüphanem
-          </h1>
-        </div>
-
-        {/* Action Link to Discover */}
-        <Link
-          href="/kesfet"
-          onClick={() => triggerSound('click')}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-bold text-white transition-colors self-start md:self-auto cursor-pointer"
-        >
-          <Compass className="w-4 h-4 text-sky-400" />
-          <span>Katalogdan Yapım Keşfet</span>
-        </Link>
+      <div className="pb-6 border-b border-white/[0.08]">
+        <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+          Kütüphanem
+        </h1>
       </div>
 
       {/* Metric Breakdown Cards */}

@@ -1625,17 +1625,17 @@ export default function SeriesDetailPage({
           </section>
         )}
 
-        {/* 4. FULL EPISODES GRID (Only for series, not movies) */}
-        {!isFilm && (
-          <section className="p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08] relative z-20 overflow-visible">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        {/* 4. FULL EPISODES GRID (For series and movies) */}
+        <section className="p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08] relative z-20 overflow-visible">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div>
               <div className="flex flex-wrap items-center gap-3 relative z-30">
                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
                   <Film className="w-5 h-5 text-sky-400" />
                   <span>
-                    Bölüm Listesi ({seasonEpisodes.length}
-                    {media.episode_count > seasonEpisodes.length ? ` / ${media.episode_count}` : ''} Bölüm)
+                    {isFilm
+                      ? 'Film'
+                      : `Bölüm Listesi (${seasonEpisodes.length}${media.episode_count > seasonEpisodes.length ? ` / ${media.episode_count}` : ''} Bölüm)`}
                   </span>
                 </h2>
                 {user?.role === 'admin' && (
@@ -1648,7 +1648,7 @@ export default function SeriesDetailPage({
                   />
                 )}
               </div>
-              {media.episode_count > seasonEpisodes.length && (
+              {!isFilm && media.episode_count > seasonEpisodes.length && (
                 <div className="mt-2.5 px-3 py-1.5 rounded-xl bg-sky-500/[0.07] border border-sky-400/20 text-xs text-sky-300/90 flex items-center gap-2">
                   <Sparkles className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                   <span>
@@ -1656,12 +1656,11 @@ export default function SeriesDetailPage({
                   </span>
                 </div>
               )}
-              
             </div>
 
             <div className="flex items-center justify-between sm:justify-end gap-3">
               {/* Season Selector Tabs if Multi-Season with Fluid Sliding Pill */}
-              {seasons.length > 1 && (
+              {!isFilm && seasons.length > 1 && (
                 <LayoutGroup id="seri-season-selector-group">
                   <div className="flex items-center gap-1 p-1.5 rounded-full glass-pill-dark border border-white/12 overflow-x-auto no-scrollbar">
                     {seasons.map((s) => {
@@ -1701,20 +1700,34 @@ export default function SeriesDetailPage({
             </div>
           </div>
 
-          {seasonEpisodes.length === 0 ? (
-            <div className="py-12 text-center text-sm text-white/45">
-              Bu sezon için henüz bölüm yüklenmedi.
-            </div>
-          ) : (() => {
+          {(() => {
+            const effectiveEpisodes: EpisodeData[] = (isFilm && seasonEpisodes.length === 0)
+              ? [{
+                  id: -1,
+                  season_number: 1,
+                  episode_number: 1,
+                  episode_name: `${media.title} (Tek Parça)`,
+                  episode_type: 'film',
+                  status: 'published',
+                  sources: [],
+                }]
+              : seasonEpisodes;
+
+            if (effectiveEpisodes.length === 0) {
+              return (
+                <div className="py-12 text-center text-sm text-white/45">
+                  Bu sezon için henüz bölüm yüklenmedi.
+                </div>
+              );
+            }
+
             const watchedSet = new Set(userProg?.watched_episodes || []);
             const renderEpisodeCard = (ep: EpisodeData) => {
               const epWatched = watchedSet.has(ep.episode_number);
               const seasonNum = ep.season_number || selectedSeason || 1;
-              const epTitle = formatEpisodeTitle(
-                ep.episode_name,
-                seasonNum,
-                ep.episode_number
-              );
+              const epTitle = isFilm
+                ? (ep.episode_name && ep.episode_name.toLowerCase() !== 'film' && ep.episode_name !== 'Bölüm 1' ? ep.episode_name : `${media.title} (Tek Parça)`)
+                : formatEpisodeTitle(ep.episode_name, seasonNum, ep.episode_number);
               const epProg = getEpisodeProgress(
                 userProg,
                 media.id,
@@ -1745,7 +1758,7 @@ export default function SeriesDetailPage({
                           : 'bg-white/10 border-white/10 text-white/90 group-hover:bg-[#2997ff] group-hover:border-sky-400 group-hover:text-white'
                       }`}
                     >
-                      {ep.episode_number}
+                      {isFilm ? <Play className="w-3.5 h-3.5 fill-current ml-0.5" /> : ep.episode_number}
                     </div>
 
                     <div className="min-w-0">
@@ -1840,11 +1853,11 @@ export default function SeriesDetailPage({
               <>
                 {/* Initial 4 Episodes */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
-                  {seasonEpisodes.slice(0, 4).map(renderEpisodeCard)}
+                  {effectiveEpisodes.slice(0, 4).map(renderEpisodeCard)}
                 </div>
 
                 {/* Extra Episodes with Pre-Mounted 120fps Intrinsic CSS Drawer */}
-                {seasonEpisodes.length > 4 && (extraSectionsReady || showAllEpisodes) && (
+                {!isFilm && effectiveEpisodes.length > 4 && (extraSectionsReady || showAllEpisodes) && (
                   <div
                     ref={episodesDrawerRef}
                     key={`extra-episodes-${selectedSeason}`}
@@ -1853,49 +1866,48 @@ export default function SeriesDetailPage({
                   >
                     <div className="koup-expandable-inner">
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 pt-3.5 pb-2.5 sm:pb-3">
-                        {seasonEpisodes.slice(4).map(renderEpisodeCard)}
+                        {effectiveEpisodes.slice(4).map(renderEpisodeCard)}
                       </div>
                     </div>
                   </div>
                 )}
 
-              {seasonEpisodes.length > 4 && (
-                <div className="flex justify-center mt-6 pt-2">
-                  <button
-                    type="button"
-                    aria-expanded={showAllEpisodes}
-                    onMouseEnter={() => setExtraSectionsReady(true)}
-                    onClick={() => {
-                      const next = !showAllEpisodes;
-                      if (episodesDrawerRef.current) {
-                        episodesDrawerRef.current.classList.toggle('is-expanded', next);
-                        episodesDrawerRef.current.setAttribute('aria-hidden', String(!next));
-                      }
-                      React.startTransition(() => {
-                        setExtraSectionsReady(true);
-                        setShowAllEpisodes(next);
-                      });
-                    }}
-                    className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full glass-pill hover:bg-white/18 text-xs font-semibold text-white/90 hover:text-white transition-[background-color,color,transform] cursor-pointer shadow-sm active:scale-95"
-                  >
-                    <span>
-                      {showAllEpisodes
-                        ? 'Daha Az Göster'
-                        : `Tümünü Gör (${seasonEpisodes.length} Bölüm)`}
-                    </span>
-                    {showAllEpisodes ? (
-                      <ChevronUp className="w-4 h-4 text-sky-400" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4 text-sky-400" />
-                    )}
-                  </button>
-                </div>
-              )}
-            </>
+                {!isFilm && effectiveEpisodes.length > 4 && (
+                  <div className="flex justify-center mt-6 pt-2">
+                    <button
+                      type="button"
+                      aria-expanded={showAllEpisodes}
+                      onMouseEnter={() => setExtraSectionsReady(true)}
+                      onClick={() => {
+                        const next = !showAllEpisodes;
+                        if (episodesDrawerRef.current) {
+                          episodesDrawerRef.current.classList.toggle('is-expanded', next);
+                          episodesDrawerRef.current.setAttribute('aria-hidden', String(!next));
+                        }
+                        React.startTransition(() => {
+                          setExtraSectionsReady(true);
+                          setShowAllEpisodes(next);
+                        });
+                      }}
+                      className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full glass-pill hover:bg-white/18 text-xs font-semibold text-white/90 hover:text-white transition-[background-color,color,transform] cursor-pointer shadow-sm active:scale-95"
+                    >
+                      <span>
+                        {showAllEpisodes
+                          ? 'Daha Az Göster'
+                          : `Tümünü Gör (${effectiveEpisodes.length} Bölüm)`}
+                      </span>
+                      {showAllEpisodes ? (
+                        <ChevronUp className="w-4 h-4 text-sky-400" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-sky-400" />
+                      )}
+                    </button>
+                  </div>
+                )}
+              </>
             );
           })()}
         </section>
-        )}
 
         {/* 5. RELATED RECOMMENDATIONS */}
         {relatedMedia.length > 0 && (
