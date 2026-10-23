@@ -22,22 +22,48 @@ export async function GET(req: NextRequest) {
 
     let results = Array.isArray(lists) ? [...lists] : [];
 
-    // Ensure cover_image_url & backdrop_image_url are attached if RPC returns without them
-    if (results.length > 0 && (results[0].cover_image_url === undefined || results[0].backdrop_image_url === undefined)) {
+    // Ensure cover_image_url, backdrop_image_url & exact likes_count are attached
+    if (results.length > 0) {
       const listIds = results.map((r: any) => r.id).filter(Boolean);
       if (listIds.length > 0) {
-        const { data: covers } = await (supabaseAdmin || supabase)
-          .from('custom_lists')
-          .select('id, cover_image_url, backdrop_image_url')
-          .in('id', listIds);
-        if (covers) {
-          const coverMap = new Map(covers.map((c: any) => [c.id, { cover: c.cover_image_url, backdrop: c.backdrop_image_url }]));
-          results.forEach((r: any) => {
-            const row = coverMap.get(r.id);
-            r.cover_image_url = row?.cover || null;
-            r.backdrop_image_url = row?.backdrop || null;
-          });
+        const db = supabaseAdmin || supabase;
+        const [{ data: covers }, { data: likesRows }] = await Promise.all([
+          db
+            .from('custom_lists')
+            .select('id, cover_image_url, backdrop_image_url, likes_count')
+            .in('id', listIds),
+          db
+            .from('custom_list_likes')
+            .select('list_id')
+            .in('list_id', listIds),
+        ]);
+
+        const realLikeCounts = new Map<number, number>();
+        if (Array.isArray(likesRows)) {
+          for (const row of likesRows) {
+            const lid = Number(row.list_id);
+            realLikeCounts.set(lid, (realLikeCounts.get(lid) || 0) + 1);
+          }
         }
+
+        const coverMap = new Map(
+          (covers || []).map((c: any) => [
+            c.id,
+            {
+              cover: c.cover_image_url,
+              backdrop: c.backdrop_image_url,
+              likes: c.likes_count || 0,
+            },
+          ])
+        );
+
+        results.forEach((r: any) => {
+          const row = coverMap.get(r.id);
+          if (r.cover_image_url === undefined) r.cover_image_url = row?.cover || null;
+          if (r.backdrop_image_url === undefined) r.backdrop_image_url = row?.backdrop || null;
+          const exactLikes = realLikeCounts.get(r.id) ?? 0;
+          r.likes_count = Math.max(exactLikes, r.likes_count || 0, row?.likes || 0);
+        });
       }
     }
 

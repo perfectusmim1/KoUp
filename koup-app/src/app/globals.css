@@ -851,15 +851,25 @@ input[type="range"].netflix-volume-slider::-webkit-slider-runnable-track {
   block-size: var(--slider-track-size);
   border: 0;
   border-radius: var(--slider-track-radius);
-  background: linear-gradient(
-    var(--slider-direction),
-    var(--slider-fill-color) 0%,
-    var(--slider-fill-color) var(--slider-progress),
-    var(--slider-buffered-color) var(--slider-progress),
-    var(--slider-buffered-color) var(--buffered-progress),
-    var(--slider-track-color) var(--buffered-progress),
-    var(--slider-track-color) 100%
-  );
+  background:
+    linear-gradient(
+      var(--slider-direction),
+      transparent 0%,
+      transparent var(--intro-start, 0%),
+      rgba(251, 191, 36, 0.92) var(--intro-start, 0%),
+      rgba(251, 191, 36, 0.92) var(--intro-end, 0%),
+      transparent var(--intro-end, 0%),
+      transparent 100%
+    ),
+    linear-gradient(
+      var(--slider-direction),
+      var(--slider-fill-color) 0%,
+      var(--slider-fill-color) var(--slider-progress),
+      var(--slider-buffered-color) var(--slider-progress),
+      var(--slider-buffered-color) var(--buffered-progress),
+      var(--slider-track-color) var(--buffered-progress),
+      var(--slider-track-color) 100%
+    );
   transition: block-size 120ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -868,6 +878,8 @@ input[type="range"].netflix-scrubber::-webkit-slider-thumb,
 input[type="range"].netflix-volume-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
+  position: relative;
+  z-index: 2;
   inline-size: var(--slider-thumb-size);
   block-size: var(--slider-thumb-size);
   margin-block-start: calc(
@@ -895,7 +907,17 @@ input[type="range"].netflix-volume-slider::-moz-range-track {
   block-size: var(--slider-track-size);
   border: 0;
   border-radius: var(--slider-track-radius);
-  background: var(--slider-track-color);
+  background:
+    linear-gradient(
+      var(--slider-direction),
+      transparent 0%,
+      transparent var(--intro-start, 0%),
+      rgba(251, 191, 36, 0.92) var(--intro-start, 0%),
+      rgba(251, 191, 36, 0.92) var(--intro-end, 0%),
+      transparent var(--intro-end, 0%),
+      transparent 100%
+    ),
+    var(--slider-track-color);
 }
 
 /* Firefox Progress */

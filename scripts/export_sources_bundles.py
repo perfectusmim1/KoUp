@@ -165,8 +165,8 @@ def export_all(drama_id: int = None):
         episodes = []
 
         for ep_id, season_num, ep_num, ep_name, ep_type, src_status in ep_rows:
-            raw_sources = c.execute(src_query, (ep_id,)).fetchall()
             is_pending = (src_status == "pending")
+            raw_sources = [] if is_pending else c.execute(src_query, (ep_id,)).fetchall()
             if not raw_sources and not is_pending:
                 continue
 

@@ -73,15 +73,28 @@ export async function GET(
       }
     }
 
-    if (data && (data.cover_image_url === undefined || data.backdrop_image_url === undefined)) {
+    if (data) {
+      const db = supabaseAdmin || supabase;
       const isNum = /^[0-9]+$/.test(id);
-      let cq = (supabaseAdmin || supabase).from('custom_lists').select('cover_image_url, backdrop_image_url');
+      let cq = db.from('custom_lists').select('id, cover_image_url, backdrop_image_url, likes_count');
       if (isNum) cq = cq.eq('id', Number(id));
       else cq = cq.eq('slug', id);
       const { data: cRow } = await cq.maybeSingle();
       if (cRow) {
-        data.cover_image_url = cRow.cover_image_url || null;
-        data.backdrop_image_url = cRow.backdrop_image_url || null;
+        if (data.cover_image_url === undefined) data.cover_image_url = cRow.cover_image_url || null;
+        if (data.backdrop_image_url === undefined) data.backdrop_image_url = cRow.backdrop_image_url || null;
+        data.likes_count = Math.max(data.likes_count || 0, cRow.likes_count || 0);
+      }
+
+      const listNumericId = Number(data.id || cRow?.id || 0);
+      if (listNumericId > 0) {
+        const { count: realLikesCount } = await db
+          .from('custom_list_likes')
+          .select('*', { count: 'exact', head: true })
+          .eq('list_id', listNumericId);
+        if (typeof realLikesCount === 'number') {
+          data.likes_count = Math.max(realLikesCount, data.likes_count || 0);
+        }
       }
     }
 

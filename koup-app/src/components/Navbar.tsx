@@ -35,6 +35,7 @@ import {
   Library,
   ListOrdered,
   FolderHeart,
+  Heart,
   AlertTriangle,
   Megaphone,
 } from 'lucide-react';
@@ -1050,6 +1051,19 @@ export default function Navbar() {
                   </Link>
 
                   <Link
+                    href="/favoriler"
+                    prefetch={true}
+                    onClick={() => {
+                      triggerSound('click');
+                      setProfileDropdownOpen(false);
+                    }}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.10] transition-colors duration-100 ease-out"
+                  >
+                    <Heart className="w-4 h-4 text-rose-400" />
+                    <span>Favorilerim</span>
+                  </Link>
+
+                  <Link
                     href="/gecmis"
                     prefetch={true}
                     onClick={() => {
@@ -1361,13 +1375,25 @@ export default function Navbar() {
                         <span className="truncate">Takip Edilenler</span>
                       </Link>
                       <Link
+                        href="/favoriler"
+                        prefetch={true}
+                        onClick={() => {
+                          triggerSound('click');
+                          setMobileMenuOpen(false);
+                        }}
+                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
+                      >
+                        <Heart className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                        <span className="truncate">Favorilerim</span>
+                      </Link>
+                      <Link
                         href="/ayarlar"
                         prefetch={true}
                         onClick={() => {
                           triggerSound('click');
                           setMobileMenuOpen(false);
                         }}
-                        className="col-span-2 flex items-center justify-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
+                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
                       >
                         <Settings className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                         <span className="truncate">Ayarlar</span>

@@ -409,6 +409,21 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
               }
             }
 
+            const listIds = listsData.map((l: any) => l.id).filter(Boolean);
+            const realLikeCounts = new Map<number, number>();
+            if (listIds.length > 0) {
+              const { data: likesRows } = await supabase
+                .from('custom_list_likes')
+                .select('list_id')
+                .in('list_id', listIds);
+              if (Array.isArray(likesRows)) {
+                for (const row of likesRows) {
+                  const lid = Number((row as any).list_id);
+                  realLikeCounts.set(lid, (realLikeCounts.get(lid) || 0) + 1);
+                }
+              }
+            }
+
             setCustomLists(
               listsData.map((l: any) => {
                 const posters = Array.isArray(l.media_ids)
@@ -417,6 +432,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                       .map((id) => posterMap.get(id))
                       .filter(Boolean) as string[]
                   : [];
+                const exactLikes = realLikeCounts.get(l.id) ?? 0;
                 return {
                   id: l.id,
                   slug: l.slug || String(l.id),
@@ -426,7 +442,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                   cover_image_url: l.cover_image_url || null,
                   backdrop_image_url: l.backdrop_image_url || null,
                   cover_posters: posters,
-                  likes_count: l.likes_count || 0,
+                  likes_count: Math.max(exactLikes, l.likes_count || 0),
                 };
               })
             );

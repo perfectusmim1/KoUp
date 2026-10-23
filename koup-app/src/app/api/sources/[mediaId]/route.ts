@@ -655,7 +655,20 @@ export async function GET(
       const epMap = new Map(
         episodes.map((e) => [`${e.season_number}_${e.episode_number}`, e])
       );
+      const introTemplates = new Map<number, { start: number; end: number }>();
+
       for (const le of liveEps) {
+        if (
+          Number(le.episode_number) === 0 &&
+          le.intro_start_sec != null &&
+          le.intro_end_sec != null
+        ) {
+          introTemplates.set(Number(le.season_number || 0), {
+            start: Number(le.intro_start_sec),
+            end: Number(le.intro_end_sec),
+          });
+          continue;
+        }
         const key = `${le.season_number}_${le.episode_number}`;
         const existing = epMap.get(key);
         if (existing) {
@@ -679,7 +692,10 @@ export async function GET(
             existing.scheduled_release_at = le.scheduled_release_at;
             existing.translation_note = le.translation_note;
           }
-        } else if (le.status === 'scheduled' || le.status === 'pending_source') {
+        } else if (
+          Number(le.episode_number) > 0 &&
+          (le.status === 'scheduled' || le.status === 'pending_source')
+        ) {
           episodes.push({
             id: idNum * 1000 + le.episode_number,
             season_number: le.season_number || 1,
@@ -699,6 +715,20 @@ export async function GET(
             intro_end_sec: le.intro_end_sec || null,
             sources: [],
           });
+        }
+      }
+
+      // Inherit default intro templates on episodes that don't have explicit intro times yet
+      if (introTemplates.size > 0) {
+        const globalTemplate = introTemplates.get(0);
+        for (const ep of episodes) {
+          if (ep.intro_start_sec == null || ep.intro_end_sec == null) {
+            const seasonTemplate = introTemplates.get(ep.season_number || 1) || globalTemplate;
+            if (seasonTemplate) {
+              ep.intro_start_sec = seasonTemplate.start;
+              ep.intro_end_sec = seasonTemplate.end;
+            }
+          }
         }
       }
 

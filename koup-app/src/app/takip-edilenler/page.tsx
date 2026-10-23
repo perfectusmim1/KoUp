@@ -19,6 +19,9 @@ import {
   Sparkles,
   ArrowRight,
   ShieldAlert,
+  ArrowUpDown,
+  Clock,
+  ArrowDownAZ,
 } from 'lucide-react';
 import { useKoUpSelector } from '@/context/KoUpContext';
 import {
@@ -30,11 +33,41 @@ import {
   getProxiedImageUrl,
 } from '@/lib/supabase';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
+import CustomSelect, { SelectOption } from '@/components/CustomSelect';
 import Pagination from '@/components/Pagination';
 
 type ActiveTab = 'media' | 'people';
 type MediaFilter = 'ALL' | 'dizi' | 'anime' | 'film';
 type PersonFilter = 'ALL' | 'actor' | 'character' | 'seiyuu';
+type SortOption = 'default' | 'newest' | 'oldest' | 'rating' | 'title_asc';
+
+const FOLLOW_SORT_OPTIONS: SelectOption[] = [
+  {
+    value: 'default',
+    label: 'Varsayılan Sıralama',
+    icon: <ArrowUpDown className="w-3.5 h-3.5 text-sky-400" />,
+  },
+  {
+    value: 'newest',
+    label: 'En Yeni Eklenen',
+    icon: <Clock className="w-3.5 h-3.5 text-emerald-400" />,
+  },
+  {
+    value: 'oldest',
+    label: 'En Eski Eklenen',
+    icon: <Clock className="w-3.5 h-3.5 text-amber-400" />,
+  },
+  {
+    value: 'rating',
+    label: 'En Yüksek Puan / Popüler',
+    icon: <Star className="w-3.5 h-3.5 text-yellow-400" />,
+  },
+  {
+    value: 'title_asc',
+    label: 'İsme Göre (A-Z)',
+    icon: <ArrowDownAZ className="w-3.5 h-3.5 text-purple-400" />,
+  },
+];
 
 export default function FollowedPage() {
   const user = useKoUpSelector((s) => s.user);
@@ -53,6 +86,7 @@ export default function FollowedPage() {
   // Sub-filters
   const [mediaFilter, setMediaFilter] = useState<MediaFilter>('ALL');
   const [personFilter, setPersonFilter] = useState<PersonFilter>('ALL');
+  const [sortBy, setSortBy] = useState<SortOption>('default');
 
   // Search Query
   const [searchQuery, setSearchQuery] = useState('');
@@ -176,7 +210,7 @@ export default function FollowedPage() {
 
   // Filtered Media List
   const filteredMedia = useMemo(() => {
-    return mediaItems.filter((item) => {
+    const filtered = mediaItems.filter((item) => {
       // Filter by type
       if (mediaFilter !== 'ALL') {
         if (item.content_type !== mediaFilter) return false;
@@ -190,7 +224,21 @@ export default function FollowedPage() {
       }
       return true;
     });
-  }, [mediaItems, mediaFilter, searchQuery]);
+
+    const sorted = [...filtered];
+    if (sortBy === 'oldest') {
+      sorted.reverse();
+    } else if (sortBy === 'rating') {
+      sorted.sort((a, b) => {
+        const rA = Number(a.site_rating || a.mdl_rating || a.imdb_rating || 0);
+        const rB = Number(b.site_rating || b.mdl_rating || b.imdb_rating || 0);
+        return rB - rA;
+      });
+    } else if (sortBy === 'title_asc') {
+      sorted.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'tr'));
+    }
+    return sorted;
+  }, [mediaItems, mediaFilter, searchQuery, sortBy]);
 
   // Paginated Media
   const paginatedMedia = useMemo(() => {
@@ -200,7 +248,7 @@ export default function FollowedPage() {
 
   // Filtered People List
   const filteredPeople = useMemo(() => {
-    return peopleItems.filter((person) => {
+    const filtered = peopleItems.filter((person) => {
       // Filter by person_type
       if (personFilter !== 'ALL') {
         if (person.person_type !== personFilter) return false;
@@ -214,7 +262,17 @@ export default function FollowedPage() {
       }
       return true;
     });
-  }, [peopleItems, personFilter, searchQuery]);
+
+    const sorted = [...filtered];
+    if (sortBy === 'oldest') {
+      sorted.reverse();
+    } else if (sortBy === 'rating') {
+      sorted.sort((a, b) => Number(b.favorites_count || 0) - Number(a.favorites_count || 0));
+    } else if (sortBy === 'title_asc') {
+      sorted.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'tr'));
+    }
+    return sorted;
+  }, [peopleItems, personFilter, searchQuery, sortBy]);
 
   // Paginated People
   const paginatedPeople = useMemo(() => {
@@ -367,35 +425,54 @@ export default function FollowedPage() {
           </button>
         </div>
 
-        {/* Search Bar */}
-        <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-200 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] w-full sm:w-72">
-          <Search className="w-4 h-4 text-white/50 shrink-0" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setCurrentPage(1);
-            }}
-            placeholder={
-              activeTab === 'media'
-                ? 'Takip edilen serilerde ara...'
-                : 'Takip edilen oyuncularda ara...'
-            }
-            className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full font-medium"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => {
-                setSearchQuery('');
+        {/* Sort & Search Bar */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+          <div className="w-full sm:w-52 shrink-0">
+            <CustomSelect
+              value={sortBy}
+              onChange={(val) => {
+                triggerSound?.('click');
+                setSortBy((val as SortOption) || 'default');
                 setCurrentPage(1);
               }}
-              className="text-white/40 hover:text-white transition-colors cursor-pointer p-0.5"
-              aria-label="Aramayı temizle"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
+              options={FOLLOW_SORT_OPTIONS}
+              variant="glass"
+              size="sm"
+              searchable={false}
+              aria-label="Sıralama seçin"
+              className="w-full"
+            />
+          </div>
+
+          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-all duration-200 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] w-full sm:w-72">
+            <Search className="w-4 h-4 text-white/50 shrink-0" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              placeholder={
+                activeTab === 'media'
+                  ? 'Takip edilen serilerde ara...'
+                  : 'Takip edilen oyuncularda ara...'
+              }
+              className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full font-medium"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setCurrentPage(1);
+                }}
+                className="text-white/40 hover:text-white transition-colors cursor-pointer p-0.5"
+                aria-label="Aramayı temizle"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

@@ -435,11 +435,13 @@ def match_or_create_episode(cur, drama_id, season, number, name, url):
             if r:
                 existing_ep_id, existing_drama_id = r
                 if existing_drama_id != drama_id:
-                    # Bu bolum URL'si baska bir diziye yanlis baglanmis!
-                    # Eger mevcut drama_id bu (season, number)'a sahip degilse bu bolumu gercek sahibine aktar:
+                    # Bu bolum URL'si baska/silinmis bir diziye yanlis baglanmis!
+                    # Eski diziden kalan hayalet (ghost) video kaynaklarini temizle ve bu bolumu gercek sahibine aktar:
+                    cur.execute("DELETE FROM episode_sources WHERE episode_id=?", (existing_ep_id,))
                     cur.execute("""
                         UPDATE episodes 
-                        SET drama_id=?, season_number=?, episode_number=?, episode_name=?
+                        SET drama_id=?, season_number=?, episode_number=?, episode_name=?,
+                            source_status=NULL, pending_since=NULL, last_source_check=NULL, source_check_attempts=0
                         WHERE id=?
                     """, (drama_id, season, number, clean_name, existing_ep_id))
                     return existing_ep_id, True

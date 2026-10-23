@@ -544,6 +544,7 @@ export default function AdminDashboardPage() {
   const [bulkIntroStart, setBulkIntroStart] = useState<string>('');
   const [bulkIntroEnd, setBulkIntroEnd] = useState<string>('');
   const [bulkIntroClear, setBulkIntroClear] = useState<boolean>(false);
+  const [bulkIntroApplyFuture, setBulkIntroApplyFuture] = useState<boolean>(true);
   const [bulkIntroSaving, setBulkIntroSaving] = useState<boolean>(false);
 
   // Comments Tab State (Server-Side Paginated)
@@ -904,7 +905,7 @@ export default function AdminDashboardPage() {
             ? a.season_number - b.season_number
             : a.episode_number - b.episode_number
         );
-        setEpisodesList(combined);
+        setEpisodesList(combined.filter((ep) => ep.episode_number > 0));
       } catch (err: any) {
         pushNotification('Bölümler Yüklenemedi', err.message || 'Veritabanı hatası.', 'info');
       } finally {
@@ -1868,6 +1869,39 @@ export default function AdminDashboardPage() {
         if (error) throw error;
       }
 
+      // Persist or clear default intro template for future episodes (episode_number = 0)
+      const templateSeason = bulkIntroTargetSeason === 'all' ? 0 : Number(bulkIntroTargetSeason);
+      if (bulkIntroClear) {
+        await supabase
+          .from('episodes')
+          .delete()
+          .eq('media_id', selectedMediaForEp.id)
+          .eq('season_number', templateSeason)
+          .eq('episode_number', 0);
+      } else if (bulkIntroApplyFuture) {
+        await supabase.from('episodes').upsert(
+          {
+            media_id: selectedMediaForEp.id,
+            season_number: templateSeason,
+            episode_number: 0,
+            episode_name: '__DEFAULT_INTRO_TEMPLATE__',
+            episode_type: 'template',
+            status: 'template',
+            intro_start_sec: startSec,
+            intro_end_sec: endSec,
+            video_sources: [],
+          },
+          { onConflict: 'media_id,season_number,episode_number' }
+        );
+      } else {
+        await supabase
+          .from('episodes')
+          .delete()
+          .eq('media_id', selectedMediaForEp.id)
+          .eq('season_number', templateSeason)
+          .eq('episode_number', 0);
+      }
+
       setEpisodesList((prev) =>
         prev.map((ep) => {
           if (bulkIntroTargetSeason === 'all' || ep.season_number === Number(bulkIntroTargetSeason)) {
@@ -1885,7 +1919,7 @@ export default function AdminDashboardPage() {
       setBulkIntroModalOpen(false);
       pushNotification(
         'Toplu İntro Kaydedildi',
-        `${targetEps.length} bölüme intro atlama ayarı uygulandı (${bulkIntroTargetSeason === 'all' ? 'Tüm Seri' : `${bulkIntroTargetSeason}. Sezon`}).`,
+        `${targetEps.length} bölüme intro atlama ayarı uygulandı${!bulkIntroClear && bulkIntroApplyFuture ? ' (Gelecek bölümler dahil)' : ''} (${bulkIntroTargetSeason === 'all' ? 'Tüm Seri' : `${bulkIntroTargetSeason}. Sezon`}).`,
         'success'
       );
     } catch (err: any) {
@@ -4378,6 +4412,24 @@ export default function AdminDashboardPage() {
                     className="w-4 h-4 rounded accent-amber-400 cursor-pointer"
                   />
                 </div>
+
+                {/* Option to apply to future episodes */}
+                {!bulkIntroClear && (
+                  <div className="p-3 rounded-2xl bg-amber-500/[0.05] border border-amber-400/25 flex items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <div className="text-xs font-semibold text-amber-300">Gelecek Bölümlerde de Otomatik Geçerli Olsun</div>
+                      <div className="text-[10px] text-white/55">
+                        Güncel serilerde yeni bölüm eklendiğinde bu intro başlangıç ve bitiş süresi otomatik uygulanır.
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={bulkIntroApplyFuture}
+                      onChange={(e) => setBulkIntroApplyFuture(e.target.checked)}
+                      className="w-4 h-4 rounded accent-amber-400 cursor-pointer shrink-0"
+                    />
+                  </div>
+                )}
 
                 {/* Inputs if not clearing */}
                 {!bulkIntroClear && (

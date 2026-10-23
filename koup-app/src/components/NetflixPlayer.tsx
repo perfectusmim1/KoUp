@@ -3928,17 +3928,6 @@ export default function NetflixPlayer({
                         setHoverTime(null);
                       }}
                     >
-                      {/* Visual amber segment indicating intro position on scrubber */}
-                      {hasIntro && safeDuration > 0 && (
-                        <div
-                          style={{
-                            left: `${(currentEpObj.intro_start_sec! / safeDuration) * 100}%`,
-                            width: `${((currentEpObj.intro_end_sec! - currentEpObj.intro_start_sec!) / safeDuration) * 100}%`,
-                          }}
-                          className="absolute top-1/2 -translate-y-1/2 h-1 bg-amber-400/90 rounded-sm pointer-events-none z-10 shadow-[0_0_8px_rgba(251,191,36,0.7)]"
-                        />
-                      )}
-
                       {/* PC Hover Timestamp Tooltip */}
                       {!isTouchDevice && hoverTime !== null && safeDuration > 0 && (
                         <div
@@ -3970,6 +3959,14 @@ export default function NetflixPlayer({
                             '--attr-max': safeDuration > 0 ? safeDuration : 100,
                             '--control-value': safeDuration > 0 ? effectiveTime : 0,
                             '--buffered-progress': safeDuration > 0 ? `${bufferedPercent}%` : '0%',
+                            '--intro-start':
+                              hasIntro && safeDuration > 0
+                                ? `${Math.max(0, Math.min(100, (currentEpObj.intro_start_sec! / safeDuration) * 100))}%`
+                                : '0%',
+                            '--intro-end':
+                              hasIntro && safeDuration > 0
+                                ? `${Math.max(0, Math.min(100, (currentEpObj.intro_end_sec! / safeDuration) * 100))}%`
+                                : '0%',
                           } as React.CSSProperties
                         }
                         onPointerDown={() => {

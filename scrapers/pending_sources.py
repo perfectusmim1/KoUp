@@ -253,7 +253,12 @@ def reconcile_episode(
     )
     count = cur.fetchone()[0]
 
-    if count == 0 or is_placeholder:
+    if is_placeholder:
+        # Placeholder sayfada gerçek video kaynağı olamaz; olası hayalet kaynakları temizle
+        cur.execute("DELETE FROM episode_sources WHERE episode_id = ?", (episode_id,))
+        mark_pending(cur, episode_id, increment_attempts=increment_attempt)
+        return True
+    elif count == 0:
         mark_pending(cur, episode_id, increment_attempts=increment_attempt)
         return True
     else:

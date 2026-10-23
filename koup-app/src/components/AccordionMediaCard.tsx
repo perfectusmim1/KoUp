@@ -943,22 +943,22 @@ function AccordionMediaCardComponent({
                     getStore().triggerSound?.('click');
                   }}
                   aria-label={`${displayTitle} hemen izle`}
-                  className="flex-1 py-1.5 px-3 rounded-full bg-white text-black font-bold text-[11px] flex items-center justify-center gap-1.5 hover:bg-white/90 active:scale-[0.98] transition-transform cursor-pointer"
+                  className="flex-1 min-w-0 py-1.5 px-2.5 rounded-full bg-white text-black font-bold text-[11px] flex items-center justify-center gap-1 whitespace-nowrap overflow-hidden hover:bg-white/90 active:scale-[0.98] transition-transform cursor-pointer"
                 >
                   <Play className="w-3 h-3 fill-black shrink-0" />
-                  <span>
+                  <span className="truncate">
                     {isFilm
                       ? hasProgress
                         ? isAccordionExpanded
                           ? 'Filme Devam Et'
-                          : 'Devam Et'
+                          : 'Devam'
                         : isAccordionExpanded
                         ? 'Filmi İzle'
                         : 'İzle'
                       : hasProgress
                       ? isAccordionExpanded
                         ? `${nextEpNum}. Bölümden Devam`
-                        : `${nextEpNum}. Bölüm`
+                        : `${nextEpNum}. B`
                       : isAccordionExpanded
                       ? 'Hemen İzle'
                       : 'İzle'}

@@ -624,6 +624,8 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
                 return 0
             srcs.sort(key=_src_priority)
             is_pending = (src_status == "pending")
+            if is_pending:
+                srcs = []
             if srcs or is_pending:
                 clean_name = clean_episode_title(ep_name, s_num or 1, e_num)
                 ep_obj = {
@@ -632,6 +634,7 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
                     "episode_number": e_num,
                     "episode_name": clean_name,
                     "episode_type": ep_type or "normal",
+                    "status": "pending_source" if is_pending else "published",
                     "sources": srcs,
                 }
                 if is_pending:

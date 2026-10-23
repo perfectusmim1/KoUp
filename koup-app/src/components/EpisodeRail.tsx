@@ -125,50 +125,50 @@ const EpisodeRailRow = memo(function EpisodeRailRow({
             }`}
           >
             <span className="truncate">{epTitle}</span>
+            <span
+              className="inline-flex items-center gap-0.5 text-[10px] font-mono font-normal text-white/45 shrink-0 ml-0.5"
+              title="Bölüm Görüntülenme Sayısı"
+            >
+              <Eye className="w-3 h-3 text-sky-400/80 shrink-0" />
+              <span>{formatViewCount(ep.views_count || 0)}</span>
+            </span>
             {(ep.pending || ep.status === 'pending_source') && (
               <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0">
                 Yakında
               </span>
             )}
           </div>
-          <div className="mt-0.5 flex items-center flex-wrap gap-2 text-[10px] font-mono">
-            <span
-              className="inline-flex items-center gap-1 text-white/50"
-              title="Bölüm Görüntülenme Sayısı"
-            >
-              <Eye className="w-3 h-3 text-sky-400/80 shrink-0" />
-              <span>{formatViewCount(ep.views_count || 0)}</span>
-            </span>
-
-            {epWatched ? (
-              <span className="text-emerald-400 font-medium">
-                • İzlendi
-              </span>
-            ) : (() => {
-              const epProg = getEpisodeProgress(
-                userProgress,
-                mediaId,
-                ep.season_number || currentSeason,
-                ep.episode_number
+          {(() => {
+            if (epWatched) {
+              return (
+                <div className="mt-0.5 flex items-center flex-wrap gap-2 text-[10px] font-mono">
+                  <span className="text-emerald-400 font-medium">• İzlendi</span>
+                </div>
               );
-              if (epProg.position > 15) {
-                return (
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-12 h-1 bg-white/20 rounded-full overflow-hidden">
-                      <div
-                        style={{ width: `${epProg.percent}%` }}
-                        className="h-full bg-sky-400"
-                      />
-                    </div>
-                    <span className="text-[9px] font-mono text-white/50">
-                      {epProg.remainingMinutes} dk kaldı
-                    </span>
+            }
+            const epProg = getEpisodeProgress(
+              userProgress,
+              mediaId,
+              ep.season_number || currentSeason,
+              ep.episode_number
+            );
+            if (epProg.position > 15) {
+              return (
+                <div className="mt-0.5 flex items-center gap-1.5 text-[10px] font-mono">
+                  <div className="w-12 h-1 bg-white/20 rounded-full overflow-hidden">
+                    <div
+                      style={{ width: `${epProg.percent}%` }}
+                      className="h-full bg-sky-400"
+                    />
                   </div>
-                );
-              }
-              return null;
-            })()}
-          </div>
+                  <span className="text-[9px] font-mono text-white/50">
+                    {epProg.remainingMinutes} dk kaldı
+                  </span>
+                </div>
+              );
+            }
+            return null;
+          })()}
         </div>
       </div>
 

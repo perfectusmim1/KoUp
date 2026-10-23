@@ -18,10 +18,12 @@ import {
   Globe,
   User,
   Image as ImageIcon,
+  Trash2,
 } from 'lucide-react';
 import { getProxiedImageUrl } from '@/lib/supabase';
 import { useKoUpSelector } from '@/context/KoUpContext';
 import Pagination from '@/components/Pagination';
+import CustomSelect, { SelectOption } from '@/components/CustomSelect';
 
 interface ListCreator {
   id: string;
@@ -54,8 +56,20 @@ interface CustomListRecord {
   preview_posters: PreviewPoster[];
 }
 
+type ListSortBy = 'default' | 'popular' | 'newest' | 'oldest' | 'items';
+
+const SORT_OPTIONS: SelectOption[] = [
+  { value: 'default', label: 'Sıralama: Varsayılan' },
+  { value: 'popular', label: 'Sıralama: En Popüler' },
+  { value: 'newest', label: 'Sıralama: En Yeni' },
+  { value: 'oldest', label: 'Sıralama: En Eski' },
+  { value: 'items', label: 'Sıralama: En Çok İçerik' },
+];
+
 export default function PublicListsPage() {
   const user = useKoUpSelector((s) => s.user);
+  const isAdmin = user?.role === 'admin';
+  const confirmDialog = useKoUpSelector((s) => s.confirmDialog);
   const triggerSound = useKoUpSelector((s) => s.triggerSound);
   const pushNotification = useKoUpSelector((s) => s.pushNotification);
   const setIsAuthModalOpen = useKoUpSelector((s) => s.setIsAuthModalOpen);
@@ -63,7 +77,7 @@ export default function PublicListsPage() {
   const [lists, setLists] = useState<CustomListRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'popular' | 'items' | 'newest'>('popular');
+  const [sortBy, setSortBy] = useState<ListSortBy>('default');
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 12;
 
@@ -122,10 +136,47 @@ export default function PublicListsPage() {
       result.sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
+    } else if (sortBy === 'oldest') {
+      result.sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
     }
 
     return result;
   }, [lists, searchQuery, sortBy]);
+
+  const handleDeleteListFromCard = async (e: React.MouseEvent, targetList: CustomListRecord) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!user?.id) return;
+
+    const confirmed = await confirmDialog({
+      title: 'Listeyi Sil',
+      message: `"${targetList.title}" listesini kalıcı olarak silmek istediğinize emin misiniz?`,
+      confirmText: 'Listeyi Sil',
+      cancelText: 'Vazgeç',
+      isDestructive: true,
+      icon: 'trash',
+    });
+    if (!confirmed) return;
+
+    triggerSound('click');
+    try {
+      const res = await fetch(`/api/lists/${targetList.id}?user_id=${encodeURIComponent(user.id)}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (data.success) {
+        triggerSound('success');
+        pushNotification('Liste Silindi', `"${targetList.title}" listesi kaldırıldı.`, 'info');
+        setLists((prev) => prev.filter((l) => l.id !== targetList.id));
+      } else {
+        pushNotification('Hata', data.error || 'Liste silinemedi.', 'info');
+      }
+    } catch {
+      pushNotification('Hata', 'Silme işlemi sırasında hata oluştu.', 'info');
+    }
+  };
 
   // Paginated slice for current page
   const paginatedLists = useMemo(() => {
@@ -287,45 +338,61 @@ export default function PublicListsPage() {
         </div>
 
         {/* Sort Controls */}
-        <div className="flex items-center gap-1.5 p-1.5 rounded-full glass-pill-dark overflow-x-auto no-scrollbar">
-          <span className="text-xs font-mono text-white/40 ml-3 mr-1 hidden sm:inline">Sırala:</span>
-          {(
-            [
-              { id: 'popular', label: 'En Popüler', icon: TrendingUp },
-              { id: 'items', label: 'En Çok İçerik', icon: Layers },
-              { id: 'newest', label: 'En Yeni', icon: Clock },
-            ] as const
-          ).map((opt) => {
-            const Icon = opt.icon;
-            const active = sortBy === opt.id;
-            return (
-              <button
-                key={opt.id}
-                onClick={() => {
-                  triggerSound('click');
-                  setSortBy(opt.id);
-                  setCurrentPage(1);
-                }}
-                className={`relative flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors duration-200 select-none ${
-                  active ? 'text-black' : 'text-white/70 hover:text-white'
-                }`}
-              >
-                {active && (
-                  <motion.span
-                    layoutId="listeler-sort-pill"
-                    transition={{
-                      type: 'spring',
-                      stiffness: 420,
-                      damping: 32,
-                    }}
-                    className="absolute inset-0 rounded-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.25),0_0_20px_-2px_rgba(255,255,255,0.15)]"
-                  />
-                )}
-                <Icon className="w-3.5 h-3.5 relative z-10" />
-                <span className="relative z-10 font-bold">{opt.label}</span>
-              </button>
-            );
-          })}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="w-full sm:w-52">
+            <CustomSelect
+              value={sortBy}
+              onChange={(val) => {
+                triggerSound('click');
+                setSortBy(val as ListSortBy);
+                setCurrentPage(1);
+              }}
+              options={SORT_OPTIONS}
+              size="sm"
+              aria-label="Liste Sıralaması"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 p-1.5 rounded-full glass-pill-dark overflow-x-auto no-scrollbar">
+            <span className="text-xs font-mono text-white/40 ml-3 mr-1 hidden sm:inline">Hızlı:</span>
+            {(
+              [
+                { id: 'popular', label: 'En Popüler', icon: TrendingUp },
+                { id: 'items', label: 'En Çok İçerik', icon: Layers },
+                { id: 'newest', label: 'En Yeni', icon: Clock },
+              ] as const
+            ).map((opt) => {
+              const Icon = opt.icon;
+              const active = sortBy === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => {
+                    triggerSound('click');
+                    setSortBy(opt.id);
+                    setCurrentPage(1);
+                  }}
+                  className={`relative flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors duration-200 select-none ${
+                    active ? 'text-black' : 'text-white/70 hover:text-white'
+                  }`}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="listeler-sort-pill"
+                      transition={{
+                        type: 'spring',
+                        stiffness: 420,
+                        damping: 32,
+                      }}
+                      className="absolute inset-0 rounded-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.25),0_0_20px_-2px_rgba(255,255,255,0.15)]"
+                    />
+                  )}
+                  <Icon className="w-3.5 h-3.5 relative z-10" />
+                  <span className="relative z-10 font-bold">{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -434,6 +501,18 @@ export default function PublicListsPage() {
                         <span>{list.likes_count.toLocaleString('tr-TR')}</span>
                       </span>
                     )}
+
+                    {(isAdmin || (user?.id && list.creator?.id === user.id)) && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteListFromCard(e, list)}
+                        className="w-7 h-7 rounded-full bg-black/60 backdrop-blur-md border border-white/15 hover:bg-rose-500/20 hover:border-rose-500/40 text-white/70 hover:text-rose-400 flex items-center justify-center transition-colors cursor-pointer"
+                        title="Listeyi Sil"
+                        aria-label="Listeyi Sil"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -513,7 +592,7 @@ export default function PublicListsPage() {
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="relative w-full max-w-lg rounded-3xl bg-[#0f0f13] border border-white/15 p-6 sm:p-8 shadow-2xl z-10 space-y-5"
+              className="relative w-full max-w-lg max-h-[88vh] overflow-y-auto custom-scrollbar rounded-3xl bg-[#0f0f13] border border-white/15 p-6 sm:p-7 shadow-2xl z-10 space-y-5"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">

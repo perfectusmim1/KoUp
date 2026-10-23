@@ -16,6 +16,9 @@ import {
   LogIn,
   Trash2,
   X,
+  ArrowUpDown,
+  Star,
+  ArrowDownAZ,
 } from 'lucide-react';
 import { useKoUpSelector } from '@/context/KoUpContext';
 import { supabase, MediaItem, cleanMediaTitle } from '@/lib/supabase';
@@ -53,6 +56,35 @@ const CARD_STATUS_OPTIONS: SelectOption[] = [
 
 type LibraryStatus = 'ALL' | 'watching' | 'completed' | 'plan_to_watch' | 'on_hold' | 'dropped';
 type ContentTypeFilter = 'ALL' | 'drama' | 'anime' | 'movie';
+type SortOption = 'default' | 'newest' | 'oldest' | 'rating' | 'title_asc';
+
+const LIBRARY_SORT_OPTIONS: SelectOption[] = [
+  {
+    value: 'default',
+    label: 'Varsayılan Sıralama',
+    icon: <ArrowUpDown className="w-3.5 h-3.5 text-sky-400" />,
+  },
+  {
+    value: 'newest',
+    label: 'En Yeni Eklenen',
+    icon: <Clock className="w-3.5 h-3.5 text-emerald-400" />,
+  },
+  {
+    value: 'oldest',
+    label: 'En Eski Eklenen',
+    icon: <Clock className="w-3.5 h-3.5 text-amber-400" />,
+  },
+  {
+    value: 'rating',
+    label: 'En Yüksek Puan',
+    icon: <Star className="w-3.5 h-3.5 text-yellow-400" />,
+  },
+  {
+    value: 'title_asc',
+    label: 'İsme Göre (A-Z)',
+    icon: <ArrowDownAZ className="w-3.5 h-3.5 text-purple-400" />,
+  },
+];
 
 export default function KutuphanePage() {
   const user = useKoUpSelector((s) => s.user);
@@ -65,6 +97,7 @@ export default function KutuphanePage() {
 
   const [activeStatus, setActiveStatus] = useState<LibraryStatus>('ALL');
   const [activeType, setActiveType] = useState<ContentTypeFilter>('ALL');
+  const [sortBy, setSortBy] = useState<SortOption>('default');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 36;
@@ -146,7 +179,7 @@ export default function KutuphanePage() {
 
   // Filtered media list
   const filteredMedia = useMemo(() => {
-    return libraryMedia.filter((item) => {
+    const filtered = libraryMedia.filter((item) => {
       const prog = progressMap[item.id];
       if (!prog?.status) return false;
 
@@ -179,7 +212,32 @@ export default function KutuphanePage() {
 
       return true;
     });
-  }, [libraryMedia, activeStatus, activeType, searchQuery, progressMap]);
+
+    const sorted = [...filtered];
+    if (sortBy === 'newest') {
+      sorted.sort((a, b) => {
+        const tA = new Date(progressMap[a.id]?.updated_at || 0).getTime();
+        const tB = new Date(progressMap[b.id]?.updated_at || 0).getTime();
+        return tB - tA || b.id - a.id;
+      });
+    } else if (sortBy === 'oldest') {
+      sorted.sort((a, b) => {
+        const tA = new Date(progressMap[a.id]?.updated_at || 0).getTime();
+        const tB = new Date(progressMap[b.id]?.updated_at || 0).getTime();
+        return tA - tB || a.id - b.id;
+      });
+    } else if (sortBy === 'rating') {
+      sorted.sort((a, b) => {
+        const rA = Number(a.site_rating || a.mdl_rating || a.imdb_rating || 0);
+        const rB = Number(b.site_rating || b.mdl_rating || b.imdb_rating || 0);
+        return rB - rA;
+      });
+    } else if (sortBy === 'title_asc') {
+      sorted.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'tr'));
+    }
+
+    return sorted;
+  }, [libraryMedia, activeStatus, activeType, searchQuery, sortBy, progressMap]);
 
   // Paginated slice for current page
   const paginatedMedia = useMemo(() => {
@@ -318,31 +376,50 @@ export default function KutuphanePage() {
           })}
         </div>
 
-        {/* Search Input */}
-        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-colors duration-200 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] min-w-[200px]">
-          <Search className="w-3.5 h-3.5 text-white/60 shrink-0" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setCurrentPage(1);
-            }}
-            placeholder="Kütüphanede ara..."
-            className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full font-medium"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => {
-                setSearchQuery('');
+        {/* Sort & Search Controls */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+          <div className="w-full sm:w-52 shrink-0">
+            <CustomSelect
+              value={sortBy}
+              onChange={(val) => {
+                triggerSound('click');
+                setSortBy((val as SortOption) || 'default');
                 setCurrentPage(1);
               }}
-              className="text-white/40 hover:text-white transition-colors cursor-pointer"
-              aria-label="Aramayı temizle"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
+              options={LIBRARY_SORT_OPTIONS}
+              variant="glass"
+              size="sm"
+              searchable={false}
+              aria-label="Sıralama seçin"
+              className="w-full"
+            />
+          </div>
+
+          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-colors duration-200 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] min-w-[200px]">
+            <Search className="w-3.5 h-3.5 text-white/60 shrink-0" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              placeholder="Kütüphanede ara..."
+              className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full font-medium"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setCurrentPage(1);
+                }}
+                className="text-white/40 hover:text-white transition-colors cursor-pointer"
+                aria-label="Aramayı temizle"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

@@ -145,7 +145,7 @@ const NetflixEpisodeRow = memo(function NetflixEpisodeRow({
   if (isExpanded) {
     return (
       <div
-        key={ep.id || `${ep.season_number}-${ep.episode_number}`}
+        key={`expanded-${ep.id || `${ep.season_number}-${ep.episode_number}`}`}
         style={{ contain: 'content' }}
         onClick={() => {
           onClose();
@@ -232,7 +232,10 @@ const NetflixEpisodeRow = memo(function NetflixEpisodeRow({
               />
             )}
             <div className="absolute inset-0 bg-black/35 group-hover:bg-black/50 flex items-center justify-center transition-colors">
-              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-black/75 group-hover:bg-black/90 group-focus:bg-black/90 border border-white/35 group-hover:border-white/70 flex items-center justify-center text-white shadow-md transition-[background-color,border-color]">
+              <div
+                key={`play-circle-${ep.episode_number}`}
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-black/75 group-hover:bg-black/90 group-focus:bg-black/90 border border-white/35 group-hover:border-white/70 flex items-center justify-center text-white shadow-md"
+              >
                 <Play className="w-3.5 h-3.5 fill-white text-white translate-x-[1px]" />
               </div>
             </div>
@@ -276,7 +279,7 @@ const NetflixEpisodeRow = memo(function NetflixEpisodeRow({
 
   return (
     <div
-      key={ep.id || `${ep.season_number}-${ep.episode_number}`}
+      key={`collapsed-${ep.id || `${ep.season_number}-${ep.episode_number}`}`}
       style={{ height: EP_ROW_COLLAPSED_H, contain: 'content' }}
       onClick={() => {
         onExpand(ep.episode_number);

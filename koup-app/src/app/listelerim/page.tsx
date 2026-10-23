@@ -16,10 +16,12 @@ import {
   X,
   Compass,
   Image as ImageIcon,
+  Heart,
 } from 'lucide-react';
 import { useKoUpSelector } from '@/context/KoUpContext';
 import { supabase, getProxiedImageUrl } from '@/lib/supabase';
 import Pagination from '@/components/Pagination';
+import CustomSelect, { SelectOption } from '@/components/CustomSelect';
 
 interface UserCustomList {
   id: number;
@@ -35,6 +37,17 @@ interface UserCustomList {
   cover_posters?: string[];
 }
 
+type MyListSortBy = 'default' | 'newest' | 'oldest' | 'popular' | 'items' | 'title_asc';
+
+const MY_LIST_SORT_OPTIONS: SelectOption[] = [
+  { value: 'default', label: 'Sıralama: Varsayılan' },
+  { value: 'newest', label: 'Sıralama: En Yeni' },
+  { value: 'oldest', label: 'Sıralama: En Eski' },
+  { value: 'popular', label: 'Sıralama: En Çok Beğenilen' },
+  { value: 'items', label: 'Sıralama: En Çok İçerik' },
+  { value: 'title_asc', label: 'Sıralama: İsme Göre (A-Z)' },
+];
+
 export default function MyListsPage() {
   const user = useKoUpSelector((s) => s.user);
   const setIsAuthModalOpen = useKoUpSelector((s) => s.setIsAuthModalOpen);
@@ -44,6 +57,7 @@ export default function MyListsPage() {
   const [lists, setLists] = useState<UserCustomList[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<MyListSortBy>('default');
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 12;
 
@@ -104,6 +118,21 @@ export default function MyListsPage() {
             }
           }
 
+          const listIds = data.map((l: any) => l.id).filter(Boolean);
+          const realLikeCounts = new Map<number, number>();
+          if (listIds.length > 0) {
+            const { data: likesRows } = await supabase
+              .from('custom_list_likes')
+              .select('list_id')
+              .in('list_id', listIds);
+            if (Array.isArray(likesRows)) {
+              for (const row of likesRows) {
+                const lid = Number((row as any).list_id);
+                realLikeCounts.set(lid, (realLikeCounts.get(lid) || 0) + 1);
+              }
+            }
+          }
+
           const formattedLists: UserCustomList[] = data.map((l: any) => {
             const posters = Array.isArray(l.media_ids)
               ? (l.media_ids as number[])
@@ -111,6 +140,7 @@ export default function MyListsPage() {
                   .map((id) => posterMap.get(id))
                   .filter(Boolean) as string[]
               : [];
+            const exactLikes = realLikeCounts.get(l.id) ?? 0;
             return {
               id: l.id,
               slug: l.slug,
@@ -118,7 +148,7 @@ export default function MyListsPage() {
               description: l.description,
               visibility: l.visibility || 'public',
               media_ids: Array.isArray(l.media_ids) ? l.media_ids : [],
-              likes_count: l.likes_count || 0,
+              likes_count: Math.max(exactLikes, l.likes_count || 0),
               created_at: l.created_at,
               cover_image_url: l.cover_image_url || null,
               backdrop_image_url: l.backdrop_image_url || null,
@@ -231,15 +261,36 @@ export default function MyListsPage() {
     }
   };
 
-  // Filtered lists
+  // Filtered & sorted lists
   const filteredLists = useMemo(() => {
-    if (!searchQuery.trim()) return lists;
-    const q = searchQuery.toLowerCase();
-    return lists.filter((l) =>
-      l.title.toLowerCase().includes(q) ||
-      (l.description && l.description.toLowerCase().includes(q))
-    );
-  }, [lists, searchQuery]);
+    let result = [...lists];
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (l) =>
+          l.title.toLowerCase().includes(q) ||
+          (l.description && l.description.toLowerCase().includes(q))
+      );
+    }
+
+    if (sortBy === 'newest') {
+      result.sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+    } else if (sortBy === 'oldest') {
+      result.sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+    } else if (sortBy === 'popular') {
+      result.sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0));
+    } else if (sortBy === 'items') {
+      result.sort((a, b) => (b.media_ids?.length || 0) - (a.media_ids?.length || 0));
+    } else if (sortBy === 'title_asc') {
+      result.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'tr'));
+    }
+
+    return result;
+  }, [lists, searchQuery, sortBy]);
 
   // Paginated slice
   const paginatedLists = useMemo(() => {
@@ -319,30 +370,46 @@ export default function MyListsPage() {
           Toplam <strong className="text-white font-bold">{lists.length}</strong> özel koleksiyon
         </div>
 
-        <div className="flex items-center gap-2 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/50 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-colors duration-200 w-full sm:w-64 lg:w-72 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.25)]">
-          <Search className="w-4 h-4 text-white/60 shrink-0" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setCurrentPage(1);
-            }}
-            placeholder="Listelerimde ara..."
-            className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full font-medium"
-          />
-          {searchQuery ? (
-            <button
-              onClick={() => {
-                setSearchQuery('');
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+          <div className="flex items-center gap-2 px-3.5 py-2 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/50 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-colors duration-200 w-full sm:w-64 lg:w-72 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.25)]">
+            <Search className="w-4 h-4 text-white/60 shrink-0" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
                 setCurrentPage(1);
               }}
-              className="text-white/50 hover:text-white transition-colors cursor-pointer shrink-0"
-              aria-label="Aramayı temizle"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          ) : null}
+              placeholder="Listelerimde ara..."
+              className="bg-transparent text-xs text-white placeholder-white/40 focus:outline-none w-full font-medium"
+            />
+            {searchQuery ? (
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setCurrentPage(1);
+                }}
+                className="text-white/50 hover:text-white transition-colors cursor-pointer shrink-0"
+                aria-label="Aramayı temizle"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            ) : null}
+          </div>
+
+          <div className="w-full sm:w-56">
+            <CustomSelect
+              value={sortBy}
+              onChange={(val) => {
+                triggerSound('click');
+                setSortBy(val as MyListSortBy);
+                setCurrentPage(1);
+              }}
+              options={MY_LIST_SORT_OPTIONS}
+              size="sm"
+              aria-label="Listelerim Sıralaması"
+            />
+          </div>
         </div>
       </div>
 
@@ -577,7 +644,7 @@ export default function MyListsPage() {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.94, y: 16 }}
               transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className="relative w-full max-w-lg rounded-3xl bg-[#0f0f13] border border-white/15 p-6 sm:p-8 shadow-2xl z-10 space-y-5"
+              className="relative w-full max-w-lg max-h-[88vh] overflow-y-auto custom-scrollbar rounded-3xl bg-[#0f0f13] border border-white/15 p-6 sm:p-7 shadow-2xl z-10 space-y-5"
             >
               {/* Modal Header */}
               <div className="flex items-center justify-between pb-3 border-b border-white/10">

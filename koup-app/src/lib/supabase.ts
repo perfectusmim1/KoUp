@@ -935,17 +935,17 @@ export function formatEpisodeTitle(
 }
 
 /**
- * Formats view counts compactly (e.g. 0 -> "0", 420 -> "420", 1250 -> "1.2K", 3000 -> "3K", 1200000 -> "1.2M")
+ * Formats view counts compactly (e.g. 0 -> "0", 420 -> "420", 1500 -> "1.5K", 15500 -> "15.5K", 1200000 -> "1.2M")
  */
 export function formatViewCount(count?: number | null): string {
   const n = Math.max(0, Math.floor(Number(count) || 0));
   if (n < 1000) return String(n);
   if (n < 1_000_000) {
     const k = n / 1000;
-    return `${k >= 10 ? Math.round(k) : Number(k.toFixed(1))}K`;
+    return `${k >= 100 ? Math.round(k) : Number(k.toFixed(1))}K`;
   }
   const m = n / 1_000_000;
-  return `${m >= 10 ? Math.round(m) : Number(m.toFixed(1))}M`;
+  return `${m >= 100 ? Math.round(m) : Number(m.toFixed(1))}M`;
 }
 
 /**

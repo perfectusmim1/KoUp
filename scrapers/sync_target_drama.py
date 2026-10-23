@@ -1523,6 +1523,7 @@ def sync_animecix_target(conn, cur, drama, target_url=None):
         single_season_in_db = (len(db_seasons) <= 1 and (not db_seasons or 1 in db_seasons))
 
         # 4. Fetch all videos for this title from AnimeciX (up to 60 pages for long series like One Piece)
+        all_videos = []
         page = 1
         while page <= 60:
             v_qs = f"titleId={anime_id}&page={page}&perPage=100"
@@ -1532,95 +1533,121 @@ def sync_animecix_target(conn, cur, drama, target_url=None):
             videos = v_data['pagination'].get('data', [])
             if not videos:
                 break
-
-            for v in videos:
-                v_url = (v.get('url') or '').strip()
-                if not v_url:
-                    continue
-                v_low = v_url.lower()
-                v_name = (v.get('name') or '').strip()
-
-                # Skip trailers, openings, and dead hosts
-                if (
-                    v.get('type') == 'trailer'
-                    or 'youtube.com' in v_low
-                    or 'youtu.be' in v_low
-                    or 'trailer' in v_name.lower()
-                    or any(dead in v_low for dead in [
-                        'sibnet.ru', 'sibnet', 'sendvid', 'drive.google.com', 'docs.google.com',
-                        'dood', 'short.icu', 'pixeldrain', '4meplayer', 'asyaanim.upns.one', 'upns.one',
-                        'vudeo.', 'streamsb.', 'streamtape.com/e/'
-                    ])
-                    or v_low.endswith('/e/')
-                ):
-                    continue
-
-                raw_snum = v.get('season_num')
-                raw_enum = v.get('episode_num')
-
-                if raw_enum is None and not matched_is_movie:
-                    continue
-
-                v_snum = int(raw_snum) if raw_snum else 1
-                v_enum = int(raw_enum) if raw_enum else 1
-
-                if explicit_season and single_season_in_db:
-                    if v_snum != explicit_season:
-                        continue
-                    target_s = 1
-                    target_e = v_enum
-                elif explicit_season:
-                    if v_snum != explicit_season:
-                        continue
-                    target_s = explicit_season
-                    target_e = v_enum
-                else:
-                    if single_season_in_db and ep_rows and v_snum != 1:
-                        continue
-                    target_s = v_snum
-                    target_e = v_enum
-
-                prov = clean_animecix_provider(v_name, v_url)
-                if prov == 'tau-video':
-                    clean_pname = 'Tau Video'
-                elif prov == 'uqload':
-                    clean_pname = 'Uqload'
-                elif prov == 'mp4upload':
-                    clean_pname = 'Mp4Upload'
-                elif prov == 'ok.ru':
-                    clean_pname = 'OK.ru HD'
-                elif prov == 'mail.ru':
-                    clean_pname = 'Mail.ru HD'
-                else:
-                    clean_pname = prov.capitalize()
-
-                if 'dublaj' in v_name.lower():
-                    clean_pname += ' (Türkçe Dublaj)'
-                elif 'altyazı' in v_name.lower():
-                    clean_pname += ' (Türkçe Altyazılı)'
-
-                ep_id = ep_map.get((target_s, target_e))
-                if not ep_id:
-                    ep_url = f"https://animecix.tv/titles/{anime_id}/season/{v_snum}/episode/{v_enum}"
-                    ep_id, created = match_or_create_episode(
-                        cur, d['id'], target_s, target_e,
-                        f"{target_s}. Sezon {target_e}. Bölüm", ep_url
-                    )
-                    if created:
-                        episodes_added += 1
-                    ep_map[(target_s, target_e)] = ep_id
-
-                if add_source(cur, ep_id, clean_pname, v_url, prov, 'animecix'):
-                    sources_added += 1
-                    safe_commit(conn)
-
-                reconcile_episode(cur, ep_id, is_placeholder=False)
-
-            safe_commit(conn)
+            all_videos.extend(videos)
             last_page = v_data['pagination'].get('last_page', 1) or 1
             if page >= last_page:
                 break
             page += 1
+
+        # Resolve missing episode_num by looking at episode_id sequence within each season
+        eid_to_enum = {}
+        by_season_eids = {}
+        for v in all_videos:
+            s_num = int(v.get('season_num') or 1)
+            e_id = v.get('episode_id')
+            raw_e = v.get('episode_num')
+            if e_id:
+                if s_num not in by_season_eids:
+                    by_season_eids[s_num] = {}
+                if e_id not in by_season_eids[s_num] or raw_e is not None:
+                    by_season_eids[s_num][e_id] = int(raw_e) if raw_e is not None else None
+
+        for s_num, eids_dict in by_season_eids.items():
+            sorted_eids = sorted(eids_dict.keys())
+            curr_enum = 0
+            for eid in sorted_eids:
+                known_e = eids_dict[eid]
+                if known_e is not None:
+                    curr_enum = known_e
+                    eid_to_enum[eid] = known_e
+                else:
+                    curr_enum += 1
+                    eid_to_enum[eid] = curr_enum
+
+        for v in all_videos:
+            v_url = (v.get('url') or '').strip()
+            if not v_url:
+                continue
+            v_low = v_url.lower()
+            v_name = (v.get('name') or '').strip()
+
+            # Skip trailers, openings, and dead hosts
+            if (
+                v.get('type') == 'trailer'
+                or 'youtube.com' in v_low
+                or 'youtu.be' in v_low
+                or 'trailer' in v_name.lower()
+                or any(dead in v_low for dead in [
+                    'sibnet.ru', 'sibnet', 'sendvid', 'drive.google.com', 'docs.google.com',
+                    'dood', 'short.icu', 'pixeldrain', '4meplayer', 'asyaanim.upns.one', 'upns.one',
+                    'vudeo.', 'streamsb.', 'streamtape.com/e/'
+                ])
+                or v_low.endswith('/e/')
+            ):
+                continue
+
+            raw_snum = v.get('season_num')
+            raw_enum = v.get('episode_num')
+            if raw_enum is None and v.get('episode_id') in eid_to_enum:
+                raw_enum = eid_to_enum[v.get('episode_id')]
+
+            if raw_enum is None and not matched_is_movie:
+                continue
+
+            v_snum = int(raw_snum) if raw_snum else 1
+            v_enum = int(raw_enum) if raw_enum else 1
+
+            if explicit_season and single_season_in_db:
+                if v_snum != explicit_season:
+                    continue
+                target_s = 1
+                target_e = v_enum
+            elif explicit_season:
+                if v_snum != explicit_season:
+                    continue
+                target_s = explicit_season
+                target_e = v_enum
+            else:
+                target_s = v_snum
+                target_e = v_enum
+
+            prov = clean_animecix_provider(v_name, v_url)
+            if prov == 'tau-video':
+                clean_pname = 'Tau Video'
+            elif prov == 'uqload':
+                clean_pname = 'Uqload'
+            elif prov == 'mp4upload':
+                clean_pname = 'Mp4Upload'
+            elif prov == 'ok.ru':
+                clean_pname = 'OK.ru HD'
+            elif prov == 'mail.ru':
+                clean_pname = 'Mail.ru HD'
+            else:
+                clean_pname = prov.capitalize()
+
+            if 'dublaj' in v_name.lower():
+                clean_pname += ' (Türkçe Dublaj)'
+            elif 'altyazı' in v_name.lower():
+                clean_pname += ' (Türkçe Altyazılı)'
+
+            ep_id = ep_map.get((target_s, target_e))
+            if not ep_id:
+                ep_url = f"https://animecix.tv/titles/{anime_id}/season/{v_snum}/episode/{v_enum}"
+                ep_id, created = match_or_create_episode(
+                    cur, d['id'], target_s, target_e,
+                    f"{target_s}. Sezon {target_e}. Bölüm", ep_url
+                )
+                if created:
+                    episodes_added += 1
+                ep_map[(target_s, target_e)] = ep_id
+
+            if add_source(cur, ep_id, clean_pname, v_url, prov, 'animecix'):
+                sources_added += 1
+                safe_commit(conn)
+
+            reconcile_episode(cur, ep_id, is_placeholder=False)
+
+        safe_commit(conn)
 
         log("AnimeciX", f"Tamamlandı: {episodes_added} yeni bölüm, {sources_added} yeni çalışan kaynak eklendi.")
     except Exception as e:
