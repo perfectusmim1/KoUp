@@ -5,6 +5,5 @@ out/
 *.tsbuildinfo
 next-env.d.ts
 public/sources/
-
 .vercel
-.env*
+supabase/migrations/

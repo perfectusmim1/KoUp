@@ -26,6 +26,10 @@ __pycache__/
 **/__pycache__/
 *.pyc
 
+# Database Migrations & Schemas (Private)
+koup-app/supabase/migrations/
+supabase/migrations/
+
 # OS / IDE
 .DS_Store
 Thumbs.db
