@@ -18,6 +18,7 @@ export interface CustomSelectProps {
   onChange: (value: string) => void;
   options: SelectOption[];
   placeholder?: string;
+  triggerLabel?: React.ReactNode;
   leftIcon?: React.ReactNode;
   className?: string;
   triggerClassName?: string;
@@ -40,6 +41,7 @@ export default function CustomSelect({
   onChange,
   options,
   placeholder = 'Seçiniz...',
+  triggerLabel,
   leftIcon,
   className = '',
   triggerClassName = '',
@@ -553,7 +555,7 @@ export default function CustomSelect({
             selectedOption?.icon
           )}
           <span className="font-semibold tracking-tight truncate">
-            {selectedOption?.label || placeholder}
+            {triggerLabel !== undefined ? triggerLabel : (selectedOption?.label || placeholder)}
           </span>
         </span>
         <ChevronDown

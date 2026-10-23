@@ -1,21 +1,19 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   RefreshCw,
-  ChevronDown,
   CheckCircle2,
   AlertCircle,
   Loader2,
   Terminal,
   X,
   Link as LinkIcon,
-  Sparkles,
   ExternalLink,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import CustomSelect, { SelectOption } from '@/components/CustomSelect';
 
 interface AdminSeriesSyncProps {
   dramaId: number;
@@ -25,18 +23,19 @@ interface AdminSeriesSyncProps {
   onSyncComplete?: (result: { episodesAdded: number; sourcesAdded: number; provider: string }) => void;
 }
 
-const PROVIDERS = [
-  { id: 'auto', name: 'Otomatik Akıllı Tespit', desc: 'Mevcut kaynaklar ve yapım ülkesine göre otomatik seçer', icon: '⚡' },
-  { id: 'bldrama', name: 'BLDrama & WebDramaTurkey', desc: 'BL & Asya Dizileri Doğrudan HLS & Alternatifler', icon: '🌈' },
-  { id: 'asyawatch', name: 'AsyaWatch', desc: 'four.pichive.online 1080p Native HLS', icon: '🌸' },
-  { id: 'dizikorea', name: 'DiziKorea Asya', desc: 'playerdkorea 1080p HLS akışları', icon: '🎎' },
-  { id: 'dizifon', name: 'DiziFon / AsyaDizi', desc: 'Asya Dizi & Film alternatif akışları', icon: '🎭' },
-  { id: 'dizibox', name: 'DiziBOX Global', desc: 'DBX Pro 1080p HLS akışları', icon: '📦' },
-  { id: 'hdfilm', name: 'HDFilmcehennemi', desc: 'Close Dual & Rapidrame Doğrudan 1080p HLS', icon: '🔥' },
-  { id: 'dizilla', name: 'Dizilla Global & Anime', desc: 'AES-256 Decrypt & 1080p Native HLS', icon: '🎬' },
-  { id: 'animecix', name: 'AnimeciX', desc: 'Tau-Video & Sibnet alternatifleri', icon: '⚡' },
-  { id: 'asyaanimeleri', name: 'AsyaAnimeleri', desc: 'Asya Animeleri & Dizi alternatifleri', icon: '⛩️' },
-  { id: 'ddizi', name: 'DDizi Yerli & Klasik', desc: 'YouTube HD & HLS resmi yayınlar', icon: '📺' },
+const SYNC_OPTIONS: SelectOption[] = [
+  { value: 'auto', label: 'Otomatik Akıllı Tespit', description: 'Mevcut kaynaklar ve yapım ülkesine göre otomatik seçer', icon: '⚡' },
+  { value: 'asyawatch', label: 'AsyaWatch (HLS)', description: 'four.pichive.online 1080p Native HLS', icon: '🌸' },
+  { value: 'bldrama', label: 'BLDrama & WebDramaTurkey', description: 'BL & Asya Dizileri Doğrudan HLS & Alternatifler', icon: '🌈' },
+  { value: 'dizikorea', label: 'DiziKorea Asya', description: 'playerdkorea 1080p HLS akışları', icon: '🎎' },
+  { value: 'dizifon', label: 'DiziFon / AsyaDizi', description: 'Asya Dizi & Film alternatif akışları', icon: '🎭' },
+  { value: 'dizibox', label: 'DiziBOX Global', description: 'DBX Pro 1080p HLS akışları', icon: '📦' },
+  { value: 'hdfilm', label: 'HDFilmcehennemi', description: 'Close Dual & Rapidrame Doğrudan 1080p HLS', icon: '🔥' },
+  { value: 'dizilla', label: 'Dizilla Global & Anime', description: 'AES-256 Çözülmüş 1080p Native HLS', icon: '🎬' },
+  { value: 'animecix', label: 'AnimeciX', description: 'Tau-Video & Sibnet alternatifleri', icon: '⚡' },
+  { value: 'asyaanimeleri', label: 'AsyaAnimeleri', description: 'Asya Animeleri & Dizi alternatifleri', icon: '⛩️' },
+  { value: 'ddizi', label: 'DDizi Yerli & Klasik', description: 'YouTube HD & HLS resmi yayınlar', icon: '📺' },
+  { value: '__manual__', label: 'Özel Dizi URL\'si Gir...', description: 'DiziBOX, HDFilm vb. doğrudan dizi URL\'si yapıştırın', icon: <LinkIcon className="w-3.5 h-3.5 text-sky-400" /> },
 ];
 
 export default function AdminSeriesSync({
@@ -47,7 +46,6 @@ export default function AdminSeriesSync({
   onSyncComplete,
 }: AdminSeriesSyncProps) {
   const [selectedProvider, setSelectedProvider] = useState<string>('auto');
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [internalPendingCount, setInternalPendingCount] = useState<number | null>(null);
@@ -86,75 +84,6 @@ export default function AdminSeriesSync({
   // Toast feedback
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [mounted, setMounted] = useState(false);
-  const [portalCoords, setPortalCoords] = useState<{
-    top?: number;
-    bottom?: number;
-    left: number;
-    width: number;
-    upwards: boolean;
-  } | null>(null);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  const calculatePosition = useCallback(() => {
-    if (!dropdownRef.current || typeof window === 'undefined') return null;
-    const rect = dropdownRef.current.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const spaceAbove = rect.top;
-    const upwards = spaceBelow < 340 && spaceAbove > 200;
-
-    const menuWidth = Math.min(320, window.innerWidth - 24);
-    const clampedLeft = Math.max(12, Math.min(rect.left, window.innerWidth - menuWidth - 12));
-
-    return {
-      top: upwards ? undefined : Math.round(rect.bottom + 6),
-      bottom: upwards ? Math.round(window.innerHeight - rect.top + 6) : undefined,
-      left: clampedLeft,
-      width: menuWidth,
-      upwards,
-    };
-  }, []);
-
-  const updatePosition = useCallback(() => {
-    const coords = calculatePosition();
-    if (coords) setPortalCoords(coords);
-  }, [calculatePosition]);
-
-  useEffect(() => {
-    if (isDropdownOpen) {
-      updatePosition();
-      const handleScrollOrResize = () => updatePosition();
-      window.addEventListener('resize', handleScrollOrResize, { passive: true });
-      window.addEventListener('scroll', handleScrollOrResize, { passive: true, capture: true });
-      return () => {
-        window.removeEventListener('resize', handleScrollOrResize);
-        window.removeEventListener('scroll', handleScrollOrResize, true);
-      };
-    }
-  }, [isDropdownOpen, updatePosition]);
-
-  // Auto-close dropdown on outside click
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      const target = event.target as Node;
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(target) &&
-        menuRef.current &&
-        !menuRef.current.contains(target)
-      ) {
-        setIsDropdownOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   // Clear toast after 5s
   useEffect(() => {
     if (toast) {
@@ -167,7 +96,6 @@ export default function AdminSeriesSync({
     const prov = providerOverride || selectedProvider;
     setIsSyncing(true);
     setStatusText('Başlatılıyor...');
-    setIsDropdownOpen(false);
     setLogs([]);
 
     try {
@@ -303,10 +231,18 @@ export default function AdminSeriesSync({
     }
   };
 
-  const activeProviderMeta = PROVIDERS.find((p) => p.id === selectedProvider) || PROVIDERS[0];
+  const handleProviderSelect = (val: string) => {
+    if (!val) return;
+    if (val === '__manual__') {
+      setShowManualModal(true);
+      return;
+    }
+    setSelectedProvider(val);
+    handleTriggerSync(val);
+  };
 
   return (
-    <div className="relative inline-flex flex-col items-start gap-1.5">
+    <div className="relative inline-flex flex-wrap items-center gap-2">
       {/* Toast Alert */}
       <AnimatePresence>
         {toast && (
@@ -336,148 +272,38 @@ export default function AdminSeriesSync({
         )}
       </AnimatePresence>
 
-      {/* Main Admin Action Split Toolbar (Apple Cinema Glass) */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div
-          ref={dropdownRef}
-          className={`relative ${
-            isDropdownOpen ? 'z-[80]' : 'z-20'
-          } flex items-center rounded-full bg-[#121217]/90 backdrop-blur-2xl border border-white/15 hover:border-white/25 shadow-[0_4px_20px_rgba(0,0,0,0.45)] transition-all p-0.5`}
+      {/* Sitenin Genel CustomSelect Dropdown Bileşeni */}
+      <CustomSelect
+        value={selectedProvider}
+        onChange={handleProviderSelect}
+        options={SYNC_OPTIONS}
+        triggerLabel={isSyncing ? (statusText || 'Senkronize Ediliyor...') : 'Senkronize Et'}
+        leftIcon={
+          isSyncing ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
+          ) : (
+            <RefreshCw className="w-3.5 h-3.5 text-sky-400" />
+          )
+        }
+        disabled={isSyncing}
+        size="sm"
+        variant="glass"
+        triggerClassName="px-3.5 py-1.5 text-xs rounded-full gap-2 hover:border-sky-400/40 hover:shadow-[0_0_15px_rgba(56,189,248,0.2)] transition-all font-bold cursor-pointer"
+        menuClassName="min-w-[280px] max-w-[340px]"
+        searchPlaceholder="Sağlayıcı veya site ara..."
+        direction="auto"
+      />
+
+      {/* Pending Episodes Badge for Admins */}
+      {effectivePendingCount > 0 && (
+        <span
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0 shadow-[0_0_12px_rgba(245,158,11,0.2)]"
+          title={`${effectivePendingCount} bölüm henüz oynatılabilir video kaynağına sahip değil ("pending_source")`}
         >
-          {/* Left Action Button */}
-          <button
-            type="button"
-            disabled={isSyncing}
-            onClick={() => handleTriggerSync()}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-l-full hover:bg-white/[0.08] text-white/90 hover:text-white text-xs font-bold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isSyncing ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
-            ) : (
-              <RefreshCw className="w-3.5 h-3.5 text-sky-400" />
-            )}
-            <span>
-              {isSyncing ? statusText || 'Senkronize Ediliyor...' : 'Senkronize Et'}
-            </span>
-            {!isSyncing && (
-              <span className="text-[10px] font-mono text-sky-300 bg-sky-500/15 px-2 py-0.5 rounded-full border border-sky-400/25">
-                {activeProviderMeta.name.split(' ')[0]}
-              </span>
-            )}
-          </button>
-
-          {/* Dropdown Toggle Arrow */}
-          <button
-            type="button"
-            disabled={isSyncing}
-            onClick={() => setIsDropdownOpen((v) => !v)}
-            className="px-2.5 py-1.5 rounded-r-full border-l border-white/10 hover:bg-white/[0.08] text-white/60 hover:text-white transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-            aria-label="Kaynak sağlayıcı seç"
-          >
-            <ChevronDown
-              className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                isDropdownOpen ? 'rotate-180' : ''
-              }`}
-            />
-          </button>
-
-          {/* Dropdown Popover (Rendered via Portal to eliminate clipping issues) */}
-          {mounted &&
-            typeof document !== 'undefined' &&
-            createPortal(
-              <AnimatePresence>
-                {isDropdownOpen && portalCoords && (
-                  <motion.div
-                    ref={menuRef}
-                    initial={{ opacity: 0, y: portalCoords.upwards ? 8 : -8, scale: 0.96 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: portalCoords.upwards ? 6 : -6, scale: 0.96 }}
-                    transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                    style={{
-                      position: 'fixed',
-                      top: portalCoords.top !== undefined ? `${portalCoords.top}px` : undefined,
-                      bottom: portalCoords.bottom !== undefined ? `${portalCoords.bottom}px` : undefined,
-                      left: `${portalCoords.left}px`,
-                      width: `${portalCoords.width}px`,
-                      zIndex: 999999,
-                    }}
-                    className="rounded-2xl bg-[#0f0f13]/98 border border-white/20 shadow-[0_25px_60px_rgba(0,0,0,0.95),0_0_25px_rgba(0,0,0,0.8)] backdrop-blur-3xl p-2 pointer-events-auto"
-                  >
-                    <div className="px-3 py-2 border-b border-white/10 mb-1 flex items-center justify-between">
-                      <span className="text-[10px] font-mono uppercase tracking-wider text-sky-400 font-bold flex items-center gap-1.5">
-                        <Sparkles className="w-3 h-3" />
-                        Senkronizasyon Sağlayıcısı
-                      </span>
-                    </div>
-
-                    <div className="space-y-1 max-h-[300px] overflow-y-auto no-scrollbar">
-                      {PROVIDERS.map((p) => {
-                        const isSelected = selectedProvider === p.id;
-                        return (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedProvider(p.id);
-                              setIsDropdownOpen(false);
-                              handleTriggerSync(p.id);
-                            }}
-                            className={`w-full text-left px-3 py-2 rounded-xl transition-all flex items-start gap-2.5 cursor-pointer ${
-                              isSelected
-                                ? 'bg-sky-500/15 border border-sky-400/40 text-white'
-                                : 'hover:bg-white/[0.06] text-white/80 hover:text-white'
-                            }`}
-                          >
-                            <span className="text-base shrink-0 mt-0.5">{p.icon}</span>
-                            <div className="flex-1 min-w-0">
-                              <div className="text-xs font-bold flex items-center justify-between">
-                                <span>{p.name}</span>
-                                {isSelected && (
-                                  <span className="text-[10px] text-sky-400 font-mono font-bold">SEÇİLİ</span>
-                                )}
-                              </div>
-                              <p className="text-[11px] text-white/50 line-clamp-1 mt-0.5">{p.desc}</p>
-                            </div>
-                          </button>
-                        );
-                      })}
-
-                      {/* Custom URL Option */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsDropdownOpen(false);
-                          setShowManualModal(true);
-                        }}
-                        className="w-full text-left px-3 py-2 rounded-xl hover:bg-sky-500/15 border border-dashed border-sky-400/30 text-sky-300 hover:text-white transition-all flex items-start gap-2.5 cursor-pointer mt-1"
-                      >
-                        <LinkIcon className="w-4 h-4 shrink-0 mt-0.5 text-sky-400" />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-bold">Özel Kaynak Linki Gir...</div>
-                          <p className="text-[11px] text-sky-300/60 line-clamp-1 mt-0.5">
-                            DiziBOX, HDFilm vb. doğrudan dizi URL'sini yapıştırın
-                          </p>
-                        </div>
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>,
-              document.body
-            )}
-        </div>
-
-        {/* Pending Episodes Badge for Admins */}
-        {effectivePendingCount > 0 && (
-          <span
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0 shadow-[0_0_12px_rgba(245,158,11,0.2)]"
-            title={`${effectivePendingCount} bölüm henüz oynatılabilir video kaynağına sahip değil ("pending_source")`}
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-            <span>{effectivePendingCount} kaynak bekliyor</span>
-          </span>
-        )}
-      </div>
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+          <span>{effectivePendingCount} kaynak bekliyor</span>
+        </span>
+      )}
 
       {/* View Last / Live Logs Button if logs exist */}
       {logs.length > 0 && (
