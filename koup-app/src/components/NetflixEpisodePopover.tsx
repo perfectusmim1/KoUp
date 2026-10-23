@@ -185,7 +185,7 @@ const NetflixEpisodeRow = memo(function NetflixEpisodeRow({
                 <div className="w-8 sm:w-12 h-1 bg-white/20 rounded-full overflow-hidden">
                   <div
                     style={{ width: `${epProgressPct}%` }}
-                    className={`h-full ${isEpWatched ? 'bg-emerald-400' : 'bg-[#E50914]'}`}
+                    className={`h-full ${isEpWatched ? 'bg-emerald-400' : 'bg-sky-400'}`}
                   />
                 </div>
               </div>
@@ -240,7 +240,7 @@ const NetflixEpisodeRow = memo(function NetflixEpisodeRow({
               <div className="absolute bottom-0 inset-x-0 h-1 bg-white/25">
                 <div
                   style={{ width: `${epProgressPct}%` }}
-                  className={`h-full ${isEpWatched ? 'bg-emerald-400' : 'bg-[#E50914]'}`}
+                  className={`h-full ${isEpWatched ? 'bg-emerald-400' : 'bg-sky-400'}`}
                 />
               </div>
             )}
@@ -318,7 +318,7 @@ const NetflixEpisodeRow = memo(function NetflixEpisodeRow({
             <div className="w-10 sm:w-12 h-1 bg-white/20 rounded-full overflow-hidden">
               <div
                 style={{ width: `${epProgressPct}%` }}
-                className={`h-full ${isEpWatched ? 'bg-emerald-400' : 'bg-[#E50914]'}`}
+                className={`h-full ${isEpWatched ? 'bg-emerald-400' : 'bg-sky-400'}`}
               />
             </div>
           </div>
@@ -468,7 +468,7 @@ function NetflixEpisodePopoverComponent({
                   }}
                   className={`px-1.5 py-0.5 rounded text-[10px] sm:text-[11px] font-bold transition-colors cursor-pointer shrink-0 ${
                     drawerSeason === s
-                      ? 'bg-[#E50914] text-white'
+                      ? 'bg-white text-black font-black'
                       : 'bg-white/10 text-white/70 hover:text-white'
                   }`}
                 >

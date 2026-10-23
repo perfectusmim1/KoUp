@@ -1151,8 +1151,8 @@ export default function NetflixPlayer({
     const v = videoRef.current;
     if (!v || v.readyState < 2 || !v.videoWidth || !v.videoHeight) return;
 
-    // Minimum 2nd minute (120s) preferred for authentic content scenes; if video is shorter, at least 10s
-    const isPastIntro = v.currentTime >= 120 || (v.duration > 0 && v.duration < 120 && v.currentTime >= 10);
+    // Minimum 30s preferred to ensure intro cards/watermarks/red logos have finished
+    const isPastIntro = v.currentTime >= 60 || (v.duration > 0 && v.duration < 60 && v.currentTime >= 25);
     if (!isPastIntro && !episodePreviewCache.has(key)) {
       return;
     }
@@ -4042,7 +4042,7 @@ export default function NetflixPlayer({
                             }
                             aria-label={`Oynatma Hızı (${playbackRate}x)`}
                             className={`flex items-center gap-1 py-1 text-xs font-medium cursor-pointer shrink-0 ${
-                              activePanel === 'speed' ? 'text-[#E50914] font-bold' : 'text-white/90'
+                              activePanel === 'speed' ? 'text-sky-400 font-bold' : 'text-white/90'
                             }`}
                           >
                             <NetflixSpeedIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -4060,7 +4060,7 @@ export default function NetflixPlayer({
                               aria-label="Bölümler"
                               className={`flex items-center gap-1 py-1 text-xs font-medium cursor-pointer shrink-0 ${
                                 activePanel === 'episodes'
-                                  ? 'text-[#E50914] font-bold'
+                                  ? 'text-sky-400 font-bold'
                                   : 'text-white/90'
                               }`}
                             >
@@ -4382,13 +4382,13 @@ export default function NetflixPlayer({
                               setActivePanel((prev) => (prev === 'speed' ? null : 'speed'))
                             }
                             aria-label="Oynatma Hızı"
-                            className={`flex items-center gap-2 py-1 text-sm font-medium transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap [text-shadow:0_1px_3px_rgba(0,0,0,0.9)] ${
+                            className={`flex items-center gap-1.5 py-1 text-xs font-medium transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap [text-shadow:0_1px_3px_rgba(0,0,0,0.9)] ${
                               activePanel === 'speed'
-                                ? 'text-[#E50914] font-bold'
+                                ? 'text-sky-400 font-bold'
                                 : 'text-white/90 hover:text-white'
                             }`}
                           >
-                            <NetflixSpeedIcon className="w-6 h-6 shrink-0" />
+                            <NetflixSpeedIcon className="w-5 h-5 shrink-0" />
                             <span className="hidden sm:inline">Hız ({playbackRate}x)</span>
                           </button>
                         )}
@@ -4409,7 +4409,7 @@ export default function NetflixPlayer({
                                   aria-label="Bölümler (E)"
                                   className={`flex items-center gap-1.5 py-1 text-sm font-medium transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap ${
                                     activePanel === 'episodes'
-                                      ? 'text-[#E50914] font-bold'
+                                      ? 'text-sky-400 font-bold'
                                       : 'text-white/90 hover:text-white'
                                   }`}
                                 >
@@ -4549,33 +4549,35 @@ export default function NetflixPlayer({
                           </>
                         )}
 
-                        {/* Google Cast / TV Yansıt Butonu: Fullscreen ile birebir odak ve hover animasyonu */}
+                        {/* Google Cast / TV Yansıt Butonu: Titremeyen stabil konteyner & GPU hızlandırmalı ikon ölçekleme */}
                         <button
                           type="button"
                           onClick={handleCastPrompt}
                           aria-label={isCasting ? "TV'ye Yansıtılıyor" : "TV'ye Yansıt (Chromecast)"}
                           title={isCasting ? "TV'ye Yansıtılıyor" : "TV'ye Yansıt (Chromecast)"}
-                          className={`p-1 shrink-0 transition-transform cursor-pointer ${
+                          className={`w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-200 group/cast cursor-pointer shrink-0 ${
                             isCasting
-                              ? 'text-[#E50914] scale-110 drop-shadow-[0_0_8px_rgba(229,9,20,0.6)] animate-pulse'
-                              : 'text-white/90 hover:text-white hover:scale-110 active:scale-95'
+                              ? 'text-sky-400 drop-shadow-[0_0_8px_rgba(56,189,248,0.6)] animate-pulse'
+                              : 'text-white/90 hover:text-white'
                           }`}
                         >
-                          <CastIcon className="w-5 h-5" />
+                          <CastIcon className="w-5 h-5 group-hover/cast:scale-110 transition-transform duration-200 ease-out will-change-transform transform-gpu" />
                         </button>
 
-                        {/* Tam Ekran Butonu */}
+                        {/* Tam Ekran Butonu: Titremeyen stabil konteyner & GPU hızlandırmalı ikon ölçekleme */}
                         <button
                           type="button"
                           onClick={toggleFullscreen}
                           aria-label={isFullscreen ? 'Tam Ekrandan Çık (F)' : 'Tam Ekran (F)'}
-                          className="text-white/90 hover:text-white hover:scale-110 active:scale-95 transition-transform cursor-pointer p-1 shrink-0"
+                          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-200 group/fs text-white/90 hover:text-white cursor-pointer shrink-0"
                         >
-                          {isFullscreen ? (
-                            <Minimize className="w-5 h-5" />
-                          ) : (
-                            <Maximize className="w-5 h-5" />
-                          )}
+                          <div className="w-5 h-5 flex items-center justify-center group-hover/fs:scale-110 transition-transform duration-200 ease-out will-change-transform transform-gpu">
+                            {isFullscreen ? (
+                              <Minimize className="w-5 h-5" />
+                            ) : (
+                              <Maximize className="w-5 h-5" />
+                            )}
+                          </div>
                         </button>
                       </div>
                     </div>
@@ -4920,9 +4922,9 @@ export default function NetflixPlayer({
                   <button
                     type="button"
                     onClick={toggleFullscreen}
-                    className="p-1.5 text-white hover:scale-110 transition-transform cursor-pointer"
+                    className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-200 group/fsBack text-white cursor-pointer"
                   >
-                    <ArrowLeft className="w-6 h-6" />
+                    <ArrowLeft className="w-5 h-5 group-hover/fsBack:scale-110 transition-transform duration-200 ease-out will-change-transform transform-gpu" />
                   </button>
                   <span className="text-sm sm:text-base font-semibold text-white">
                     {episodeDisplayTitle}
@@ -4970,9 +4972,9 @@ export default function NetflixPlayer({
                   <button
                     type="button"
                     onClick={toggleFullscreen}
-                    className="p-1.5 text-white hover:scale-110 transition-transform cursor-pointer"
+                    className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-200 group/fsMin text-white cursor-pointer"
                   >
-                    <Minimize className="w-5 h-5" />
+                    <Minimize className="w-5 h-5 group-hover/fsMin:scale-110 transition-transform duration-200 ease-out will-change-transform transform-gpu" />
                   </button>
                 </div>
               </div>

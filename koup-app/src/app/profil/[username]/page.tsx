@@ -1661,11 +1661,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                         <div className="absolute inset-0 bg-gradient-to-r from-[#09090d]/85 via-[#09090d]/40 to-transparent pointer-events-none" />
 
                         {/* Top Badges */}
-                        <div className="relative z-10 flex items-center justify-between pointer-events-none">
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-[10px] font-mono font-semibold text-sky-300 shadow-sm">
-                            <FolderHeart className="w-3 h-3 text-sky-400" />
-                            <span>Özel Koleksiyon</span>
-                          </span>
+                        <div className="relative z-10 flex items-center justify-end pointer-events-none">
                           <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-[10px] font-mono text-white/80 shadow-sm">
                             {lst.count} Yapım
                           </span>

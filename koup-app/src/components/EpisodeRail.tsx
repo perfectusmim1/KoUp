@@ -157,7 +157,7 @@ const EpisodeRailRow = memo(function EpisodeRailRow({
                     <div className="w-12 h-1 bg-white/20 rounded-full overflow-hidden">
                       <div
                         style={{ width: `${epProg.percent}%` }}
-                        className="h-full bg-[#E50914]"
+                        className="h-full bg-sky-400"
                       />
                     </div>
                     <span className="text-[9px] font-mono text-white/50">
