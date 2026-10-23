@@ -40,6 +40,29 @@ function getMagCategoryColor(cat: string): string {
   }
 }
 
+function getMagCategoryActivePill(cat: string): { pill: string; text: string } {
+  switch (cat) {
+    case 'Dedikodu':
+      return { pill: 'bg-rose-500 shadow-[0_0_18px_rgba(244,63,94,0.45)]', text: 'text-white font-extrabold' };
+    case 'Kore':
+      return { pill: 'bg-emerald-500 shadow-[0_0_18px_rgba(16,185,129,0.45)]', text: 'text-black font-extrabold' };
+    case 'Çin':
+      return { pill: 'bg-orange-500 shadow-[0_0_18px_rgba(249,115,22,0.45)]', text: 'text-white font-extrabold' };
+    case 'Dizi':
+      return { pill: 'bg-sky-400 shadow-[0_0_18px_rgba(56,189,248,0.45)]', text: 'text-black font-extrabold' };
+    case 'Müzik':
+      return { pill: 'bg-purple-500 shadow-[0_0_18px_rgba(168,85,247,0.45)]', text: 'text-white font-extrabold' };
+    case 'Film':
+      return { pill: 'bg-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.45)]', text: 'text-black font-extrabold' };
+    case 'BL GL':
+      return { pill: 'bg-pink-500 shadow-[0_0_18px_rgba(236,72,153,0.45)]', text: 'text-white font-extrabold' };
+    case 'Tayland':
+      return { pill: 'bg-teal-400 shadow-[0_0_18px_rgba(45,212,191,0.45)]', text: 'text-black font-extrabold' };
+    default:
+      return { pill: 'bg-white shadow-[0_0_18px_rgba(255,255,255,0.35)]', text: 'text-black font-extrabold' };
+  }
+}
+
 const MAGAZINE_CATEGORIES = [
   'Tümü',
   'Dedikodu',
@@ -212,13 +235,14 @@ export default function MagazineHubPage() {
         <div className="flex flex-wrap items-center gap-2">
           {MAGAZINE_CATEGORIES.map((cat) => {
             const active = activeCategory === cat;
+            const style = getMagCategoryActivePill(cat);
             return (
               <button
                 key={cat}
                 onClick={() => setActiveCategory(cat)}
                 className={`relative flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-colors duration-200 cursor-pointer ${
                   active
-                    ? 'text-black'
+                    ? style.text
                     : 'glass-pill text-white/75 hover:text-white'
                 }`}
               >
@@ -227,7 +251,7 @@ export default function MagazineHubPage() {
                     layoutId="magazin-category-active-pill"
                     initial={false}
                     transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
-                    className="absolute inset-0 rounded-full bg-white shadow-[0_0_20px_rgba(255,255,255,0.4)]"
+                    className={`absolute inset-0 rounded-full ${style.pill}`}
                   />
                 )}
                 {cat === 'Dedikodu' && <Flame className="w-3.5 h-3.5 text-rose-400 relative z-10" />}

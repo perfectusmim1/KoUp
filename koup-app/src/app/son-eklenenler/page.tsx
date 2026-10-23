@@ -35,10 +35,34 @@ interface EpisodeItem {
 const PAGE_SIZE = 50;
 
 const TYPE_FILTERS = [
-  { id: 'ALL', label: 'Tümü', icon: LayoutGrid },
-  { id: 'dizi', label: 'Diziler', icon: Tv },
-  { id: 'anime', label: 'Animeler', icon: Flame },
-  { id: 'film', label: 'Filmler', icon: Film },
+  {
+    id: 'ALL',
+    label: 'Tümü',
+    icon: LayoutGrid,
+    activePillClass: 'bg-white shadow-[0_0_18px_rgba(255,255,255,0.35)]',
+    activeTextClass: 'text-black font-extrabold',
+  },
+  {
+    id: 'dizi',
+    label: 'Diziler',
+    icon: Tv,
+    activePillClass: 'bg-sky-400 shadow-[0_0_20px_rgba(56,189,248,0.45)]',
+    activeTextClass: 'text-black font-extrabold',
+  },
+  {
+    id: 'anime',
+    label: 'Animeler',
+    icon: Flame,
+    activePillClass: 'bg-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.45)]',
+    activeTextClass: 'text-white font-extrabold',
+  },
+  {
+    id: 'film',
+    label: 'Filmler',
+    icon: Film,
+    activePillClass: 'bg-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.45)]',
+    activeTextClass: 'text-black font-extrabold',
+  },
 ];
 
 function formatRelativeTime(dateStr?: string | null): string {
@@ -261,14 +285,14 @@ function RecentEpisodesContent() {
                   key={f.id}
                   onClick={() => handleTypeChange(f.id)}
                   className={`relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold cursor-pointer transition-colors duration-200 shrink-0 ${
-                    active ? 'text-black font-bold' : 'text-white/70 hover:text-white'
+                    active ? f.activeTextClass : 'text-white/70 hover:text-white'
                   }`}
                 >
                   {active && (
                     <motion.span
                       layoutId="recent-episodes-active-type"
                       transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                      className="absolute inset-0 rounded-xl bg-white shadow-[0_0_24px_rgba(255,255,255,0.4)]"
+                      className={`absolute inset-0 rounded-xl ${f.activePillClass}`}
                     />
                   )}
                   <Icon className="w-3.5 h-3.5 relative z-10" />

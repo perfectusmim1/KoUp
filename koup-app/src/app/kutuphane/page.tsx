@@ -382,10 +382,34 @@ export default function KutuphanePage() {
         {/* Content Type Filter */}
         <div className="flex items-center gap-1.5 p-1 rounded-full glass-pill-dark border border-white/10 shrink-0 mx-auto sm:mx-0">
           {[
-            { id: 'ALL' as const, label: 'Hepsi', icon: Compass },
-            { id: 'drama' as const, label: 'Dizi', icon: Tv },
-            { id: 'anime' as const, label: 'Anime', icon: Sparkles },
-            { id: 'movie' as const, label: 'Film', icon: Film },
+            {
+              id: 'ALL' as const,
+              label: 'Hepsi',
+              icon: Compass,
+              activePillClass: 'bg-white shadow-[0_0_18px_rgba(255,255,255,0.35)]',
+              activeTextClass: 'text-black font-extrabold',
+            },
+            {
+              id: 'drama' as const,
+              label: 'Dizi',
+              icon: Tv,
+              activePillClass: 'bg-sky-400 shadow-[0_0_20px_rgba(56,189,248,0.45)]',
+              activeTextClass: 'text-black font-extrabold',
+            },
+            {
+              id: 'anime' as const,
+              label: 'Anime',
+              icon: Sparkles,
+              activePillClass: 'bg-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.45)]',
+              activeTextClass: 'text-white font-extrabold',
+            },
+            {
+              id: 'movie' as const,
+              label: 'Film',
+              icon: Film,
+              activePillClass: 'bg-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.45)]',
+              activeTextClass: 'text-black font-extrabold',
+            },
           ].map((tp) => {
             const Icon = tp.icon;
             const active = activeType === tp.id;
@@ -399,7 +423,7 @@ export default function KutuphanePage() {
                 }}
                 className={`relative shrink-0 flex items-center gap-2 px-4 sm:px-5 py-2 rounded-full text-xs font-semibold transition-colors duration-200 cursor-pointer ${
                   active
-                    ? 'text-black font-extrabold'
+                    ? tp.activeTextClass
                     : 'text-white/70 hover:text-white'
                 }`}
               >
@@ -408,7 +432,7 @@ export default function KutuphanePage() {
                     layoutId="kutuphane-type-active-pill"
                     initial={false}
                     transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
-                    className="absolute inset-0 rounded-full bg-white shadow-[0_0_20px_rgba(255,255,255,0.4)]"
+                    className={`absolute inset-0 rounded-full ${tp.activePillClass}`}
                   />
                 )}
                 <Icon className="w-3.5 h-3.5 relative z-10" />

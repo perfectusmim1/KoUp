@@ -375,14 +375,14 @@ export default function FollowedPage() {
           <button
             onClick={() => handleTabChange('media')}
             className={`relative flex items-center gap-2 px-4 sm:px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-colors cursor-pointer duration-200 ${
-              activeTab === 'media' ? 'text-black' : 'text-white/60 hover:text-white'
+              activeTab === 'media' ? 'text-black font-extrabold' : 'text-white/60 hover:text-white'
             }`}
           >
             {activeTab === 'media' && (
               <motion.span
                 layoutId="takip-main-tab-pill"
                 transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                className="absolute inset-0 rounded-xl bg-white shadow-md"
+                className="absolute inset-0 rounded-xl bg-sky-400 shadow-[0_0_18px_rgba(56,189,248,0.4)]"
               />
             )}
             <Tv className="w-4 h-4 relative z-10" />
@@ -390,7 +390,7 @@ export default function FollowedPage() {
             <span
               className={`relative z-10 ml-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-extrabold ${
                 activeTab === 'media'
-                  ? 'bg-black/15 text-black'
+                  ? 'bg-black/20 text-black'
                   : 'bg-white/10 text-white/80'
               }`}
             >
@@ -401,14 +401,14 @@ export default function FollowedPage() {
           <button
             onClick={() => handleTabChange('people')}
             className={`relative flex items-center gap-2 px-4 sm:px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-colors cursor-pointer duration-200 ${
-              activeTab === 'people' ? 'text-black' : 'text-white/60 hover:text-white'
+              activeTab === 'people' ? 'text-black font-extrabold' : 'text-white/60 hover:text-white'
             }`}
           >
             {activeTab === 'people' && (
               <motion.span
                 layoutId="takip-main-tab-pill"
                 transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                className="absolute inset-0 rounded-xl bg-white shadow-md"
+                className="absolute inset-0 rounded-xl bg-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.4)]"
               />
             )}
             <Users className="w-4 h-4 relative z-10" />
@@ -416,7 +416,7 @@ export default function FollowedPage() {
             <span
               className={`relative z-10 ml-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-extrabold ${
                 activeTab === 'people'
-                  ? 'bg-black/15 text-black'
+                  ? 'bg-black/20 text-black'
                   : 'bg-white/10 text-white/80'
               }`}
             >
@@ -481,10 +481,30 @@ export default function FollowedPage() {
         {activeTab === 'media' ? (
           <>
             {[
-              { id: 'ALL' as const, label: `Tümü (${mediaItems.length})` },
-              { id: 'dizi' as const, label: 'Diziler' },
-              { id: 'anime' as const, label: 'Animeler' },
-              { id: 'film' as const, label: 'Filmler' },
+              {
+                id: 'ALL' as const,
+                label: `Tümü (${mediaItems.length})`,
+                activePillClass: 'bg-white shadow-[0_0_15px_rgba(255,255,255,0.35)]',
+                activeTextClass: 'text-black font-extrabold',
+              },
+              {
+                id: 'dizi' as const,
+                label: 'Diziler',
+                activePillClass: 'bg-sky-400 shadow-[0_0_18px_rgba(56,189,248,0.45)]',
+                activeTextClass: 'text-black font-extrabold',
+              },
+              {
+                id: 'anime' as const,
+                label: 'Animeler',
+                activePillClass: 'bg-purple-500 shadow-[0_0_18px_rgba(168,85,247,0.45)]',
+                activeTextClass: 'text-white font-extrabold',
+              },
+              {
+                id: 'film' as const,
+                label: 'Filmler',
+                activePillClass: 'bg-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
+                activeTextClass: 'text-black font-extrabold',
+              },
             ].map((flt) => {
               const active = mediaFilter === flt.id;
               return (
@@ -497,7 +517,7 @@ export default function FollowedPage() {
                   }}
                   className={`relative px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors duration-200 cursor-pointer shrink-0 ${
                     active
-                      ? 'text-black'
+                      ? flt.activeTextClass
                       : 'bg-white/[0.04] text-white/70 hover:text-white hover:bg-white/[0.08] border border-white/[0.06]'
                   }`}
                 >
@@ -505,7 +525,7 @@ export default function FollowedPage() {
                     <motion.span
                       layoutId="takip-subfilter-pill"
                       transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                      className="absolute inset-0 rounded-full bg-white shadow-md"
+                      className={`absolute inset-0 rounded-full ${flt.activePillClass}`}
                     />
                   )}
                   <span className="relative z-10">{flt.label}</span>
@@ -516,10 +536,30 @@ export default function FollowedPage() {
         ) : (
           <>
             {[
-              { id: 'ALL' as const, label: `Tümü (${peopleItems.length})` },
-              { id: 'actor' as const, label: 'Oyuncular' },
-              { id: 'character' as const, label: 'Karakterler' },
-              { id: 'seiyuu' as const, label: 'Seslendirmenler' },
+              {
+                id: 'ALL' as const,
+                label: `Tümü (${peopleItems.length})`,
+                activePillClass: 'bg-white shadow-[0_0_15px_rgba(255,255,255,0.35)]',
+                activeTextClass: 'text-black font-extrabold',
+              },
+              {
+                id: 'actor' as const,
+                label: 'Oyuncular',
+                activePillClass: 'bg-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.45)]',
+                activeTextClass: 'text-black font-extrabold',
+              },
+              {
+                id: 'character' as const,
+                label: 'Karakterler',
+                activePillClass: 'bg-purple-500 shadow-[0_0_18px_rgba(168,85,247,0.45)]',
+                activeTextClass: 'text-white font-extrabold',
+              },
+              {
+                id: 'seiyuu' as const,
+                label: 'Seslendirmenler',
+                activePillClass: 'bg-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
+                activeTextClass: 'text-black font-extrabold',
+              },
             ].map((flt) => {
               const active = personFilter === flt.id;
               return (
@@ -532,7 +572,7 @@ export default function FollowedPage() {
                   }}
                   className={`relative px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors duration-200 cursor-pointer shrink-0 ${
                     active
-                      ? 'text-black'
+                      ? flt.activeTextClass
                       : 'bg-white/[0.04] text-white/70 hover:text-white hover:bg-white/[0.08] border border-white/[0.06]'
                   }`}
                 >
@@ -540,7 +580,7 @@ export default function FollowedPage() {
                     <motion.span
                       layoutId="takip-subfilter-pill"
                       transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                      className="absolute inset-0 rounded-full bg-white shadow-md"
+                      className={`absolute inset-0 rounded-full ${flt.activePillClass}`}
                     />
                   )}
                   <span className="relative z-10">{flt.label}</span>

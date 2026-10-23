@@ -860,6 +860,8 @@ export default function SeriesDetailPage({
           <img
             src={backdropSrc}
             alt={media.title}
+            loading="eager"
+            decoding="async"
             onError={(e) => {
               const target = e.currentTarget;
               if (!target.dataset.triedPoster && posterSrc) {

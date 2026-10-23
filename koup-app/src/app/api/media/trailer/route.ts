@@ -543,7 +543,18 @@ export async function GET(req: NextRequest) {
         shouldPatch = true;
       }
       if (shouldPatch) {
-        supabaseAdmin.rpc('patch_media_metadata', patch).then(() => {});
+        Promise.resolve(supabaseAdmin.rpc('patch_media_metadata', patch))
+          .then(({ error }) => {
+            if (error) {
+              const fallback: Record<string, any> = { updated_at: new Date().toISOString() };
+              if (patch.p_backdrop_image) fallback.backdrop_image = patch.p_backdrop_image;
+              if (patch.p_tmdb_id) fallback.tmdb_id = patch.p_tmdb_id;
+              if (patch.p_imdb_id) fallback.imdb_id = patch.p_imdb_id;
+              if (patch.p_imdb_rating) fallback.imdb_rating = patch.p_imdb_rating;
+              return supabaseAdmin.from('media').update(fallback).eq('id', media.id);
+            }
+          })
+          .catch(() => {});
       }
     }
 

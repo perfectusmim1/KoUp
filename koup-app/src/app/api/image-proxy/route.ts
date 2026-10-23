@@ -5,6 +5,8 @@ import { supabaseAdmin } from '@/lib/supabase';
 const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB max to prevent memory exhaustion
 
 const SCRAPER_BLOCK_HOSTS = [
+  'webdrama',
+  'macellan',
   'hdfilmcehennemi',
   'dizifon',
   'dizikorea',
@@ -358,6 +360,13 @@ function isTitleMatch(expectedTitle?: string | null, candidateTitle?: string | n
 
   if (cleanCand === cleanExp) return true;
 
+  // Check matching without trailing season numbers
+  const expNoSeason = cleanExp.replace(/\s+(?:season|sezon|\d+)$/gi, '').trim();
+  const candNoSeason = cleanCand.replace(/\s+(?:season|sezon|\d+)$/gi, '').trim();
+  if (expNoSeason && candNoSeason && expNoSeason === candNoSeason) {
+    return true;
+  }
+
   const expWords = cleanExp.split(/\s+/).filter(Boolean);
   const candWords = cleanCand.split(/\s+/).filter(Boolean);
 
@@ -504,16 +513,27 @@ async function fetchTmdbPosterForTitle(
   const queries: string[] = [];
   function addQuery(q?: string | null) {
     if (!q) return;
-    const trimmed = q
-      .replace(/²/g, '2')
-      .replace(/³/g, '3')
-      .trim();
-    if (trimmed.length >= 2 && !queries.includes(trimmed)) {
-      queries.push(trimmed);
-    }
-    const ascii = transliterateTrToAscii(trimmed);
-    if (ascii.length >= 2 && !queries.includes(ascii)) {
-      queries.push(ascii);
+    const parts = q.split(/[/|,;()]+/).map((s) => s.trim()).filter(Boolean);
+    for (const part of (parts.length > 1 ? [q, ...parts] : [q])) {
+      const trimmed = part
+        .replace(/²/g, '2')
+        .replace(/³/g, '3')
+        .trim();
+      if (trimmed.length >= 2 && !queries.includes(trimmed)) {
+        queries.push(trimmed);
+      }
+      const ascii = transliterateTrToAscii(trimmed);
+      if (ascii.length >= 2 && !queries.includes(ascii)) {
+        queries.push(ascii);
+      }
+      const noSeason = trimmed.replace(/\s+(?:season|sezon|\d+\.?\s*(?:sezon|season)|\d+)$/gi, '').trim();
+      if (noSeason && noSeason.length >= 2 && !queries.includes(noSeason)) {
+        queries.push(noSeason);
+        const noSeasonAscii = transliterateTrToAscii(noSeason);
+        if (noSeasonAscii.length >= 2 && !queries.includes(noSeasonAscii)) {
+          queries.push(noSeasonAscii);
+        }
+      }
     }
   }
 
@@ -867,6 +887,18 @@ export async function GET(req: NextRequest) {
           if (streamed) return streamed;
         }
       }
+    }
+
+    // 3.9. Last-Resort Real Image Fallback: If TMDB search yielded nothing, try streaming targetUrl or fallbackUrl directly!
+    const candidatesToFetch = [targetUrl, fallbackUrl].filter(
+      (u): u is string => !!u && (u.startsWith('http://') || u.startsWith('https://'))
+    );
+    for (const rawUrl of candidatesToFetch) {
+      if (rawUrl.includes('cdn.webdrama.io')) continue; // Skip dead domain
+      try {
+        const streamed = await fetchAndStreamImage(rawUrl, sizeParam);
+        if (streamed) return streamed;
+      } catch {}
     }
 
     // 4. Default Fallback

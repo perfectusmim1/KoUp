@@ -276,15 +276,32 @@ export async function GET(req: NextRequest) {
     const searchQueries: string[] = [];
     function addSearchQuery(t?: string | null) {
       if (!t) return;
-      const clean = t
-        .replace(/\(\d{4}\)/g, '')
-        .replace(/\b(izle|turkce|altyazili|dizi|film|hd|full)\b/gi, '')
-        .replace(/²/g, '2')
-        .replace(/³/g, '3')
-        .trim();
-      if (clean && clean.length >= 2 && !searchQueries.includes(clean)) {
-        searchQueries.push(clean);
+      const subparts = t.split(/[/|,;()]+/).map((s) => s.trim()).filter(Boolean);
+      for (const part of subparts.length > 1 ? [t, ...subparts] : [t]) {
+        const clean = part
+          .replace(/\(\d{4}\)/g, '')
+          .replace(/\b(izle|turkce|altyazili|dizi|film|hd|full)\b/gi, '')
+          .replace(/²/g, '2')
+          .replace(/³/g, '3')
+          .trim();
+        if (clean && clean.length >= 2 && !searchQueries.includes(clean)) {
+          searchQueries.push(clean);
+        }
+        // Strip trailing season numbers (e.g. "Heart Signal 4" -> "Heart Signal", "Voice 4" -> "Voice")
+        const stripped = clean.replace(/\s+(?:season|sezon|\d+\.?\s*(?:sezon|season)|\d+)$/gi, '').trim();
+        if (stripped && stripped.length >= 2 && !searchQueries.includes(stripped)) {
+          searchQueries.push(stripped);
+        }
       }
+    }
+
+    // Detect target season number from title or slug (e.g. "Heart Signal 4" -> 4)
+    let targetSeasonNum: number | null = null;
+    const seasonRawMatch =
+      (media.title || '').match(/(?:season|sezon|\s)\s*(\d+)$/i) ||
+      (media.slug || '').match(/(?:season|sezon|-)?(\d+)$/i);
+    if (seasonRawMatch && parseInt(seasonRawMatch[1], 10) > 0 && parseInt(seasonRawMatch[1], 10) <= 50) {
+      targetSeasonNum = parseInt(seasonRawMatch[1], 10);
     }
 
     if (media.native_title) addSearchQuery(media.native_title);
@@ -529,9 +546,24 @@ export async function GET(req: NextRequest) {
         patch.p_backdrop_image = `https://image.tmdb.org/t/p/w1280${tmdbHit.backdrop_path}`;
       }
 
-      // Cover Poster Image — replace low-res/landscape scraped covers with official 2:3 TMDB poster!
-      if (!isOfficialHighResCover && tmdbHit.poster_path) {
-        patch.p_cover_image = `https://image.tmdb.org/t/p/w780${tmdbHit.poster_path}`;
+      // Cover Poster Image — check for season-specific poster first if this is a multi-season show!
+      let resolvedPosterPath = tmdbHit.poster_path;
+      if (tmdbType === 'tv' && targetSeasonNum) {
+        try {
+          const showDetUrl = `https://api.themoviedb.org/3/tv/${tmdbHit.id}?api_key=${TMDB_API_KEY}&language=tr-TR`;
+          const showResp = await fetch(showDetUrl, { signal: AbortSignal.timeout(3500) });
+          if (showResp.ok) {
+            const showData = await showResp.json();
+            const sObj = (showData.seasons || []).find((s: any) => s.season_number === targetSeasonNum);
+            if (sObj?.poster_path) {
+              resolvedPosterPath = sObj.poster_path;
+            }
+          }
+        } catch {}
+      }
+
+      if (!isOfficialHighResCover && resolvedPosterPath) {
+        patch.p_cover_image = `https://image.tmdb.org/t/p/w780${resolvedPosterPath}`;
       }
 
       // Fetch external IDs (IMDb ID) from TMDB
@@ -589,10 +621,47 @@ export async function GET(req: NextRequest) {
       patch.p_overview = `${media.title}; ${yearStr}${catStr}${typeStr} yapımıdır.`;
     }
 
-    // 5. Apply to Supabase DB via patch_media_metadata RPC
-    const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc('patch_media_metadata', patch);
-    if (rpcErr) {
-      return NextResponse.json({ error: rpcErr.message, patch }, { status: 500 });
+    // 5. Apply to Supabase DB via patch_media_metadata RPC with defensive direct fallback
+    let rpcSuccess = false;
+    try {
+      const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc('patch_media_metadata', patch);
+      if (!rpcErr) {
+        rpcSuccess = true;
+      }
+    } catch {}
+
+    if (!rpcSuccess) {
+      // Direct defensive fallback update to Supabase
+      const directUpdate: Record<string, any> = { updated_at: new Date().toISOString() };
+      if (patch.p_overview && patch.p_overview.length > 20) directUpdate.overview = patch.p_overview;
+      if (patch.p_tmdb_id) directUpdate.tmdb_id = patch.p_tmdb_id;
+      if (patch.p_imdb_id) directUpdate.imdb_id = patch.p_imdb_id;
+      if (patch.p_imdb_rating) directUpdate.imdb_rating = patch.p_imdb_rating;
+      if (patch.p_mdl_id) {
+        if (patch.p_mdl_id === '__CLEAR__') {
+          directUpdate.mdl_id = null;
+          directUpdate.mydramalist_url = null;
+        } else {
+          directUpdate.mdl_id = patch.p_mdl_id;
+          directUpdate.mydramalist_url = `https://mydramalist.com/${patch.p_mdl_id}`;
+        }
+      }
+      if (patch.p_mdl_rating) directUpdate.mdl_rating = patch.p_mdl_rating;
+      if (patch.p_anilist_id) directUpdate.anilist_id = patch.p_anilist_id;
+      if (patch.p_anilist_rating) directUpdate.anilist_rating = patch.p_anilist_rating;
+      if (patch.p_anilist_url) directUpdate.anilist_url = patch.p_anilist_url;
+      if (patch.p_cover_image) {
+        directUpdate.cover_image = patch.p_cover_image;
+        directUpdate.poster_fallback_url = patch.p_cover_image;
+      }
+      if (patch.p_backdrop_image) directUpdate.backdrop_image = patch.p_backdrop_image;
+      if (patch.p_country_code) directUpdate.country_code = patch.p_country_code;
+      if (patch.p_country_name) directUpdate.country_name = patch.p_country_name;
+      if (patch.p_release_year) directUpdate.release_year = patch.p_release_year;
+      if (patch.p_title_tr) directUpdate.title_tr = patch.p_title_tr;
+      if (patch.p_native_title) directUpdate.native_title = patch.p_native_title;
+
+      await supabaseAdmin.from('media').update(directUpdate).eq('id', media.id);
     }
 
     // 6. Also persist directly to local SQLite archive for instant offline/local speed
@@ -601,14 +670,20 @@ export async function GET(req: NextRequest) {
         db.prepare(`
           UPDATE dramas
           SET cover_image = COALESCE(?, cover_image),
+              backdrop_image = COALESCE(?, backdrop_image),
               overview = COALESCE(?, overview),
               imdb_id = COALESCE(?, imdb_id),
+              tmdb_id = COALESCE(?, tmdb_id),
+              imdb_rating = COALESCE(?, imdb_rating),
               updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
         `).run(
           patch.p_cover_image || null,
+          patch.p_backdrop_image || null,
           patch.p_overview || null,
           patch.p_imdb_id || null,
+          patch.p_tmdb_id || null,
+          patch.p_imdb_rating || null,
           media.id
         );
       } catch {}

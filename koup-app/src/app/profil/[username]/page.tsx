@@ -712,23 +712,43 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
     id: ProfileTab;
     label: string;
     icon: React.ComponentType<{ className?: string }>;
+    activePillClass: string;
+    activeTextClass: string;
   }> = [
-    { id: 'overview', label: 'Genel Bakış & Drama DNA', icon: BarChart3 },
+    {
+      id: 'overview',
+      label: 'Genel Bakış & Drama DNA',
+      icon: BarChart3,
+      activePillClass: 'bg-sky-400 shadow-[0_0_18px_rgba(56,189,248,0.45)]',
+      activeTextClass: 'text-black font-extrabold',
+    },
     {
       id: 'library',
       label: !isOwner && hideLibrary ? 'Kütüphane (Gizli)' : `Kütüphane (${watchedMedia.length})`,
       icon: !isOwner && hideLibrary ? Lock : Library,
+      activePillClass: 'bg-emerald-500 shadow-[0_0_18px_rgba(16,185,129,0.45)]',
+      activeTextClass: 'text-black font-extrabold',
     },
     {
       id: 'history',
       label: !isOwner && hideHistory ? 'İzleme Geçmişi (Gizli)' : `İzleme Geçmişi (${activeWatchingList.length})`,
       icon: !isOwner && hideHistory ? Lock : Clock,
+      activePillClass: 'bg-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
+      activeTextClass: 'text-black font-extrabold',
     },
-    { id: 'lists', label: `Özel Listeler (${customLists.length})`, icon: FolderHeart },
+    {
+      id: 'lists',
+      label: `Özel Listeler (${customLists.length})`,
+      icon: FolderHeart,
+      activePillClass: 'bg-rose-500 shadow-[0_0_18px_rgba(244,63,94,0.45)]',
+      activeTextClass: 'text-white font-extrabold',
+    },
     {
       id: 'comments',
       label: !isOwner && hideComments ? 'Yorumlar (Gizli)' : `Yorumlar (${profileComments.length})`,
       icon: !isOwner && hideComments ? Lock : MessageSquare,
+      activePillClass: 'bg-purple-500 shadow-[0_0_18px_rgba(168,85,247,0.45)]',
+      activeTextClass: 'text-white font-extrabold',
     },
   ];
 
@@ -975,14 +995,14 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                     key={t.id}
                     onClick={() => switchTab(t.id)}
                     className={`relative flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
-                      active ? 'text-black' : 'bg-white/[0.08] border border-white/10 text-white/80 hover:text-white hover:bg-white/12'
+                      active ? t.activeTextClass : 'bg-white/[0.08] border border-white/10 text-white/80 hover:text-white hover:bg-white/12'
                     }`}
                   >
                     {active && (
                       <motion.span
                         layoutId="profile-active-tab-pill"
                         transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                        className="absolute inset-0 rounded-full bg-white shadow-[0_0_20px_rgba(255,255,255,0.35)]"
+                        className={`absolute inset-0 rounded-full ${t.activePillClass}`}
                       />
                     )}
                     <Icon className="w-3.5 h-3.5 relative z-10" />

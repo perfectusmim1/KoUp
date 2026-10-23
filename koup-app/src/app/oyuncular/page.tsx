@@ -25,10 +25,34 @@ import Pagination from '@/components/Pagination';
 
 
 const PERSON_TABS = [
-  { id: 'all', label: 'Tüm Yıldızlar & Karakterler', icon: Sparkles },
-  { id: 'actor', label: 'Dizi & Sinema Oyuncuları (MDL)', icon: Clapperboard },
-  { id: 'character', label: 'Anime Karakterleri (AniList)', icon: UserCheck },
-  { id: 'seiyuu', label: 'Seslendirmenler (Seiyuu)', icon: Mic },
+  {
+    id: 'all',
+    label: 'Tüm Yıldızlar & Karakterler',
+    icon: Sparkles,
+    activePillClass: 'bg-white shadow-[0_0_18px_rgba(255,255,255,0.35)]',
+    activeTextClass: 'text-black font-extrabold',
+  },
+  {
+    id: 'actor',
+    label: 'Dizi & Sinema Oyuncuları (MDL)',
+    icon: Clapperboard,
+    activePillClass: 'bg-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.45)]',
+    activeTextClass: 'text-black font-extrabold',
+  },
+  {
+    id: 'character',
+    label: 'Anime Karakterleri (AniList)',
+    icon: UserCheck,
+    activePillClass: 'bg-purple-500 shadow-[0_0_18px_rgba(168,85,247,0.45)]',
+    activeTextClass: 'text-white font-extrabold',
+  },
+  {
+    id: 'seiyuu',
+    label: 'Seslendirmenler (Seiyuu)',
+    icon: Mic,
+    activePillClass: 'bg-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
+    activeTextClass: 'text-black font-extrabold',
+  },
 ] as const;
 
 export default function ActorsLeaderboardPage() {
@@ -161,7 +185,7 @@ export default function ActorsLeaderboardPage() {
                 setCurrentPage(1);
               }}
               className={`relative flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition-colors duration-200 cursor-pointer ${
-                active ? 'text-black' : 'glass-pill text-white/75 hover:text-white'
+                active ? tab.activeTextClass : 'glass-pill text-white/75 hover:text-white'
               }`}
             >
               {active && (
@@ -169,7 +193,7 @@ export default function ActorsLeaderboardPage() {
                   layoutId="oyuncular-tab-active-pill"
                   initial={false}
                   transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
-                  className="absolute inset-0 rounded-full bg-white shadow-[0_0_24px_rgba(255,255,255,0.4)]"
+                  className={`absolute inset-0 rounded-full ${tab.activePillClass}`}
                 />
               )}
               <Icon className="w-3.5 h-3.5 relative z-10" />

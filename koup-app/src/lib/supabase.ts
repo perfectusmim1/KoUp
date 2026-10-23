@@ -434,6 +434,8 @@ function isLikelyUrl(val?: string | null): boolean {
 }
 
 const SCRAPER_BLOCK_HOSTS = [
+  'webdrama',
+  'macellan',
   'hdfilmcehennemi',
   'dizifon',
   'dizikorea',
