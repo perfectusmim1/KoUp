@@ -185,7 +185,7 @@ const NetflixEpisodeRow = memo(function NetflixEpisodeRow({
                 <div className="w-8 sm:w-12 h-1 bg-white/20 rounded-full overflow-hidden">
                   <div
                     style={{ width: `${epProgressPct}%` }}
-                    className={`h-full ${isEpWatched ? 'bg-emerald-400' : 'bg-sky-400'}`}
+                    className={`h-full ${isEpWatched ? 'bg-emerald-400' : 'bg-[#E50914]'}`}
                   />
                 </div>
               </div>
@@ -243,7 +243,7 @@ const NetflixEpisodeRow = memo(function NetflixEpisodeRow({
               <div className="absolute bottom-0 inset-x-0 h-1 bg-white/25">
                 <div
                   style={{ width: `${epProgressPct}%` }}
-                  className={`h-full ${isEpWatched ? 'bg-emerald-400' : 'bg-sky-400'}`}
+                  className={`h-full ${isEpWatched ? 'bg-emerald-400' : 'bg-[#E50914]'}`}
                 />
               </div>
             )}
@@ -257,7 +257,7 @@ const NetflixEpisodeRow = memo(function NetflixEpisodeRow({
             </div>
             <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
               <span className="inline-flex items-center gap-1 text-white/55">
-                <Eye className="w-3 h-3 text-sky-400 shrink-0" />
+                <Eye className="w-3 h-3 text-red-500 shrink-0" />
                 <span>{formatViewCount(ep.views_count || 0)}</span>
               </span>
               {epRemainingLabel && (
@@ -321,7 +321,7 @@ const NetflixEpisodeRow = memo(function NetflixEpisodeRow({
             <div className="w-10 sm:w-12 h-1 bg-white/20 rounded-full overflow-hidden">
               <div
                 style={{ width: `${epProgressPct}%` }}
-                className={`h-full ${isEpWatched ? 'bg-emerald-400' : 'bg-sky-400'}`}
+                className={`h-full ${isEpWatched ? 'bg-emerald-400' : 'bg-[#E50914]'}`}
               />
             </div>
           </div>

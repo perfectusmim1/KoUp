@@ -22,7 +22,7 @@ def classify_stream_type(provider: str, direct_url: str) -> str:
     p = (provider or "").lower()
     u = (direct_url or "").lower()
     if (
-        p in ("diziyou-hls", "hdfilm-hls", "asyawatch", "dizilla", "dbx", "dizibox", "morencius", "ev", "filemoon", "byse", "gdriveplayer", "gdplayer", "upns", "streamwish", "vidhide", "streamruby", "dzen")
+        p in ("diziyou-hls", "hdfilm-hls", "hdfilm-close", "close", "rapidrame", "asyawatch", "dizilla", "dbx", "dizibox", "morencius", "ev", "filemoon", "byse", "gdriveplayer", "gdplayer", "upns", "streamwish", "vidhide", "streamruby", "dzen")
         or "pichive" in u
         or "dplayer" in u
         or "hotlinger" in u
@@ -41,6 +41,10 @@ def classify_stream_type(provider: str, direct_url: str) -> str:
         or "dzen.ru" in u
         or "luluvdo" in u
         or "lulustream" in u
+        or "playmix.uno" in u
+        or "rapidrame" in u
+        or "/rplayer/" in u
+        or "hdfilmcehennemi.mobi/video/embed/" in u
         or ".m3u8" in u
         or "master.txt" in u
     ):

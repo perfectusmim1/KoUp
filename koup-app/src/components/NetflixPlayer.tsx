@@ -2525,9 +2525,8 @@ export default function NetflixPlayer({
         videoRef.current.muted = nextVol === 0;
       }
       triggerHudToast(`Ses: %${Math.round(nextVol * 100)}`);
-      revealControls();
     },
-    [isMuted, volume, isTrailerMode, sendTrailerYtCommand, triggerHudToast, revealControls]
+    [isMuted, volume, isTrailerMode, sendTrailerYtCommand, triggerHudToast]
   );
 
   const toggleMute = useCallback(() => {
@@ -2561,8 +2560,7 @@ export default function NetflixPlayer({
     }
     const currentToastVol = nextMute ? 0 : (savedVolumeRef.current || volume || 0.5);
     triggerHudToast(nextMute ? 'Ses Kapatıldı' : `Ses: %${Math.round(currentToastVol * 100)}`);
-    revealControls();
-  }, [isMuted, volume, isTrailerMode, setTrailerMuted, sendTrailerYtCommand, triggerHudToast, revealControls]);
+  }, [isMuted, volume, isTrailerMode, setTrailerMuted, sendTrailerYtCommand, triggerHudToast]);
 
   // Complete Keyboard Shortcuts (Space/K, ArrowLeft/J, ArrowRight, ArrowUp/Down, M, F, N, S, E, L, 0-9, Esc)
   useEffect(() => {
@@ -2570,7 +2568,10 @@ export default function NetflixPlayer({
       const targetEl = e.target as HTMLElement | null;
       if (
         targetEl &&
-        (targetEl.closest('input:not([type="range"]), textarea, select, [contenteditable="true"], [role="textbox"], form') ||
+        ((targetEl.closest &&
+          targetEl.closest(
+            'input:not([type="range"]), textarea, select, [contenteditable="true"], [role="textbox"], form'
+          )) ||
           targetEl.isContentEditable ||
           ['TEXTAREA', 'SELECT'].includes(targetEl.tagName) ||
           (targetEl.tagName === 'INPUT' && (targetEl as HTMLInputElement).type !== 'range'))
@@ -4039,7 +4040,7 @@ export default function NetflixPlayer({
                             }
                             aria-label={`Oynatma Hızı (${playbackRate}x)`}
                             className={`flex items-center gap-1 py-1 text-xs font-medium cursor-pointer shrink-0 ${
-                              activePanel === 'speed' ? 'text-sky-400 font-bold' : 'text-white/90'
+                              activePanel === 'speed' ? 'text-[#E50914] font-bold' : 'text-white/90'
                             }`}
                           >
                             <NetflixSpeedIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -4057,7 +4058,7 @@ export default function NetflixPlayer({
                               aria-label="Bölümler"
                               className={`flex items-center gap-1 py-1 text-xs font-medium cursor-pointer shrink-0 ${
                                 activePanel === 'episodes'
-                                  ? 'text-sky-400 font-bold'
+                                  ? 'text-[#E50914] font-bold'
                                   : 'text-white/90'
                               }`}
                             >
@@ -4242,23 +4243,23 @@ export default function NetflixPlayer({
                                 if (isDraggingVolumeRef.current) return;
                                 volumeHideTimerRef.current = setTimeout(() => {
                                   if (!isDraggingVolumeRef.current) setShowVolumeSlider(false);
-                                }, 350);
+                                }, 150);
                               }}
                               onWheel={(e) => {
                                 e.preventDefault();
                                 adjustVolume(e.deltaY < 0 ? 0.05 : -0.05);
                               }}
                             >
-                              {/* Speaker Icon Button: Sized and animated identically to Fullscreen */}
+                              {/* Speaker Icon Button: Sized and animated identically to Fullscreen & Cast (stable bounding box, zero jitter) */}
                               <button
                                 type="button"
                                 onClick={toggleMute}
                                 aria-label={isMuted ? 'Sesi Aç (M)' : 'Sesi Kapat (M)'}
-                                className="text-white/90 hover:text-white hover:scale-110 active:scale-95 transition-transform cursor-pointer p-1 shrink-0"
+                                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-200 group/vol cursor-pointer shrink-0 text-white/90 hover:text-white"
                               >
                                 <svg
                                   viewBox="0 0 24 24"
-                                  className="w-5 h-5 shrink-0"
+                                  className="w-5 h-5 shrink-0 group-hover/vol:scale-110 transition-transform duration-200 ease-out will-change-transform transform-gpu"
                                   fill="none"
                                 >
                                   {/* Solid white speaker cone */}
@@ -4303,7 +4304,7 @@ export default function NetflixPlayer({
 
                               {/* Horizontal Slider Track: smoothly expands to the right without displacing the speaker button */}
                               <div
-                                className={`overflow-hidden transition-[max-width,opacity] duration-200 ease-out flex items-center ${
+                                className={`overflow-hidden transition-[max-width,opacity] duration-150 ease-out flex items-center ${
                                   open ? 'max-w-[88px] opacity-100 pl-1.5 pr-1' : 'max-w-0 opacity-0 pointer-events-none pl-0 pr-0'
                                 }`}
                               >
@@ -4381,7 +4382,7 @@ export default function NetflixPlayer({
                             aria-label="Oynatma Hızı"
                             className={`flex items-center gap-1.5 py-1 text-xs font-medium transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap [text-shadow:0_1px_3px_rgba(0,0,0,0.9)] ${
                               activePanel === 'speed'
-                                ? 'text-sky-400 font-bold'
+                                ? 'text-[#E50914] font-bold'
                                 : 'text-white/90 hover:text-white'
                             }`}
                           >
@@ -4406,7 +4407,7 @@ export default function NetflixPlayer({
                                   aria-label="Bölümler (E)"
                                   className={`flex items-center gap-1.5 py-1 text-sm font-medium transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap ${
                                     activePanel === 'episodes'
-                                      ? 'text-sky-400 font-bold'
+                                      ? 'text-[#E50914] font-bold'
                                       : 'text-white/90 hover:text-white'
                                   }`}
                                 >
