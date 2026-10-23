@@ -177,7 +177,23 @@ export async function GET(req: NextRequest) {
         if (pByName) existingPerson = pByName;
       }
 
-      // 4. By slug prefix (e.g. legacy MDL slug "kim-ji-won-56" -> matches "kim-ji-won-%")
+      // 4. By word pattern (handles spacing/hyphen variations)
+      if (!existingPerson) {
+        const words = actor.name.split(/[\s\-_]+/).filter((w: string) => w.length >= 2);
+        if (words.length >= 2) {
+          const pattern = words.join('%');
+          const { data: pByPattern } = await supabaseAdmin
+            .from('people')
+            .select('*')
+            .ilike('name', `%${pattern}%`)
+            .order('drama_count', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (pByPattern) existingPerson = pByPattern;
+        }
+      }
+
+      // 5. By slug prefix (e.g. legacy MDL slug "kim-ji-won-56" -> matches "kim-ji-won-%")
       if (!existingPerson) {
         const { data: pBySlugPrefix } = await supabaseAdmin
           .from('people')
@@ -198,9 +214,16 @@ export async function GET(req: NextRequest) {
         if (!existingPerson.image_url && actor.profile_url) {
           updates.image_url = actor.profile_url;
         }
-        // Upgrade legacy numbered slug e.g. "kim-ji-won-56" to clean "kim-ji-won" if available
+        // Upgrade legacy numbered slug e.g. "kim-ji-won-56" to clean "kim-ji-won" if available and not taken
         if (/-\d+$/.test(existingPerson.slug) && existingPerson.slug !== personSlug) {
-          updates.slug = personSlug;
+          const { data: slugTaken } = await supabaseAdmin
+            .from('people')
+            .select('id')
+            .eq('slug', personSlug)
+            .maybeSingle();
+          if (!slugTaken) {
+            updates.slug = personSlug;
+          }
         }
         if (Object.keys(updates).length > 0) {
           await supabaseAdmin.from('people').update(updates).eq('id', personId);

@@ -160,6 +160,9 @@ def main():
                             people_by_tmdb[np['tmdb_id']] = np['id']
                         if np.get('slug'):
                             people_by_slug[np['slug']] = np['id']
+                        if np.get('name'):
+                            norm_n = re.sub(r'[^a-zA-Z0-9]', '', np['name'].lower())
+                            people_by_norm_name[norm_n] = np['id']
                             
             # Assign resolved person_ids
             media_cast_batch = []
@@ -182,10 +185,12 @@ def main():
                     })
                     
             if media_cast_batch:
-                # Delete existing cast for this media
-                requests.delete(f"{SUPABASE_URL}/rest/v1/media_cast?media_id=eq.{mid}", headers=HEADERS)
-                # Bulk insert new sorted cast
-                requests.post(f"{SUPABASE_URL}/rest/v1/media_cast", json=media_cast_batch, headers=HEADERS)
+                # Upsert media_cast without wiping existing cast
+                requests.post(
+                    f"{SUPABASE_URL}/rest/v1/media_cast?on_conflict=media_id,person_id",
+                    json=media_cast_batch,
+                    headers={**HEADERS, 'Prefer': 'resolution=merge-duplicates'}
+                )
                 
                 leads = [x['character_name'] or 'Başrol' for x in media_cast_batch if x['role_type'] == 'lead']
                 print(f"[BAŞARILI] {title} (#{mid}): {len(media_cast_batch)} oyuncu (Başroller: {len(leads)} adet)", flush=True)

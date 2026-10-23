@@ -224,37 +224,48 @@ export default function PersonDetailPage({
     async function loadPerson() {
       setIsLoading(true);
       const decoded = decodeURIComponent(slug);
+      const cleanSlug = decoded.replace(/-\d+$/, '').trim().toLowerCase();
 
       try {
         const bundle = await cachedQuery<PersonBundle>(
-          `person_${decoded}`,
+          `person_v6_${cleanSlug}`,
           60_000, // 1 minute TTL for instant hydration + fresh actor sync
           async () => {
             let { data: pData } = await supabase
               .from('people')
               .select('*')
               .eq('slug', decoded)
-              .single();
+              .maybeSingle();
+
+            if (!pData && cleanSlug !== decoded) {
+              const byClean = await supabase
+                .from('people')
+                .select('*')
+                .eq('slug', cleanSlug)
+                .maybeSingle();
+              pData = byClean.data;
+            }
 
             if (!pData && !Number.isNaN(Number(decoded))) {
               const byId = await supabase
                 .from('people')
                 .select('*')
                 .eq('id', Number(decoded))
-                .single();
+                .maybeSingle();
               pData = byId.data;
             }
 
-            // Fallback for legacy numbered slugs (e.g. "kim-ji-won-56" -> "kim-ji-won")
-            if (!pData && /-\d+$/.test(decoded)) {
-              const cleanSlug = decoded.replace(/-\d+$/, '');
-              const byClean = await supabase
+            // Universal name fallback
+            if (!pData) {
+              const nameGuess = cleanSlug.replace(/-/g, ' ');
+              const byName = await supabase
                 .from('people')
                 .select('*')
-                .eq('slug', cleanSlug)
-                .single();
-              if (byClean.data) {
-                pData = byClean.data;
+                .ilike('name', nameGuess)
+                .limit(1)
+                .maybeSingle();
+              if (byName.data) {
+                pData = byName.data;
               }
             }
 

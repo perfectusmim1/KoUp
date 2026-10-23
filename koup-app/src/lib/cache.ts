@@ -25,7 +25,7 @@ const inFlightRequests = new Map<string, Promise<any>>();
 const mediaBySlug = new Map<string, any>();
 const mediaById = new Map<number, any>();
 
-const STORAGE_PREFIX = 'koup_cache_v5_';
+const STORAGE_PREFIX = 'koup_cache_v6_';
 let hasPurgedLegacyStorage = false;
 
 function isBrowser(): boolean {
