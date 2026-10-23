@@ -31,6 +31,7 @@ interface ListDetail {
   title: string;
   description: string | null;
   cover_image_url?: string | null;
+  backdrop_image_url?: string | null;
   visibility: string;
   likes_count: number;
   follower_count: number;
@@ -86,6 +87,7 @@ export default function ListDetailPage({
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editCoverUrl, setEditCoverUrl] = useState('');
+  const [editBackdropUrl, setEditBackdropUrl] = useState('');
   const [editVisibility, setEditVisibility] = useState<'public' | 'private'>('public');
 
   const isOwner = Boolean(user?.id && list?.creator?.id && user.id === list.creator.id);
@@ -106,6 +108,7 @@ export default function ListDetailPage({
           setEditTitle(data.list.title || '');
           setEditDesc(data.list.description || '');
           setEditCoverUrl(data.list.cover_image_url || '');
+          setEditBackdropUrl(data.list.backdrop_image_url || '');
           setEditVisibility(data.list.visibility === 'private' ? 'private' : 'public');
         } else {
           setList(null);
@@ -461,6 +464,7 @@ export default function ListDetailPage({
           title: editTitle.trim(),
           description: editDesc.trim() || null,
           cover_image_url: editCoverUrl.trim() || null,
+          backdrop_image_url: editBackdropUrl.trim() || null,
           visibility: editVisibility,
           user_id: user?.id,
         }),
@@ -475,6 +479,7 @@ export default function ListDetailPage({
                 title: editTitle,
                 description: editDesc,
                 cover_image_url: editCoverUrl.trim() || null,
+                backdrop_image_url: editBackdropUrl.trim() || null,
                 visibility: editVisibility,
               }
             : prev
@@ -547,9 +552,24 @@ export default function ListDetailPage({
   }
 
   return (
-    <div className="pt-36 sm:pt-40 pb-24 max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 space-y-8">
+    <div className="pt-36 sm:pt-40 pb-24 max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 space-y-8 relative">
+      {/* Full-Page Immersive Ambient Backdrop Glow */}
+      {(list.backdrop_image_url || list.cover_image_url) && (
+        <div className="fixed top-0 left-0 right-0 h-[620px] pointer-events-none overflow-hidden z-0">
+          <img
+            src={getProxiedImageUrl(
+              list.backdrop_image_url || list.cover_image_url || '',
+              list.title
+            )}
+            alt=""
+            className="w-full h-full object-cover opacity-30 filter blur-3xl scale-125"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#09090d]/30 via-[#09090d]/80 to-[#09090d]" />
+        </div>
+      )}
+
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-xs font-mono text-white/45">
+      <div className="relative z-10 flex items-center gap-2 text-xs font-mono text-white/45">
         <Link href="/" className="hover:text-white transition-colors">
           Anasayfa
         </Link>
@@ -561,92 +581,109 @@ export default function ListDetailPage({
         <span className="text-sky-400 font-semibold truncate max-w-xs">{list.title}</span>
       </div>
 
-      {/* HERO BANNER CARD */}
-      <div className="rounded-3xl bg-[#0f0f13]/90 border border-white/[0.08] p-6 sm:p-10 relative overflow-hidden shadow-2xl">
-        {list.cover_image_url && (
+      {/* HERO BANNER CARD (Cinema Glass Design) */}
+      <div className="rounded-3xl bg-[#0f0f13]/65 backdrop-blur-2xl border border-white/12 p-6 sm:p-10 relative overflow-hidden shadow-[0_25px_60px_rgba(0,0,0,0.8),0_0_40px_rgba(56,189,248,0.12)]">
+        {(list.backdrop_image_url || list.cover_image_url) && (
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
             <img
-              src={getProxiedImageUrl(list.cover_image_url, list.title)}
+              src={getProxiedImageUrl(
+                list.backdrop_image_url || list.cover_image_url || '',
+                list.title
+              )}
               alt=""
-              className="w-full h-full object-cover opacity-20 filter blur-xs scale-105"
+              className="w-full h-full object-cover opacity-35 filter blur-xs scale-105"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f13] via-[#0f0f13]/85 to-[#0f0f13]/40" />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#0f0f13] via-[#0f0f13]/65 to-transparent" />
           </div>
         )}
-        <div className="absolute top-0 right-0 w-96 h-96 rounded-full bg-sky-500/5 blur-3xl pointer-events-none" />
+        <div className="absolute top-0 right-0 w-96 h-96 rounded-full bg-sky-500/10 blur-3xl pointer-events-none" />
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div className="space-y-4 flex-1">
-            {/* Header Tags */}
-            <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
-              {list.visibility === 'public' ? (
-                <span className="px-2.5 py-1 rounded-full bg-white/[0.06] border border-white/10 text-white/60 font-mono text-[11px] flex items-center gap-1">
-                  <Globe className="w-3 h-3 text-sky-400" />
-                  <span>Herkese Açık</span>
-                </span>
-              ) : (
-                <span className="px-2.5 py-1 rounded-full bg-amber-400/10 border border-amber-400/20 text-amber-300 font-mono text-[11px] flex items-center gap-1">
-                  <Lock className="w-3 h-3" />
-                  <span>Gizli Liste</span>
-                </span>
-              )}
-            </div>
-
-            {/* List Title */}
-            <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight text-center md:text-left break-words">
-              {list.title}
-            </h1>
-
-            {/* Description */}
-            {list.description && (
-              <p className="text-sm sm:text-base text-white/65 max-w-3xl leading-relaxed font-normal text-center md:text-left break-words">
-                {list.description}
-              </p>
+          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 flex-1">
+            {/* Front Cover Poster (if provided) */}
+            {list.cover_image_url && (
+              <div className="w-28 sm:w-32 h-40 sm:h-44 rounded-2xl overflow-hidden shrink-0 border border-white/20 shadow-2xl bg-black/50 relative group">
+                <img
+                  src={getProxiedImageUrl(list.cover_image_url, list.title)}
+                  alt={list.title}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                />
+              </div>
             )}
 
-            {/* Creator Pill & Stats */}
-            <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 pt-2">
-              <Link
-                href={`/profil/${encodeURIComponent(list.creator?.username || '')}`}
-                className="inline-flex items-center gap-2.5 p-1.5 pr-4 rounded-full bg-white/[0.04] border border-white/10 hover:border-white/20 transition-colors group"
-              >
-                <div className="w-7 h-7 rounded-full overflow-hidden bg-white/10 border border-white/15 flex items-center justify-center shrink-0">
-                  {list.creator?.avatar_url ? (
-                    <img
-                      src={getProxiedImageUrl(list.creator.avatar_url, list.creator.username)}
-                      alt={list.creator.username}
-                      loading="lazy"
-                      decoding="async"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <User className="w-3.5 h-3.5 text-white/70" />
-                  )}
-                </div>
-                <div className="flex flex-col text-left">
-                  <span className="text-xs font-bold text-white group-hover:text-sky-300 transition-colors truncate max-w-[140px] sm:max-w-none">
-                    {list.creator?.display_name || list.creator?.username}
+            <div className="space-y-4 flex-1 text-center sm:text-left">
+              {/* Header Tags */}
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                {list.visibility === 'public' ? (
+                  <span className="px-2.5 py-1 rounded-full bg-white/[0.06] border border-white/10 text-white/60 font-mono text-[11px] flex items-center gap-1">
+                    <Globe className="w-3 h-3 text-sky-400" />
+                    <span>Herkese Açık</span>
                   </span>
-                  <span className="text-[10px] font-mono text-white/45 truncate max-w-[140px] sm:max-w-none">
-                    @{list.creator?.username}
+                ) : (
+                  <span className="px-2.5 py-1 rounded-full bg-amber-400/10 border border-amber-400/20 text-amber-300 font-mono text-[11px] flex items-center gap-1">
+                    <Lock className="w-3 h-3" />
+                    <span>Gizli Liste</span>
                   </span>
-                </div>
-              </Link>
+                )}
+              </div>
 
-              <div className="flex items-center gap-3 text-xs font-mono text-white/50 justify-center">
-                <span className="flex items-center gap-1.5">
-                  <Film className="w-3.5 h-3.5 text-sky-400" />
-                  <strong className="text-white font-bold">{list.items.length}</strong> Yapım
-                </span>
-                <span>•</span>
-                <span>
-                  Oluşturulma:{' '}
-                  {new Date(list.created_at).toLocaleDateString('tr-TR', {
-                    day: 'numeric',
-                    month: 'long',
-                    year: 'numeric',
-                  })}
-                </span>
+              {/* List Title */}
+              <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight break-words">
+                {list.title}
+              </h1>
+
+              {/* Description */}
+              {list.description && (
+                <p className="text-sm sm:text-base text-white/65 max-w-3xl leading-relaxed font-normal break-words">
+                  {list.description}
+                </p>
+              )}
+
+              {/* Creator Pill & Stats */}
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4 pt-2">
+                <Link
+                  href={`/profil/${encodeURIComponent(list.creator?.username || '')}`}
+                  className="inline-flex items-center gap-2.5 p-1.5 pr-4 rounded-full bg-white/[0.04] border border-white/10 hover:border-white/20 transition-colors group"
+                >
+                  <div className="w-7 h-7 rounded-full overflow-hidden bg-white/10 border border-white/15 flex items-center justify-center shrink-0">
+                    {list.creator?.avatar_url ? (
+                      <img
+                        src={getProxiedImageUrl(list.creator.avatar_url, list.creator.username)}
+                        alt={list.creator.username}
+                        loading="lazy"
+                        decoding="async"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <User className="w-3.5 h-3.5 text-white/70" />
+                    )}
+                  </div>
+                  <div className="flex flex-col text-left">
+                    <span className="text-xs font-bold text-white group-hover:text-sky-300 transition-colors truncate max-w-[140px] sm:max-w-none">
+                      {list.creator?.display_name || list.creator?.username}
+                    </span>
+                    <span className="text-[10px] font-mono text-white/45 truncate max-w-[140px] sm:max-w-none">
+                      @{list.creator?.username}
+                    </span>
+                  </div>
+                </Link>
+
+                <div className="flex items-center gap-3 text-xs font-mono text-white/50 justify-center">
+                  <span className="flex items-center gap-1.5">
+                    <Film className="w-3.5 h-3.5 text-sky-400" />
+                    <strong className="text-white font-bold">{list.items.length}</strong> Yapım
+                  </span>
+                  <span>•</span>
+                  <span>
+                    Oluşturulma:{' '}
+                    {new Date(list.created_at).toLocaleDateString('tr-TR', {
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric',
+                    })}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -1019,9 +1056,10 @@ export default function ListDetailPage({
                   />
                 </div>
 
+                {/* 1. Ön Kapak / Afiş Görseli */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs font-semibold text-white/80">
-                    <span>Kapak Görseli URL (İsteğe Bağlı)</span>
+                    <span>Ön Kapak / Afiş Görseli URL (İsteğe Bağlı)</span>
                     {editCoverUrl && (
                       <button
                         type="button"
@@ -1037,7 +1075,7 @@ export default function ListDetailPage({
                       type="url"
                       value={editCoverUrl}
                       onChange={(e) => setEditCoverUrl(e.target.value)}
-                      placeholder="https://... (Banner veya afiş görseli URL'si)"
+                      placeholder="https://... (Ön kartta ve afiş kutusunda gösterilir)"
                       className="koup-input text-xs py-2.5 px-4 font-medium pr-10"
                     />
                     <ImageIcon className="w-4 h-4 text-white/30 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -1046,14 +1084,55 @@ export default function ListDetailPage({
                     <div className="mt-2 relative h-24 rounded-xl overflow-hidden border border-white/15 bg-black/40">
                       <img
                         src={getProxiedImageUrl(editCoverUrl.trim(), 'Önizleme')}
-                        alt="Kapak Önizleme"
+                        alt="Ön Kapak Önizleme"
                         onError={(e) => {
                           (e.currentTarget as HTMLElement).style.display = 'none';
                         }}
                         className="w-full h-full object-cover"
                       />
                       <div className="absolute bottom-1 left-2 text-[9px] font-mono text-white/80 bg-black/70 px-1.5 py-0.5 rounded backdrop-blur-sm">
-                        Kapak Önizleme
+                        Ön Kapak Önizleme
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. Arka Plan / Banner Görseli */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-semibold text-white/80">
+                    <span>Arka Plan / Banner Görseli URL (İsteğe Bağlı)</span>
+                    {editBackdropUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setEditBackdropUrl('')}
+                        className="text-[10px] text-rose-400 hover:underline cursor-pointer"
+                      >
+                        Temizle
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="url"
+                      value={editBackdropUrl}
+                      onChange={(e) => setEditBackdropUrl(e.target.value)}
+                      placeholder="https://... (Tüm sayfa arka planını ve zemin ışığını kaplar)"
+                      className="koup-input text-xs py-2.5 px-4 font-medium pr-10"
+                    />
+                    <ImageIcon className="w-4 h-4 text-white/30 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                  {editBackdropUrl.trim().length > 10 && (
+                    <div className="mt-2 relative h-24 rounded-xl overflow-hidden border border-white/15 bg-black/40">
+                      <img
+                        src={getProxiedImageUrl(editBackdropUrl.trim(), 'Banner Önizleme')}
+                        alt="Arka Plan Önizleme"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = 'none';
+                        }}
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute bottom-1 left-2 text-[9px] font-mono text-white/80 bg-black/70 px-1.5 py-0.5 rounded backdrop-blur-sm">
+                        Arka Plan Banner Önizleme
                       </div>
                     </div>
                   )}

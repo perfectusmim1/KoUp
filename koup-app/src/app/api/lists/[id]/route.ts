@@ -60,6 +60,7 @@ export async function GET(
           title: directList.title,
           description: directList.description,
           cover_image_url: directList.cover_image_url || null,
+          backdrop_image_url: directList.backdrop_image_url || null,
           visibility: directList.visibility,
           likes_count: directList.likes_count || 0,
           follower_count: directList.follower_count || 0,
@@ -72,14 +73,15 @@ export async function GET(
       }
     }
 
-    if (data && data.cover_image_url === undefined) {
+    if (data && (data.cover_image_url === undefined || data.backdrop_image_url === undefined)) {
       const isNum = /^[0-9]+$/.test(id);
-      let cq = (supabaseAdmin || supabase).from('custom_lists').select('cover_image_url');
+      let cq = (supabaseAdmin || supabase).from('custom_lists').select('cover_image_url, backdrop_image_url');
       if (isNum) cq = cq.eq('id', Number(id));
       else cq = cq.eq('slug', id);
       const { data: cRow } = await cq.maybeSingle();
       if (cRow) {
         data.cover_image_url = cRow.cover_image_url || null;
+        data.backdrop_image_url = cRow.backdrop_image_url || null;
       }
     }
 
@@ -107,7 +109,7 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await req.json();
-    const { action, media_id, title, description, visibility, user_id, cover_image_url } = body;
+    const { action, media_id, title, description, visibility, user_id, cover_image_url, backdrop_image_url } = body;
 
     const isNum = /^[0-9]+$/.test(id);
     let query = (supabaseAdmin || supabase).from('custom_lists').select('*');
@@ -137,6 +139,7 @@ export async function PATCH(
     if (title && title.trim().length >= 2) updates.title = title.trim();
     if (description !== undefined) updates.description = description ? description.trim() : null;
     if (cover_image_url !== undefined) updates.cover_image_url = cover_image_url ? cover_image_url.trim() : null;
+    if (backdrop_image_url !== undefined) updates.backdrop_image_url = backdrop_image_url ? backdrop_image_url.trim() : null;
     if (visibility === 'public' || visibility === 'private') updates.visibility = visibility;
 
     // Handle adding/removing media items
@@ -189,12 +192,18 @@ export async function PATCH(
       return NextResponse.json({ success: true, list: tableData });
     }
 
-    if (updatedList && updates.cover_image_url !== undefined) {
-      await (supabaseAdmin || supabase)
-        .from('custom_lists')
-        .update({ cover_image_url: updates.cover_image_url })
-        .eq('id', existingList.id);
-      updatedList.cover_image_url = updates.cover_image_url;
+    if (updatedList) {
+      const extraCols: Record<string, any> = {};
+      if (updates.cover_image_url !== undefined) extraCols.cover_image_url = updates.cover_image_url;
+      if (updates.backdrop_image_url !== undefined) extraCols.backdrop_image_url = updates.backdrop_image_url;
+
+      if (Object.keys(extraCols).length > 0) {
+        await (supabaseAdmin || supabase)
+          .from('custom_lists')
+          .update(extraCols)
+          .eq('id', existingList.id);
+        Object.assign(updatedList, extraCols);
+      }
     }
 
     return NextResponse.json({ success: true, list: updatedList });

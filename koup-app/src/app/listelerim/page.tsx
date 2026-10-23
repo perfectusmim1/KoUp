@@ -31,6 +31,7 @@ interface UserCustomList {
   likes_count: number;
   created_at: string;
   cover_image_url?: string | null;
+  backdrop_image_url?: string | null;
   cover_posters?: string[];
 }
 
@@ -55,6 +56,7 @@ export default function MyListsPage() {
   const [modalTitle, setModalTitle] = useState('');
   const [modalDesc, setModalDesc] = useState('');
   const [modalCoverUrl, setModalCoverUrl] = useState('');
+  const [modalBackdropUrl, setModalBackdropUrl] = useState('');
   const [modalVisibility, setModalVisibility] = useState<'public' | 'private'>('public');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -119,6 +121,7 @@ export default function MyListsPage() {
               likes_count: l.likes_count || 0,
               created_at: l.created_at,
               cover_image_url: l.cover_image_url || null,
+              backdrop_image_url: l.backdrop_image_url || null,
               cover_posters: posters,
             };
           });
@@ -161,6 +164,7 @@ export default function MyListsPage() {
           title: modalTitle.trim(),
           description: modalDesc.trim() || null,
           cover_image_url: modalCoverUrl.trim() || null,
+          backdrop_image_url: modalBackdropUrl.trim() || null,
           visibility: modalVisibility,
           user_id: user.id,
           media_ids: [],
@@ -182,6 +186,7 @@ export default function MyListsPage() {
             likes_count: 0,
             created_at: d.list.created_at,
             cover_image_url: d.list.cover_image_url || modalCoverUrl.trim() || null,
+            backdrop_image_url: d.list.backdrop_image_url || modalBackdropUrl.trim() || null,
             cover_posters: [],
           },
           ...prev,
@@ -190,6 +195,7 @@ export default function MyListsPage() {
         setModalTitle('');
         setModalDesc('');
         setModalCoverUrl('');
+        setModalBackdropUrl('');
         setModalVisibility('public');
       } else {
         setModalError(d.error || 'Liste oluşturulamadı.');
@@ -377,118 +383,125 @@ export default function MyListsPage() {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {paginatedLists.map((l) => {
             const itemCount = l.media_ids.length;
             const isPublic = l.visibility === 'public';
+            const bgImage = l.backdrop_image_url || l.cover_image_url || (l.cover_posters && l.cover_posters[0]) || null;
 
             return (
               <div
                 key={l.id}
-                className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-5 flex flex-col justify-between hover:border-white/20 hover:bg-white/[0.02] transition-[border-color,background-color] duration-200 group relative overflow-hidden shadow-xl [content-visibility:auto] [contain-intrinsic-size:auto_280px]"
+                className="group relative rounded-3xl overflow-hidden min-h-[270px] sm:min-h-[290px] border border-white/10 hover:border-sky-400/50 p-6 flex flex-col justify-between transition-all duration-300 hover:shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_35px_rgba(56,189,248,0.22)] [content-visibility:auto] [contain-intrinsic-size:auto_290px]"
               >
-                <div>
-                  {/* Top Bar: Privacy Badge and Action Menu */}
-                  <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
-                    <div className="flex items-center gap-2">
-                      {isPublic ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sky-500/10 border border-sky-400/20 text-sky-400 text-[10px] font-mono font-semibold">
-                          <Globe className="w-3 h-3" />
-                          <span>Herkese Açık</span>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-400/20 text-amber-300 text-[10px] font-mono font-semibold">
-                          <Lock className="w-3 h-3" />
-                          <span>Gizli Liste</span>
-                        </span>
-                      )}
-                      <span className="text-[11px] font-mono text-white/40">
-                        {itemCount} Yapım
-                      </span>
-                    </div>
+                {/* GPU Ambient Glow */}
+                <div className="absolute -inset-0.5 bg-gradient-to-r from-sky-500/20 via-sky-400/10 to-indigo-500/20 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none -z-10" />
 
-                    <button
-                      onClick={() => setDeletingId(l.id)}
-                      className="w-7 h-7 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 flex items-center justify-center transition-colors cursor-pointer opacity-70 hover:opacity-100"
-                      aria-label="Listeyi Sil"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                {/* Full-bleed Immersive Background Artwork */}
+                {bgImage ? (
+                  <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                    <img
+                      src={getProxiedImageUrl(bgImage, l.title)}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+                    />
+                  </div>
+                ) : (
+                  <div className="absolute inset-0 bg-[#0e0e14] bg-gradient-to-br from-white/[0.04] to-transparent pointer-events-none" />
+                )}
+
+                {/* Multi-layer Cinematic Shadow Gradients for Readability */}
+                <div className="absolute inset-0 bg-gradient-to-t from-[#09090d] via-[#09090d]/80 via-50% to-black/35 group-hover:via-[#09090d]/70 transition-colors duration-300 pointer-events-none" />
+                <div className="absolute inset-0 bg-gradient-to-r from-[#09090d]/85 via-[#09090d]/40 to-transparent pointer-events-none" />
+
+                {/* Top Bar: Glass Badges & Actions */}
+                <div className="relative z-10 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    {isPublic ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-sky-400 text-[10px] font-mono font-semibold shadow-sm">
+                        <Globe className="w-3 h-3 text-sky-400" />
+                        <span>Herkese Açık</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-amber-300 text-[10px] font-mono font-semibold shadow-sm">
+                        <Lock className="w-3 h-3 text-amber-400" />
+                        <span>Gizli Liste</span>
+                      </span>
+                    )}
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-white/80 text-[10px] font-mono shadow-sm">
+                      {itemCount} Yapım
+                    </span>
                   </div>
 
-                  {/* Artwork / Poster Strip / Custom Cover */}
-                  <Link
-                    href={`/listeler/${l.slug || l.id}`}
-                    onClick={() => triggerSound('click')}
-                    className="block mt-4 rounded-2xl overflow-hidden bg-black/40 border border-white/10 group-hover:border-sky-400/40 transition-colors"
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeletingId(l.id);
+                    }}
+                    className="w-8 h-8 rounded-full bg-black/60 backdrop-blur-md border border-white/15 hover:bg-rose-500/20 hover:border-rose-500/40 text-white/70 hover:text-rose-400 flex items-center justify-center transition-colors cursor-pointer"
+                    aria-label="Listeyi Sil"
                   >
-                    {l.cover_image_url ? (
-                      <div className="relative h-28 overflow-hidden">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Bottom Content Area */}
+                <div className="relative z-10 mt-6 pt-4 flex flex-col justify-end">
+                  <div className="flex items-end gap-3.5">
+                    {/* Front Cover Poster Card (if cover_image_url is set) */}
+                    {l.cover_image_url && (
+                      <Link
+                        href={`/listeler/${l.slug || l.id}`}
+                        onClick={() => triggerSound('click')}
+                        className="w-16 h-24 sm:w-20 sm:h-28 rounded-2xl overflow-hidden shrink-0 border border-white/20 shadow-[0_10px_25px_rgba(0,0,0,0.85)] bg-black/60 relative group-hover:scale-105 transition-transform duration-300 block"
+                      >
                         <img
                           src={getProxiedImageUrl(l.cover_image_url, l.title)}
                           alt={l.title}
                           loading="lazy"
                           decoding="async"
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
+                          className="w-full h-full object-cover"
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
-                      </div>
-                    ) : l.cover_posters && l.cover_posters.length > 0 ? (
-                      <div className="grid grid-cols-4 h-24 overflow-hidden">
-                        {l.cover_posters.map((poster, idx) => (
-                          <div key={idx} className="relative h-full overflow-hidden border-r border-white/10 last:border-r-0">
-                            <img
-                              src={getProxiedImageUrl(poster, l.title)}
-                              alt=""
-                              loading="lazy"
-                              decoding="async"
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="h-20 flex items-center justify-center text-white/30 text-xs font-mono">
-                        <Layers className="w-5 h-5 mr-1.5 opacity-50" />
-                        <span>Henüz yapım eklenmedi</span>
-                      </div>
+                      </Link>
                     )}
-                  </Link>
 
-                  {/* Title and Description */}
-                  <div className="mt-4">
+                    {/* Title & Description */}
+                    <div className="flex-1 min-w-0">
+                      <Link
+                        href={`/listeler/${l.slug || l.id}`}
+                        onClick={() => triggerSound('click')}
+                        className="text-lg sm:text-xl font-bold text-white group-hover:text-sky-300 transition-colors line-clamp-1 drop-shadow-md break-words block"
+                      >
+                        {l.title}
+                      </Link>
+                      {l.description ? (
+                        <p className="text-xs text-white/70 mt-1 line-clamp-2 leading-relaxed drop-shadow-sm break-words">
+                          {l.description}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-white/40 italic mt-1">
+                          Açıklama belirtilmemiş.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Footer Bar */}
+                  <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
+                    <span className="text-[10px] font-mono text-white/50">
+                      {new Date(l.created_at).toLocaleDateString('tr-TR')}
+                    </span>
                     <Link
                       href={`/listeler/${l.slug || l.id}`}
                       onClick={() => triggerSound('click')}
-                      className="text-base sm:text-lg font-bold text-white group-hover:text-sky-300 transition-colors line-clamp-1 break-words"
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-sky-400 group-hover:text-sky-300 transition-colors cursor-pointer"
                     >
-                      {l.title}
+                      <span>Listeyi Görüntüle</span>
+                      <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
                     </Link>
-                    {l.description ? (
-                      <p className="text-xs text-white/55 mt-1 line-clamp-2 leading-relaxed break-words">
-                        {l.description}
-                      </p>
-                    ) : (
-                      <p className="text-xs text-white/30 italic mt-1">
-                        Açıklama belirtilmemiş.
-                      </p>
-                    )}
                   </div>
-                </div>
-
-                {/* Footer Link */}
-                <div className="mt-5 pt-3.5 border-t border-white/[0.08] flex items-center justify-between">
-                  <span className="text-[10px] font-mono text-white/40">
-                    {new Date(l.created_at).toLocaleDateString('tr-TR')}
-                  </span>
-                  <Link
-                    href={`/listeler/${l.slug || l.id}`}
-                    onClick={() => triggerSound('click')}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-sky-400 hover:text-sky-300 transition-colors cursor-pointer"
-                  >
-                    <span>Listeyi Görüntüle</span>
-                    <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                  </Link>
                 </div>
 
                 {/* Delete Confirmation Overlay */}
@@ -498,7 +511,7 @@ export default function MyListsPage() {
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      className="absolute inset-0 bg-[#0d0d10] p-6 flex flex-col justify-center items-center text-center space-y-3 z-20"
+                      className="absolute inset-0 bg-[#0d0d10]/95 backdrop-blur-md p-6 flex flex-col justify-center items-center text-center space-y-3 z-30"
                     >
                       <div className="w-10 h-10 rounded-full bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400">
                         <Trash2 className="w-5 h-5" />
@@ -614,44 +627,89 @@ export default function MyListsPage() {
                   />
                 </div>
 
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs font-semibold text-white/80">
-                    <span>Kapak Görseli URL (İsteğe Bağlı)</span>
-                    {modalCoverUrl && (
-                      <button
-                        type="button"
-                        onClick={() => setModalCoverUrl('')}
-                        className="text-[10px] text-rose-400 hover:underline cursor-pointer"
-                      >
-                        Temizle
-                      </button>
+                {/* Two Image Inputs: Cover & Backdrop */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  {/* Front Cover Poster */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs font-semibold text-white/80">
+                      <span>Ön Kapak URL (İsteğe Bağlı)</span>
+                      {modalCoverUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setModalCoverUrl('')}
+                          className="text-[10px] text-rose-400 hover:underline cursor-pointer"
+                        >
+                          Temizle
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="url"
+                        value={modalCoverUrl}
+                        onChange={(e) => setModalCoverUrl(e.target.value)}
+                        placeholder="https://... (Ön afiş görseli)"
+                        className="koup-input text-xs py-2.5 px-4 font-medium pr-10"
+                      />
+                      <ImageIcon className="w-4 h-4 text-white/30 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                    {modalCoverUrl.trim().length > 10 && (
+                      <div className="mt-1.5 relative h-20 rounded-xl overflow-hidden border border-white/15 bg-black/40">
+                        <img
+                          src={getProxiedImageUrl(modalCoverUrl.trim(), 'Ön Kapak')}
+                          alt="Ön Kapak Önizleme"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLElement).style.display = 'none';
+                          }}
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute bottom-1 left-2 text-[8px] font-mono text-white/80 bg-black/70 px-1.5 py-0.5 rounded backdrop-blur-sm">
+                          Ön Kapak Önizleme
+                        </div>
+                      </div>
                     )}
                   </div>
-                  <div className="relative">
-                    <input
-                      type="url"
-                      value={modalCoverUrl}
-                      onChange={(e) => setModalCoverUrl(e.target.value)}
-                      placeholder="https://... (Banner veya afiş görseli URL'si)"
-                      className="koup-input text-xs py-2.5 px-4 font-medium pr-10"
-                    />
-                    <ImageIcon className="w-4 h-4 text-white/30 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  </div>
-                  {modalCoverUrl.trim().length > 10 && (
-                    <div className="mt-2 relative h-24 rounded-xl overflow-hidden border border-white/15 bg-black/40">
-                      <img
-                        src={getProxiedImageUrl(modalCoverUrl.trim(), 'Önizleme')}
-                        alt="Kapak Önizleme"
-                        onError={(e) => {
-                          (e.currentTarget as HTMLElement).style.display = 'none';
-                        }}
-                        className="w-full h-full object-cover"
-                      />
-                      <div className="absolute bottom-1 left-2 text-[9px] font-mono text-white/80 bg-black/70 px-1.5 py-0.5 rounded backdrop-blur-sm">
-                        Kapak Önizleme
-                      </div>
+
+                  {/* Backdrop Banner */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs font-semibold text-white/80">
+                      <span>Arka Plan URL (İsteğe Bağlı)</span>
+                      {modalBackdropUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setModalBackdropUrl('')}
+                          className="text-[10px] text-rose-400 hover:underline cursor-pointer"
+                        >
+                          Temizle
+                        </button>
+                      )}
                     </div>
-                  )}
+                    <div className="relative">
+                      <input
+                        type="url"
+                        value={modalBackdropUrl}
+                        onChange={(e) => setModalBackdropUrl(e.target.value)}
+                        placeholder="https://... (Banner görseli)"
+                        className="koup-input text-xs py-2.5 px-4 font-medium pr-10"
+                      />
+                      <ImageIcon className="w-4 h-4 text-white/30 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                    {modalBackdropUrl.trim().length > 10 && (
+                      <div className="mt-1.5 relative h-20 rounded-xl overflow-hidden border border-white/15 bg-black/40">
+                        <img
+                          src={getProxiedImageUrl(modalBackdropUrl.trim(), 'Arka Plan')}
+                          alt="Arka Plan Önizleme"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLElement).style.display = 'none';
+                          }}
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute bottom-1 left-2 text-[8px] font-mono text-white/80 bg-black/70 px-1.5 py-0.5 rounded backdrop-blur-sm">
+                          Arka Plan Önizleme
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Visibility selector */}

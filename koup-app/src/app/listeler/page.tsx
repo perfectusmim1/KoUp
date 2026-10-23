@@ -43,6 +43,7 @@ interface CustomListRecord {
   title: string;
   description: string | null;
   cover_image_url?: string | null;
+  backdrop_image_url?: string | null;
   visibility: string;
   likes_count: number;
   follower_count: number;
@@ -75,6 +76,7 @@ export default function PublicListsPage() {
   const [newListTitle, setNewListTitle] = useState('');
   const [newListDesc, setNewListDesc] = useState('');
   const [newListCover, setNewListCover] = useState('');
+  const [newListBackdrop, setNewListBackdrop] = useState('');
   const [newListVisibility, setNewListVisibility] = useState<'public' | 'private'>('public');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -160,6 +162,7 @@ export default function PublicListsPage() {
           title: newListTitle.trim(),
           description: newListDesc.trim() || null,
           cover_image_url: newListCover.trim() || null,
+          backdrop_image_url: newListBackdrop.trim() || null,
           visibility: newListVisibility,
           user_id: user.id,
           media_ids: [],
@@ -182,6 +185,7 @@ export default function PublicListsPage() {
           title: data.list.title,
           description: data.list.description,
           cover_image_url: data.list.cover_image_url || newListCover.trim() || null,
+          backdrop_image_url: data.list.backdrop_image_url || newListBackdrop.trim() || null,
           visibility: data.list.visibility,
           likes_count: 0,
           follower_count: 0,
@@ -201,6 +205,7 @@ export default function PublicListsPage() {
         setNewListTitle('');
         setNewListDesc('');
         setNewListCover('');
+        setNewListBackdrop('');
         setIsCreateModalOpen(false);
       } else {
         pushNotification('Hata', data.error || 'Liste oluşturulamadı', 'info');
@@ -362,132 +367,117 @@ export default function PublicListsPage() {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {paginatedLists.map((list) => {
             const posters = list.preview_posters || [];
+            const bgImage = list.backdrop_image_url || list.cover_image_url || (posters[0]?.cover_image) || null;
+
             return (
               <Link
                 key={list.id}
-                href={`/listeler/${list.id}`}
+                href={`/listeler/${list.slug || list.id}`}
                 onClick={() => triggerSound('click')}
-                className="group relative rounded-3xl bg-[#0e0e13] border border-white/[0.08] hover:border-sky-500/40 p-5 sm:p-6 transition-[border-color,box-shadow] duration-200 hover:shadow-[0_12px_40px_rgba(0,0,0,0.65),0_0_30px_rgba(56,189,248,0.12)] flex flex-col justify-between overflow-hidden [content-visibility:auto] [contain-intrinsic-size:auto_200px]"
+                className="group relative rounded-3xl overflow-hidden min-h-[270px] sm:min-h-[290px] border border-white/10 hover:border-sky-400/50 p-6 flex flex-col justify-between transition-all duration-300 hover:shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_35px_rgba(56,189,248,0.22)] [content-visibility:auto] [contain-intrinsic-size:auto_290px]"
               >
-                {/* Subtle Ambient Background Glow on Hover */}
-                <div className="absolute -right-20 -bottom-20 w-64 h-64 rounded-full bg-sky-500/5 group-hover:bg-sky-500/15 blur-3xl pointer-events-none transition-opacity duration-300" />
+                {/* GPU Ambient Glow */}
+                <div className="absolute -inset-0.5 bg-gradient-to-r from-sky-500/20 via-sky-400/10 to-indigo-500/20 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none -z-10" />
 
-                <div className="flex items-center justify-between gap-4 relative z-10">
-                  {/* Left Column: Creator & Title & Meta */}
-                  <div className="flex-1 min-w-0 pr-2">
-                    {/* Creator Row */}
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="w-6 h-6 rounded-full overflow-hidden bg-white/10 border border-white/15 flex items-center justify-center shrink-0">
-                        {list.creator?.avatar_url ? (
-                          <img
-                            src={getProxiedImageUrl(list.creator.avatar_url, list.creator.username)}
-                            alt={list.creator.username}
-                            loading="lazy"
-                            decoding="async"
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <User className="w-3.5 h-3.5 text-white/70" />
-                        )}
-                      </div>
-                      <span className="text-xs font-mono text-white/60 group-hover:text-white transition-colors truncate">
-                        @{list.creator?.username || 'kullanici'}
-                      </span>
-                    </div>
-
-                    {/* List Title */}
-                    <h3 className="text-xl sm:text-2xl font-black text-white group-hover:text-sky-300 transition-colors tracking-tight line-clamp-1 leading-tight break-words">
-                      {list.title}
-                    </h3>
-
-                    {/* Description */}
-                    {list.description && (
-                      <p className="text-xs text-white/50 line-clamp-2 mt-1.5 leading-relaxed font-normal break-words">
-                        {list.description}
-                      </p>
-                    )}
-
-                    {/* Stats & Badge */}
-                    <div className="mt-4 flex flex-wrap items-center gap-2.5 text-xs font-mono">
-                      <span className="px-2.5 py-1 rounded-full bg-white/[0.06] border border-white/10 text-white/75 flex items-center gap-1.5">
-                        <Film className="w-3 h-3 text-sky-400" />
-                        <span>{list.item_count} içerik</span>
-                      </span>
-
-                      {list.likes_count > 0 && (
-                        <span className="px-2.5 py-1 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-300 flex items-center gap-1">
-                          <Heart className="w-3 h-3 fill-rose-500 text-rose-500" />
-                          <span>{list.likes_count.toLocaleString('tr-TR')}</span>
-                        </span>
-                      )}
-                    </div>
+                {/* Full-bleed Immersive Background Artwork */}
+                {bgImage ? (
+                  <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                    <img
+                      src={getProxiedImageUrl(bgImage, list.title)}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+                    />
                   </div>
+                ) : (
+                  <div className="absolute inset-0 bg-[#0e0e14] bg-gradient-to-br from-white/[0.04] to-transparent pointer-events-none" />
+                )}
 
-                  {/* Right Column: Custom Cover or 3-Poster Horizontal Collage */}
-                  <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                    {list.cover_image_url ? (
-                      <div className="w-36 sm:w-52 h-24 sm:h-28 rounded-2xl overflow-hidden border border-white/10 shadow-lg relative bg-[#181820]">
+                {/* Multi-layer Cinematic Shadow Gradients for Readability */}
+                <div className="absolute inset-0 bg-gradient-to-t from-[#09090d] via-[#09090d]/80 via-50% to-black/35 group-hover:via-[#09090d]/70 transition-colors duration-300 pointer-events-none" />
+                <div className="absolute inset-0 bg-gradient-to-r from-[#09090d]/85 via-[#09090d]/40 to-transparent pointer-events-none" />
+
+                {/* Top Bar: Creator Info & Stats */}
+                <div className="relative z-10 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/15 shadow-sm">
+                    <div className="w-5 h-5 rounded-full overflow-hidden bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
+                      {list.creator?.avatar_url ? (
                         <img
-                          src={getProxiedImageUrl(list.cover_image_url, list.title)}
-                          alt={list.title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
+                          src={getProxiedImageUrl(list.creator.avatar_url, list.creator.username)}
+                          alt={list.creator.username}
                           loading="lazy"
                           decoding="async"
+                          className="w-full h-full object-cover"
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
-                      </div>
-                    ) : posters.length > 0 ? (
-                      posters.slice(0, 3).map((item, idx) => (
-                        <div
-                          key={item.id || idx}
-                          className="w-16 h-24 sm:w-20 sm:h-28 rounded-xl overflow-hidden border border-white/10 shadow-lg relative bg-[#181820]"
-                        >
-                          {item.cover_image ? (
-                            <img
-                              src={getProxiedImageUrl(item.cover_image, item.title)}
-                              alt={item.title}
-                              className="w-full h-full object-cover"
-                              loading="lazy"
-                              decoding="async"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex flex-col items-center justify-center p-1 text-center bg-[#181820]">
-                              <Film className="w-5 h-5 text-white/30 mb-1" />
-                              <span className="text-[9px] text-white/40 line-clamp-2 font-mono">
-                                {item.title}
-                              </span>
-                            </div>
-                          )}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </div>
-                      ))
-                    ) : (
-                      // Empty placeholder posters
-                      <div className="flex gap-1.5">
-                        <div className="w-16 h-24 sm:w-20 sm:h-28 rounded-xl bg-white/[0.04] border border-white/10 flex items-center justify-center text-white/20">
-                          <Film className="w-5 h-5" />
-                        </div>
-                        <div className="w-16 h-24 sm:w-20 sm:h-28 rounded-xl bg-white/[0.04] border border-white/10 flex items-center justify-center text-white/20">
-                          <Film className="w-5 h-5" />
-                        </div>
-                        <div className="w-16 h-24 sm:w-20 sm:h-28 rounded-xl bg-white/[0.04] border border-white/10 flex items-center justify-center text-white/20">
-                          <Film className="w-5 h-5" />
-                        </div>
-                      </div>
+                      ) : (
+                        <User className="w-3 h-3 text-white/70" />
+                      )}
+                    </div>
+                    <span className="text-xs font-mono text-white/80 group-hover:text-white transition-colors truncate">
+                      @{list.creator?.username || 'kullanici'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-white/80 text-[10px] font-mono shadow-sm flex items-center gap-1.5">
+                      <Film className="w-3 h-3 text-sky-400" />
+                      <span>{list.item_count} içerik</span>
+                    </span>
+
+                    {list.likes_count > 0 && (
+                      <span className="px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-rose-300 text-[10px] font-mono shadow-sm flex items-center gap-1">
+                        <Heart className="w-3 h-3 fill-rose-500 text-rose-500" />
+                        <span>{list.likes_count.toLocaleString('tr-TR')}</span>
+                      </span>
                     )}
                   </div>
                 </div>
 
-                {/* Bottom subtle bar on card */}
-                <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between text-[11px] font-mono text-white/40">
-                  <span>Listeyi İncele</span>
-                  <span className="text-sky-400 group-hover:translate-x-1 transition-transform flex items-center gap-1 font-semibold">
-                    <span>Görüntüle</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </span>
+                {/* Bottom Content Area */}
+                <div className="relative z-10 mt-6 pt-4 flex flex-col justify-end">
+                  <div className="flex items-end gap-4">
+                    {/* Front Cover Poster (if cover_image_url exists) */}
+                    {list.cover_image_url && (
+                      <div className="w-16 h-24 sm:w-20 sm:h-28 rounded-2xl overflow-hidden shrink-0 border border-white/20 shadow-[0_10px_25px_rgba(0,0,0,0.85)] bg-black/60 relative group-hover:scale-105 transition-transform duration-300">
+                        <img
+                          src={getProxiedImageUrl(list.cover_image_url, list.title)}
+                          alt={list.title}
+                          loading="lazy"
+                          decoding="async"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    )}
+
+                    {/* Title & Description */}
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-xl sm:text-2xl font-black text-white group-hover:text-sky-300 transition-colors tracking-tight line-clamp-1 leading-tight drop-shadow-md break-words">
+                        {list.title}
+                      </h3>
+                      {list.description ? (
+                        <p className="text-xs text-white/70 line-clamp-2 mt-1.5 leading-relaxed drop-shadow-sm font-normal break-words">
+                          {list.description}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-white/40 italic mt-1.5">
+                          Açıklama belirtilmemiş.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Bottom bar */}
+                  <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-[11px] font-mono text-white/50">
+                    <span>Listeyi İncele</span>
+                    <span className="text-sky-400 group-hover:translate-x-1 transition-transform flex items-center gap-1 font-semibold">
+                      <span>Görüntüle</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </span>
+                  </div>
                 </div>
               </Link>
             );
@@ -572,44 +562,89 @@ export default function PublicListsPage() {
                   />
                 </div>
 
-                <div>
-                  <div className="flex items-center justify-between text-xs font-mono text-white/60 mb-1.5">
-                    <span>Kapak Görseli URL (Opsiyonel)</span>
-                    {newListCover && (
-                      <button
-                        type="button"
-                        onClick={() => setNewListCover('')}
-                        className="text-[10px] text-rose-400 hover:underline cursor-pointer"
-                      >
-                        Temizle
-                      </button>
+                {/* Two Image Inputs: Cover & Backdrop */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  {/* Front Cover Poster */}
+                  <div>
+                    <div className="flex items-center justify-between text-xs font-mono text-white/60 mb-1.5">
+                      <span>Ön Kapak URL (Opsiyonel)</span>
+                      {newListCover && (
+                        <button
+                          type="button"
+                          onClick={() => setNewListCover('')}
+                          className="text-[10px] text-rose-400 hover:underline cursor-pointer"
+                        >
+                          Temizle
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="url"
+                        value={newListCover}
+                        onChange={(e) => setNewListCover(e.target.value)}
+                        placeholder="https://... (Ön afiş görseli)"
+                        className="w-full px-4 py-2.5 rounded-full bg-[#141419] border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/35 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-colors font-medium pr-10"
+                      />
+                      <ImageIcon className="w-4 h-4 text-white/30 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                    {newListCover.trim().length > 10 && (
+                      <div className="mt-1.5 relative h-20 rounded-xl overflow-hidden border border-white/15 bg-black/40">
+                        <img
+                          src={getProxiedImageUrl(newListCover.trim(), 'Ön Kapak')}
+                          alt="Ön Kapak Önizleme"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLElement).style.display = 'none';
+                          }}
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute bottom-1 left-2 text-[8px] font-mono text-white/80 bg-black/70 px-1.5 py-0.5 rounded backdrop-blur-sm">
+                          Ön Kapak Önizleme
+                        </div>
+                      </div>
                     )}
                   </div>
-                  <div className="relative">
-                    <input
-                      type="url"
-                      value={newListCover}
-                      onChange={(e) => setNewListCover(e.target.value)}
-                      placeholder="https://... (Örn: Banner veya afiş görseli)"
-                      className="w-full px-4 py-2.5 rounded-full bg-[#141419] border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/35 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-colors font-medium pr-10"
-                    />
-                    <ImageIcon className="w-4 h-4 text-white/30 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  </div>
-                  {newListCover.trim().length > 10 && (
-                    <div className="mt-2 relative h-24 rounded-xl overflow-hidden border border-white/15 bg-black/40">
-                      <img
-                        src={getProxiedImageUrl(newListCover.trim(), 'Önizleme')}
-                        alt="Kapak Önizleme"
-                        onError={(e) => {
-                          (e.currentTarget as HTMLElement).style.display = 'none';
-                        }}
-                        className="w-full h-full object-cover"
-                      />
-                      <div className="absolute bottom-1 left-2 text-[9px] font-mono text-white/80 bg-black/70 px-1.5 py-0.5 rounded backdrop-blur-sm">
-                        Kapak Önizleme
-                      </div>
+
+                  {/* Backdrop Banner */}
+                  <div>
+                    <div className="flex items-center justify-between text-xs font-mono text-white/60 mb-1.5">
+                      <span>Arka Plan URL (Opsiyonel)</span>
+                      {newListBackdrop && (
+                        <button
+                          type="button"
+                          onClick={() => setNewListBackdrop('')}
+                          className="text-[10px] text-rose-400 hover:underline cursor-pointer"
+                        >
+                          Temizle
+                        </button>
+                      )}
                     </div>
-                  )}
+                    <div className="relative">
+                      <input
+                        type="url"
+                        value={newListBackdrop}
+                        onChange={(e) => setNewListBackdrop(e.target.value)}
+                        placeholder="https://... (Banner görseli)"
+                        className="w-full px-4 py-2.5 rounded-full bg-[#141419] border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/35 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-colors font-medium pr-10"
+                      />
+                      <ImageIcon className="w-4 h-4 text-white/30 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                    {newListBackdrop.trim().length > 10 && (
+                      <div className="mt-1.5 relative h-20 rounded-xl overflow-hidden border border-white/15 bg-black/40">
+                        <img
+                          src={getProxiedImageUrl(newListBackdrop.trim(), 'Arka Plan')}
+                          alt="Arka Plan Önizleme"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLElement).style.display = 'none';
+                          }}
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute bottom-1 left-2 text-[8px] font-mono text-white/80 bg-black/70 px-1.5 py-0.5 rounded backdrop-blur-sm">
+                          Arka Plan Önizleme
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div>

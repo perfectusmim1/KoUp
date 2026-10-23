@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, memo, useCallback, useId } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Play, Heart, Bell, Star, Info, Volume2, VolumeX, Eye } from 'lucide-react';
+import { Play, Heart, Bell, Star, ListPlus, Volume2, VolumeX, Eye } from 'lucide-react';
 import {
   MediaItem,
   getProxiedImageUrl,
@@ -17,6 +17,7 @@ import {
 import { useKoUpSelector, useKoUpStoreGet } from '@/context/KoUpContext';
 import CountryFlag from '@/components/CountryFlag';
 import Top10Numeral from '@/components/Top10Numeral';
+import AddToListModal from '@/components/AddToListModal';
 import { registerMediaItem, cachedQuery } from '@/lib/cache';
 import { recordTasteSignal } from '@/lib/tasteProfile';
 import { buildCleanTrailerEmbedUrl, watchYouTubeIframe, postYouTubeCommand } from '@/lib/youtubeTrailer';
@@ -223,6 +224,7 @@ function AccordionMediaCardComponent({
   const cardHoverExpandEnabled = useKoUpSelector((s) => s.cardHoverExpandEnabled);
 
   const [isHovered, setIsHovered] = useState(false);
+  const [isAddToListOpen, setIsAddToListOpen] = useState(false);
   const [mountBackdrop, setMountBackdrop] = useState(false);
   const hasRealCover = Boolean(
     item.cover_image &&
@@ -437,6 +439,7 @@ function AccordionMediaCardComponent({
     }
 
     if (!cardHoverExpandEnabled) {
+      setIsHovered(true);
       if (!prefetchRef.current) {
         prefetchRef.current = true;
         router.prefetch(`/seri/${item.slug}`);
@@ -996,23 +999,32 @@ function AccordionMediaCardComponent({
               <Bell className={`w-3.5 h-3.5 ${isFollowed ? 'fill-amber-300' : ''}`} />
             </button>
 
-            {isAccordionExpanded && (
-              <Link
-                href={`/seri/${item.slug}`}
-                prefetch={false}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  getStore().triggerSound?.('click');
-                }}
-                aria-label={`${item.title} detaylar`}
-                className="w-7 h-7 rounded-full bg-white/12 border border-white/15 hover:bg-white/25 flex items-center justify-center text-white/85 hover:text-white transition-colors cursor-pointer"
-              >
-                <Info className="w-3.5 h-3.5" />
-              </Link>
-            )}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                getStore().triggerSound?.('click');
+                setIsAddToListOpen(true);
+              }}
+              aria-label="Özel Listeye Ekle"
+              title="Özel Listeye Ekle"
+              className="w-7 h-7 rounded-full bg-white/12 border border-white/15 hover:bg-white/25 flex items-center justify-center text-white/85 hover:text-white transition-colors cursor-pointer"
+            >
+              <ListPlus className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Conditionally rendered AddToListModal (zero performance impact when closed) */}
+      {isAddToListOpen && (
+        <AddToListModal
+          isOpen={isAddToListOpen}
+          onClose={() => setIsAddToListOpen(false)}
+          media={item}
+        />
+      )}
     </div>
   );
 }

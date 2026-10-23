@@ -22,18 +22,20 @@ export async function GET(req: NextRequest) {
 
     let results = Array.isArray(lists) ? [...lists] : [];
 
-    // Ensure cover_image_url is attached if RPC returns without it
-    if (results.length > 0 && results[0].cover_image_url === undefined) {
+    // Ensure cover_image_url & backdrop_image_url are attached if RPC returns without them
+    if (results.length > 0 && (results[0].cover_image_url === undefined || results[0].backdrop_image_url === undefined)) {
       const listIds = results.map((r: any) => r.id).filter(Boolean);
       if (listIds.length > 0) {
         const { data: covers } = await (supabaseAdmin || supabase)
           .from('custom_lists')
-          .select('id, cover_image_url')
+          .select('id, cover_image_url, backdrop_image_url')
           .in('id', listIds);
         if (covers) {
-          const coverMap = new Map(covers.map((c: any) => [c.id, c.cover_image_url]));
+          const coverMap = new Map(covers.map((c: any) => [c.id, { cover: c.cover_image_url, backdrop: c.backdrop_image_url }]));
           results.forEach((r: any) => {
-            r.cover_image_url = coverMap.get(r.id) || null;
+            const row = coverMap.get(r.id);
+            r.cover_image_url = row?.cover || null;
+            r.backdrop_image_url = row?.backdrop || null;
           });
         }
       }
@@ -91,7 +93,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { title, description, visibility, user_id, media_ids, cover_image_url } = body;
+    const { title, description, visibility, user_id, media_ids, cover_image_url, backdrop_image_url } = body;
 
     if (!title || title.trim().length < 2) {
       return NextResponse.json(
@@ -131,6 +133,7 @@ export async function POST(req: NextRequest) {
           title: cleanTitle,
           description: description?.trim() || null,
           cover_image_url: cover_image_url?.trim() || null,
+          backdrop_image_url: backdrop_image_url?.trim() || null,
           visibility: visibility === 'private' ? 'private' : 'public',
           media_ids: Array.isArray(media_ids) ? media_ids : [],
           slug,
@@ -147,12 +150,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, list: insertData });
     }
 
-    if (data && cover_image_url?.trim()) {
+    if (data && (cover_image_url?.trim() || backdrop_image_url?.trim())) {
+      const extraUpdates: Record<string, string> = {};
+      if (cover_image_url?.trim()) extraUpdates.cover_image_url = cover_image_url.trim();
+      if (backdrop_image_url?.trim()) extraUpdates.backdrop_image_url = backdrop_image_url.trim();
+
       await (supabaseAdmin || supabase)
         .from('custom_lists')
-        .update({ cover_image_url: cover_image_url.trim() })
+        .update(extraUpdates)
         .eq('id', data.id);
-      data.cover_image_url = cover_image_url.trim();
+      Object.assign(data, extraUpdates);
     }
 
     return NextResponse.json({ success: true, list: data });
