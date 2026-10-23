@@ -18,6 +18,7 @@ import {
   ArrowLeft,
   Check,
   CheckSquare,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { MediaItem, getProxiedImageUrl, formatContentTypeTR, supabase } from '@/lib/supabase';
 import { useKoUpSelector } from '@/context/KoUpContext';
@@ -29,6 +30,7 @@ interface ListDetail {
   slug: string;
   title: string;
   description: string | null;
+  cover_image_url?: string | null;
   visibility: string;
   likes_count: number;
   follower_count: number;
@@ -83,6 +85,7 @@ export default function ListDetailPage({
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
+  const [editCoverUrl, setEditCoverUrl] = useState('');
   const [editVisibility, setEditVisibility] = useState<'public' | 'private'>('public');
 
   const isOwner = Boolean(user?.id && list?.creator?.id && user.id === list.creator.id);
@@ -102,6 +105,7 @@ export default function ListDetailPage({
           setLikesCount(data.list.likes_count || 0);
           setEditTitle(data.list.title || '');
           setEditDesc(data.list.description || '');
+          setEditCoverUrl(data.list.cover_image_url || '');
           setEditVisibility(data.list.visibility === 'private' ? 'private' : 'public');
         } else {
           setList(null);
@@ -456,6 +460,7 @@ export default function ListDetailPage({
         body: JSON.stringify({
           title: editTitle.trim(),
           description: editDesc.trim() || null,
+          cover_image_url: editCoverUrl.trim() || null,
           visibility: editVisibility,
           user_id: user?.id,
         }),
@@ -463,7 +468,17 @@ export default function ListDetailPage({
 
       const data = await res.json();
       if (data.success) {
-        setList((prev) => (prev ? { ...prev, title: editTitle, description: editDesc, visibility: editVisibility } : prev));
+        setList((prev) =>
+          prev
+            ? {
+                ...prev,
+                title: editTitle,
+                description: editDesc,
+                cover_image_url: editCoverUrl.trim() || null,
+                visibility: editVisibility,
+              }
+            : prev
+        );
         pushNotification('Liste Güncellendi', 'Değişiklikleriniz kaydedildi.', 'success');
         setIsEditModalOpen(false);
       }
@@ -548,6 +563,16 @@ export default function ListDetailPage({
 
       {/* HERO BANNER CARD */}
       <div className="rounded-3xl bg-[#0f0f13]/90 border border-white/[0.08] p-6 sm:p-10 relative overflow-hidden shadow-2xl">
+        {list.cover_image_url && (
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            <img
+              src={getProxiedImageUrl(list.cover_image_url, list.title)}
+              alt=""
+              className="w-full h-full object-cover opacity-20 filter blur-xs scale-105"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f13] via-[#0f0f13]/85 to-[#0f0f13]/40" />
+          </div>
+        )}
         <div className="absolute top-0 right-0 w-96 h-96 rounded-full bg-sky-500/5 blur-3xl pointer-events-none" />
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -992,6 +1017,46 @@ export default function ListDetailPage({
                     placeholder=""
                     className="koup-input text-xs py-2.5 px-4 font-medium resize-none"
                   />
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-semibold text-white/80">
+                    <span>Kapak Görseli URL (İsteğe Bağlı)</span>
+                    {editCoverUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setEditCoverUrl('')}
+                        className="text-[10px] text-rose-400 hover:underline cursor-pointer"
+                      >
+                        Temizle
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="url"
+                      value={editCoverUrl}
+                      onChange={(e) => setEditCoverUrl(e.target.value)}
+                      placeholder="https://... (Banner veya afiş görseli URL'si)"
+                      className="koup-input text-xs py-2.5 px-4 font-medium pr-10"
+                    />
+                    <ImageIcon className="w-4 h-4 text-white/30 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                  {editCoverUrl.trim().length > 10 && (
+                    <div className="mt-2 relative h-24 rounded-xl overflow-hidden border border-white/15 bg-black/40">
+                      <img
+                        src={getProxiedImageUrl(editCoverUrl.trim(), 'Önizleme')}
+                        alt="Kapak Önizleme"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = 'none';
+                        }}
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute bottom-1 left-2 text-[9px] font-mono text-white/80 bg-black/70 px-1.5 py-0.5 rounded backdrop-blur-sm">
+                        Kapak Önizleme
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">

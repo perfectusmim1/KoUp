@@ -17,6 +17,7 @@ import {
   Lock,
   Globe,
   User,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { getProxiedImageUrl } from '@/lib/supabase';
 import { useKoUpSelector } from '@/context/KoUpContext';
@@ -41,6 +42,7 @@ interface CustomListRecord {
   slug: string;
   title: string;
   description: string | null;
+  cover_image_url?: string | null;
   visibility: string;
   likes_count: number;
   follower_count: number;
@@ -72,6 +74,7 @@ export default function PublicListsPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newListTitle, setNewListTitle] = useState('');
   const [newListDesc, setNewListDesc] = useState('');
+  const [newListCover, setNewListCover] = useState('');
   const [newListVisibility, setNewListVisibility] = useState<'public' | 'private'>('public');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -156,6 +159,7 @@ export default function PublicListsPage() {
         body: JSON.stringify({
           title: newListTitle.trim(),
           description: newListDesc.trim() || null,
+          cover_image_url: newListCover.trim() || null,
           visibility: newListVisibility,
           user_id: user.id,
           media_ids: [],
@@ -177,6 +181,7 @@ export default function PublicListsPage() {
           slug: data.list.slug,
           title: data.list.title,
           description: data.list.description,
+          cover_image_url: data.list.cover_image_url || newListCover.trim() || null,
           visibility: data.list.visibility,
           likes_count: 0,
           follower_count: 0,
@@ -195,6 +200,7 @@ export default function PublicListsPage() {
         setLists((prev) => [newListRecord, ...prev]);
         setNewListTitle('');
         setNewListDesc('');
+        setNewListCover('');
         setIsCreateModalOpen(false);
       } else {
         pushNotification('Hata', data.error || 'Liste oluşturulamadı', 'info');
@@ -420,9 +426,20 @@ export default function PublicListsPage() {
                     </div>
                   </div>
 
-                  {/* Right Column: 3-Poster Horizontal Collage (Triptych Layout) */}
+                  {/* Right Column: Custom Cover or 3-Poster Horizontal Collage */}
                   <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                    {posters.length > 0 ? (
+                    {list.cover_image_url ? (
+                      <div className="w-36 sm:w-52 h-24 sm:h-28 rounded-2xl overflow-hidden border border-white/10 shadow-lg relative bg-[#181820]">
+                        <img
+                          src={getProxiedImageUrl(list.cover_image_url, list.title)}
+                          alt={list.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+                      </div>
+                    ) : posters.length > 0 ? (
                       posters.slice(0, 3).map((item, idx) => (
                         <div
                           key={item.id || idx}
@@ -553,6 +570,46 @@ export default function PublicListsPage() {
                     placeholder=""
                     className="w-full px-4 py-2.5 rounded-2xl bg-[#141419] border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/35 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-colors resize-none font-medium"
                   />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between text-xs font-mono text-white/60 mb-1.5">
+                    <span>Kapak Görseli URL (Opsiyonel)</span>
+                    {newListCover && (
+                      <button
+                        type="button"
+                        onClick={() => setNewListCover('')}
+                        className="text-[10px] text-rose-400 hover:underline cursor-pointer"
+                      >
+                        Temizle
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="url"
+                      value={newListCover}
+                      onChange={(e) => setNewListCover(e.target.value)}
+                      placeholder="https://... (Örn: Banner veya afiş görseli)"
+                      className="w-full px-4 py-2.5 rounded-full bg-[#141419] border border-white/12 hover:border-white/25 text-xs text-white placeholder-white/35 focus:outline-none focus:border-[var(--accent-blue)]/60 focus:ring-2 focus:ring-[var(--accent-blue)]/20 focus:shadow-[0_0_16px_rgba(41,151,255,0.28)] transition-colors font-medium pr-10"
+                    />
+                    <ImageIcon className="w-4 h-4 text-white/30 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                  {newListCover.trim().length > 10 && (
+                    <div className="mt-2 relative h-24 rounded-xl overflow-hidden border border-white/15 bg-black/40">
+                      <img
+                        src={getProxiedImageUrl(newListCover.trim(), 'Önizleme')}
+                        alt="Kapak Önizleme"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = 'none';
+                        }}
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute bottom-1 left-2 text-[9px] font-mono text-white/80 bg-black/70 px-1.5 py-0.5 rounded backdrop-blur-sm">
+                        Kapak Önizleme
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div>

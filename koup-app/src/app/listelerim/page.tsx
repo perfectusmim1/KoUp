@@ -15,6 +15,7 @@ import {
   ChevronRight,
   X,
   Compass,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { useKoUpSelector } from '@/context/KoUpContext';
 import { supabase, getProxiedImageUrl } from '@/lib/supabase';
@@ -29,6 +30,7 @@ interface UserCustomList {
   media_ids: number[];
   likes_count: number;
   created_at: string;
+  cover_image_url?: string | null;
   cover_posters?: string[];
 }
 
@@ -52,6 +54,7 @@ export default function MyListsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState('');
   const [modalDesc, setModalDesc] = useState('');
+  const [modalCoverUrl, setModalCoverUrl] = useState('');
   const [modalVisibility, setModalVisibility] = useState<'public' | 'private'>('public');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -77,35 +80,49 @@ export default function MyListsPage() {
           .order('created_at', { ascending: false });
 
         if (!error && data && isMounted) {
-          // Fetch preview posters for media_ids in each list
-          const formattedLists: UserCustomList[] = await Promise.all(
-            data.map(async (l: any) => {
-              let posters: string[] = [];
-              if (Array.isArray(l.media_ids) && l.media_ids.length > 0) {
-                const sampleIds = l.media_ids.slice(0, 4);
-                const { data: mediaRows } = await supabase
-                  .from('media')
-                  .select('cover_image')
-                  .in('id', sampleIds);
-                if (mediaRows) {
-                  posters = mediaRows
-                    .map((m: any) => m.cover_image)
-                    .filter(Boolean);
-                }
-              }
-              return {
-                id: l.id,
-                slug: l.slug,
-                title: l.title,
-                description: l.description,
-                visibility: l.visibility || 'public',
-                media_ids: Array.isArray(l.media_ids) ? l.media_ids : [],
-                likes_count: l.likes_count || 0,
-                created_at: l.created_at,
-                cover_posters: posters,
-              };
-            })
+          // Batch fetch preview posters for media_ids across all lists
+          const sampleMediaIds = Array.from(
+            new Set(
+              data.flatMap((l: any) =>
+                Array.isArray(l.media_ids) ? l.media_ids.slice(0, 4) : []
+              )
+            )
           );
+
+          let posterMap = new Map<number, string>();
+          if (sampleMediaIds.length > 0) {
+            const { data: mediaRows } = await supabase
+              .from('media')
+              .select('id, cover_image')
+              .in('id', sampleMediaIds);
+            if (mediaRows) {
+              mediaRows.forEach((m: any) => {
+                if (m.cover_image) posterMap.set(m.id, m.cover_image);
+              });
+            }
+          }
+
+          const formattedLists: UserCustomList[] = data.map((l: any) => {
+            const posters = Array.isArray(l.media_ids)
+              ? (l.media_ids as number[])
+                  .slice(0, 4)
+                  .map((id) => posterMap.get(id))
+                  .filter(Boolean) as string[]
+              : [];
+            return {
+              id: l.id,
+              slug: l.slug,
+              title: l.title,
+              description: l.description,
+              visibility: l.visibility || 'public',
+              media_ids: Array.isArray(l.media_ids) ? l.media_ids : [],
+              likes_count: l.likes_count || 0,
+              created_at: l.created_at,
+              cover_image_url: l.cover_image_url || null,
+              cover_posters: posters,
+            };
+          });
+
           if (isMounted) {
             setLists(formattedLists);
           }
@@ -143,6 +160,7 @@ export default function MyListsPage() {
         body: JSON.stringify({
           title: modalTitle.trim(),
           description: modalDesc.trim() || null,
+          cover_image_url: modalCoverUrl.trim() || null,
           visibility: modalVisibility,
           user_id: user.id,
           media_ids: [],
@@ -163,6 +181,7 @@ export default function MyListsPage() {
             media_ids: [],
             likes_count: 0,
             created_at: d.list.created_at,
+            cover_image_url: d.list.cover_image_url || modalCoverUrl.trim() || null,
             cover_posters: [],
           },
           ...prev,
@@ -170,6 +189,7 @@ export default function MyListsPage() {
         setIsModalOpen(false);
         setModalTitle('');
         setModalDesc('');
+        setModalCoverUrl('');
         setModalVisibility('public');
       } else {
         setModalError(d.error || 'Liste oluşturulamadı.');
@@ -396,13 +416,24 @@ export default function MyListsPage() {
                     </button>
                   </div>
 
-                  {/* Artwork / Poster Strip */}
+                  {/* Artwork / Poster Strip / Custom Cover */}
                   <Link
                     href={`/listeler/${l.slug || l.id}`}
                     onClick={() => triggerSound('click')}
                     className="block mt-4 rounded-2xl overflow-hidden bg-black/40 border border-white/10 group-hover:border-sky-400/40 transition-colors"
                   >
-                    {l.cover_posters && l.cover_posters.length > 0 ? (
+                    {l.cover_image_url ? (
+                      <div className="relative h-28 overflow-hidden">
+                        <img
+                          src={getProxiedImageUrl(l.cover_image_url, l.title)}
+                          alt={l.title}
+                          loading="lazy"
+                          decoding="async"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+                      </div>
+                    ) : l.cover_posters && l.cover_posters.length > 0 ? (
                       <div className="grid grid-cols-4 h-24 overflow-hidden">
                         {l.cover_posters.map((poster, idx) => (
                           <div key={idx} className="relative h-full overflow-hidden border-r border-white/10 last:border-r-0">
@@ -411,7 +442,7 @@ export default function MyListsPage() {
                               alt=""
                               loading="lazy"
                               decoding="async"
-                              className="w-full h-full object-cover"
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
                             />
                           </div>
                         ))}
@@ -581,6 +612,46 @@ export default function MyListsPage() {
                     placeholder=""
                     className="koup-input text-xs py-2.5 px-4 font-medium resize-none"
                   />
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-semibold text-white/80">
+                    <span>Kapak Görseli URL (İsteğe Bağlı)</span>
+                    {modalCoverUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setModalCoverUrl('')}
+                        className="text-[10px] text-rose-400 hover:underline cursor-pointer"
+                      >
+                        Temizle
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="url"
+                      value={modalCoverUrl}
+                      onChange={(e) => setModalCoverUrl(e.target.value)}
+                      placeholder="https://... (Banner veya afiş görseli URL'si)"
+                      className="koup-input text-xs py-2.5 px-4 font-medium pr-10"
+                    />
+                    <ImageIcon className="w-4 h-4 text-white/30 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                  {modalCoverUrl.trim().length > 10 && (
+                    <div className="mt-2 relative h-24 rounded-xl overflow-hidden border border-white/15 bg-black/40">
+                      <img
+                        src={getProxiedImageUrl(modalCoverUrl.trim(), 'Önizleme')}
+                        alt="Kapak Önizleme"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = 'none';
+                        }}
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute bottom-1 left-2 text-[9px] font-mono text-white/80 bg-black/70 px-1.5 py-0.5 rounded backdrop-blur-sm">
+                        Kapak Önizleme
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Visibility selector */}

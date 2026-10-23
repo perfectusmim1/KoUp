@@ -22,6 +22,23 @@ export async function GET(req: NextRequest) {
 
     let results = Array.isArray(lists) ? [...lists] : [];
 
+    // Ensure cover_image_url is attached if RPC returns without it
+    if (results.length > 0 && results[0].cover_image_url === undefined) {
+      const listIds = results.map((r: any) => r.id).filter(Boolean);
+      if (listIds.length > 0) {
+        const { data: covers } = await (supabaseAdmin || supabase)
+          .from('custom_lists')
+          .select('id, cover_image_url')
+          .in('id', listIds);
+        if (covers) {
+          const coverMap = new Map(covers.map((c: any) => [c.id, c.cover_image_url]));
+          results.forEach((r: any) => {
+            r.cover_image_url = coverMap.get(r.id) || null;
+          });
+        }
+      }
+    }
+
     // Filter by query (title, description, or creator username)
     if (query) {
       results = results.filter((item) => {
@@ -74,7 +91,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { title, description, visibility, user_id, media_ids } = body;
+    const { title, description, visibility, user_id, media_ids, cover_image_url } = body;
 
     if (!title || title.trim().length < 2) {
       return NextResponse.json(
@@ -113,6 +130,7 @@ export async function POST(req: NextRequest) {
           user_id,
           title: cleanTitle,
           description: description?.trim() || null,
+          cover_image_url: cover_image_url?.trim() || null,
           visibility: visibility === 'private' ? 'private' : 'public',
           media_ids: Array.isArray(media_ids) ? media_ids : [],
           slug,
@@ -127,6 +145,14 @@ export async function POST(req: NextRequest) {
         );
       }
       return NextResponse.json({ success: true, list: insertData });
+    }
+
+    if (data && cover_image_url?.trim()) {
+      await (supabaseAdmin || supabase)
+        .from('custom_lists')
+        .update({ cover_image_url: cover_image_url.trim() })
+        .eq('id', data.id);
+      data.cover_image_url = cover_image_url.trim();
     }
 
     return NextResponse.json({ success: true, list: data });
