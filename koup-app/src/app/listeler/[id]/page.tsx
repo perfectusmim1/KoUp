@@ -90,7 +90,7 @@ export default function ListDetailPage({
   const unwrappedParams = use(params);
   const router = useRouter();
   const user = useKoUpSelector((s) => s.user);
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin' || user?.role === 'mod';
   const authLoading = useKoUpSelector((s) => s.authLoading);
   const triggerSound = useKoUpSelector((s) => s.triggerSound);
   const pushNotification = useKoUpSelector((s) => s.pushNotification);
@@ -559,13 +559,16 @@ export default function ListDetailPage({
       const res = await fetch(`/api/lists/${list.id}?user_id=${user?.id}`, {
         method: 'DELETE',
       });
-      const data = await res.json();
-      if (data.success) {
-        pushNotification('Liste Silindi', 'Listeniz başarıyla kaldırıldı.', 'info');
+      const data = await res.json().catch(() => ({}));
+      if (data.success || res.status === 404) {
+        pushNotification('Liste Silindi', 'Liste başarıyla kaldırıldı.', 'info');
         router.push('/listeler');
+      } else {
+        pushNotification('Hata', data.error || 'Liste silinemedi.', 'error');
       }
     } catch (err) {
       console.error('Failed to delete list:', err);
+      pushNotification('Hata', 'Silme işlemi sırasında hata oluştu.', 'error');
     }
   };
 

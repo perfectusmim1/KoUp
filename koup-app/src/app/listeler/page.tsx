@@ -89,7 +89,7 @@ const SORT_OPTIONS: SelectOption[] = [
 
 export default function PublicListsPage() {
   const user = useKoUpSelector((s) => s.user);
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin' || user?.role === 'mod';
   const confirmDialog = useKoUpSelector((s) => s.confirmDialog);
   const triggerSound = useKoUpSelector((s) => s.triggerSound);
   const pushNotification = useKoUpSelector((s) => s.pushNotification);
@@ -186,8 +186,8 @@ export default function PublicListsPage() {
       const res = await fetch(`/api/lists/${targetList.id}?user_id=${encodeURIComponent(user.id)}`, {
         method: 'DELETE',
       });
-      const data = await res.json();
-      if (data.success) {
+      const data = await res.json().catch(() => ({}));
+      if (data.success || res.status === 404) {
         triggerSound('success');
         pushNotification('Liste Silindi', `"${targetList.title}" listesi kaldırıldı.`, 'info');
         setLists((prev) => prev.filter((l) => l.id !== targetList.id));

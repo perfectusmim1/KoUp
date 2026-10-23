@@ -13,6 +13,8 @@ import {
   XCircle,
   Search,
   Compass,
+  Tv,
+  Film,
   LogIn,
   Trash2,
   X,
@@ -378,13 +380,14 @@ export default function KutuphanePage() {
       {/* Filter and Search Bar */}
       <div className="rounded-3xl bg-[#0f0f11] p-4 sm:p-5 border border-white/[0.08] flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
         {/* Content Type Filter */}
-        <div className="flex items-center gap-1 p-1 rounded-full glass-pill-dark border border-white/12 shrink-0 mx-auto sm:mx-0">
+        <div className="flex items-center gap-1.5 p-1 rounded-full glass-pill-dark border border-white/10 shrink-0 mx-auto sm:mx-0">
           {[
-            { id: 'ALL' as const, label: 'Hepsi' },
-            { id: 'drama' as const, label: 'Dizi' },
-            { id: 'anime' as const, label: 'Anime' },
-            { id: 'movie' as const, label: 'Film' },
+            { id: 'ALL' as const, label: 'Hepsi', icon: Compass },
+            { id: 'drama' as const, label: 'Dizi', icon: Tv },
+            { id: 'anime' as const, label: 'Anime', icon: Sparkles },
+            { id: 'movie' as const, label: 'Film', icon: Film },
           ].map((tp) => {
+            const Icon = tp.icon;
             const active = activeType === tp.id;
             return (
               <button
@@ -394,10 +397,10 @@ export default function KutuphanePage() {
                   setActiveType(tp.id);
                   setCurrentPage(1);
                 }}
-                className={`relative px-3 py-1 rounded-full text-[11px] font-semibold transition-colors duration-200 cursor-pointer ${
+                className={`relative shrink-0 flex items-center gap-2 px-4 sm:px-5 py-2 rounded-full text-xs font-semibold transition-colors duration-200 cursor-pointer ${
                   active
-                    ? 'text-white'
-                    : 'text-white/60 hover:text-white'
+                    ? 'text-black font-extrabold'
+                    : 'text-white/70 hover:text-white'
                 }`}
               >
                 {active && (
@@ -405,10 +408,11 @@ export default function KutuphanePage() {
                     layoutId="kutuphane-type-active-pill"
                     initial={false}
                     transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
-                    className="absolute inset-0 rounded-full bg-sky-500 shadow-[0_0_12px_rgba(14,165,233,0.45)]"
+                    className="absolute inset-0 rounded-full bg-white shadow-[0_0_20px_rgba(255,255,255,0.4)]"
                   />
                 )}
-                <span className="relative z-10 font-bold">{tp.label}</span>
+                <Icon className="w-3.5 h-3.5 relative z-10" />
+                <span className="relative z-10">{tp.label}</span>
               </button>
             );
           })}

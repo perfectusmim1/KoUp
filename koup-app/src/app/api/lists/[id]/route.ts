@@ -258,47 +258,61 @@ export async function DELETE(
       return NextResponse.json({ success: true, message: 'Liste silindi' });
     }
 
-    // Resilient fallback with strict owner check
+    // Resilient fallback with strict owner or admin check
     const isNum = /^[0-9]+$/.test(id);
     let checkQuery = (supabaseAdmin || supabase).from('custom_lists').select('id, user_id');
     if (isNum) checkQuery = checkQuery.eq('id', Number(id));
     else checkQuery = checkQuery.eq('slug', id);
 
     const { data: listRow } = await checkQuery.maybeSingle();
-    if (listRow) {
-      let isAuthorized = listRow.user_id === userId;
-      if (!isAuthorized) {
-        const { data: profile } = await (supabaseAdmin || supabase)
-          .from('profiles')
-          .select('role')
-          .eq('id', userId)
-          .maybeSingle();
-        if (profile?.role === 'admin') {
-          isAuthorized = true;
-        }
-      }
+    if (!listRow) {
+      // If the list is already gone from DB, treat as fulfilled so UI cleans up immediately
+      return NextResponse.json({
+        success: true,
+        message: 'Liste zaten silinmiş veya mevcut değil.',
+        already_deleted: true,
+      });
+    }
 
-      if (!isAuthorized) {
-        return NextResponse.json(
-          { success: false, error: 'Bu listeyi silme yetkiniz yok.' },
-          { status: 403 }
-        );
-      }
-
-      const { error: directDelErr } = await (supabaseAdmin || supabase)
-        .from('custom_lists')
-        .delete()
-        .eq('id', listRow.id);
-
-      if (!directDelErr) {
-        return NextResponse.json({ success: true, message: 'Liste silindi' });
+    let isAuthorized = listRow.user_id === userId;
+    if (!isAuthorized) {
+      const { data: profile } = await (supabaseAdmin || supabase)
+        .from('profiles')
+        .select('role')
+        .eq('id', userId)
+        .maybeSingle();
+      if (profile?.role === 'admin' || profile?.role === 'superadmin' || profile?.role === 'mod') {
+        isAuthorized = true;
       }
     }
 
-    return NextResponse.json(
-      { success: false, error: 'Liste bulunamadı veya silinemedi.' },
-      { status: 404 }
-    );
+    if (!isAuthorized) {
+      return NextResponse.json(
+        { success: false, error: 'Bu listeyi silme yetkiniz yok.' },
+        { status: 403 }
+      );
+    }
+
+    // Clean up relations first if any exist
+    await (supabaseAdmin || supabase)
+      .from('custom_list_likes')
+      .delete()
+      .eq('list_id', listRow.id);
+
+    const { error: directDelErr } = await (supabaseAdmin || supabase)
+      .from('custom_lists')
+      .delete()
+      .eq('id', listRow.id);
+
+    if (directDelErr) {
+      console.error('Direct delete custom_lists error:', directDelErr);
+      return NextResponse.json(
+        { success: false, error: directDelErr.message || 'Liste silinemedi.' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true, message: 'Liste silindi' });
   } catch (err: any) {
     return NextResponse.json(
       { success: false, error: err?.message || 'Silme işlemi başarısız' },

@@ -273,8 +273,8 @@ export default function MyListsPage() {
       const res = await fetch(`/api/lists/${id}?user_id=${user.id}`, {
         method: 'DELETE',
       });
-      const d = await res.json();
-      if (d.success) {
+      const d = await res.json().catch(() => ({}));
+      if (d.success || res.status === 404) {
         triggerSound('success');
         pushNotification('Liste Silindi', 'Özel listeniz başarıyla kaldırıldı.', 'info');
         setLists((prev) => prev.filter((l) => l.id !== id));
