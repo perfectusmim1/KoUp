@@ -208,6 +208,18 @@ function getDisplaySourceName(
   const s = (site || '').toLowerCase();
   const raw = cleanSourceName(rawSourceName);
 
+  // 0. EV Player (1080p native HLS)
+  if (
+    p === 'morencius' ||
+    p === 'ev' ||
+    raw.toUpperCase() === 'EV' ||
+    raw.toUpperCase().startsWith('EV ') ||
+    raw.toUpperCase().includes('EV 1080P') ||
+    u.includes('morencius.com')
+  ) {
+    return 'EV';
+  }
+
   // 1. AsyaWatch primary native streams
   if (p === 'asyawatch' || s === 'asyawatch' || u.includes('pichive') || u.includes('molystream')) {
     return 'Orijinal';
@@ -277,9 +289,19 @@ function getProviderPriority(provider: string, directUrl: string, contentType: s
   const hasTrSub = s.includes('altyaz') || u.includes('altyaz') || p.includes('sub');
   const hasTrDub = s.includes('dublaj') || s.includes('dual') || u.includes('dublaj') || p.includes('dub');
 
-  // Priority #1: Tau-Video (Fastest ultra-responsive native MP4 player stream for KoUp Netflix Player)
+  // Priority #1: KoUp Native Players (Tau-Video MP4 & EV / Morencius 1080p Native HLS)
   if (p === 'tau-video' || u.includes('tau-video')) {
     return -5;
+  }
+  if (
+    p === 'morencius' ||
+    p === 'ev' ||
+    s === 'ev' ||
+    s.startsWith('ev ') ||
+    s.includes('ev 1080p') ||
+    u.includes('morencius.com')
+  ) {
+    return -4.5;
   }
 
   // Priority #2: Direct native HLS players (Rapidrame, Diziyou)

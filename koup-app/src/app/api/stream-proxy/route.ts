@@ -89,7 +89,14 @@ export async function GET(req: NextRequest) {
     } else if (targetUrl.includes('dizibox') || targetUrl.includes('molystream')) {
       referer = 'https://dbx.molystream.org/';
       origin = 'https://dbx.molystream.org';
-    } else if (targetUrl.includes('morencius')) {
+    } else if (
+      targetUrl.includes('morencius') ||
+      targetUrl.includes('acek-cdn') ||
+      targetUrl.includes('dramiyos') ||
+      targetUrl.includes('videopixelvanto') ||
+      targetUrl.includes('smartcheckout.shop') ||
+      targetUrl.includes('fastsupplyhub.shop')
+    ) {
       referer = 'https://morencius.com/';
       origin = 'https://morencius.com';
     } else if (targetUrl.includes('gdriveplayer') || targetUrl.includes('stream121')) {
@@ -263,7 +270,8 @@ export async function GET(req: NextRequest) {
           targetUrl.includes('/m.php') ||
           targetUrl.includes('/l.php') ||
           targetUrl.includes('/ld.php') ||
-          targetUrl.includes('.m3u8');
+          targetUrl.includes('.m3u8') ||
+          targetUrl.includes('master.txt');
         if (isPlayListUrl) {
           try {
             const { execFile } = await import('child_process');

@@ -611,6 +611,8 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
                 u = (s.get("direct_url") or "").lower()
                 if "tau-video" in p or "tau" in n or "tau-video" in u:
                     return -5
+                if "morencius" in p or "ev" in p or n == "ev" or n.startswith("ev ") or "morencius" in u:
+                    return -4.5
                 if "rapidrame" in p or "diziyou" in p:
                     return -4
                 if "tr-dublaj" in p or "tr-altyazi" in p or "player" in p or "hls" in p:

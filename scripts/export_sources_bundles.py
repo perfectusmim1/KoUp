@@ -66,7 +66,7 @@ def get_provider_priority(provider: str, direct_url: str, content_type: str) -> 
     p = (provider or "").lower()
     u = (direct_url or "").lower()
 
-    if p == "tau-video" or "tau-video" in u:
+    if p in ("tau-video", "morencius", "ev") or "tau-video" in u or "morencius" in u:
         return 0
     if p in ("rapidrame", "diziyou-hls") or "rplayer" in u or "storage.diziyou" in u:
         return 1
@@ -190,7 +190,10 @@ def export_all(drama_id: int = None):
                     or "pichive" in u_low
                 )
 
-                if p_low == "asyawatch" or (site or "").lower() == "asyawatch" or "pichive" in u_low or "molystream" in u_low:
+                if p_low in ("morencius", "ev") or "morencius" in u_low or clean_name.upper() in ("EV", "EV 1080P") or clean_name.upper().startswith("EV "):
+                    display_name = "EV"
+                    is_native = True
+                elif p_low == "asyawatch" or (site or "").lower() == "asyawatch" or "pichive" in u_low or "molystream" in u_low:
                     display_name = "Orijinal"
                 elif p_low == "dizilla" or (site or "").lower() == "dizilla" or "dplayer" in u_low or "hotlinger" in u_low:
                     display_name = "Dizilla"

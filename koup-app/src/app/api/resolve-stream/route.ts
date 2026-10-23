@@ -54,7 +54,7 @@ function unpackDeanEdwards(packedJs: string): string {
   while (c--) {
     if (k[c]) {
       const regex = new RegExp('\\b' + baseN(c, a) + '\\b', 'g');
-      p = p.replace(regex, k[c]);
+      p = p.replace(regex, () => k[c]);
     }
   }
   return p;
@@ -1213,15 +1213,27 @@ export async function GET(req: NextRequest) {
     } catch {}
   }
 
-  // 3d. EV Player (morencius.com) Direct 1080p HLS Resolver
-  if (lowerUrl.includes('morencius.com') || provider === 'morencius' || provider === 'ev') {
+  // 3d. EV Player (morencius.com / vidhide) Direct 1080p HLS Resolver
+  if (
+    lowerUrl.includes('morencius.com') ||
+    lowerUrl.includes('vidhide') ||
+    provider === 'morencius' ||
+    provider === 'ev'
+  ) {
     try {
-      const resp = await fetch(url, {
+      let targetEvUrl = url;
+      if (lowerUrl.includes('vidhide')) {
+        const vhMatch = url.match(/(?:embed-|e\/|v\/)([a-zA-Z0-9]+)/);
+        if (vhMatch) {
+          targetEvUrl = `https://morencius.com/embed/${vhMatch[1]}`;
+        }
+      }
+      const resp = await fetch(targetEvUrl, {
         headers: {
           'User-Agent': commonUA,
           Referer: 'https://morencius.com/',
         },
-        signal: AbortSignal.timeout(6000),
+        signal: AbortSignal.timeout(10000),
       });
       if (!resp.ok && (resp.status === 404 || resp.status === 410)) {
         return NextResponse.json({ error: 'EV videosu bulunamadı (404)', isDead: true }, { status: 410 });
@@ -1235,7 +1247,8 @@ export async function GET(req: NextRequest) {
         unpacked.match(/["']hls2["']\s*:\s*["']([^"']+)["']/) ||
         unpacked.match(/["']hls3["']\s*:\s*["']([^"']+)["']/) ||
         unpacked.match(/["']hls4["']\s*:\s*["']([^"']+)["']/) ||
-        unpacked.match(/https?:\/\/[^\s"'<>]+\.m3u8[^\s"'<>]*/);
+        unpacked.match(/https?:\/\/[^\s"'<>]+\.m3u8[^\s"'<>]*/) ||
+        unpacked.match(/https?:\/\/[^\s"'<>]+\/master\.txt[^\s"'<>]*/);
       if (m3u8Match) {
         const m3u8Url = m3u8Match[1] || m3u8Match[0];
         const proxied = `/api/stream-proxy?url=${encodeURIComponent(m3u8Url)}&ref=${encodeURIComponent('https://morencius.com/')}`;
@@ -1245,7 +1258,7 @@ export async function GET(req: NextRequest) {
           qualities: [{ label: '1080p (EV)', url: proxied }],
           fallbackIframe: url,
         };
-        setCachedStream(url, result);
+        setCachedStream(url, result, 12 * 60 * 60 * 1000);
         return NextResponse.json(result, { headers: CACHE_HEADERS });
       }
     } catch {}

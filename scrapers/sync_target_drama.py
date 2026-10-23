@@ -362,6 +362,12 @@ def extract_streams_from_html(raw_html: str, site_label: str = "general") -> lis
     for pdk_u in re.findall(r'https?://(?:www\.)?playerdkorea\.xyz/video/[a-zA-Z0-9]+', full_html):
         _add('PlayerDKorea 1080p', pdk_u, 'dizikorea')
 
+    # 0.1. EV Player / Morencius 1080p HLS (KoUp Native Player)
+    for ev_id in re.findall(r'https?://(?:www\.)?morencius\.com/embed/([a-zA-Z0-9]+)', full_html):
+        _add('EV', f'https://morencius.com/embed/{ev_id}', 'morencius')
+    for vh_id in re.findall(r'https?://(?:www\.)?(?:vidhide\.[a-z]+|vidhideplus\.com|vidhidevip\.com|vidhidepro\.com|ahvsh\.com)/(?:embed-|e/|v/)([a-zA-Z0-9]+)', full_html):
+        _add('EV', f'https://morencius.com/embed/{vh_id}', 'morencius')
+
     # 1. Pichive 1080p HLS (AsyaWatch / Dizilla)
     for m in re.findall(r'(?:https?:)?//([a-zA-Z0-9_\-\.]*pichive\.[a-z]+/iframe\.php\?v=[a-zA-Z0-9]+)', full_html):
         _add('Pichive 1080p HLS', f'https://{m}', 'asyawatch')
