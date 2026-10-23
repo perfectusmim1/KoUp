@@ -912,7 +912,7 @@ function AccordionMediaCardComponent({
         {/* Quick Action Drawer on Hover */}
         <div
           className={`overflow-hidden pointer-events-auto transition-[max-height,opacity,transform] duration-200 ease-out ${
-            isHovered && (fluidWidth || cardHoverExpandEnabled)
+            isHovered
               ? 'max-h-[44px] opacity-100 translate-y-0'
               : 'max-h-0 opacity-0 translate-y-1'
           }`}

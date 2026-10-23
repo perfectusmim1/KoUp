@@ -34,6 +34,7 @@ import {
   Compass,
   Play,
   Maximize2,
+  Tv,
   Library,
   MessageSquare,
   ShieldAlert,
@@ -447,41 +448,90 @@ export default function SettingsPage() {
               </button>
             </div>
 
-            {/* 3. Seri ve Film Kartlarında Yana Doğru Genişleme (Hover Efekti) */}
-            <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between gap-4">
-              <div className="min-w-0">
+            {/* 3. Dizi & Film Kart Şekli / Görünüm Seçimi */}
+            <div className="p-4 sm:p-6 rounded-2xl bg-white/[0.03] border border-white/10 space-y-4">
+              <div>
                 <div className="text-sm font-bold text-white flex items-center gap-2">
                   <Maximize2 className="w-4 h-4 text-sky-400" />
-                  <span>Seri & Film Kartlarında Yana Genişleme (Hover)</span>
+                  <span>Dizi & Film Kart Şekli (Önizleme Tarzı)</span>
                 </div>
-                <div className="text-xs text-white/55 mt-0.5">
-                  Masaüstünde fareyle kart üzerine gelindiğinde yana doğru açılan geniş sinematik önizlemeyi kontrol edin.
-                </div>
-                <div className="text-[11px] text-white/40 mt-1">
-                  💡 Kapatıldığında geniş arka plan görseli yüklenmez; yalnızca dikey afiş render edilerek tarayıcı performansı maksimuma çıkar.
+                <div className="text-xs text-white/55 mt-1">
+                  Masaüstünde fareyle yapımların üzerine geldiğinizde kartın nasıl tepki vereceğini ve hangi düzeni kullanacağını belirleyin.
                 </div>
               </div>
 
-              {/* iOS / Apple Style Toggle Switch */}
-              <button
-                type="button"
-                onClick={() => {
-                  triggerSound('click');
-                  setCardHoverExpandEnabled(!cardHoverExpandEnabled);
-                }}
-                role="switch"
-                aria-checked={cardHoverExpandEnabled}
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                  cardHoverExpandEnabled ? 'bg-sky-500' : 'bg-white/20'
-                }`}
-              >
-                <span
-                  aria-hidden="true"
-                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                    cardHoverExpandEnabled ? 'translate-x-5' : 'translate-x-0'
+              {/* 2 Seçenekli Kart Düzeni Seçici */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                {/* 1. Seçenek: Genişleyen Sinematik Kart */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerSound('click');
+                    setCardHoverExpandEnabled(true);
+                  }}
+                  className={`relative p-4 rounded-xl border text-left transition-all duration-200 cursor-pointer flex flex-col justify-between gap-3 ${
+                    cardHoverExpandEnabled
+                      ? 'bg-sky-500/15 border-sky-400/50 shadow-[0_0_24px_rgba(56,189,248,0.22)] ring-1 ring-sky-400/30'
+                      : 'bg-white/[0.02] border-white/10 hover:border-white/20 hover:bg-white/[0.05]'
                   }`}
-                />
-              </button>
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className={`p-1.5 rounded-lg ${cardHoverExpandEnabled ? 'bg-sky-400/20 text-sky-300' : 'bg-white/10 text-white/60'}`}>
+                        <Maximize2 className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs sm:text-sm font-bold text-white">Genişleyen Sinematik Kart</span>
+                    </div>
+                    {cardHoverExpandEnabled && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-400/20 text-sky-300 border border-sky-400/30">
+                        <Check className="w-3 h-3" />
+                        <span>Aktif</span>
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-white/55 leading-relaxed">
+                    Üzerine gelindiğinde yana doğru genişler; sinematik arka plan görseli, detaylar ve fragman önizlemesi sunar.
+                  </p>
+                  <div className="inline-flex items-center gap-1.5 text-[10px] font-mono text-sky-400/90 font-medium">
+                    <span>✨ Netflix stili sinematik genişleme</span>
+                  </div>
+                </button>
+
+                {/* 2. Seçenek: Kompakt Dikey Kart */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerSound('click');
+                    setCardHoverExpandEnabled(false);
+                  }}
+                  className={`relative p-4 rounded-xl border text-left transition-all duration-200 cursor-pointer flex flex-col justify-between gap-3 ${
+                    !cardHoverExpandEnabled
+                      ? 'bg-sky-500/15 border-sky-400/50 shadow-[0_0_24px_rgba(56,189,248,0.22)] ring-1 ring-sky-400/30'
+                      : 'bg-white/[0.02] border-white/10 hover:border-white/20 hover:bg-white/[0.05]'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className={`p-1.5 rounded-lg ${!cardHoverExpandEnabled ? 'bg-sky-400/20 text-sky-300' : 'bg-white/10 text-white/60'}`}>
+                        <Tv className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs sm:text-sm font-bold text-white">Kompakt Dikey Kart</span>
+                    </div>
+                    {!cardHoverExpandEnabled && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-400/20 text-sky-300 border border-sky-400/30">
+                        <Check className="w-3 h-3" />
+                        <span>Aktif</span>
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-white/55 leading-relaxed">
+                    Dikey afiş boyutunu korur; üzerine gelindiğinde hızlı izleme, favori ve bildirim butonlarını açar.
+                  </p>
+                  <div className="inline-flex items-center gap-1.5 text-[10px] font-mono text-emerald-400/90 font-medium">
+                    <span>⚡ Hızlı & hafif dikey düzen</span>
+                  </div>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1156,41 +1206,90 @@ export default function SettingsPage() {
               </button>
             </div>
 
-            {/* 3. Seri ve Film Kartlarında Yana Doğru Genişleme (Hover Efekti) */}
-            <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between gap-4">
-              <div className="min-w-0">
+            {/* 3. Dizi & Film Kart Şekli / Görünüm Seçimi */}
+            <div className="p-4 sm:p-6 rounded-2xl bg-white/[0.03] border border-white/10 space-y-4">
+              <div>
                 <div className="text-sm font-bold text-white flex items-center gap-2">
                   <Maximize2 className="w-4 h-4 text-sky-400" />
-                  <span>Seri & Film Kartlarında Yana Genişleme (Hover)</span>
+                  <span>Dizi & Film Kart Şekli (Önizleme Tarzı)</span>
                 </div>
-                <div className="text-xs text-white/55 mt-0.5">
-                  Masaüstünde fareyle kart üzerine gelindiğinde yana doğru açılan geniş sinematik önizlemeyi kontrol edin.
-                </div>
-                <div className="text-[11px] text-white/40 mt-1">
-                  💡 Kapatıldığında geniş arka plan görseli yüklenmez; yalnızca dikey afiş render edilerek tarayıcı performansı maksimuma çıkar.
+                <div className="text-xs text-white/55 mt-1">
+                  Masaüstünde fareyle yapımların üzerine geldiğinizde kartın nasıl tepki vereceğini ve hangi düzeni kullanacağını belirleyin.
                 </div>
               </div>
 
-              {/* iOS / Apple Style Toggle Switch */}
-              <button
-                type="button"
-                onClick={() => {
-                  triggerSound('click');
-                  setCardHoverExpandEnabled(!cardHoverExpandEnabled);
-                }}
-                role="switch"
-                aria-checked={cardHoverExpandEnabled}
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                  cardHoverExpandEnabled ? 'bg-sky-500' : 'bg-white/20'
-                }`}
-              >
-                <span
-                  aria-hidden="true"
-                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                    cardHoverExpandEnabled ? 'translate-x-5' : 'translate-x-0'
+              {/* 2 Seçenekli Kart Düzeni Seçici */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                {/* 1. Seçenek: Genişleyen Sinematik Kart */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerSound('click');
+                    setCardHoverExpandEnabled(true);
+                  }}
+                  className={`relative p-4 rounded-xl border text-left transition-all duration-200 cursor-pointer flex flex-col justify-between gap-3 ${
+                    cardHoverExpandEnabled
+                      ? 'bg-sky-500/15 border-sky-400/50 shadow-[0_0_24px_rgba(56,189,248,0.22)] ring-1 ring-sky-400/30'
+                      : 'bg-white/[0.02] border-white/10 hover:border-white/20 hover:bg-white/[0.05]'
                   }`}
-                />
-              </button>
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className={`p-1.5 rounded-lg ${cardHoverExpandEnabled ? 'bg-sky-400/20 text-sky-300' : 'bg-white/10 text-white/60'}`}>
+                        <Maximize2 className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs sm:text-sm font-bold text-white">Genişleyen Sinematik Kart</span>
+                    </div>
+                    {cardHoverExpandEnabled && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-400/20 text-sky-300 border border-sky-400/30">
+                        <Check className="w-3 h-3" />
+                        <span>Aktif</span>
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-white/55 leading-relaxed">
+                    Üzerine gelindiğinde yana doğru genişler; sinematik arka plan görseli, detaylar ve fragman önizlemesi sunar.
+                  </p>
+                  <div className="inline-flex items-center gap-1.5 text-[10px] font-mono text-sky-400/90 font-medium">
+                    <span>✨ Netflix stili sinematik genişleme</span>
+                  </div>
+                </button>
+
+                {/* 2. Seçenek: Kompakt Dikey Kart */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerSound('click');
+                    setCardHoverExpandEnabled(false);
+                  }}
+                  className={`relative p-4 rounded-xl border text-left transition-all duration-200 cursor-pointer flex flex-col justify-between gap-3 ${
+                    !cardHoverExpandEnabled
+                      ? 'bg-sky-500/15 border-sky-400/50 shadow-[0_0_24px_rgba(56,189,248,0.22)] ring-1 ring-sky-400/30'
+                      : 'bg-white/[0.02] border-white/10 hover:border-white/20 hover:bg-white/[0.05]'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className={`p-1.5 rounded-lg ${!cardHoverExpandEnabled ? 'bg-sky-400/20 text-sky-300' : 'bg-white/10 text-white/60'}`}>
+                        <Tv className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs sm:text-sm font-bold text-white">Kompakt Dikey Kart</span>
+                    </div>
+                    {!cardHoverExpandEnabled && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-400/20 text-sky-300 border border-sky-400/30">
+                        <Check className="w-3 h-3" />
+                        <span>Aktif</span>
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-white/55 leading-relaxed">
+                    Dikey afiş boyutunu korur; üzerine gelindiğinde hızlı izleme, favori ve bildirim butonlarını açar.
+                  </p>
+                  <div className="inline-flex items-center gap-1.5 text-[10px] font-mono text-emerald-400/90 font-medium">
+                    <span>⚡ Hızlı & hafif dikey düzen</span>
+                  </div>
+                </button>
+              </div>
             </div>
           </div>
         </div>
