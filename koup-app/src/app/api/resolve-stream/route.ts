@@ -809,9 +809,12 @@ export async function GET(req: NextRequest) {
       // Embed page (e.g. Close Player https://hdfilmcehennemi.mobi/video/embed/... or Rapidrame https://www.hdfilmcehennemi.nl/rplayer/...)
       if (url.includes('hdfilmcehennemi.mobi/video/embed/') || url.includes('/video/embed/') || url.includes('/rplayer/')) {
         let embedFetchUrl = url;
-        const rapidParamMatch = url.match(/rapidrame_id=([a-zA-Z0-9_-]+)/);
-        if (rapidParamMatch?.[1]) {
-          embedFetchUrl = `https://www.hdfilmcehennemi.nl/rplayer/${rapidParamMatch[1]}/`;
+        let fetchReferer = 'https://hdfilmcehennemi.mobi/';
+        if (url.includes('/video/embed/')) {
+          embedFetchUrl = url.split('?')[0];
+          fetchReferer = 'https://hdfilmcehennemi.mobi/';
+        } else if (url.includes('/rplayer/')) {
+          fetchReferer = 'https://www.hdfilmcehennemi.nl/';
         }
 
         let html = '';
@@ -820,7 +823,7 @@ export async function GET(req: NextRequest) {
             headers: {
               'User-Agent':
                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-              Referer: 'https://www.hdfilmcehennemi.nl/',
+              Referer: fetchReferer,
             },
             signal: AbortSignal.timeout(6000),
           });
@@ -837,7 +840,7 @@ export async function GET(req: NextRequest) {
                 'python',
                 [
                   '-c',
-                  `import sys; from curl_cffi import requests; sys.stdout.reconfigure(encoding='utf-8'); r = requests.get(${JSON.stringify(embedFetchUrl)}, headers={'Referer': 'https://www.hdfilmcehennemi.nl/'}, impersonate='chrome', timeout=8); print(r.text if r.status_code == 200 else '')`,
+                  `import sys; from curl_cffi import requests; sys.stdout.reconfigure(encoding='utf-8'); r = requests.get(${JSON.stringify(embedFetchUrl)}, headers={'Referer': ${JSON.stringify(fetchReferer)}}, impersonate='chrome', timeout=8); print(r.text if r.status_code == 200 else '')`,
                 ],
                 { maxBuffer: 10 * 1024 * 1024, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } },
                 (err, stdout) => (err ? reject(err) : resolve(stdout))
@@ -855,7 +858,7 @@ export async function GET(req: NextRequest) {
                 [
                   '-s',
                   '-L',
-                  '-H', 'Referer: https://www.hdfilmcehennemi.nl/',
+                  '-H', `Referer: ${fetchReferer}`,
                   '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
                   '--connect-timeout', '6',
                   '--max-time', '10',
@@ -881,48 +884,83 @@ export async function GET(req: NextRequest) {
           // 2. Resolve Master HLS URL from obfuscated jwplayer setup or unpack
           let masterHlsUrl: string | null = null;
           const scriptMatches = html.match(/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/gi) || [];
-          const cand = scriptMatches.find((s) => s.includes('jwplayer') && (s.includes('eval(function') || s.includes('sources') || s.includes('.split(') || s.includes('master')));
-          if (cand) {
-            const cleanCode = cand.replace(/<script[^>]*>/, '').replace(/<\/script>/, '');
-            const stub = `
-              const createProxy = () => new Proxy(() => createProxy(), { get: (t, p) => p === 'then' ? undefined : createProxy(), apply: () => createProxy() });
-              var window = new Proxy({
-                lastCheckPoint: 0,
-                location: { href: '${embedFetchUrl}' },
-                addEventListener: () => {},
-                removeEventListener: () => {},
-                navigator: { userAgent: 'Mozilla/5.0' },
-                screen: { width: 1920, height: 1080 }
-              }, {
-                get: (target, prop) => prop in target ? target[prop] : createProxy()
-              });
-              var document = createProxy();
-              var localStorage = {};
-              var setInterval = () => 0;
-              var setTimeout = () => 0;
-              var extractedUrl = null;
-              var jwplayer = () => ({
-                setup: (cfg) => {
-                  if (cfg && cfg.sources && cfg.sources[0]) {
-                    extractedUrl = cfg.sources[0].file;
-                  }
-                  return createProxy();
-                },
-                on: () => createProxy(),
-                addButton: () => createProxy(),
-                getContainer: () => createProxy()
-              });
-              jwplayer.key = "test";
-              var $ = createProxy();
-            `;
-            try {
-              const fn = new Function(stub + cleanCode + `\nreturn extractedUrl;`);
-              const resolved = fn();
-              if (resolved && typeof resolved === 'string' && resolved.startsWith('http')) {
-                masterHlsUrl = resolved;
+
+          // 2a. Primary: Variable unpacker (sources: [{file: varName}])
+          const mVar = html.match(/sources:\s*\[\{file:\s*(\w+)/);
+          if (mVar?.[1]) {
+            const varName = mVar[1];
+            const candScript = scriptMatches.find((s) => s.includes(varName) && (s.includes('eval(') || s.includes('function')));
+            if (candScript) {
+              const cleanCode = candScript.replace(/<script[^>]*>/, '').replace(/<\/script>/, '');
+              const host = new URL(embedFetchUrl).hostname;
+              const orig = new URL(embedFetchUrl).origin;
+              const stub = `
+                var atob = (str) => Buffer.from(str, 'base64').toString('binary');
+                var btoa = (str) => Buffer.from(str, 'binary').toString('base64');
+                var location = { href: '${embedFetchUrl}', hostname: '${host}', origin: '${orig}', protocol: 'https:' };
+                var document = { querySelector: () => null, addEventListener: () => {}, location };
+                var window = { location, document, navigator: { userAgent: 'Mozilla/5.0' } };
+                var self = window;
+              `;
+              try {
+                const fn = new Function(stub + '\n' + cleanCode + `\nreturn ${varName};`);
+                const resolved = fn();
+                if (resolved && typeof resolved === 'string' && resolved.startsWith('http')) {
+                  masterHlsUrl = resolved;
+                }
+              } catch (err: any) {
+                console.error('HDFILM VAR UNPACK ERROR:', err?.message);
               }
-            } catch (err: any) {
-              console.error('RPLAYER UNPACK ERROR:', err?.message);
+            }
+          }
+
+          // 2b. Secondary: Full JWPlayer setup proxy evaluator
+          if (!masterHlsUrl) {
+            const cand = scriptMatches.find((s) => s.includes('jwplayer') && (s.includes('eval(function') || s.includes('sources') || s.includes('.split(') || s.includes('master')));
+            if (cand) {
+              const cleanCode = cand.replace(/<script[^>]*>/, '').replace(/<\/script>/, '');
+              const host = new URL(embedFetchUrl).hostname;
+              const orig = new URL(embedFetchUrl).origin;
+              const stub = `
+                const createProxy = () => new Proxy(() => createProxy(), { get: (t, p) => p === 'then' ? undefined : createProxy(), apply: () => createProxy() });
+                var window = new Proxy({
+                  lastCheckPoint: 0,
+                  location: { href: '${embedFetchUrl}', hostname: '${host}', origin: '${orig}', protocol: 'https:' },
+                  addEventListener: () => {},
+                  removeEventListener: () => {},
+                  navigator: { userAgent: 'Mozilla/5.0' },
+                  screen: { width: 1920, height: 1080 }
+                }, {
+                  get: (target, prop) => prop in target ? target[prop] : createProxy()
+                });
+                var document = createProxy();
+                var localStorage = {};
+                var setInterval = () => 0;
+                var setTimeout = () => 0;
+                var extractedUrl = null;
+                var jwplayer = () => ({
+                  setup: (cfg) => {
+                    if (cfg && cfg.sources && cfg.sources[0]) {
+                      extractedUrl = cfg.sources[0].file;
+                    }
+                    return createProxy();
+                  },
+                  on: () => createProxy(),
+                  addButton: () => createProxy(),
+                  getContainer: () => createProxy()
+                });
+                jwplayer.key = "test";
+                var $ = createProxy();
+              `;
+              try {
+                const fn = new Function(stub + cleanCode + `\nreturn extractedUrl;`);
+                const resolved = fn();
+                if (resolved && typeof resolved === 'string' && resolved.startsWith('http')) {
+                  masterHlsUrl = resolved;
+                }
+              } catch (err: any) {
+                console.error('RPLAYER UNPACK ERROR:', err?.message);
+              }
             }
           }
 
@@ -2229,7 +2267,22 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 5. Default to clean iframe shell
+  // 5. If the host is known to forbid framing (e.g. hdfilmcehennemi frame-ancestors 'self'), mark as dead rather than returning a blocked iframe
+  if (
+    url.includes('hdfilmcehennemi') ||
+    url.includes('/rplayer/') ||
+    url.includes('rapidrame')
+  ) {
+    return NextResponse.json(
+      {
+        isDead: true,
+        error: 'Kaynak doğrudan oynatılamıyor veya yayıncı tarafından engellendi.',
+      },
+      { status: 410, headers: CACHE_HEADERS }
+    );
+  }
+
+  // 6. Default to clean iframe shell
   return NextResponse.json(
     {
       mode: 'iframe',

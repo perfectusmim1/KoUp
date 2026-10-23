@@ -1165,6 +1165,51 @@ export default function SeriesDetailPage({
                   <span className="truncate">Fragmanı İzle</span>
                 </button>
 
+                {/* Film İzlendi / Tamamlandı Toggle Button */}
+                {isFilm && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!user) {
+                        openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
+                        return;
+                      }
+                      if (isSoftBanned) {
+                        pushNotification(
+                          'Hesap Askıda',
+                          'Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır.',
+                          'info'
+                        );
+                        return;
+                      }
+                      const isCurrentlyWatched = userProg?.status === 'completed' || userProg?.watched_episodes?.includes(1);
+                      if (isCurrentlyWatched) {
+                        setLibraryStatus(media, null);
+                        toggleEpisodeWatched(media, 1);
+                        pushNotification('İzleme Durumu', `"${media.title}" izlenmedi olarak güncellendi.`, 'info');
+                      } else {
+                        setLibraryStatus(media, 'completed');
+                        if (!userProg?.watched_episodes?.includes(1)) {
+                          toggleEpisodeWatched(media, 1);
+                        }
+                        pushNotification('İzlendi Olarak İşaretlendi', `"${media.title}" tamamlananlar listenize eklendi.`, 'success');
+                      }
+                    }}
+                    className={`flex-1 sm:flex-initial sm:w-auto shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 rounded-full font-bold text-xs transition-all cursor-pointer active:scale-[0.98] ${
+                      (userProg?.status === 'completed' || userProg?.watched_episodes?.includes(1))
+                        ? 'bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.3)]'
+                        : 'bg-white/10 hover:bg-white/20 border border-white/15 hover:border-emerald-400/50 text-white hover:text-emerald-300'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>
+                      {(userProg?.status === 'completed' || userProg?.watched_episodes?.includes(1))
+                        ? 'İzlendi'
+                        : 'İzlendi Olarak İşaretle'}
+                    </span>
+                  </button>
+                )}
+
                 {/* Admin Sync Button for Films */}
                 {user?.role === 'admin' && isFilm && (
                   <AdminSeriesSync
@@ -1625,8 +1670,9 @@ export default function SeriesDetailPage({
           </section>
         )}
 
-        {/* 4. FULL EPISODES GRID (For series and movies) */}
-        <section className="p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08] relative z-20 overflow-visible">
+        {/* 4. FULL EPISODES GRID (Series only, hidden for films) */}
+        {!isFilm && (
+          <section className="p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08] relative z-20 overflow-visible">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div>
               <div className="flex flex-wrap items-center gap-3 relative z-30">
@@ -1908,6 +1954,7 @@ export default function SeriesDetailPage({
             );
           })()}
         </section>
+        )}
 
         {/* 5. RELATED RECOMMENDATIONS */}
         {relatedMedia.length > 0 && (

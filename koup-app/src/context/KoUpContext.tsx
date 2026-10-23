@@ -1330,11 +1330,14 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         } catch {}
 
         const existingStatus = existing.status || null;
-        const nextStatus: UserMediaProgress['status'] = existingStatus
-          ? media.episode_count > 0 && watchedSet.size >= media.episode_count
-            ? 'completed'
-            : existingStatus
-          : null;
+        const isFilmMedia = media.content_type === 'film' || media.episode_count === 1;
+        const nextStatus: UserMediaProgress['status'] = isFilmMedia
+          ? (watchedSet.has(1) ? 'completed' : (existingStatus === 'completed' ? null : existingStatus))
+          : (existingStatus
+              ? media.episode_count > 0 && watchedSet.size >= media.episode_count
+                ? 'completed'
+                : existingStatus
+              : null);
 
         const updated: UserMediaProgress = {
           ...existing,
@@ -1505,11 +1508,14 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
             : 1;
 
         const existingStatus = existing.status || null;
-        const nextStatus: UserMediaProgress['status'] = existingStatus
-          ? media.episode_count > 0 && watchedSet.size >= media.episode_count
-            ? 'completed'
-            : existingStatus
-          : null;
+        const isFilmMedia = media.content_type === 'film' || media.episode_count === 1;
+        const nextStatus: UserMediaProgress['status'] = isFilmMedia
+          ? (watchedSet.has(1) ? 'completed' : (existingStatus === 'completed' ? null : existingStatus))
+          : (existingStatus
+              ? media.episode_count > 0 && watchedSet.size >= media.episode_count
+                ? 'completed'
+                : existingStatus
+              : null);
 
         const isNowWatched = watchedSet.has(episodeNum);
         const epKey = `${existing.last_season_num || 1}_${episodeNum}`;
