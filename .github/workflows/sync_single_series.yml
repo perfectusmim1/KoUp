@@ -1,0 +1,53 @@
+name: KoUp Single Series Live Synchronizer
+
+on:
+  workflow_dispatch:
+    inputs:
+      drama_id:
+        description: 'Senkronize edilecek Dizi ID (Örn: 1245)'
+        required: true
+        type: string
+      provider:
+        description: 'Hedef Sağlayıcı (auto, dizibox, dizikorea, bldrama, asyawatch, hdfilm, ddizi, animecix, dizifon, dizilla)'
+        required: false
+        default: 'auto'
+        type: string
+      manual_url:
+        description: 'Manuel Dizi URL (Opsiyonel)'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  sync-series:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout KoUp Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Scraper Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4 curl_cffi boto3 cryptography
+
+      - name: Run Single Series Synchronizer
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          CF_R2_ENDPOINT: ${{ secrets.CF_R2_ENDPOINT }}
+          CF_R2_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+          CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+          CF_R2_BUCKET: ${{ secrets.CF_R2_BUCKET }}
+        run: |
+          python scripts/sync_single_series_runner.py \
+            --drama-id "${{ github.event.inputs.drama_id }}" \
+            --provider "${{ github.event.inputs.provider }}" \
+            --manual-url "${{ github.event.inputs.manual_url }}"

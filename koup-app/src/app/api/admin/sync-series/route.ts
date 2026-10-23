@@ -45,13 +45,113 @@ export async function POST(req: NextRequest) {
     }
 
     const scriptPath = path.resolve(process.cwd(), '..', 'scrapers', 'sync_target_drama.py');
-    if (!fs.existsSync(scriptPath)) {
-      return NextResponse.json(
-        { error: `Senkronizasyon motoru bulunamadı: ${scriptPath}` },
-        { status: 500 }
-      );
+    const isLocalPython = !process.env.VERCEL && fs.existsSync(scriptPath);
+
+    const encoder = new TextEncoder();
+
+    // =========================================================================
+    // PRODUCTION / VERCEL: DISPATCH GITHUB ACTIONS BULUT SENKRONİZASYONU
+    // =========================================================================
+    if (!isLocalPython) {
+      const githubToken = process.env.GITHUB_TOKEN;
+      if (!githubToken) {
+        return NextResponse.json(
+          { error: 'GitHub Actions erişim anahtarı (GITHUB_TOKEN) sunucu ortamında tanımlı değil.' },
+          { status: 500 }
+        );
+      }
+
+      const stream = new ReadableStream({
+        async start(controller) {
+          const sendEvent = (obj: any) => {
+            try {
+              controller.enqueue(encoder.encode(JSON.stringify(obj) + '\n'));
+            } catch (_) {}
+          };
+
+          const nowStr = () => new Date().toTimeString().split(' ')[0];
+          sendEvent({
+            type: 'log',
+            line: `[${nowStr()}] [Bulut] Vercel Serverless ortamı algılandı -> GitHub Actions bulut motoru tetikleniyor...`,
+          });
+          sendEvent({
+            type: 'log',
+            line: `[${nowStr()}] [Bulut] Dizi #${dramaId} için hedef sağlayıcı: ${provider.toUpperCase()}${manualUrl ? ` (${manualUrl})` : ''}`,
+          });
+
+          try {
+            const ghRes = await fetch(
+              'https://api.github.com/repos/perfectusmim1/KoUp/actions/workflows/sync_single_series.yml/dispatches',
+              {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${githubToken}`,
+                  Accept: 'application/vnd.github.v3+json',
+                  'User-Agent': 'KoUp-App',
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  ref: 'main',
+                  inputs: {
+                    drama_id: String(dramaId),
+                    provider: provider || 'auto',
+                    manual_url: (manualUrl || '').trim(),
+                  },
+                }),
+              }
+            );
+
+            if (!ghRes.ok) {
+              const errText = await ghRes.text();
+              sendEvent({
+                type: 'error',
+                error: `GitHub Actions API hatası (${ghRes.status}): ${errText}`,
+              });
+            } else {
+              sendEvent({
+                type: 'log',
+                line: `[${nowStr()}] [BAŞARILI] GitHub Actions iş parçacığı başarıyla kuyruğa alındı!`,
+              });
+              sendEvent({
+                type: 'log',
+                line: `[${nowStr()}] [Bilgi] Python 3.12 bulut çalışanı R2 veritabanını indirecek ve Supabase ile eşitleyecektir (~1-2 dk).`,
+              });
+              sendEvent({
+                type: 'result',
+                ok: true,
+                cloud: true,
+                dramaId,
+                provider,
+                message: 'GitHub Actions bulut senkronizasyonu başlatıldı! Arka planda 1-2 dakika içinde bölümler ve kaynaklar güncellenecektir.',
+                actionsUrl: 'https://github.com/perfectusmim1/KoUp/actions',
+                timestamp: new Date().toISOString(),
+              });
+            }
+          } catch (ghErr: any) {
+            sendEvent({
+              type: 'error',
+              error: ghErr.message || 'GitHub Actions tetiklenirken beklenmeyen bir hata oluştu.',
+            });
+          } finally {
+            try {
+              controller.close();
+            } catch (_) {}
+          }
+        },
+      });
+
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'application/x-ndjson; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+        },
+      });
     }
 
+    // =========================================================================
+    // LOCALHOST / DEVELOPMENT: RUN LOCAL PYTHON SCRIPT DIRECTLY
+    // =========================================================================
     const pythonBin = getPythonPath();
     const args = ['-u', scriptPath, '--drama-id', String(dramaId), '--provider', provider];
 
@@ -59,7 +159,6 @@ export async function POST(req: NextRequest) {
       args.push('--manual-url', manualUrl.trim());
     }
 
-    const encoder = new TextEncoder();
     const stream = new ReadableStream({
       start(controller) {
         const logs: string[] = [];
@@ -172,6 +271,7 @@ export async function POST(req: NextRequest) {
           sendEvent({
             type: 'result',
             ok: true,
+            cloud: false,
             dramaId,
             dramaTitle: resultPayload.dramaTitle || '',
             provider: resultPayload.provider || provider,
@@ -205,7 +305,6 @@ export async function POST(req: NextRequest) {
       headers: {
         'Content-Type': 'application/x-ndjson; charset=utf-8',
         'Cache-Control': 'no-cache, no-transform',
-        Connection: 'keep-alive',
       },
     });
   } catch (err: any) {

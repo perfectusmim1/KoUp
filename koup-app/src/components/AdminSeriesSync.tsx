@@ -13,6 +13,7 @@ import {
   X,
   Link as LinkIcon,
   Sparkles,
+  ExternalLink,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -26,12 +27,15 @@ interface AdminSeriesSyncProps {
 
 const PROVIDERS = [
   { id: 'auto', name: 'Otomatik Akıllı Tespit', desc: 'Mevcut kaynaklar ve yapım ülkesine göre otomatik seçer', icon: '⚡' },
-  { id: 'dizibox', name: 'DiziBOX Global', desc: 'DBX Pro 1080p HLS akışları', icon: '📦' },
-  { id: 'hdfilm', name: 'HDFilmcehennemi', desc: 'Close Dual & Rapidrame Doğrudan 1080p HLS', icon: '🔥' },
+  { id: 'bldrama', name: 'BLDrama & WebDramaTurkey', desc: 'BL & Asya Dizileri Doğrudan HLS & Alternatifler', icon: '🌈' },
   { id: 'asyawatch', name: 'AsyaWatch', desc: 'four.pichive.online 1080p Native HLS', icon: '🌸' },
   { id: 'dizikorea', name: 'DiziKorea Asya', desc: 'playerdkorea 1080p HLS akışları', icon: '🎎' },
+  { id: 'dizifon', name: 'DiziFon / AsyaDizi', desc: 'Asya Dizi & Film alternatif akışları', icon: '🎭' },
+  { id: 'dizibox', name: 'DiziBOX Global', desc: 'DBX Pro 1080p HLS akışları', icon: '📦' },
+  { id: 'hdfilm', name: 'HDFilmcehennemi', desc: 'Close Dual & Rapidrame Doğrudan 1080p HLS', icon: '🔥' },
   { id: 'dizilla', name: 'Dizilla Global & Anime', desc: 'AES-256 Decrypt & 1080p Native HLS', icon: '🎬' },
   { id: 'animecix', name: 'AnimeciX', desc: 'Tau-Video & Sibnet alternatifleri', icon: '⚡' },
+  { id: 'asyaanimeleri', name: 'AsyaAnimeleri', desc: 'Asya Animeleri & Dizi alternatifleri', icon: '⛩️' },
   { id: 'ddizi', name: 'DDizi Yerli & Klasik', desc: 'YouTube HD & HLS resmi yayınlar', icon: '📺' },
 ];
 
@@ -195,6 +199,7 @@ export default function AdminSeriesSync({
         const decoder = new TextDecoder();
         let buffer = '';
         let finalResult: any = null;
+        let streamError: string | null = null;
 
         const handleMessage = (lineStr: string) => {
           const trimmed = lineStr.trim();
@@ -208,7 +213,8 @@ export default function AdminSeriesSync({
             } else if (msg.type === 'result') {
               finalResult = msg;
             } else if (msg.type === 'error') {
-              throw new Error(msg.error || 'Senkronizasyon hatası');
+              streamError = msg.error || 'Senkronizasyon hatası';
+              setLogs((prev) => [...prev, `[HATA] ${streamError}`]);
             }
           } catch (_) {}
         };
@@ -227,17 +233,32 @@ export default function AdminSeriesSync({
           handleMessage(buffer);
         }
 
-        const epAdded = finalResult?.episodesAdded ?? 0;
-        const srcAdded = finalResult?.sourcesAdded ?? 0;
+        if (streamError) {
+          throw new Error(streamError);
+        }
+
         const resolvedProvider = finalResult?.provider || prov;
 
-        setToast({
-          type: 'success',
-          message: `Senkronizasyon tamamlandı (${resolvedProvider.toUpperCase()}): +${epAdded} yeni bölüm, +${srcAdded} yeni kaynak!`,
-        });
+        if (finalResult?.cloud) {
+          setToast({
+            type: 'success',
+            message: '🚀 GitHub Actions bulut senkronizasyonu başlatıldı! Arka planda 1-2 dakika içinde bölümler ve kaynaklar güncellenecektir.',
+          });
+          if (onSyncComplete) {
+            onSyncComplete({ episodesAdded: 0, sourcesAdded: 0, provider: resolvedProvider });
+          }
+        } else {
+          const epAdded = finalResult?.episodesAdded ?? 0;
+          const srcAdded = finalResult?.sourcesAdded ?? 0;
 
-        if (onSyncComplete) {
-          onSyncComplete({ episodesAdded: epAdded, sourcesAdded: srcAdded, provider: resolvedProvider });
+          setToast({
+            type: 'success',
+            message: `Senkronizasyon tamamlandı (${resolvedProvider.toUpperCase()}): +${epAdded} yeni bölüm, +${srcAdded} yeni kaynak!`,
+          });
+
+          if (onSyncComplete) {
+            onSyncComplete({ episodesAdded: epAdded, sourcesAdded: srcAdded, provider: resolvedProvider });
+          }
         }
       } else {
         const data = await res.json();
@@ -246,17 +267,28 @@ export default function AdminSeriesSync({
         }
 
         setLogs(data.logs || []);
-        const epAdded = data.episodesAdded ?? 0;
-        const srcAdded = data.sourcesAdded ?? 0;
         const resolvedProvider = data.provider || prov;
 
-        setToast({
-          type: 'success',
-          message: `Senkronizasyon tamamlandı (${resolvedProvider.toUpperCase()}): +${epAdded} yeni bölüm, +${srcAdded} yeni kaynak!`,
-        });
+        if (data.cloud) {
+          setToast({
+            type: 'success',
+            message: '🚀 GitHub Actions bulut senkronizasyonu başlatıldı! Arka planda 1-2 dakika içinde bölümler ve kaynaklar güncellenecektir.',
+          });
+          if (onSyncComplete) {
+            onSyncComplete({ episodesAdded: 0, sourcesAdded: 0, provider: resolvedProvider });
+          }
+        } else {
+          const epAdded = data.episodesAdded ?? 0;
+          const srcAdded = data.sourcesAdded ?? 0;
 
-        if (onSyncComplete) {
-          onSyncComplete({ episodesAdded: epAdded, sourcesAdded: srcAdded, provider: resolvedProvider });
+          setToast({
+            type: 'success',
+            message: `Senkronizasyon tamamlandı (${resolvedProvider.toUpperCase()}): +${epAdded} yeni bölüm, +${srcAdded} yeni kaynak!`,
+          });
+
+          if (onSyncComplete) {
+            onSyncComplete({ episodesAdded: epAdded, sourcesAdded: srcAdded, provider: resolvedProvider });
+          }
         }
       }
     } catch (err: any) {
@@ -510,9 +542,12 @@ export default function AdminSeriesSync({
                   type="url"
                   value={manualUrlInput}
                   onChange={(e) => setManualUrlInput(e.target.value)}
-                  placeholder="Örn: https://www.dizibox.live/diziler/... veya https://www.hdfilmcehennemi.nl/dizi/..."
+                  placeholder="Örn: https://asyawatch.com/dizi/... veya https://bldramaturkey.co/dizi/..."
                   className="koup-input text-xs py-2.5 px-4 font-mono font-medium"
                 />
+                <p className="text-[10px] text-white/40 pt-1">
+                  Desteklenen Siteler: AsyaWatch, BLDrama/WebDramaTurkey, DiziBOX, DiziKorea, DiziFon, HDFilmcehennemi, Dizilla, AnimeciX, AsyaAnimeleri, DDizi
+                </p>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-2">
@@ -569,13 +604,24 @@ export default function AdminSeriesSync({
                   <Terminal className="w-4 h-4 text-sky-400" />
                   <span>Senkronizasyon İşlem Günlükleri</span>
                 </h3>
-                <button
-                  type="button"
-                  onClick={() => setShowLogsModal(false)}
-                  className="w-8 h-8 rounded-full glass-pill flex items-center justify-center text-white/60 hover:text-white cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <a
+                    href="https://github.com/perfectusmim1/KoUp/actions"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/20 text-[11px] font-medium transition-colors cursor-pointer"
+                  >
+                    <span>GitHub Actions Canlı Takip Et</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setShowLogsModal(false)}
+                    className="w-8 h-8 rounded-full glass-pill flex items-center justify-center text-white/60 hover:text-white cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
               <div className="flex-1 overflow-y-auto p-3.5 rounded-2xl bg-black/70 border border-white/10 font-mono text-[11px] text-emerald-300/90 space-y-1 no-scrollbar">

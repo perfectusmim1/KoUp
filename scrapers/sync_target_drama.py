@@ -77,17 +77,17 @@ def fetch_html(url: str, referer: str = None, timeout: int = 15) -> str:
     if referer:
         h['Referer'] = referer
 
-    # For HDFilmcehennemi, always prefer curl_cffi with chrome impersonation
-    if 'hdfilmcehennemi' in url and HAS_CURL_CFFI:
+    # Always prefer curl_cffi with chrome impersonation when available to bypass Cloudflare and bot checks
+    if HAS_CURL_CFFI:
         try:
-            s = cfr.Session(impersonate="chrome")
+            s = cfr.Session(impersonate="chrome120")
             r = s.get(url, headers=h, timeout=timeout)
             if r.status_code == 200:
                 return r.text
         except Exception:
             pass
 
-    # Standard requests session
+    # Standard requests session fallback
     try:
         s = requests.Session()
         r = s.get(url, headers=h, timeout=timeout)
@@ -95,16 +95,6 @@ def fetch_html(url: str, referer: str = None, timeout: int = 15) -> str:
             return r.text
     except Exception:
         pass
-
-    # Fallback to curl_cffi if not yet used
-    if HAS_CURL_CFFI:
-        try:
-            s = cfr.Session(impersonate="chrome")
-            r = s.get(url, headers=h, timeout=timeout)
-            if r.status_code == 200:
-                return r.text
-        except Exception:
-            pass
 
     # Last fallback to urllib
     try:
@@ -1353,6 +1343,8 @@ def sync_bldrama_target(conn, cur, drama, target_url=None):
         ep_links.sort(key=lambda x: (x[0], x[1], x[2]))
         log("BLDrama", f"{len(ep_links)} adet bölüm bağlantısı tespit edildi.")
 
+        bldrama_session = cfr.Session(impersonate="chrome120") if HAS_CURL_CFFI else requests.Session()
+
         for s_num, start_ep, end_ep, ep_url in ep_links:
             target_ep_ids = []
             for e_num in range(start_ep, end_ep + 1):
@@ -1390,17 +1382,17 @@ def sync_bldrama_target(conn, cur, drama, target_url=None):
                     if any(bad in sname.lower() for bad in ('upn', 'p2p')):
                         continue
                     try:
-                        resp = requests.post('https://bldramaturkey.co/ajax/embed', data={'id': embed_id}, headers={
+                        resp = bldrama_session.post('https://bldramaturkey.co/ajax/embed', data={'id': embed_id}, headers={
                             'User-Agent': DEFAULT_HEADERS['User-Agent'],
                             'X-Requested-With': 'XMLHttpRequest',
                             'Referer': ep_url_live
-                        }, timeout=8)
+                        }, timeout=10)
                         m = re.search(r'hash=([a-zA-Z0-9]+)', resp.text)
                         if m:
-                            v_res = requests.get(f'https://bldramaturkey.co/video.php?hash={m.group(1)}', headers={
+                            v_res = bldrama_session.get(f'https://bldramaturkey.co/video.php?hash={m.group(1)}', headers={
                                 'User-Agent': DEFAULT_HEADERS['User-Agent'],
                                 'Referer': ep_url_live
-                            }, timeout=8)
+                            }, timeout=10)
                             extracted = extract_streams_from_html(v_res.text, 'bldrama')
                             if extracted:
                                 resolved_streams.extend(extracted)
@@ -1981,21 +1973,26 @@ def main():
     # Automatic provider detection if 'auto'
     if chosen_provider == 'auto':
         if manual_url:
-            if 'dizibox' in manual_url:
+            mu = manual_url.lower()
+            if 'dizibox' in mu:
                 chosen_provider = 'dizibox'
-            elif 'hdfilmcehennemi' in manual_url:
+            elif 'hdfilmcehennemi' in mu or 'hdfilm' in mu:
                 chosen_provider = 'hdfilm'
-            elif 'dizikorea' in manual_url:
+            elif 'dizikorea' in mu:
                 chosen_provider = 'dizikorea'
-            elif 'animecix' in manual_url:
+            elif 'animecix' in mu:
                 chosen_provider = 'animecix'
-            elif 'ddizi' in manual_url:
+            elif 'asyaanimeleri' in mu or 'asyaanim' in mu:
+                chosen_provider = 'asyaanimeleri'
+            elif 'ddizi' in mu:
                 chosen_provider = 'ddizi'
-            elif 'asyawatch' in manual_url:
+            elif 'asyawatch' in mu:
                 chosen_provider = 'asyawatch'
-            elif 'dizilla' in manual_url:
+            elif 'dizilla' in mu:
                 chosen_provider = 'dizilla'
-            elif any(x in manual_url for x in ('dizifon', 'asyadizi', 'asyaluna', 'asyaking')):
+            elif any(x in mu for x in ('bldrama', 'webdramaturkey')):
+                chosen_provider = 'bldrama'
+            elif any(x in mu for x in ('dizifon', 'asyadizi', 'asyaluna', 'asyaking')):
                 chosen_provider = 'dizifon'
 
         if chosen_provider == 'auto':
