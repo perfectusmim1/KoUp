@@ -17,6 +17,9 @@ import {
   Compass,
   Image as ImageIcon,
   Heart,
+  ArrowUpDown,
+  Clock,
+  ArrowDownAZ,
 } from 'lucide-react';
 import { useKoUpSelector } from '@/context/KoUpContext';
 import { supabase, getProxiedImageUrl } from '@/lib/supabase';
@@ -40,12 +43,36 @@ interface UserCustomList {
 type MyListSortBy = 'default' | 'newest' | 'oldest' | 'popular' | 'items' | 'title_asc';
 
 const MY_LIST_SORT_OPTIONS: SelectOption[] = [
-  { value: 'default', label: 'Sıralama: Varsayılan' },
-  { value: 'newest', label: 'Sıralama: En Yeni' },
-  { value: 'oldest', label: 'Sıralama: En Eski' },
-  { value: 'popular', label: 'Sıralama: En Çok Beğenilen' },
-  { value: 'items', label: 'Sıralama: En Çok İçerik' },
-  { value: 'title_asc', label: 'Sıralama: İsme Göre (A-Z)' },
+  {
+    value: 'default',
+    label: 'Varsayılan Sıralama',
+    icon: <ArrowUpDown className="w-3.5 h-3.5 text-sky-400" />,
+  },
+  {
+    value: 'popular',
+    label: 'En Çok Beğenilen',
+    icon: <Heart className="w-3.5 h-3.5 text-rose-400" />,
+  },
+  {
+    value: 'newest',
+    label: 'En Yeni Eklenen',
+    icon: <Clock className="w-3.5 h-3.5 text-emerald-400" />,
+  },
+  {
+    value: 'oldest',
+    label: 'En Eski Eklenen',
+    icon: <Clock className="w-3.5 h-3.5 text-amber-400" />,
+  },
+  {
+    value: 'items',
+    label: 'En Çok İçerik',
+    icon: <Layers className="w-3.5 h-3.5 text-indigo-400" />,
+  },
+  {
+    value: 'title_asc',
+    label: 'İsme Göre (A-Z)',
+    icon: <ArrowDownAZ className="w-3.5 h-3.5 text-purple-400" />,
+  },
 ];
 
 export default function MyListsPage() {

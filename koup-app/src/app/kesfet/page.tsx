@@ -13,6 +13,11 @@ import {
   Layers,
   Check,
   X,
+  Clock,
+  TrendingUp,
+  Star,
+  Calendar,
+  ArrowUpDown,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { supabase, MediaItem, getCountryFlag } from '@/lib/supabase';
@@ -457,10 +462,26 @@ function DiscoverContent() {
                 variant="pill"
                 aria-label="Sıralama Ölçütü"
                 options={[
-                  { value: 'latest', label: 'Son Eklenen' },
-                  { value: 'views', label: 'En Çok İzlenen' },
-                  { value: 'rating', label: 'En Yüksek Puanlı' },
-                  { value: 'year', label: 'En Yeni Yıl' },
+                  {
+                    value: 'latest',
+                    label: 'Son Eklenen',
+                    icon: <Clock className="w-3.5 h-3.5 text-emerald-400" />,
+                  },
+                  {
+                    value: 'views',
+                    label: 'En Çok İzlenen',
+                    icon: <TrendingUp className="w-3.5 h-3.5 text-sky-400" />,
+                  },
+                  {
+                    value: 'rating',
+                    label: 'En Yüksek Puanlı',
+                    icon: <Star className="w-3.5 h-3.5 text-yellow-400" />,
+                  },
+                  {
+                    value: 'year',
+                    label: 'En Yeni Yıl',
+                    icon: <Calendar className="w-3.5 h-3.5 text-purple-400" />,
+                  },
                 ]}
               />
             </div>

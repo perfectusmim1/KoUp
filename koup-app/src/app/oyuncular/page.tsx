@@ -131,8 +131,16 @@ export default function ActorsLeaderboardPage() {
               }}
               variant="pill"
               options={[
-                { value: 'favs', label: 'En Çok Favorilenenler' },
-                { value: 'dramas', label: 'En Çok Yapımda Rol Alan' },
+                {
+                  value: 'favs',
+                  label: 'En Çok Favorilenenler',
+                  icon: <Heart className="w-3.5 h-3.5 text-rose-400" />,
+                },
+                {
+                  value: 'dramas',
+                  label: 'En Çok Yapımda Rol Alan',
+                  icon: <Clapperboard className="w-3.5 h-3.5 text-sky-400" />,
+                },
               ]}
             />
           </div>

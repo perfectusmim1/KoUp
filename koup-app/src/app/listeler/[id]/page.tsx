@@ -19,6 +19,10 @@ import {
   Check,
   CheckSquare,
   Image as ImageIcon,
+  ArrowUpDown,
+  Calendar,
+  Star,
+  ArrowDownAZ,
 } from 'lucide-react';
 import { MediaItem, getProxiedImageUrl, formatContentTypeTR, supabase } from '@/lib/supabase';
 import { useKoUpSelector } from '@/context/KoUpContext';
@@ -29,11 +33,31 @@ import { rankSearchResults } from '@/lib/searchRanking';
 type ListItemSortBy = 'default' | 'newest' | 'oldest' | 'rating' | 'title_asc';
 
 const LIST_ITEM_SORT_OPTIONS: SelectOption[] = [
-  { value: 'default', label: 'Sıralama: Varsayılan (Eklenme)' },
-  { value: 'newest', label: 'Sıralama: En Yeni Yıl' },
-  { value: 'oldest', label: 'Sıralama: En Eski Yıl' },
-  { value: 'rating', label: 'Sıralama: En Yüksek Puan' },
-  { value: 'title_asc', label: 'Sıralama: İsme Göre (A-Z)' },
+  {
+    value: 'default',
+    label: 'Varsayılan (Eklenme)',
+    icon: <ArrowUpDown className="w-3.5 h-3.5 text-sky-400" />,
+  },
+  {
+    value: 'newest',
+    label: 'En Yeni Yıl',
+    icon: <Calendar className="w-3.5 h-3.5 text-emerald-400" />,
+  },
+  {
+    value: 'oldest',
+    label: 'En Eski Yıl',
+    icon: <Calendar className="w-3.5 h-3.5 text-amber-400" />,
+  },
+  {
+    value: 'rating',
+    label: 'En Yüksek Puan',
+    icon: <Star className="w-3.5 h-3.5 text-yellow-400" />,
+  },
+  {
+    value: 'title_asc',
+    label: 'İsme Göre (A-Z)',
+    icon: <ArrowDownAZ className="w-3.5 h-3.5 text-purple-400" />,
+  },
 ];
 
 interface ListDetail {

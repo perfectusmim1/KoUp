@@ -19,6 +19,7 @@ import {
   User,
   Image as ImageIcon,
   Trash2,
+  ArrowUpDown,
 } from 'lucide-react';
 import { getProxiedImageUrl } from '@/lib/supabase';
 import { useKoUpSelector } from '@/context/KoUpContext';
@@ -59,11 +60,31 @@ interface CustomListRecord {
 type ListSortBy = 'default' | 'popular' | 'newest' | 'oldest' | 'items';
 
 const SORT_OPTIONS: SelectOption[] = [
-  { value: 'default', label: 'Sıralama: Varsayılan' },
-  { value: 'popular', label: 'Sıralama: En Popüler' },
-  { value: 'newest', label: 'Sıralama: En Yeni' },
-  { value: 'oldest', label: 'Sıralama: En Eski' },
-  { value: 'items', label: 'Sıralama: En Çok İçerik' },
+  {
+    value: 'default',
+    label: 'Varsayılan Sıralama',
+    icon: <ArrowUpDown className="w-3.5 h-3.5 text-sky-400" />,
+  },
+  {
+    value: 'popular',
+    label: 'En Popüler',
+    icon: <TrendingUp className="w-3.5 h-3.5 text-rose-400" />,
+  },
+  {
+    value: 'newest',
+    label: 'En Yeni Eklenen',
+    icon: <Clock className="w-3.5 h-3.5 text-emerald-400" />,
+  },
+  {
+    value: 'oldest',
+    label: 'En Eski Eklenen',
+    icon: <Clock className="w-3.5 h-3.5 text-amber-400" />,
+  },
+  {
+    value: 'items',
+    label: 'En Çok İçerik',
+    icon: <Layers className="w-3.5 h-3.5 text-indigo-400" />,
+  },
 ];
 
 export default function PublicListsPage() {
