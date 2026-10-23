@@ -290,12 +290,60 @@ export default function KutuphanePage() {
       {/* Metric Breakdown Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {[
-          { id: 'ALL' as const, label: 'Toplam Yapım', count: statusCounts.ALL, icon: Sparkles, color: 'text-white', border: 'border-white/15' },
-          { id: 'watching' as const, label: 'İzleniyor', count: statusCounts.watching, icon: Clock, color: 'text-sky-400', border: 'border-sky-500/30' },
-          { id: 'completed' as const, label: 'Tamamlandı', count: statusCounts.completed, icon: CheckCircle2, color: 'text-emerald-400', border: 'border-emerald-500/30' },
-          { id: 'plan_to_watch' as const, label: 'Planlanan', count: statusCounts.plan_to_watch, icon: Bookmark, color: 'text-amber-400', border: 'border-amber-500/30' },
-          { id: 'on_hold' as const, label: 'Beklemede', count: statusCounts.on_hold, icon: PauseCircle, color: 'text-purple-400', border: 'border-purple-500/30' },
-          { id: 'dropped' as const, label: 'Bıraktım', count: statusCounts.dropped, icon: XCircle, color: 'text-rose-400', border: 'border-rose-500/30' },
+          {
+            id: 'ALL' as const,
+            label: 'Toplam Yapım',
+            count: statusCounts.ALL,
+            icon: Sparkles,
+            color: 'text-white',
+            activeClass: 'bg-white/[0.07] border-white/40 shadow-[0_4px_16px_rgba(255,255,255,0.06)]',
+            activeLabel: 'text-white font-semibold',
+          },
+          {
+            id: 'watching' as const,
+            label: 'İzleniyor',
+            count: statusCounts.watching,
+            icon: Clock,
+            color: 'text-sky-400',
+            activeClass: 'bg-sky-500/[0.08] border-sky-400/60 shadow-[0_4px_16px_rgba(56,189,248,0.12)]',
+            activeLabel: 'text-sky-300 font-semibold',
+          },
+          {
+            id: 'completed' as const,
+            label: 'Tamamlandı',
+            count: statusCounts.completed,
+            icon: CheckCircle2,
+            color: 'text-emerald-400',
+            activeClass: 'bg-emerald-500/[0.08] border-emerald-400/60 shadow-[0_4px_16px_rgba(16,185,129,0.12)]',
+            activeLabel: 'text-emerald-300 font-semibold',
+          },
+          {
+            id: 'plan_to_watch' as const,
+            label: 'Planlanan',
+            count: statusCounts.plan_to_watch,
+            icon: Bookmark,
+            color: 'text-amber-400',
+            activeClass: 'bg-amber-500/[0.08] border-amber-400/60 shadow-[0_4px_16px_rgba(245,158,11,0.12)]',
+            activeLabel: 'text-amber-300 font-semibold',
+          },
+          {
+            id: 'on_hold' as const,
+            label: 'Beklemede',
+            count: statusCounts.on_hold,
+            icon: PauseCircle,
+            color: 'text-purple-400',
+            activeClass: 'bg-purple-500/[0.08] border-purple-400/60 shadow-[0_4px_16px_rgba(168,85,247,0.12)]',
+            activeLabel: 'text-purple-300 font-semibold',
+          },
+          {
+            id: 'dropped' as const,
+            label: 'Bıraktım',
+            count: statusCounts.dropped,
+            icon: XCircle,
+            color: 'text-rose-400',
+            activeClass: 'bg-rose-500/[0.08] border-rose-400/60 shadow-[0_4px_16px_rgba(244,63,94,0.12)]',
+            activeLabel: 'text-rose-300 font-semibold',
+          },
         ].map((item) => {
           const Icon = item.icon;
           const isSelected = activeStatus === item.id;
@@ -307,14 +355,16 @@ export default function KutuphanePage() {
                 setActiveStatus(item.id);
                 setCurrentPage(1);
               }}
-              className={`p-4 rounded-3xl border transition-colors cursor-pointer text-left ${
+              className={`p-4 rounded-3xl border transition-all duration-200 cursor-pointer text-left select-none ${
                 isSelected
-                  ? 'bg-white/[0.1] border-sky-400/60 shadow-[0_0_20px_rgba(41,151,255,0.2)]'
+                  ? item.activeClass
                   : 'bg-[#0f0f12]/90 border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04]'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-mono font-medium text-white/50">{item.label}</span>
+                <span className={`text-[11px] font-mono transition-colors ${isSelected ? item.activeLabel : 'text-white/50'}`}>
+                  {item.label}
+                </span>
                 <Icon className={`w-4 h-4 ${item.color}`} />
               </div>
               <div className="text-2xl font-black text-white mt-2 font-mono">

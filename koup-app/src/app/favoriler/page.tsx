@@ -265,6 +265,8 @@ export default function FavorilerPage() {
             count: typeCounts.ALL,
             icon: Heart,
             color: 'text-rose-400',
+            activeClass: 'bg-rose-500/[0.08] border-rose-400/60 shadow-[0_4px_16px_rgba(244,63,94,0.12)]',
+            activeLabel: 'text-rose-300 font-semibold',
           },
           {
             id: 'drama' as const,
@@ -272,6 +274,8 @@ export default function FavorilerPage() {
             count: typeCounts.drama,
             icon: Tv,
             color: 'text-sky-400',
+            activeClass: 'bg-sky-500/[0.08] border-sky-400/60 shadow-[0_4px_16px_rgba(56,189,248,0.12)]',
+            activeLabel: 'text-sky-300 font-semibold',
           },
           {
             id: 'anime' as const,
@@ -279,6 +283,8 @@ export default function FavorilerPage() {
             count: typeCounts.anime,
             icon: Sparkles,
             color: 'text-purple-400',
+            activeClass: 'bg-purple-500/[0.08] border-purple-400/60 shadow-[0_4px_16px_rgba(168,85,247,0.12)]',
+            activeLabel: 'text-purple-300 font-semibold',
           },
           {
             id: 'movie' as const,
@@ -286,6 +292,8 @@ export default function FavorilerPage() {
             count: typeCounts.movie,
             icon: Film,
             color: 'text-amber-400',
+            activeClass: 'bg-amber-500/[0.08] border-amber-400/60 shadow-[0_4px_16px_rgba(245,158,11,0.12)]',
+            activeLabel: 'text-amber-300 font-semibold',
           },
         ].map((item) => {
           const Icon = item.icon;
@@ -298,14 +306,14 @@ export default function FavorilerPage() {
                 setActiveType(item.id);
                 setCurrentPage(1);
               }}
-              className={`p-4 rounded-3xl border transition-all cursor-pointer text-left select-none ${
+              className={`p-4 rounded-3xl border transition-all duration-200 cursor-pointer text-left select-none ${
                 isSelected
-                  ? 'bg-rose-500/10 border-rose-500/50 shadow-[0_0_24px_rgba(244,63,94,0.22)] ring-1 ring-rose-400/30'
+                  ? item.activeClass
                   : 'bg-[#0f0f12]/90 border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04]'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className={`text-[11px] font-mono font-medium ${isSelected ? 'text-white' : 'text-white/50'}`}>
+                <span className={`text-[11px] font-mono transition-colors ${isSelected ? item.activeLabel : 'text-white/50'}`}>
                   {item.label}
                 </span>
                 <Icon className={`w-4 h-4 ${item.color}`} />
