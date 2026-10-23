@@ -19,12 +19,10 @@ import {
   User,
   Image as ImageIcon,
   Trash2,
-  ArrowUpDown,
 } from 'lucide-react';
 import { getProxiedImageUrl } from '@/lib/supabase';
 import { useKoUpSelector } from '@/context/KoUpContext';
 import Pagination from '@/components/Pagination';
-import CustomSelect, { SelectOption } from '@/components/CustomSelect';
 
 interface ListCreator {
   id: string;
@@ -57,35 +55,7 @@ interface CustomListRecord {
   preview_posters: PreviewPoster[];
 }
 
-type ListSortBy = 'default' | 'popular' | 'newest' | 'oldest' | 'items';
-
-const SORT_OPTIONS: SelectOption[] = [
-  {
-    value: 'default',
-    label: 'Varsayılan Sıralama',
-    icon: <ArrowUpDown className="w-3.5 h-3.5 text-sky-400" />,
-  },
-  {
-    value: 'popular',
-    label: 'En Popüler',
-    icon: <TrendingUp className="w-3.5 h-3.5 text-rose-400" />,
-  },
-  {
-    value: 'newest',
-    label: 'En Yeni Eklenen',
-    icon: <Clock className="w-3.5 h-3.5 text-emerald-400" />,
-  },
-  {
-    value: 'oldest',
-    label: 'En Eski Eklenen',
-    icon: <Clock className="w-3.5 h-3.5 text-amber-400" />,
-  },
-  {
-    value: 'items',
-    label: 'En Çok İçerik',
-    icon: <Layers className="w-3.5 h-3.5 text-indigo-400" />,
-  },
-];
+type ListSortBy = 'popular' | 'newest' | 'items' | 'default' | 'oldest';
 
 export default function PublicListsPage() {
   const user = useKoUpSelector((s) => s.user);
@@ -98,7 +68,7 @@ export default function PublicListsPage() {
   const [lists, setLists] = useState<CustomListRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<ListSortBy>('default');
+  const [sortBy, setSortBy] = useState<ListSortBy>('popular');
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 12;
 
@@ -358,62 +328,47 @@ export default function PublicListsPage() {
           )}
         </div>
 
-        {/* Sort Controls */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="w-full sm:w-52">
-            <CustomSelect
-              value={sortBy}
-              onChange={(val) => {
-                triggerSound('click');
-                setSortBy(val as ListSortBy);
-                setCurrentPage(1);
-              }}
-              options={SORT_OPTIONS}
-              size="sm"
-              aria-label="Liste Sıralaması"
-            />
-          </div>
-
-          <div className="flex items-center gap-1.5 p-1.5 rounded-full glass-pill-dark overflow-x-auto no-scrollbar">
-            <span className="text-xs font-mono text-white/40 ml-3 mr-1 hidden sm:inline">Hızlı:</span>
-            {(
-              [
-                { id: 'popular', label: 'En Popüler', icon: TrendingUp },
-                { id: 'items', label: 'En Çok İçerik', icon: Layers },
-                { id: 'newest', label: 'En Yeni', icon: Clock },
-              ] as const
-            ).map((opt) => {
-              const Icon = opt.icon;
-              const active = sortBy === opt.id;
-              return (
-                <button
-                  key={opt.id}
-                  onClick={() => {
-                    triggerSound('click');
-                    setSortBy(opt.id);
-                    setCurrentPage(1);
-                  }}
-                  className={`relative flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors duration-200 select-none ${
-                    active ? 'text-black' : 'text-white/70 hover:text-white'
-                  }`}
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="listeler-sort-pill"
-                      transition={{
-                        type: 'spring',
-                        stiffness: 420,
-                        damping: 32,
-                      }}
-                      className="absolute inset-0 rounded-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.25),0_0_20px_-2px_rgba(255,255,255,0.15)]"
-                    />
-                  )}
-                  <Icon className="w-3.5 h-3.5 relative z-10" />
-                  <span className="relative z-10 font-bold">{opt.label}</span>
-                </button>
-              );
-            })}
-          </div>
+        {/* Sort Pill Buttons */}
+        <div className="flex items-center gap-1.5 p-1 rounded-full glass-pill-dark border border-white/10 overflow-x-auto no-scrollbar shrink-0">
+          {(
+            [
+              { id: 'popular', label: 'En Popüler', icon: TrendingUp },
+              { id: 'items', label: 'En Çok İçerik', icon: Layers },
+              { id: 'newest', label: 'En Yeni', icon: Clock },
+            ] as const
+          ).map((opt) => {
+            const Icon = opt.icon;
+            const active = sortBy === opt.id;
+            return (
+              <button
+                key={opt.id}
+                onClick={() => {
+                  triggerSound('click');
+                  setSortBy(opt.id);
+                  setCurrentPage(1);
+                }}
+                className={`relative shrink-0 flex items-center gap-2 px-4 sm:px-5 py-2 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors duration-200 select-none ${
+                  active ? 'text-black font-extrabold' : 'text-white/70 hover:text-white'
+                }`}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="listeler-sort-pill"
+                    initial={false}
+                    transition={{
+                      type: 'spring',
+                      stiffness: 480,
+                      damping: 34,
+                      mass: 0.6,
+                    }}
+                    className="absolute inset-0 rounded-full bg-white shadow-[0_0_20px_rgba(255,255,255,0.4)]"
+                  />
+                )}
+                <Icon className="w-3.5 h-3.5 relative z-10" />
+                <span className="relative z-10">{opt.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
