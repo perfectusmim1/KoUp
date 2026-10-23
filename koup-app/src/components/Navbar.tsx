@@ -436,11 +436,11 @@ export default function Navbar() {
           className={`pointer-events-auto flex items-center justify-between outline-none transition-[width,max-width,margin-top,padding,border-radius,background-color,box-shadow,border-color] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)] ${
             navbarBehavior === 'floating'
               ? isScrolled
-                ? 'mt-2 sm:mt-3 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-[28px] bg-[#0a0b10]/95 backdrop-blur-xl border border-white/[0.08] shadow-[0_20px_50px_rgba(0,0,0,0.85)] py-2 sm:py-2.5 px-4 sm:px-6'
+                ? 'mt-2 sm:mt-3 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-[28px] bg-[#0a0b10]/95 backdrop-blur-xl border-0 shadow-[0_20px_50px_rgba(0,0,0,0.85)] py-2 sm:py-2.5 px-4 sm:px-6'
                 : 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-0 shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
               : navbarBehavior === 'sticky'
               ? isScrolled
-                ? 'mt-0 w-full max-w-[2560px] rounded-none bg-[#0a0b10]/95 backdrop-blur-xl border-b border-white/[0.08] shadow-[0_12px_32px_rgba(0,0,0,0.85)] py-3 sm:py-4 px-4 sm:px-8 lg:px-14'
+                ? 'mt-0 w-full max-w-[2560px] rounded-none bg-[#0a0b10]/95 backdrop-blur-xl border-0 shadow-[0_12px_32px_rgba(0,0,0,0.85)] py-3 sm:py-4 px-4 sm:px-8 lg:px-14'
                 : 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-0 shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
               : /* static: sitenin üstünde kalır, sayfa kayınca bizle gelmez */
                 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-0 shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
