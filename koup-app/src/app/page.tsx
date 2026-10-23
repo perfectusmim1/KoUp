@@ -796,6 +796,21 @@ export default function HomePage() {
       const playerDivId = `yt-hero-player-${Date.now()}`;
       heroPlayerContainerRef.current.innerHTML = `<div id="${playerDivId}"></div>`;
 
+      const enforceHighQuality = (player: any) => {
+        try {
+          const levels: string[] = player.getAvailableQualityLevels?.() || [];
+          if (levels.includes('hd1080')) {
+            player.setPlaybackQuality('hd1080');
+          } else if (levels.includes('hd720')) {
+            player.setPlaybackQuality('hd720');
+          } else if (levels.includes('highres')) {
+            player.setPlaybackQuality('highres');
+          } else {
+            player.setPlaybackQuality('hd1080');
+          }
+        } catch {}
+      };
+
       try {
         heroPlayerRef.current = new window.YT.Player(playerDivId, {
           videoId: heroTrailerYtId,
@@ -811,6 +826,7 @@ export default function HomePage() {
             iv_load_policy: 3,
             playsinline: 1,
             enablejsapi: 1,
+            vq: 'hd1080',
             origin: typeof window !== 'undefined' ? window.location.origin : '',
           },
           events: {
@@ -818,9 +834,17 @@ export default function HomePage() {
               if (!isSubscribed) return;
               try {
                 e.target.mute();
+                enforceHighQuality(e.target);
               } catch {}
               if (isHeroInViewportRef.current) {
                 e.target.playVideo();
+              }
+            },
+            onPlaybackQualityChange: (e: any) => {
+              if (!isSubscribed) return;
+              const q = e.data;
+              if (q !== 'hd1080' && q !== 'hd720' && q !== 'highres') {
+                enforceHighQuality(e.target);
               }
             },
             onStateChange: (e: any) => {
@@ -831,6 +855,7 @@ export default function HomePage() {
               // 1. PLAYING: start countdown & poll. Video is revealed after 1.35s once YouTube's
               //    own center play button has completely faded away. Audio unmutes at that exact moment.
               if (e.data === YTState.PLAYING) {
+                enforceHighQuality(e.target);
                 if (!isHeroInViewportRef.current || (typeof document !== 'undefined' && document.hidden)) {
                   try {
                     e.target.mute();

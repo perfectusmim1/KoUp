@@ -917,7 +917,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                   className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-black text-xs font-bold hover:bg-white/90 cursor-pointer shadow-lg transition-colors"
                 >
                   <LogIn className="w-3.5 h-3.5" />
-                  <span>Giriş Yap / Takip Et</span>
+                  <span>Giriş Yap</span>
                 </button>
               ) : (
                 <button

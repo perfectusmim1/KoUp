@@ -43,6 +43,7 @@ export function buildModalTrailerEmbedUrl(youtubeId: string): string {
     playsinline: '1',
     enablejsapi: '1',
     modestbranding: '1',
+    vq: 'hd1080',
     hl: 'tr',
   });
   if (typeof window !== 'undefined') {
@@ -64,6 +65,7 @@ export function buildCleanTrailerEmbedUrl(youtubeId: string): string {
     iv_load_policy: '3',
     playsinline: '1',
     enablejsapi: '1',
+    vq: 'hd1080',
     cc_load_policy: '1',
     cc_lang_pref: 'tr',
     hl: 'tr',
@@ -132,6 +134,7 @@ export function watchYouTubeIframe(iframe: HTMLIFrameElement, opts: WatchOptions
     playerState = state;
 
     if (state === 1) {
+      postYouTubeCommand(iframe, 'setPlaybackQuality', ['hd1080']);
       if (bufferHideTimer) {
         clearTimeout(bufferHideTimer);
         bufferHideTimer = null;
