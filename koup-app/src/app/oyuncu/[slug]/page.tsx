@@ -30,6 +30,7 @@ import { useKoUpSelector } from '@/context/KoUpContext';
 import AccordionMediaCard, { requestAccordionHover, preloadMediaImages } from '@/components/AccordionMediaCard';
 import { useDragScroll } from '@/hooks/useDragScroll';
 import RichCommentSection from '@/components/RichCommentSection';
+import WikiBioText from '@/components/WikiBioText';
 
 interface PersonBundle {
   person: PersonItem | null;
@@ -537,10 +538,15 @@ export default function PersonDetailPage({
             )}
           </div>
 
-          <p className="text-sm sm:text-base text-white/80 leading-relaxed max-w-3xl">
-            {person.bio_tr ||
-              `${person.name}, KoUp arşivindeki ${credits.length} yapımda yer almaktadır.`}
-          </p>
+          {/* Wiki-Style Interactive Biography with Series Hovercards */}
+          <div className="max-w-3xl">
+            <WikiBioText
+              text={person.bio_tr}
+              credits={credits}
+              personName={person.name}
+              fallbackText={`${person.name}, KoUp arşivindeki ${credits.length} yapımda yer almaktadır.`}
+            />
+          </div>
 
           {/* DETAILED ACTOR / CHARACTER METADATA SPECS BAR */}
           {(person.gender || person.birth_date || person.place_of_birth || person.country_code || (person.also_known_as && person.also_known_as.length > 0) || person.blood_type) && (
