@@ -429,11 +429,21 @@ def match_or_create_episode(cur, drama_id, season, number, name, url):
             })
             return new_ep_id, True
         except sqlite3.IntegrityError:
-            # Ayni URL baska drama/numarada kayitli (toplu bolum vb.): mevcut satiri kullan.
-            cur.execute("SELECT id FROM episodes WHERE episode_url=?", (url,))
+            # Ayni URL baska drama/numarada kayitli (toplu bolum vb.): mevcut satiri kullan veya guncelle.
+            cur.execute("SELECT id, drama_id FROM episodes WHERE episode_url=?", (url,))
             r = cur.fetchone()
             if r:
-                return r[0], False
+                existing_ep_id, existing_drama_id = r
+                if existing_drama_id != drama_id:
+                    # Bu bolum URL'si baska bir diziye yanlis baglanmis!
+                    # Eger mevcut drama_id bu (season, number)'a sahip degilse bu bolumu gercek sahibine aktar:
+                    cur.execute("""
+                        UPDATE episodes 
+                        SET drama_id=?, season_number=?, episode_number=?, episode_name=?
+                        WHERE id=?
+                    """, (drama_id, season, number, clean_name, existing_ep_id))
+                    return existing_ep_id, True
+                return existing_ep_id, False
             raise
     return _retry(_op)
 

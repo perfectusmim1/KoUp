@@ -427,21 +427,38 @@ def extract_streams_from_html(raw_html: str, site_label: str = "general") -> lis
 def _ep_needs_sources(cur, ep_id: int, site_name: str, total_ep_count: int = 100) -> bool:
     """
     Returns True if we should fetch & extract sources for this episode from site_name.
-    - Always True if the episode has 0 sources.
-    - For standard series (<= 32 eps), also True if total sources < 2 and no source from site_name yet.
+    - Always True if the episode has 0 active sources.
+    - Always True if the episode is marked as pending.
+    - True if total sources < 3 and no source from site_name yet.
     """
-    cur.execute("SELECT site FROM episode_sources WHERE episode_id = ?", (ep_id,))
+    # 1. Check if episode is marked pending in DB
+    cur.execute("SELECT source_status FROM episodes WHERE id = ?", (ep_id,))
+    ep_row = cur.fetchone()
+    if ep_row and ep_row[0] == 'pending':
+        return True
+
+    # 2. Check active sources
+    cur.execute("""
+        SELECT site FROM episode_sources 
+        WHERE episode_id = ?
+          AND direct_url IS NOT NULL 
+          AND direct_url != '' 
+          AND direct_url != 'dead'
+          AND (provider IS NULL OR provider != 'dead')
+    """, (ep_id,))
     rows = cur.fetchall()
     if not rows:
         return True
-    if total_ep_count <= 32 and len(rows) < 2:
-        existing_sites = set()
-        for r in rows:
-            for s in (r[0] or '').split(','):
-                if s.strip():
-                    existing_sites.add(s.strip().lower())
-        if site_name.lower() not in existing_sites:
-            return True
+
+    # 3. Allow fetching if fewer than 3 sources and this site is not represented yet
+    existing_sites = set()
+    for r in rows:
+        for s in (r[0] or '').split(','):
+            if s.strip():
+                existing_sites.add(s.strip().lower())
+    if site_name.lower() not in existing_sites and len(rows) < 3:
+        return True
+
     return False
 
 
@@ -525,7 +542,7 @@ def sync_dizibox_target(conn, cur, drama, target_url=None):
             episodes_added += 1
         safe_commit(conn)
 
-        if not created and not _ep_needs_sources(cur, ep_id, 'dizibox', len(ep_links)):
+        if not created and not target_url and not _ep_needs_sources(cur, ep_id, 'dizibox', len(ep_links)):
             reconcile_episode(cur, ep_id, is_placeholder=False)
             safe_commit(conn)
             continue
@@ -695,7 +712,7 @@ def sync_hdfilm_target(conn, cur, drama, target_url=None):
         if created:
             episodes_added += 1
 
-        if not created and not _ep_needs_sources(cur, ep_id, 'hdfilm', len(ep_links)):
+        if not created and not target_url and not _ep_needs_sources(cur, ep_id, 'hdfilm', len(ep_links)):
             reconcile_episode(cur, ep_id, is_placeholder=False)
             safe_commit(conn)
             continue
@@ -797,7 +814,7 @@ def sync_dizikorea_target(conn, cur, drama, target_url=None):
         if created:
             episodes_added += 1
 
-        if not created and not _ep_needs_sources(cur, ep_id, 'dizikorea', len(ep_links)):
+        if not created and not target_url and not _ep_needs_sources(cur, ep_id, 'dizikorea', len(ep_links)):
             reconcile_episode(cur, ep_id, is_placeholder=False)
             safe_commit(conn)
             continue
@@ -942,7 +959,7 @@ def sync_asyawatch_target(conn, cur, drama, target_url=None):
         if created:
             episodes_added += 1
 
-        if not created and not _ep_needs_sources(cur, ep_id, 'asyawatch', len(flat_eps)):
+        if not created and not target_url and not _ep_needs_sources(cur, ep_id, 'asyawatch', len(flat_eps)):
             reconcile_episode(cur, ep_id, is_placeholder=False)
             safe_commit(conn)
             continue
@@ -1100,7 +1117,7 @@ def sync_dizilla_target(conn, cur, drama, target_url=None):
         if created:
             episodes_added += 1
 
-        if not created and not _ep_needs_sources(cur, ep_id, 'dizilla', len(flat_eps)):
+        if not created and not target_url and not _ep_needs_sources(cur, ep_id, 'dizilla', len(flat_eps)):
             reconcile_episode(cur, ep_id, is_placeholder=False)
             safe_commit(conn)
             continue
@@ -1215,7 +1232,7 @@ def sync_dizifon_target(conn, cur, drama, target_url=None):
                 if created:
                     episodes_added += 1
 
-                if not created and not _ep_needs_sources(cur, ep_id, site_tag, len(ep_items)):
+                if not created and not target_url and not _ep_needs_sources(cur, ep_id, site_tag, len(ep_items)):
                     reconcile_episode(cur, ep_id, is_placeholder=False)
                     safe_commit(conn)
                     continue
