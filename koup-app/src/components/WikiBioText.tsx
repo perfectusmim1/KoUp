@@ -68,8 +68,10 @@ export default function WikiBioText({
   const [extraMediaMap, setExtraMediaMap] = useState<Record<string, MediaItem>>({});
   const [activeHover, setActiveHover] = useState<ActiveHoverState | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [hasOverflow, setHasOverflow] = useState(false);
   const [mounted, setMounted] = useState(false);
 
+  const textRef = useRef<HTMLDivElement | null>(null);
   const hoverTimerRef = useRef<NodeJS.Timeout | null>(null);
   const closeTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -257,15 +259,20 @@ export default function WikiBioText({
 
       hoverTimerRef.current = setTimeout(() => {
         const rect = element.getBoundingClientRect();
-        const spaceAbove = rect.top;
-        const showBelow = spaceAbove < 260; // Show below if too close to viewport top
+        const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 900;
+        const spaceBelow = viewportHeight - rect.bottom;
+        const POPOVER_HEIGHT = 240;
+
+        // User preference: "wiki iyi hoş ama yazının altında çıksın"
+        // Always prefer showing BELOW the text, unless there is physically no space at the bottom
+        const showBelow = spaceBelow >= POPOVER_HEIGHT || spaceBelow >= rect.top;
 
         setActiveHover({
           media,
           rect,
           showBelow,
         });
-      }, 120);
+      }, 100);
     },
     []
   );
@@ -307,15 +314,34 @@ export default function WikiBioText({
     };
   }, [activeHover]);
 
-  const rawTextContent = (text || fallbackText || '').trim();
-  const isLongBio = rawTextContent.length > 320;
+  // True overflow detection: Only show "Devamını Oku" if text actually overflows 4 lines
+  useEffect(() => {
+    const el = textRef.current;
+    if (!el) return;
+
+    const checkOverflow = () => {
+      if (!isExpanded) {
+        const isClamped = el.scrollHeight > el.clientHeight + 4;
+        setHasOverflow(isClamped);
+      }
+    };
+
+    checkOverflow();
+    const timer = setTimeout(checkOverflow, 60);
+    window.addEventListener('resize', checkOverflow);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', checkOverflow);
+    };
+  }, [bioSegments, isExpanded]);
 
   return (
     <div className={`relative ${className}`}>
       {/* Biography Content with interactive Wiki links */}
       <div
+        ref={textRef}
         className={`text-sm sm:text-base text-white/80 leading-relaxed transition-all duration-300 ${
-          isLongBio && !isExpanded ? 'line-clamp-4' : ''
+          !isExpanded ? 'line-clamp-4' : ''
         }`}
       >
         {bioSegments.map((segment, idx) => {
@@ -338,8 +364,8 @@ export default function WikiBioText({
         })}
       </div>
 
-      {/* Expand / Collapse toggle for long biographies */}
-      {isLongBio && (
+      {/* Expand / Collapse toggle: Rendered ONLY when text actually exceeds 4 lines */}
+      {hasOverflow && (
         <button
           type="button"
           onClick={() => setIsExpanded((prev) => !prev)}
@@ -392,7 +418,7 @@ function WikiHoverCard({ state, onMouseEnter, onMouseLeave }: WikiHoverCardProps
   // Compute fixed coordinates relative to viewport
   const top = showBelow
     ? rect.bottom + 8
-    : rect.top - 8;
+    : Math.max(12, rect.top - 8);
 
   const left = Math.max(
     14,
