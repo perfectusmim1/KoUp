@@ -135,9 +135,6 @@ export async function GET(req: NextRequest) {
     // 3. Upsert people and populate media_cast in Supabase
     const finalCast: CastMember[] = [];
 
-    // Delete old scrambled cast for this media_id
-    await supabaseAdmin.from('media_cast').delete().eq('media_id', mediaId);
-
     for (const actor of parsedCast) {
       const personSlug = slugify(actor.name);
       const spaceName = actor.name.replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -239,20 +236,30 @@ export async function GET(req: NextRequest) {
           people: existingPerson as PersonItem,
         };
 
-        await supabaseAdmin.from('media_cast').insert({
+        await supabaseAdmin.from('media_cast').upsert({
           media_id: mediaId,
           person_id: personId,
           role_type: actor.role_type,
           character_name: actor.character,
           billing_order: actor.order,
-        });
+        }, { onConflict: 'media_id,person_id' });
 
         finalCast.push(castEntry);
       }
     }
 
+    // Fetch complete updated cast from database to return full list
+    const { data: updatedCast } = await supabaseAdmin
+      .from('media_cast')
+      .select('*, people(*)')
+      .eq('media_id', mediaId)
+      .order('billing_order', { ascending: true })
+      .limit(30);
+
+    const fullList = (updatedCast && updatedCast.length > 0) ? updatedCast : finalCast;
+
     // Sort leads first, then billing order
-    const sortedFinal = [...finalCast].sort((a, b) => {
+    const sortedFinal = [...fullList].sort((a: any, b: any) => {
       const aLead = a.role_type === 'lead' ? 0 : 1;
       const bLead = b.role_type === 'lead' ? 0 : 1;
       if (aLead !== bLead) return aLead - bLead;

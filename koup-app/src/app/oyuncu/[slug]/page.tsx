@@ -228,7 +228,7 @@ export default function PersonDetailPage({
       try {
         const bundle = await cachedQuery<PersonBundle>(
           `person_${decoded}`,
-          86_400_000, // 24-hour cache TTL (fast instant hydration)
+          60_000, // 1 minute TTL for instant hydration + fresh actor sync
           async () => {
             let { data: pData } = await supabase
               .from('people')
@@ -286,7 +286,7 @@ export default function PersonDetailPage({
                   )
                     .then((r) => r.json())
                     .catch(() => null)
-                : Promise.resolve(null),
+                    : Promise.resolve(null),
             ]);
 
             if (bioRes?.success && bioRes?.person) {
@@ -331,10 +331,21 @@ export default function PersonDetailPage({
               credits: validCredits,
               coStars: peers,
             };
+          },
+          (fresh) => {
+            if (!isCancelled && fresh?.person) {
+              setPerson(fresh.person);
+              setCredits(fresh.credits);
+              setCoStars(fresh.coStars);
+            }
           }
         );
 
         if (isCancelled) return;
+
+        if (typeof window !== 'undefined' && bundle.person?.slug && bundle.person.slug !== decoded) {
+          window.history.replaceState(null, '', `/oyuncu/${bundle.person.slug}${window.location.search}`);
+        }
 
         setPerson(bundle.person);
         setCredits(bundle.credits);
