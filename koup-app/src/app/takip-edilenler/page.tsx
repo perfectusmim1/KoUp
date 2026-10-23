@@ -33,7 +33,7 @@ import AccordionMediaCard from '@/components/AccordionMediaCard';
 import Pagination from '@/components/Pagination';
 
 type ActiveTab = 'media' | 'people';
-type MediaFilter = 'ALL' | 'drama' | 'anime' | 'movie';
+type MediaFilter = 'ALL' | 'dizi' | 'anime' | 'film';
 type PersonFilter = 'ALL' | 'actor' | 'character' | 'seiyuu';
 
 export default function FollowedPage() {
@@ -260,17 +260,10 @@ export default function FollowedPage() {
     <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-4 sm:px-8 lg:px-14 space-y-8">
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-white/[0.08]">
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono font-semibold bg-sky-500/10 border border-sky-400/25 text-sky-300">
-            <Bell className="w-3.5 h-3.5" />
-            <span>Kişisel Bildirim & Takip Merkezi</span>
-          </div>
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight flex items-center gap-3">
-            <span>Takip Edilenler</span>
+        <div>
+          <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+            Takip Edilenler
           </h1>
-          <p className="text-xs sm:text-sm text-white/50 max-w-2xl leading-relaxed">
-            Takip ettiğiniz yapımlar ve favori yıldızlarınız. Yeni bölüm yayınlandığında veya yeni bir projede rol aldıklarında anında bildirim alırsınız.
-          </p>
         </div>
 
         {/* Quick Discovery Actions */}
@@ -335,7 +328,7 @@ export default function FollowedPage() {
               />
             )}
             <Tv className="w-4 h-4 relative z-10" />
-            <span className="relative z-10">Diziler & Animeler</span>
+            <span className="relative z-10">Seriler</span>
             <span
               className={`relative z-10 ml-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-extrabold ${
                 activeTab === 'media'
@@ -412,9 +405,9 @@ export default function FollowedPage() {
           <>
             {[
               { id: 'ALL' as const, label: `Tümü (${mediaItems.length})` },
-              { id: 'drama' as const, label: 'Diziler' },
+              { id: 'dizi' as const, label: 'Diziler' },
               { id: 'anime' as const, label: 'Animeler' },
-              { id: 'movie' as const, label: 'Filmler' },
+              { id: 'film' as const, label: 'Filmler' },
             ].map((flt) => {
               const active = mediaFilter === flt.id;
               return (
@@ -507,13 +500,13 @@ export default function FollowedPage() {
             <div className="space-y-1.5">
               <h3 className="text-lg font-bold text-white">
                 {searchQuery.trim()
-                  ? 'Aramanıza uygun takip edilen seri bulunamadı'
-                  : 'Henüz takip ettiğiniz bir dizi veya anime bulunmuyor'}
+                  ? 'Aramanıza uygun takip edilen yapım bulunamadı'
+                  : 'Henüz takip ettiğiniz bir yapım bulunmuyor'}
               </h3>
               <p className="text-xs text-white/50 max-w-md mx-auto leading-relaxed">
                 {searchQuery.trim()
                   ? 'Arama kriterlerinizi değiştirerek tekrar deneyebilirsiniz.'
-                  : 'Dizilerin ve animelerin üzerindeki zil butonuna tıklayarak takip listenize ekleyebilir, yeni bölümler yayınlandığında anında haberdar olabilirsiniz.'}
+                  : 'Dizi, film ve animelerin üzerindeki takip butonuna tıklayarak listenize ekleyebilirsiniz.'}
               </p>
             </div>
             <Link
