@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo, memo } from 'react';
-import { Film, Play, Check, Eye } from 'lucide-react';
+import { Film, Check, Eye } from 'lucide-react';
 import {
   MediaItem,
   EpisodeData,
@@ -103,7 +103,7 @@ const EpisodeRailRow = memo(function EpisodeRailRow({
       aria-label={`${ep.episode_number}. Bölüm`}
       title={`${ep.episode_number}. Bölüm${cleanSubtitle ? ` - ${cleanSubtitle}` : ''}`}
       style={{ contain: 'content' }}
-      className={`relative rounded-2xl border transition-all duration-200 cursor-pointer flex items-center gap-2.5 sm:gap-3 p-2 sm:p-2.5 group select-none ${
+      className={`relative rounded-2xl border transition-colors duration-150 cursor-pointer flex items-center gap-2.5 sm:gap-3 p-2 sm:p-2.5 group select-none ${
         isPlayingThis
           ? 'bg-sky-500/[0.12] border-sky-400/60 shadow-[0_0_18px_rgba(41,151,255,0.22)] ring-1 ring-sky-400/30'
           : epWatched
@@ -113,6 +113,7 @@ const EpisodeRailRow = memo(function EpisodeRailRow({
     >
       {/* 16:9 Thumbnail Image */}
       <div
+        style={{ contain: 'paint' }}
         className={`relative ${
           cinemaLightsOff ? 'w-20 sm:w-22' : 'w-24 sm:w-28'
         } aspect-video shrink-0 rounded-xl overflow-hidden bg-[#16161d] border border-white/10 group-hover:border-white/20 transition-colors shadow-xs`}
@@ -121,7 +122,8 @@ const EpisodeRailRow = memo(function EpisodeRailRow({
           src={thumbnailUrl}
           alt=""
           loading="lazy"
-          className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 ${
+          decoding="async"
+          className={`w-full h-full object-cover select-none pointer-events-none ${
             epWatched && !isPlayingThis ? 'opacity-70 saturate-75' : ''
           }`}
           onError={(e) => {
@@ -135,15 +137,6 @@ const EpisodeRailRow = memo(function EpisodeRailRow({
         {/* Subtle ambient gradient overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
 
-        {/* If Playing: Vibrant Play Badge */}
-        {isPlayingThis && (
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex items-center justify-center">
-            <div className="w-7 h-7 rounded-full bg-sky-400 text-black flex items-center justify-center shadow-[0_0_12px_rgba(56,189,248,0.6)]">
-              <Play className="w-3.5 h-3.5 fill-black ml-0.5" />
-            </div>
-          </div>
-        )}
-
         {/* If Watched: Discreet Emerald Check badge in top-left */}
         {epWatched && (
           <div className="absolute top-1 left-1 w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-md">
@@ -152,7 +145,13 @@ const EpisodeRailRow = memo(function EpisodeRailRow({
         )}
 
         {/* Episode Number badge bottom-right of thumbnail */}
-        <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-black/80 text-white/90 backdrop-blur-xs border border-white/10 leading-none">
+        <span
+          className={`absolute bottom-1 right-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold leading-none ${
+            isPlayingThis
+              ? 'bg-sky-400 text-black shadow-[0_0_8px_rgba(56,189,248,0.6)] font-extrabold'
+              : 'bg-black/85 text-white/90 border border-white/10'
+          }`}
+        >
           B{ep.episode_number}
         </span>
       </div>

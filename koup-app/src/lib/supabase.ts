@@ -511,8 +511,8 @@ export function getProxiedImageUrl(
       // Vitrin / Series Detail / Actor Detail: uncompressed original
       effectiveSize = 'original';
     } else if (type === 'banner') {
-      // Kart sinematik 16:9 geniş arka planı: optimize w300 (ambiyans) veya w1280 (720p HD banner)
-      effectiveSize = tmdbSize === 'w300' ? 'w300' : 'w1280';
+      // Kart sinematik 16:9 geniş arka planı: optimize w185 / w300 (ambiyans) veya w1280 (720p HD banner)
+      effectiveSize = tmdbSize === 'w185' || tmdbSize === 'w300' ? tmdbSize : 'w1280';
     } else {
       // Seri kartları, oyuncular, listeler, takvim afişleri: net 720p standardı w500 (500x750)
       effectiveSize = tmdbSize && tmdbSize !== 'w185' && tmdbSize !== 'w342' && tmdbSize !== 'w480' ? tmdbSize : 'w500';
@@ -538,7 +538,7 @@ export function getProxiedImageUrl(
       return url;
     }
     // AniList görsellerini de kartlarda 720p standardına getirmek için image-proxy üzerinden w500 / w1280 WebP'ye normalize et
-    const aniSize = type === 'banner' ? (tmdbSize === 'w300' ? 'w300' : 'w1280') : 'w500';
+    const aniSize = type === 'banner' ? (tmdbSize === 'w185' || tmdbSize === 'w300' ? tmdbSize : 'w1280') : 'w500';
     const params = new URLSearchParams({ url, size: aniSize });
     if (type) params.set('type', type);
     return `/api/image-proxy?${params.toString()}`;
