@@ -883,7 +883,7 @@ export default function SeriesDetailPage({
           {/* Vertical Poster with Glass Glow - Strict 2:3 Cinema Aspect Ratio (Grand & prominent) */}
           <div
             key={posterSrc}
-            className="relative w-52 sm:w-64 md:w-72 lg:w-80 shrink-0 aspect-[2/3] rounded-2xl sm:rounded-3xl overflow-hidden shadow-[0_30px_70px_rgba(0,0,0,0.95)] border border-white/20 bg-[#121216] self-center md:self-start md:sticky md:top-28"
+            className="relative w-52 sm:w-64 md:w-72 lg:w-80 shrink-0 aspect-[2/3] rounded-2xl sm:rounded-3xl overflow-hidden shadow-[0_30px_70px_rgba(0,0,0,0.95)] border border-white/20 bg-[#121216] self-center md:self-start"
           >
             {/* Ambient Blurred Fill for non-standard image aspect ratios */}
             <img
