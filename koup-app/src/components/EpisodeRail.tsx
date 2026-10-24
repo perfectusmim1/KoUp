@@ -98,7 +98,6 @@ const EpisodeRailRow = memo(function EpisodeRailRow({
         }
       }}
       aria-label={`${ep.episode_number}. Bölüm`}
-      title={`${ep.episode_number}. Bölüm${cleanSubtitle ? ` - ${cleanSubtitle}` : ''}`}
       style={{ contain: 'content' }}
       data-active={isPlayingThis}
       className={`relative rounded-2xl border transition-[background-color,border-color,box-shadow] duration-200 cursor-pointer flex items-center gap-2.5 sm:gap-3 p-2 sm:p-2.5 group select-none ${
@@ -205,11 +204,6 @@ const EpisodeRailRow = memo(function EpisodeRailRow({
           onToggleWatched(ep);
         }}
         aria-label={
-          epWatched
-            ? 'İzlendi (Kaldırmak için tıkla)'
-            : 'İzlendi olarak işaretle'
-        }
-        title={
           epWatched
             ? 'İzlendi (Kaldırmak için tıkla)'
             : 'İzlendi olarak işaretle'

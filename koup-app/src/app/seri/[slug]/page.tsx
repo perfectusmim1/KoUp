@@ -1790,7 +1790,6 @@ export default function SeriesDetailPage({
                     router.push(`/seri/${media.slug}/${ep.episode_number}?season=${seasonNum}`);
                   }}
                   aria-label={epTitle}
-                  title={`${epTitle}${epWatched ? ' (İzlendi)' : ''}`}
                   className={`p-3 sm:p-3.5 rounded-2xl border transition-colors duration-150 cursor-pointer flex items-center justify-between gap-3 group select-none ${
                     epWatched
                       ? 'bg-emerald-500/[0.05] hover:bg-emerald-500/[0.09] border-emerald-500/35 hover:border-emerald-400/65 shadow-[0_0_8px_rgba(16,185,129,0.12)] hover:shadow-[0_0_14px_rgba(16,185,129,0.22)]'
