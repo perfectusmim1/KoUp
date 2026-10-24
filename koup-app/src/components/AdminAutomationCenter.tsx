@@ -31,6 +31,7 @@ import {
 import { getProxiedImageUrl, formatContentTypeTR } from '@/lib/supabase';
 import CountryFlag from '@/components/CountryFlag';
 import CustomSelect, { SelectOption } from '@/components/CustomSelect';
+import KoupInput from '@/components/KoupInput';
 import { adminFetch } from '@/lib/adminClient';
 
 export interface ScraperConfigRow {
@@ -1174,13 +1175,15 @@ export default function AdminAutomationCenter({
               {/* Filters Bar */}
               <div className="p-4 border-b border-white/[0.06] bg-white/[0.02] flex flex-col sm:flex-row items-center justify-between gap-3">
                 <div className="relative w-full sm:w-72">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-                  <input
+                  <KoupInput
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Seri adı veya slug ara..."
-                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-black/40 border border-white/15 text-xs text-white placeholder-white/40 focus:outline-none focus:border-purple-400"
+                    leftIcon={<Search className="w-4 h-4" />}
+                    clearable
+                    onClear={() => setSearchQuery('')}
+                    size="sm"
                   />
                 </div>
 
@@ -1305,13 +1308,15 @@ export default function AdminAutomationCenter({
               {/* Search */}
               <div className="p-4 border-b border-white/[0.06] bg-white/[0.02]">
                 <div className="relative w-full sm:w-80">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-                  <input
+                  <KoupInput
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Dizi adı veya bölüm ara..."
-                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-black/40 border border-white/15 text-xs text-white placeholder-white/40 focus:outline-none focus:border-emerald-400"
+                    leftIcon={<Search className="w-4 h-4" />}
+                    clearable
+                    onClear={() => setSearchQuery('')}
+                    size="sm"
                   />
                 </div>
               </div>
@@ -1405,13 +1410,15 @@ export default function AdminAutomationCenter({
               {/* Filters */}
               <div className="p-4 border-b border-white/[0.06] bg-white/[0.02] flex flex-col sm:flex-row items-center justify-between gap-3">
                 <div className="relative w-full sm:w-72">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-                  <input
+                  <KoupInput
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Seri, kaynak veya provider ara..."
-                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-black/40 border border-white/15 text-xs text-white placeholder-white/40 focus:outline-none focus:border-amber-400"
+                    leftIcon={<Search className="w-4 h-4" />}
+                    clearable
+                    onClear={() => setSearchQuery('')}
+                    size="sm"
                   />
                 </div>
 

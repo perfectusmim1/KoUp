@@ -1,33 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
-import { supabase, MediaItem } from '@/lib/supabase';
+import { supabase, supabaseAdmin, MediaItem } from '@/lib/supabase';
 import { verifyAdminAuth } from '@/lib/adminAuth';
 
-interface MasterpiecesConfig {
+export interface MasterpiecesConfig {
   rotationMode: 'daily' | 'weekly' | 'manual';
   pinnedIds: number[];
   updatedAt: string;
 }
 
-const CONFIG_PATH = path.join(process.cwd(), 'src', 'data', 'masterpieces_config.json');
-
 async function readConfig(): Promise<MasterpiecesConfig> {
   try {
-    const data = await fs.readFile(CONFIG_PATH, 'utf-8');
-    return JSON.parse(data);
+    const db = supabaseAdmin || supabase;
+    const { data } = await db
+      .from('site_settings')
+      .select('value, updated_at')
+      .eq('key', 'masterpieces')
+      .maybeSingle();
+
+    if (data?.value && typeof data.value === 'object') {
+      const val = data.value as Record<string, any>;
+      const mode = val.rotationMode || val.mode || 'daily';
+      return {
+        rotationMode: mode === 'weekly' || mode === 'manual' ? mode : 'daily',
+        pinnedIds: Array.isArray(val.pinnedIds)
+          ? val.pinnedIds.map(Number).filter((n) => Number.isFinite(n) && n > 0)
+          : [],
+        updatedAt: val.updatedAt || val.lastUpdated || data.updated_at || new Date().toISOString(),
+      };
+    }
   } catch {
-    return {
-      rotationMode: 'daily',
-      pinnedIds: [],
-      updatedAt: new Date().toISOString(),
-    };
+    // Fallback below
   }
+  return {
+    rotationMode: 'daily',
+    pinnedIds: [],
+    updatedAt: new Date().toISOString(),
+  };
 }
 
-async function writeConfig(config: MasterpiecesConfig): Promise<void> {
-  await fs.mkdir(path.dirname(CONFIG_PATH), { recursive: true });
-  await fs.writeFile(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
+async function writeConfig(config: MasterpiecesConfig, userId?: string): Promise<void> {
+  const db = supabaseAdmin || supabase;
+  const { error } = await db.from('site_settings').upsert(
+    {
+      key: 'masterpieces',
+      value: {
+        rotationMode: config.rotationMode,
+        mode: config.rotationMode,
+        pinnedIds: config.pinnedIds,
+        updatedAt: config.updatedAt,
+      },
+      updated_by: userId || null,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'key' }
+  );
+  if (error) throw error;
 }
 
 function computeActiveMasterpieces(
@@ -45,7 +72,6 @@ function computeActiveMasterpieces(
     return pinnedItems.slice(0, 4);
   }
 
-  // Filter out pinned items from pool
   const pool = candidates.filter((c) => !config.pinnedIds.includes(c.id));
   if (pool.length === 0) return pinnedItems.slice(0, 4);
 
@@ -56,7 +82,6 @@ function computeActiveMasterpieces(
   if (config.rotationMode === 'weekly') {
     seed = Math.floor(now.getTime() / (1000 * 60 * 60 * 24 * 7));
   } else {
-    // daily
     seed = Math.floor(now.getTime() / (1000 * 60 * 60 * 24));
   }
 
@@ -71,7 +96,6 @@ export async function GET() {
   try {
     const config = await readConfig();
 
-    // Fetch top candidates from Supabase
     const { data: candidates, error } = await supabase
       .from('media')
       .select('*')
@@ -82,12 +106,26 @@ export async function GET() {
 
     if (error) throw error;
 
-    const allCandidates = (candidates as MediaItem[]) || [];
+    let allCandidates = (candidates as MediaItem[]) || [];
+
+    // Ensure any pinned IDs not in top 36 are also fetched so manual pins always resolve
+    const missingPinned = config.pinnedIds.filter((id) => !allCandidates.some((c) => c.id === id));
+    if (missingPinned.length > 0) {
+      const { data: extraPinned } = await supabase
+        .from('media')
+        .select('*')
+        .in('id', missingPinned);
+      if (extraPinned && extraPinned.length > 0) {
+        allCandidates = [...(extraPinned as MediaItem[]), ...allCandidates];
+      }
+    }
+
     const activeItems = computeActiveMasterpieces(config, allCandidates);
 
     return NextResponse.json({
       config,
       activeItems,
+      candidates: allCandidates,
       candidatesCount: allCandidates.length,
       nextRotationInfo:
         config.rotationMode === 'daily'
@@ -119,13 +157,22 @@ export async function POST(req: NextRequest) {
 
     const currentConfig = await readConfig();
 
+    const validMode =
+      rotationMode === 'daily' || rotationMode === 'weekly' || rotationMode === 'manual'
+        ? rotationMode
+        : currentConfig.rotationMode;
+
+    const validPinnedIds = Array.isArray(pinnedIds)
+      ? Array.from(new Set(pinnedIds.map(Number).filter((n) => Number.isFinite(n) && n > 0))).slice(0, 12)
+      : currentConfig.pinnedIds;
+
     const newConfig: MasterpiecesConfig = {
-      rotationMode: rotationMode || currentConfig.rotationMode || 'daily',
-      pinnedIds: Array.isArray(pinnedIds) ? pinnedIds : currentConfig.pinnedIds,
+      rotationMode: validMode,
+      pinnedIds: validPinnedIds,
       updatedAt: new Date().toISOString(),
     };
 
-    await writeConfig(newConfig);
+    await writeConfig(newConfig, authCheck.userId);
 
     return NextResponse.json({
       success: true,

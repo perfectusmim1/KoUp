@@ -34,6 +34,7 @@ import {
 import { getProxiedImageUrl, formatContentTypeTR } from '@/lib/supabase';
 import { useKoUpSelector } from '@/context/KoUpContext';
 import { adminFetch } from '@/lib/adminClient';
+import KoupInput from '@/components/KoupInput';
 
 export interface AutomatedSeriesItem {
   media_id: number;
@@ -103,6 +104,7 @@ function cleanDisplayTitle(raw: string): string {
 
 export default function AdminSeriesAutomation() {
   const pushNotification = useKoUpSelector((s) => s.pushNotification);
+  const confirmDialog = useKoUpSelector((s) => s.confirmDialog);
 
   const [automations, setAutomations] = useState<AutomatedSeriesItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -129,9 +131,6 @@ export default function AdminSeriesAutomation() {
   const [addSites, setAddSites] = useState<string[]>(['asyawatch', 'dizikorea', 'dizifon']);
   const [addSiteSlugs, setAddSiteSlugs] = useState<Record<string, string>>({});
   const [isAddingSaving, setIsAddingSaving] = useState(false);
-
-  // Delete Confirmation Modal State
-  const [deletingSeries, setDeletingSeries] = useState<AutomatedSeriesItem | null>(null);
 
   // Slug Edit Modal State
   const [editingSeries, setEditingSeries] = useState<AutomatedSeriesItem | null>(null);
@@ -266,9 +265,16 @@ export default function AdminSeriesAutomation() {
   };
 
   // Delete from Automation
-  const handleConfirmDelete = async () => {
-    if (!deletingSeries) return;
-    const item = deletingSeries;
+  const handleDeleteSeries = async (item: AutomatedSeriesItem) => {
+    const ok = await confirmDialog({
+      title: 'Seriyi Otomasyondan Çıkar',
+      message: `"${item.title}" serisi otomatik tarama havuzundan kaldırılacaktır. Dizinin kendisi veya mevcut bölümleri silinmez, yalnızca haftalık otomatik kontrol sona erer.`,
+      confirmText: 'Otomasyondan Çıkar',
+      cancelText: 'Vazgeç',
+      isDestructive: true,
+      icon: 'trash',
+    });
+    if (!ok) return;
     try {
       const res = await adminFetch(`/api/admin/series-automation?media_id=${item.media_id}`, {
         method: 'DELETE',
@@ -279,8 +285,6 @@ export default function AdminSeriesAutomation() {
       }
     } catch (e: any) {
       pushNotification('Hata', 'Kaldırılamadı: ' + e.message, 'system');
-    } finally {
-      setDeletingSeries(null);
     }
   };
 
@@ -575,22 +579,16 @@ export default function AdminSeriesAutomation() {
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 rounded-2xl bg-[#0f0f11] border border-white/[0.08]">
         {/* Search */}
         <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 text-white/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
+          <KoupInput
             type="text"
             placeholder="Bağlı serilerde filtrele (isim / slug)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-xs text-white bg-black/40 border border-white/10 rounded-xl focus:outline-none focus:border-sky-500/50 transition-colors placeholder:text-white/30"
+            leftIcon={<Search className="w-4 h-4" />}
+            clearable
+            onClear={() => setSearchQuery('')}
+            size="sm"
           />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
         </div>
 
         {/* Filter Pills */}
@@ -815,7 +813,7 @@ export default function AdminSeriesAutomation() {
 
                     {/* Delete */}
                     <button
-                      onClick={() => setDeletingSeries(item)}
+                      onClick={() => handleDeleteSeries(item)}
                       title="Otomasyondan Kaldır"
                       className="p-1.5 rounded-xl text-white/30 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
                     >
@@ -908,20 +906,20 @@ export default function AdminSeriesAutomation() {
               {/* Search Input (For catalog & live search) */}
               {addModalTab !== 'manual' && (
                 <div className="space-y-1.5">
-                  <div className="relative">
-                    <Search className="w-4 h-4 text-white/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      placeholder="Dizi veya anime adı girin (örn: Doctor X, Tales of Zestiria, Revenant)..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2.5 text-xs text-white bg-black/60 border border-white/15 rounded-2xl focus:outline-none focus:border-sky-500 transition-colors"
-                      autoFocus
-                    />
-                    {isSearching && (
-                      <RefreshCw className="w-4 h-4 text-sky-400 animate-spin absolute right-3.5 top-1/2 -translate-y-1/2" />
-                    )}
-                  </div>
+                  <KoupInput
+                    type="text"
+                    placeholder="Dizi veya anime adı girin (örn: Doctor X, Tales of Zestiria, Revenant)..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    leftIcon={<Search className="w-4 h-4" />}
+                    rightSlot={
+                      isSearching ? <RefreshCw className="w-4 h-4 text-sky-400 animate-spin" /> : undefined
+                    }
+                    clearable
+                    onClear={() => setSearchTerm('')}
+                    size="sm"
+                    autoFocus
+                  />
                   <div className="text-[11px] text-white/40 px-1">
                     {addModalTab === 'catalog'
                       ? 'KoUp veritabanında kayıtlı mevcut dizileri bulur.'
@@ -1081,22 +1079,23 @@ export default function AdminSeriesAutomation() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <label className="text-[11px] font-medium text-white/70">Dizi / Yapım Başlığı *</label>
-                      <input
+                      <KoupInput
                         type="text"
                         placeholder="Örn: Undercover High School"
                         value={manualTitle}
                         onChange={(e) => setManualTitle(e.target.value)}
-                        className="w-full px-3 py-2 text-xs text-white bg-black/60 border border-white/15 rounded-xl focus:outline-none focus:border-sky-500"
+                        size="sm"
                       />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[11px] font-medium text-white/70">Özel / Aday Slug</label>
-                      <input
+                      <KoupInput
                         type="text"
                         placeholder="örn: undercover-high-school"
                         value={manualSlug}
                         onChange={(e) => setManualSlug(e.target.value)}
-                        className="w-full px-3 py-2 text-xs font-mono text-white bg-black/60 border border-white/15 rounded-xl focus:outline-none focus:border-sky-500"
+                        size="sm"
+                        inputClassName="font-mono"
                       />
                     </div>
                   </div>
@@ -1332,7 +1331,7 @@ export default function AdminSeriesAutomation() {
                             Varsayılan: {editingSeries.slug}
                           </span>
                         </label>
-                        <input
+                        <KoupInput
                           type="text"
                           placeholder={editingSeries.slug}
                           value={editingSlugs[siteId] || ''}
@@ -1342,7 +1341,8 @@ export default function AdminSeriesAutomation() {
                               [siteId]: e.target.value.trim(),
                             })
                           }
-                          className="w-full px-3 py-2 text-xs font-mono text-white bg-black/60 border border-white/15 rounded-xl focus:outline-none focus:border-sky-500"
+                          size="sm"
+                          inputClassName="font-mono text-xs"
                         />
                       </div>
 
@@ -1377,54 +1377,7 @@ export default function AdminSeriesAutomation() {
         )}
       </AnimatePresence>
 
-      {/* 6. MODAL: DELETE CONFIRMATION (NO NATIVE CONFIRM) */}
-      <AnimatePresence>
-        {deletingSeries && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md bg-[#0f0f11] border border-rose-500/30 rounded-3xl p-6 shadow-2xl space-y-4"
-            >
-              <div className="flex items-center gap-3 text-rose-400">
-                <div className="w-10 h-10 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center shrink-0">
-                  <Trash2 className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white">Seriyi Otomasyondan Çıkar</h3>
-                  <div className="text-xs text-white/40">Otomatik takip durdurulacak</div>
-                </div>
-              </div>
-
-              <p className="text-xs text-white/70 leading-relaxed">
-                <strong className="text-white font-semibold">&ldquo;{deletingSeries.title}&rdquo;</strong> serisi otomatik tarama havuzundan kaldırılacaktır.
-                <br />
-                <span className="text-white/40 mt-1 block">
-                  Not: Dizinin kendisi veya veritabanındaki mevcut bölümler silinmez, yalnızca haftalık otomatik kontrol sona erer.
-                </span>
-              </p>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/10">
-                <button
-                  onClick={() => setDeletingSeries(null)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-white/60 hover:text-white cursor-pointer"
-                >
-                  Vazgeç
-                </button>
-                <button
-                  onClick={handleConfirmDelete}
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-lg cursor-pointer transition-colors"
-                >
-                  Otomasyondan Çıkar
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* 7. LOGS / EXECUTION TERMINAL DRAWER */}
+      {/* 6. LOGS / EXECUTION TERMINAL DRAWER */}
       <AnimatePresence>
         {showLogsDrawer && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">

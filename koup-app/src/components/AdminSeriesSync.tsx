@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import CustomSelect, { SelectOption } from '@/components/CustomSelect';
+import KoupInput from '@/components/KoupInput';
 
 interface AdminSeriesSyncProps {
   dramaId: number;
@@ -494,12 +495,13 @@ export default function AdminSeriesSync({
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-mono text-white/50">Hedef URL:</label>
-                <input
+                <KoupInput
                   type="url"
                   value={manualUrlInput}
                   onChange={(e) => setManualUrlInput(e.target.value)}
                   placeholder="Örn: https://asyawatch.com/dizi/... veya https://bldramaturkey.co/dizi/..."
-                  className="koup-input text-xs py-2.5 px-4 font-mono font-medium"
+                  size="sm"
+                  inputClassName="text-xs font-mono font-medium"
                 />
                 <p className="text-[10px] text-white/40 pt-1">
                   Desteklenen Siteler: AsyaWatch, BLDrama/WebDramaTurkey, DiziBOX, DiziKorea, DiziFon, HDFilmcehennemi, Dizilla, AnimeciX, AsyaAnimeleri, DDizi

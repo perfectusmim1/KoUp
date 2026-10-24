@@ -2,25 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import path from 'node:path';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
-import { verifyAdminAuth } from '@/lib/adminAuth';
+import { verifyAdminAuth, resolvePythonBinary } from '@/lib/adminAuth';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
-// Helper to find Python executable across Windows environments
 function getPythonPath(): string {
-  const possiblePaths = [
-    'C:\\Users\\Cagan\\AppData\\Local\\Programs\\Python\\Python312\\python.exe',
-    'python',
-    'py',
-  ];
-
-  for (const p of possiblePaths) {
-    if (p.includes('\\')) {
-      if (fs.existsSync(p)) return p;
-    } else {
-      return p;
-    }
-  }
-  return 'python';
+  return resolvePythonBinary();
 }
 
 export async function POST(req: NextRequest) {

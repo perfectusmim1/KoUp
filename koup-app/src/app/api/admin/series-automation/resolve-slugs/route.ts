@@ -4,29 +4,13 @@ import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { supabase } from '@/lib/supabase';
-import { verifyAdminAuth } from '@/lib/adminAuth';
+import { supabase, supabaseAdmin } from '@/lib/supabase';
+import { verifyAdminAuth, resolvePythonBinary } from '@/lib/adminAuth';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 const execFileAsync = promisify(execFile);
-
-function getPythonPath(): string {
-  const possiblePaths = [
-    'C:\\Users\\Cagan\\AppData\\Local\\Programs\\Python\\Python312\\python.exe',
-    'python',
-    'py',
-  ];
-  for (const p of possiblePaths) {
-    if (p.includes('\\')) {
-      if (fs.existsSync(p)) return p;
-    } else {
-      return p;
-    }
-  }
-  return 'python';
-}
 
 let archiveDb: DatabaseSync | null = null;
 function getArchiveDb(): DatabaseSync | null {
@@ -39,6 +23,20 @@ function getArchiveDb(): DatabaseSync | null {
   return archiveDb;
 }
 
+function slugifyTR(text: string): string {
+  const trMap: Record<string, string> = {
+    ç: 'c', Ç: 'c', ğ: 'g', Ğ: 'g', ı: 'i', I: 'i', İ: 'i',
+    ö: 'o', Ö: 'o', ş: 's', Ş: 's', ü: 'u', Ü: 'u',
+  };
+  return text
+    .split('')
+    .map((c) => trMap[c] || c)
+    .join('')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
+
 export async function POST(req: NextRequest) {
   try {
     const authCheck = await verifyAdminAuth(req);
@@ -47,9 +45,11 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const title = (body.title || '').trim();
+    const title = String(body.title || '').trim().slice(0, 140);
     const dramaId = body.drama_id ? Number(body.drama_id) : null;
-    const connectedSites = Array.isArray(body.connected_sites) ? body.connected_sites : null;
+    const connectedSites: string[] = Array.isArray(body.connected_sites)
+      ? body.connected_sites.filter((s: any) => typeof s === 'string' && /^[a-z0-9_-]+$/.test(s))
+      : ['asyawatch', 'dizikorea', 'dizifon'];
     const autoSave = Boolean(body.auto_save);
 
     if (!title) {
@@ -57,41 +57,56 @@ export async function POST(req: NextRequest) {
     }
 
     const scriptPath = path.resolve(process.cwd(), '..', 'scripts', 'series_automation_runner.py');
-    const py = getPythonPath();
-    const args = [scriptPath, '--resolve-slugs', '--title', title];
-
-    if (connectedSites && connectedSites.length > 0) {
-      args.push('--connected-sites', connectedSites.join(','));
-    }
-
-    const { stdout } = await execFileAsync(py, args, {
-      cwd: path.resolve(process.cwd(), '..'),
-      timeout: 25000,
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
-    });
+    const isLocalPython = !process.env.VERCEL && fs.existsSync(scriptPath);
 
     let parsed: any = null;
-    try {
-      parsed = JSON.parse(stdout.trim());
-    } catch {
-      // Find JSON block in stdout
-      const match = stdout.match(/\{[\s\S]*"suggested_slugs"[\s\S]*\}/);
-      if (match) {
-        parsed = JSON.parse(match[0]);
+
+    if (isLocalPython) {
+      const py = resolvePythonBinary();
+      const args = [scriptPath, '--resolve-slugs', '--title', title];
+      if (connectedSites.length > 0) {
+        args.push('--connected-sites', connectedSites.join(','));
       }
+
+      const { stdout } = await execFileAsync(py, args, {
+        cwd: path.resolve(process.cwd(), '..'),
+        timeout: 25000,
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+      });
+
+      try {
+        parsed = JSON.parse(stdout.trim());
+      } catch {
+        const match = stdout.match(/\{[\s\S]*"suggested_slugs"[\s\S]*\}/);
+        if (match) {
+          parsed = JSON.parse(match[0]);
+        }
+      }
+    } else {
+      // Cloud/Vercel fallback: generate deterministic normalized slugs per site
+      const baseSlug = slugifyTR(title);
+      const suggested: Record<string, string> = {};
+      for (const siteKey of connectedSites) {
+        suggested[siteKey] = baseSlug;
+      }
+      parsed = {
+        ok: true,
+        title,
+        suggested_slugs: suggested,
+        cloud_fallback: true,
+      };
     }
 
     if (!parsed) {
-      return NextResponse.json({ error: 'Site slugları çözümlenemedi.', raw: stdout }, { status: 500 });
+      return NextResponse.json({ error: 'Site slugları çözümlenemedi.' }, { status: 500 });
     }
 
-    // Auto-save to SQLite and Supabase if requested
     if (autoSave && dramaId && parsed.suggested_slugs) {
       const db = getArchiveDb();
+      let mergedSlugs = { ...parsed.suggested_slugs };
+
       if (db) {
-        // Read existing slugs to merge
         const existingRow = db.prepare('SELECT site_slugs FROM series_automations WHERE media_id = ?').get(dramaId) as any;
-        let mergedSlugs = { ...parsed.suggested_slugs };
         if (existingRow?.site_slugs) {
           try {
             const oldSlugs = JSON.parse(existingRow.site_slugs);
@@ -101,19 +116,29 @@ export async function POST(req: NextRequest) {
 
         db.prepare("UPDATE series_automations SET site_slugs = ?, updated_at = datetime('now') WHERE media_id = ?")
           .run(JSON.stringify(mergedSlugs), dramaId);
-
-        // Supabase sync
-        await supabase
-          .from('series_automations')
-          .update({
-            site_slugs: mergedSlugs,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('media_id', dramaId);
-
-        parsed.saved = true;
-        parsed.merged_slugs = mergedSlugs;
       }
+
+      const supa = supabaseAdmin || supabase;
+      const { data: existingSupa } = await supa
+        .from('series_automations')
+        .select('site_slugs')
+        .eq('media_id', dramaId)
+        .maybeSingle();
+
+      if (existingSupa?.site_slugs && typeof existingSupa.site_slugs === 'object') {
+        mergedSlugs = { ...(existingSupa.site_slugs as Record<string, string>), ...mergedSlugs };
+      }
+
+      await supa
+        .from('series_automations')
+        .update({
+          site_slugs: mergedSlugs,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('media_id', dramaId);
+
+      parsed.saved = true;
+      parsed.merged_slugs = mergedSlugs;
     }
 
     return NextResponse.json({ ok: true, ...parsed });

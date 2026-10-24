@@ -205,13 +205,14 @@ def score_drama(d):
         score -= 150
     return score
 
-def run_merge():
+def run_merge(dry_run: bool = False):
     db_path = os.path.join(_ROOT, 'webdrama_archive.db')
     conn = sqlite3.connect(db_path, timeout=60.0)
     conn.execute("PRAGMA busy_timeout = 60000;")
     cur = conn.cursor()
 
-    print("[Merge Duplicates] Arşivdeki tüm seriler taranıyor...", flush=True)
+    mode_str = "DRY-RUN (Önizleme)" if dry_run else "APPLY (Canlı Birleştirme)"
+    print(f"[Merge Duplicates] ({mode_str}) Arşivdeki tüm seriler taranıyor...", flush=True)
 
     dramas = cur.execute("""
         SELECT d.id, d.title, d.slug, d.content_type, d.release_year, d.cover_image,
@@ -291,6 +292,44 @@ def run_merge():
 
     total_dups = sum(len(g) - 1 for g in groups)
     print(f"Toplam {len(groups)} adet duplicate kümesi ({total_dups} duplicate seri) tespit edildi.", flush=True)
+
+    if dry_run:
+        preview_groups = []
+        for idx, g in enumerate(groups, 1):
+            sorted_dramas = sorted([drama_dict[did] for did in g], key=score_drama, reverse=True)
+            primary = sorted_dramas[0]
+            duplicates = sorted_dramas[1:]
+            print(f"\n[DRY-RUN {idx}/{len(groups)}] Ana Seri: #{primary[0]} '{primary[1]}' (slug: {primary[2]}, eps: {primary[13]}, srcs: {primary[14]})", flush=True)
+            dup_items = []
+            for dup in duplicates:
+                print(f"  --> Birleştirilecek: #{dup[0]} '{dup[1]}' (slug: {dup[2]}, eps: {dup[13]}, srcs: {dup[14]})", flush=True)
+                dup_items.append({
+                    "id": dup[0],
+                    "title": dup[1],
+                    "slug": dup[2],
+                    "episode_count": dup[13],
+                    "sources_count": dup[14],
+                })
+            preview_groups.append({
+                "primary": {
+                    "id": primary[0],
+                    "title": primary[1],
+                    "slug": primary[2],
+                    "episode_count": primary[13],
+                    "sources_count": primary[14],
+                },
+                "duplicates": dup_items,
+            })
+        conn.close()
+        result_payload = {
+            "ok": True,
+            "dryRun": True,
+            "groupsCount": len(groups),
+            "duplicatesCount": total_dups,
+            "groups": preview_groups[:50],
+        }
+        print(f"__RESULT__ {json.dumps(result_payload, ensure_ascii=False)}", flush=True)
+        return
 
     merged_count = 0
     migrated_sources_count = 0
@@ -471,5 +510,19 @@ def run_merge():
     except Exception as e:
         print(f"[R2 DB Backup Hatası]: {e}", flush=True)
 
+    result_payload = {
+        "ok": True,
+        "dryRun": False,
+        "groupsCount": len(groups),
+        "mergedCount": merged_count,
+        "migratedEpisodesCount": migrated_episodes_count,
+        "migratedSourcesCount": migrated_sources_count,
+    }
+    print(f"__RESULT__ {json.dumps(result_payload, ensure_ascii=False)}", flush=True)
+
 if __name__ == '__main__':
-    run_merge()
+    import argparse
+    parser = argparse.ArgumentParser(description="KoUp Duplicate Series Merger")
+    parser.add_argument("--dry-run", action="store_true", help="Preview duplicates without modifying SQLite, R2, or Supabase")
+    args = parser.parse_args()
+    run_merge(dry_run=args.dry_run)

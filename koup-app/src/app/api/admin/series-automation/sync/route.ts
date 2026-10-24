@@ -2,32 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import path from 'node:path';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
-import { verifyAdminAuth } from '@/lib/adminAuth';
+import { verifyAdminAuth, resolvePythonBinary, checkAdminRateLimit } from '@/lib/adminAuth';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-
-function getPythonPath(): string {
-  const possiblePaths = [
-    'C:\\Users\\Cagan\\AppData\\Local\\Programs\\Python\\Python312\\python.exe',
-    'python',
-    'py',
-  ];
-  for (const p of possiblePaths) {
-    if (p.includes('\\')) {
-      if (fs.existsSync(p)) return p;
-    } else {
-      return p;
-    }
-  }
-  return 'python';
-}
 
 export async function POST(req: NextRequest) {
   try {
     const authCheck = await verifyAdminAuth(req);
     if (!authCheck.authorized) {
       return NextResponse.json({ error: authCheck.error }, { status: authCheck.status });
+    }
+
+    const rate = checkAdminRateLimit(`series-auto-sync:${authCheck.userId}`, 15, 60_000);
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: `Çok fazla istek. Lütfen ${rate.retryAfterSec} saniye bekleyin.` },
+        { status: 429 }
+      );
     }
 
     const body = await req.json();
@@ -38,19 +30,121 @@ export async function POST(req: NextRequest) {
     }
 
     const scriptPath = path.resolve(process.cwd(), '..', 'scripts', 'series_automation_runner.py');
-    if (!fs.existsSync(scriptPath)) {
-      return NextResponse.json({ error: `Script bulunamadı: ${scriptPath}` }, { status: 500 });
+    const isLocalPython = !process.env.VERCEL && fs.existsSync(scriptPath);
+    const encoder = new TextEncoder();
+
+    // =========================================================================
+    // VERCEL / CLOUD FALLBACK: DISPATCH TO GITHUB ACTIONS
+    // =========================================================================
+    if (!isLocalPython) {
+      const githubToken = process.env.GITHUB_TOKEN;
+      if (!githubToken) {
+        return NextResponse.json(
+          { error: 'GitHub Actions erişim anahtarı (GITHUB_TOKEN) sunucu ortamında tanımlı değil.' },
+          { status: 500 }
+        );
+      }
+
+      const stream = new ReadableStream({
+        async start(controller) {
+          const sendEvent = (obj: any) => {
+            try {
+              controller.enqueue(encoder.encode(JSON.stringify(obj) + '\n'));
+            } catch (_) {}
+          };
+
+          const nowStr = () => new Date().toTimeString().split(' ')[0];
+          sendEvent({
+            type: 'log',
+            line: `[${nowStr()}] [Bulut] Vercel Serverless ortamı algılandı -> GitHub Actions bulut motoru tetikleniyor...`,
+          });
+
+          try {
+            const workflowUrl = dramaId
+              ? 'https://api.github.com/repos/perfectusmim1/KoUp/actions/workflows/sync_single_series.yml/dispatches'
+              : 'https://api.github.com/repos/perfectusmim1/KoUp/actions/workflows/scraper_cron.yml/dispatches';
+
+            const payload = dramaId
+              ? {
+                  ref: 'main',
+                  inputs: {
+                    drama_id: String(dramaId),
+                    provider: 'auto',
+                    manual_url: '',
+                  },
+                }
+              : {
+                  ref: 'main',
+                  inputs: {
+                    target: 'all',
+                  },
+                };
+
+            const ghRes = await fetch(workflowUrl, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${githubToken}`,
+                Accept: 'application/vnd.github.v3+json',
+                'User-Agent': 'KoUp-App',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(payload),
+            });
+
+            if (!ghRes.ok) {
+              const errText = await ghRes.text();
+              sendEvent({
+                type: 'error',
+                error: `GitHub Actions API hatası (${ghRes.status}): ${errText}`,
+              });
+            } else {
+              sendEvent({
+                type: 'log',
+                line: `[${nowStr()}] [BAŞARILI] GitHub Actions seri otomasyon işi kuyruğa alındı!`,
+              });
+              sendEvent({
+                type: 'done',
+                exitCode: 0,
+                ok: true,
+                result: {
+                  ok: true,
+                  cloud: true,
+                  dramaId,
+                  allActive,
+                  message: 'Bulut senkronizasyonu başlatıldı (~1-2 dk içinde tamamlanacak).',
+                },
+              });
+            }
+          } catch (ghErr: any) {
+            sendEvent({
+              type: 'error',
+              error: ghErr.message || 'GitHub Actions tetiklenirken hata oluştu.',
+            });
+          } finally {
+            try {
+              controller.close();
+            } catch (_) {}
+          }
+        },
+      });
+
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'application/x-ndjson; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+        },
+      });
     }
 
-    const pythonBin = getPythonPath();
+    const pythonBin = resolvePythonBinary();
     const args = ['-u', scriptPath];
     if (allActive) {
       args.push('--all-active');
     } else if (dramaId) {
-      args.push('--drama-id', String(dramaId));
+      args.push('--drama-id', String(Number(dramaId)));
     }
 
-    const encoder = new TextEncoder();
     const stream = new ReadableStream({
       start(controller) {
         let stdoutBuf = '';

@@ -34,15 +34,22 @@ from scrapers.supabase_sync_helper import (
     backup_db_to_r2
 )
 
-def find_gapped_series(conn, limit=100, max_gap_size=50, country_filter=None, provider_filter=None):
+def find_gapped_series(conn, limit=100, max_gap_size=50, country_filter=None, provider_filter=None, drama_id=None):
     cur = conn.cursor()
-    cur.execute("""
-        SELECT d.id, d.title, d.slug, d.content_type, d.country, d.source_url
-        FROM dramas d
-        JOIN episodes e ON e.drama_id = d.id
-        GROUP BY d.id
-        HAVING count(e.id) > 0
-    """)
+    if drama_id:
+        cur.execute("""
+            SELECT d.id, d.title, d.slug, d.content_type, d.country, d.source_url
+            FROM dramas d
+            WHERE d.id = ?
+        """, (drama_id,))
+    else:
+        cur.execute("""
+            SELECT d.id, d.title, d.slug, d.content_type, d.country, d.source_url
+            FROM dramas d
+            JOIN episodes e ON e.drama_id = d.id
+            GROUP BY d.id
+            HAVING count(e.id) > 0
+        """)
     rows = cur.fetchall()
     
     gapped = []
@@ -100,13 +107,20 @@ def choose_provider(item):
     else:
         return 'dizibox'
 
-def run_healing_loop(limit=50, max_gap_size=50, country=None, provider=None):
-    log("ENGINE", f"Otomatik Arşiv İyileştirici Başlatıldı. Hedef: İlk {limit} seri (Max Gap: {max_gap_size}, Country: {country or 'ALL'}, Provider: {provider or 'ALL'})...")
+def run_healing_loop(limit=50, max_gap_size=50, country=None, provider=None, drama_id=None, dry_run=False):
+    log("ENGINE", f"Otomatik Arşiv İyileştirici Başlatıldı. Hedef: İlk {limit} seri (Max Gap: {max_gap_size}, Country: {country or 'ALL'}, Provider: {provider or 'ALL'}, DramaID: {drama_id or 'ALL'}, DryRun: {dry_run})...")
     conn = get_db()
     cur = conn.cursor()
     
-    candidates = find_gapped_series(conn, limit=limit, max_gap_size=max_gap_size, country_filter=country, provider_filter=provider)
+    candidates = find_gapped_series(conn, limit=limit, max_gap_size=max_gap_size, country_filter=country, provider_filter=provider, drama_id=drama_id)
     log("ENGINE", f"Toplam {len(candidates)} adet iyileştirilebilir dizi tespit edildi.")
+
+    if dry_run:
+        for i, item in enumerate(candidates, 1):
+            prov = choose_provider(item)
+            log("DRY_RUN", f"[{i}/{len(candidates)}] #{item['id']} '{item['title']}' ({prov.upper()}) -> {item['missing_count']} eksik bölüm: {item['missing_eps'][:12]}")
+        conn.close()
+        return 0, 0, 0
     
     healed_dramas = 0
     total_eps_added = 0
@@ -189,9 +203,11 @@ def main():
     parser.add_argument("--max-gap", type=int, default=50, help="Max gap size to process")
     parser.add_argument("--country", type=str, default=None, help="Filter by country (e.g. KR, CN, TH, TR)")
     parser.add_argument("--provider", type=str, default=None, help="Filter by target provider (e.g. dizikorea, bldrama)")
+    parser.add_argument("--drama-id", type=int, default=None, help="Heal only a specific drama ID")
+    parser.add_argument("--dry-run", action="store_true", help="List gapped series without modifying DB")
     args = parser.parse_args()
     
-    run_healing_loop(limit=args.limit, max_gap_size=args.max_gap, country=args.country, provider=args.provider)
+    run_healing_loop(limit=args.limit, max_gap_size=args.max_gap, country=args.country, provider=args.provider, drama_id=args.drama_id, dry_run=args.dry_run)
 
 if __name__ == '__main__':
     main()

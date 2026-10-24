@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { supabase, supabaseAdmin } from '@/lib/supabase';
+import { verifyAdminAuth } from '@/lib/adminAuth';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // 60 seconds timeout
@@ -278,10 +279,15 @@ async function enrichSingleMedia(m: any, db: DatabaseSync | null): Promise<any |
 
 export async function GET(req: NextRequest) {
   try {
+    const authCheck = await verifyAdminAuth(req);
+    if (!authCheck.authorized) {
+      return NextResponse.json({ error: authCheck.error }, { status: authCheck.status });
+    }
+
     const { searchParams } = new URL(req.url);
     const mode = searchParams.get('mode') || 'bad_overviews';
-    const limit = Math.min(Number(searchParams.get('limit') || '60'), 150);
-    const offset = Number(searchParams.get('offset') || '0');
+    const limit = Math.min(Math.max(Number(searchParams.get('limit') || '60'), 1), 150);
+    const offset = Math.max(Number(searchParams.get('offset') || '0'), 0);
 
     const db = getArchiveDb();
 
@@ -331,6 +337,36 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: rpcErr.message, patchesCount: patches.length }, { status: 500 });
       }
       appliedCount = count;
+
+      // Also persist enriched overviews & IDs to local SQLite archive DB (Rule 11)
+      try {
+        const dbPath =
+          process.env.ARCHIVE_DB_PATH || path.resolve(process.cwd(), '..', 'webdrama_archive.db');
+        if (fs.existsSync(dbPath)) {
+          const writeDb = new DatabaseSync(dbPath);
+          const stmt = writeDb.prepare(
+            `UPDATE dramas
+             SET overview = COALESCE(?, overview),
+                 tmdb_id = COALESCE(?, tmdb_id),
+                 imdb_id = COALESCE(?, imdb_id),
+                 anilist_id = COALESCE(?, anilist_id)
+             WHERE id = ?`
+          );
+          for (const p of patches) {
+            stmt.run(
+              p.overview || null,
+              p.tmdb_id || null,
+              p.imdb_id || null,
+              p.anilist_id || null,
+              Number(p.id)
+            );
+          }
+          writeDb.prepare('PRAGMA wal_checkpoint(PASSIVE)').all();
+          writeDb.close();
+        }
+      } catch (sqliteErr) {
+        console.warn('SQLite overview sync warning:', sqliteErr);
+      }
     }
 
     return NextResponse.json({
@@ -347,3 +383,5 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+
+export const POST = GET;

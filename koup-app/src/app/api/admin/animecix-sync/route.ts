@@ -4,6 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { cleanFansubName, cleanSourceName } from '@/lib/cleanFansub';
+import { verifyAdminAuth } from '@/lib/adminAuth';
 
 const KEY_RAW = Buffer.from('i4C7R2fXGocdYgFLzCbDlsJjukf8G58b', 'utf-8');
 
@@ -36,6 +37,11 @@ function cleanProvider(name: string, url: string): string {
 }
 
 export async function GET(req: NextRequest) {
+  const authCheck = await verifyAdminAuth(req);
+  if (!authCheck.authorized) {
+    return NextResponse.json({ error: authCheck.error }, { status: authCheck.status });
+  }
+
   const { searchParams } = new URL(req.url);
   const action = searchParams.get('action') || 'inspect';
 

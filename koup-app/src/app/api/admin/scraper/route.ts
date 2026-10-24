@@ -5,9 +5,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { supabase } from '@/lib/supabase';
-import { verifyAdminAuth } from '@/lib/adminAuth';
+import { verifyAdminAuth, resolvePythonBinary, checkAdminRateLimit } from '@/lib/adminAuth';
 
 const execFileAsync = promisify(execFile);
+const activeScraperRuns = new Set<string>();
 
 interface ScraperMeta {
   id: string;
@@ -389,20 +390,109 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Geçersiz veya desteklenmeyen scraper ID' }, { status: 400 });
     }
 
+    const rate = checkAdminRateLimit(`scraper:${authCheck.userId}`, 12, 60_000);
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: `Çok fazla tarama isteği. Lütfen ${rate.retryAfterSec} saniye bekleyin.` },
+        { status: 429 }
+      );
+    }
+
+    if (activeScraperRuns.has(scraperId)) {
+      return NextResponse.json(
+        { error: `${SCRAPER_METAS[scraperId].name} şu anda zaten çalışıyor.` },
+        { status: 409 }
+      );
+    }
+
     const meta = SCRAPER_METAS[scraperId];
     const scriptPath = path.resolve(process.cwd(), '..', 'scrapers', 'live_scanner.py');
-
-    if (!fs.existsSync(scriptPath)) {
-      return NextResponse.json({ error: 'Tarama motoru betiği bulunamadı' }, { status: 500 });
-    }
-
-    const scanLimit = typeof limit === 'number' && limit > 0 ? limit : 30;
-    const args = ['-u', scriptPath, '--provider', scraperId, '--limit', scanLimit.toString()];
-    if (targetSeries && targetSeries.trim().length > 0) {
-      args.push('--target', targetSeries.trim());
-    }
-
+    const isLocalPython = !process.env.VERCEL && fs.existsSync(scriptPath);
     const encoder = new TextEncoder();
+
+    if (!isLocalPython) {
+      const githubToken = process.env.GITHUB_TOKEN;
+      if (!githubToken) {
+        return NextResponse.json(
+          { error: 'Bulut tarama için GITHUB_TOKEN ortam değişkeni tanımlı değil.' },
+          { status: 500 }
+        );
+      }
+      const ghRes = await fetch(
+        'https://api.github.com/repos/perfectusmim1/KoUp/actions/workflows/scraper_cron.yml/dispatches',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${githubToken}`,
+            Accept: 'application/vnd.github.v3+json',
+            'User-Agent': 'KoUp-App',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ref: 'main',
+            inputs: { target: scraperId },
+          }),
+        }
+      );
+      if (!ghRes.ok) {
+        return NextResponse.json(
+          { error: `GitHub Actions tetiklenemedi (HTTP ${ghRes.status})` },
+          { status: 500 }
+        );
+      }
+      const stream = new ReadableStream({
+        start(controller) {
+          const nowStr = new Date().toTimeString().split(' ')[0];
+          controller.enqueue(
+            encoder.encode(
+              JSON.stringify({
+                type: 'log',
+                line: `[${nowStr}] [Bulut] ${meta.name} için GitHub Actions bulut taraması başlatıldı.`,
+              }) + '\n'
+            )
+          );
+          controller.enqueue(
+            encoder.encode(
+              JSON.stringify({
+                type: 'result',
+                ok: true,
+                cloud: true,
+                scraperId,
+                name: meta.name,
+                syncedDelta: 0,
+                newTotal: 0,
+                logs: [`[${nowStr}] [Bulut] GitHub Actions kuyruğa alındı.`],
+                newlySyncedItems: [],
+                timestamp: new Date().toISOString(),
+              }) + '\n'
+            )
+          );
+          controller.close();
+        },
+      });
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'application/x-ndjson; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+        },
+      });
+    }
+
+    const scanLimit =
+      typeof limit === 'number' && Number.isFinite(limit)
+        ? Math.min(Math.max(Math.floor(limit), 1), 200)
+        : 30;
+    const args = ['-u', scriptPath, '--provider', scraperId, '--limit', scanLimit.toString()];
+    const cleanTarget =
+      typeof targetSeries === 'string'
+        ? targetSeries.replace(/[\r\n\0]/g, '').trim().slice(0, 120)
+        : '';
+    if (cleanTarget.length > 0) {
+      args.push('--target', cleanTarget);
+    }
+
+    activeScraperRuns.add(scraperId);
+    const pythonBin = resolvePythonBinary();
     const stream = new ReadableStream({
       start(controller) {
         const logs: string[] = [];
@@ -437,7 +527,7 @@ export async function POST(req: NextRequest) {
           }
         };
 
-        const child = spawn('python', args, {
+        const child = spawn(pythonBin, args, {
           cwd: path.resolve(process.cwd(), '..'),
           env: {
             ...process.env,
@@ -472,6 +562,7 @@ export async function POST(req: NextRequest) {
         });
 
         child.on('close', async () => {
+          activeScraperRuns.delete(scraperId);
           clearTimeout(killTimer);
           if (stdoutBuf.trim()) {
             processLine(stdoutBuf);
@@ -513,6 +604,7 @@ export async function POST(req: NextRequest) {
         });
 
         child.on('error', (err) => {
+          activeScraperRuns.delete(scraperId);
           clearTimeout(killTimer);
           sendEvent({
             type: 'error',

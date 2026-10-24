@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { supabase } from '@/lib/supabase';
-import { verifyAdminAuth } from '@/lib/adminAuth';
+import { verifyAdminAuth, resolvePythonBinary } from '@/lib/adminAuth';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -13,19 +13,7 @@ export const revalidate = 0;
 const execFileAsync = promisify(execFile);
 
 function getPythonPath(): string {
-  const possiblePaths = [
-    'C:\\Users\\Cagan\\AppData\\Local\\Programs\\Python\\Python312\\python.exe',
-    'python',
-    'py',
-  ];
-  for (const p of possiblePaths) {
-    if (p.includes('\\')) {
-      if (fs.existsSync(p)) return p;
-    } else {
-      return p;
-    }
-  }
-  return 'python';
+  return resolvePythonBinary();
 }
 
 let archiveDb: DatabaseSync | null = null;
