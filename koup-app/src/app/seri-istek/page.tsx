@@ -10,6 +10,7 @@ import {
   Clock,
   CheckCircle2,
   XCircle,
+  X,
   AlertCircle,
   ExternalLink,
   Trash2,
@@ -409,72 +410,65 @@ export default function SeriesRequestPage() {
           <div className="lg:col-span-7 rounded-3xl border border-white/10 bg-[#0d0d11]/90 backdrop-blur-xl p-5 sm:p-7 flex flex-col justify-between shadow-xl">
             <form onSubmit={handleSubmitRequest} className="space-y-5">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
+                <label className="block text-xs font-bold uppercase tracking-wider text-white/70 mb-2">
                   Seri Bağlantısı (AniList / TMDB / MDL / IMDb) *
                 </label>
-                <div className="relative flex items-center gap-2">
-                  <div className="relative flex-1">
-                    <Link2
-                      size={17}
-                      className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"
-                    />
-                    <input
-                      type="url"
-                      value={urlInput}
-                      onChange={(e) => setUrlInput(e.target.value)}
-                      placeholder="https://mydramalist.com/702267-weak-hero veya https://anilist.co/anime/..."
-                      className="w-full pl-11 pr-10 py-3.5 rounded-2xl bg-white/[0.04] border border-white/10 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-sky-500/50 focus:bg-white/[0.06] transition-all"
-                    />
-                    {urlInput && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setUrlInput('');
-                          setPreview(null);
-                          setPreviewError(null);
-                        }}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white p-1 rounded-lg transition-colors"
-                      >
-                        <XCircle size={16} />
-                      </button>
-                    )}
-                  </div>
+                <div className="relative flex items-center gap-2 px-3.5 py-2 sm:py-2.5 rounded-full glass-pill-dark border border-white/12 hover:border-white/20 focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 focus-within:shadow-[0_0_18px_rgba(41,151,255,0.28)] transition-all duration-200 shadow-xs">
+                  <Link2 className="w-4 h-4 text-white/60 shrink-0 ml-1" />
+                  <input
+                    type="url"
+                    value={urlInput}
+                    onChange={(e) => setUrlInput(e.target.value)}
+                    placeholder="https://mydramalist.com/... veya https://anilist.co/anime/..."
+                    className="bg-transparent text-xs sm:text-sm text-white placeholder-white/40 focus:outline-none w-full font-medium"
+                  />
+                  {urlInput && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUrlInput('');
+                        setPreview(null);
+                        setPreviewError(null);
+                      }}
+                      className="text-white/40 hover:text-white transition-colors cursor-pointer p-1 shrink-0"
+                      aria-label="Aramayı temizle"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => fetchPreview(urlInput)}
                     disabled={!urlInput.trim() || isPreviewLoading}
-                    className="px-4 py-3.5 rounded-2xl bg-white/[0.07] hover:bg-white/[0.12] disabled:opacity-40 border border-white/10 text-xs font-bold text-white transition-all flex items-center gap-2 shrink-0"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-bold shadow-md shadow-sky-500/25 active:scale-95 transition-all shrink-0 cursor-pointer"
                   >
                     {isPreviewLoading ? (
-                      <Loader2 size={15} className="animate-spin text-sky-400" />
+                      <Loader2 size={13} className="animate-spin text-white" />
                     ) : (
-                      <Search size={15} className="text-sky-400" />
+                      <Search size={13} className="text-white" />
                     )}
                     <span className="hidden sm:inline">Bilgileri Çek</span>
                   </button>
                 </div>
-                <p className="mt-2 text-[11px] text-zinc-500 flex items-center gap-1.5">
-                  <Info size={12} className="text-zinc-400 shrink-0" />
+                <p className="mt-2 text-[11px] text-white/45 flex items-center gap-1.5">
+                  <Info size={12} className="text-white/50 shrink-0" />
                   Bağlantıyı yapıştırdığınızda seri görseli, ismi ve açıklaması otomatik olarak çekilir.
                 </p>
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
+                <label className="block text-xs font-bold uppercase tracking-wider text-white/70 mb-2">
                   Ek Notunuz (İsteğe Bağlı)
                 </label>
-                <div className="relative">
-                  <MessageSquare
-                    size={16}
-                    className="absolute left-4 top-3.5 text-zinc-500 pointer-events-none"
-                  />
+                <div className="flex items-start gap-2.5 p-3.5 sm:p-4 rounded-3xl glass-pill-dark border border-white/12 hover:border-white/20 focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 focus-within:shadow-[0_0_18px_rgba(41,151,255,0.25)] transition-all duration-200 shadow-xs">
+                  <MessageSquare className="w-4 h-4 text-white/50 shrink-0 mt-0.5 ml-1" />
                   <textarea
                     rows={3}
                     maxLength={500}
                     value={userNote}
                     onChange={(e) => setUserNote(e.target.value)}
                     placeholder="Örn: 2. sezonu da eklenirse çok sevinirim, Türkçe altyazılı..."
-                    className="w-full pl-11 pr-4 py-3 rounded-2xl bg-white/[0.04] border border-white/10 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-sky-500/50 focus:bg-white/[0.06] transition-all resize-none"
+                    className="bg-transparent text-xs sm:text-sm text-white placeholder-white/40 focus:outline-none w-full font-medium resize-none leading-relaxed"
                   />
                 </div>
               </div>
@@ -521,7 +515,7 @@ export default function SeriesRequestPage() {
                   <button
                     type="button"
                     onClick={() => openAuthModal('Seri isteği göndermek için lütfen giriş yapın.')}
-                    className="w-full py-3.5 px-6 rounded-2xl bg-white text-black font-bold text-xs uppercase tracking-wider hover:bg-zinc-200 transition-all flex items-center justify-center gap-2"
+                    className="w-full py-3.5 px-6 rounded-full bg-white text-black font-extrabold text-xs uppercase tracking-wider hover:bg-zinc-200 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >
                     İstek Göndermek İçin Giriş Yapın
                     <ArrowRight size={15} />
@@ -530,16 +524,16 @@ export default function SeriesRequestPage() {
                   <button
                     type="submit"
                     disabled={!preview || isSubmitting || isPreviewLoading}
-                    className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 disabled:opacity-40 disabled:pointer-events-none text-white font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-sky-500/20 transition-all flex items-center justify-center gap-2"
+                    className="w-full py-3.5 px-6 rounded-full bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 disabled:opacity-40 disabled:pointer-events-none text-white font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-sky-500/25 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >
                     {isSubmitting ? (
                       <>
-                        <Loader2 size={16} className="animate-spin" />
+                        <Loader2 size={16} className="animate-spin text-white" />
                         Gönderiliyor...
                       </>
                     ) : (
                       <>
-                        <Send size={15} />
+                        <Send size={15} className="text-white" />
                         Seri İsteğini Gönder
                       </>
                     )}
