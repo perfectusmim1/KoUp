@@ -299,8 +299,45 @@ export default function MagazineHubPage() {
       </div>
 
       {isLoading ? (
-        <div className="py-20 text-center text-sm font-mono text-amber-300 animate-pulse">
-          Canlı AsyaMag ve KoreZin Akışı Çekiliyor...
+        <div className="space-y-12">
+          {/* Featured Hero Skeleton */}
+          <div className="rounded-3xl overflow-hidden bg-[#121216] border border-white/10 grid grid-cols-1 lg:grid-cols-12 animate-pulse min-h-[320px] sm:min-h-[380px]">
+            <div className="lg:col-span-7 bg-white/[0.04]" />
+            <div className="lg:col-span-5 p-6 sm:p-10 flex flex-col justify-between space-y-6">
+              <div className="space-y-4">
+                <div className="h-6 w-28 rounded-full bg-white/10" />
+                <div className="space-y-2">
+                  <div className="h-8 w-full rounded-xl bg-white/[0.08]" />
+                  <div className="h-8 w-4/5 rounded-xl bg-white/[0.08]" />
+                </div>
+                <div className="space-y-1.5 pt-2">
+                  <div className="h-3.5 w-full rounded bg-white/[0.04]" />
+                  <div className="h-3.5 w-2/3 rounded bg-white/[0.04]" />
+                </div>
+              </div>
+              <div className="h-4 w-32 rounded bg-white/[0.05]" />
+            </div>
+          </div>
+
+          {/* Grid Skeleton */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div
+                key={i}
+                className="rounded-3xl overflow-hidden bg-[#0f0f12] border border-white/[0.06] flex flex-col animate-pulse"
+              >
+                <div className="aspect-[16/10] bg-white/[0.04]" />
+                <div className="p-5 sm:p-6 space-y-3 flex-1 flex flex-col justify-between">
+                  <div className="space-y-2">
+                    <div className="h-5 w-20 rounded-full bg-white/10" />
+                    <div className="h-5 w-full rounded-lg bg-white/[0.08]" />
+                    <div className="h-5 w-3/4 rounded-lg bg-white/[0.08]" />
+                  </div>
+                  <div className="h-3.5 w-24 rounded bg-white/[0.04]" />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       ) : (
         <>

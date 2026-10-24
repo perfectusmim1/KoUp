@@ -713,16 +713,44 @@ export default function EpisodeWatchPage({
 
   if (isLoading) {
     return (
-      <div className="min-h-screen pt-24 pb-20 bg-[#080808] px-4 sm:px-8 max-w-7xl mx-auto space-y-6">
-        <div className="aspect-video w-full rounded-3xl bg-white/[0.03] border border-white/[0.08] animate-pulse flex items-center justify-center relative overflow-hidden">
-          <div className="flex flex-col items-center gap-3 text-sky-400/70 font-mono text-xs">
-            <Film className="w-8 h-8 animate-spin text-sky-400" />
-            <span>KoUp Sinema Oynatıcısı Hazırlanıyor...</span>
+      <div className="min-h-screen pt-20 sm:pt-24 pb-20 bg-[#080808] text-white space-y-4">
+        {/* Top Control Bar Skeleton */}
+        <div className="max-w-[1920px] mx-auto px-3 sm:px-6">
+          <div className="rounded-2xl bg-[#0f0f12] border border-white/[0.08] p-2.5 sm:p-3 flex items-center justify-between gap-3 animate-pulse">
+            <div className="h-8 w-28 rounded-full bg-white/10" />
+            <div className="h-8 w-36 rounded-full bg-white/10 hidden sm:block" />
+            <div className="flex gap-2">
+              <div className="h-7 w-20 rounded-full bg-white/10" />
+              <div className="h-7 w-16 rounded-full bg-sky-500/15" />
+            </div>
           </div>
         </div>
-        <div className="space-y-3">
-          <div className="h-8 w-2/5 rounded-xl bg-white/[0.05] animate-pulse" />
-          <div className="h-4 w-1/4 rounded-lg bg-white/[0.03] animate-pulse" />
+
+        {/* Cinema Stage Skeleton */}
+        <div className="max-w-[1920px] mx-auto px-3 sm:px-6">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_370px] xl:grid-cols-[1fr_400px] gap-3.5 items-start">
+            {/* Player Skeleton */}
+            <div className="space-y-3">
+              <div className="aspect-video w-full rounded-2xl sm:rounded-3xl bg-white/[0.03] border border-white/[0.08] animate-pulse flex items-center justify-center relative overflow-hidden shadow-2xl">
+                <div className="flex flex-col items-center gap-3 text-sky-400/70 font-mono text-xs">
+                  <Film className="w-8 h-8 animate-spin text-sky-400" />
+                  <span>KoUp Sinema Oynatıcısı Hazırlanıyor...</span>
+                </div>
+              </div>
+              <div className="space-y-2 pt-1">
+                <div className="h-7 sm:h-8 w-2/5 rounded-xl bg-white/[0.06] animate-pulse" />
+                <div className="h-4 w-1/4 rounded-lg bg-white/[0.03] animate-pulse" />
+              </div>
+            </div>
+
+            {/* Episode Rail Skeleton (Desktop) */}
+            <div className="hidden lg:flex flex-col gap-2.5 p-3.5 rounded-2xl sm:rounded-3xl bg-[#0f0f12] border border-white/[0.08] animate-pulse">
+              <div className="h-6 w-32 rounded-lg bg-white/10 mb-1" />
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="h-16 rounded-xl bg-white/[0.03] border border-white/[0.05]" />
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     );

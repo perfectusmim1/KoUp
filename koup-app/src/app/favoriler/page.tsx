@@ -374,13 +374,13 @@ export default function FavorilerPage() {
 
       {/* Main Content Grid */}
       {isLoading ? (
-        <div className="min-h-[40vh] flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-10 h-10 border-2 border-rose-400 border-t-transparent rounded-full animate-spin shadow-[0_0_15px_rgba(244,63,94,0.4)]" />
-            <p className="text-xs text-white/50 font-mono tracking-wider">
-              Favorileriniz yükleniyor...
-            </p>
-          </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5 pt-2 pb-6">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div
+              key={i}
+              className="aspect-[2/3] rounded-2xl sm:rounded-3xl bg-white/[0.03] border border-white/[0.06] animate-pulse"
+            />
+          ))}
         </div>
       ) : filteredMedia.length === 0 ? (
         <div className="rounded-3xl bg-[#0f0f11] p-16 text-center border border-white/10 space-y-4">

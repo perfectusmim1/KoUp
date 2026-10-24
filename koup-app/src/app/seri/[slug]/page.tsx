@@ -647,28 +647,121 @@ export default function SeriesDetailPage({
 
   if (isLoading && !media) {
     return (
-      <div className="min-h-screen pb-32 text-white pt-24 sm:pt-28 relative overflow-hidden bg-[#080808]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8 space-y-8 animate-pulse">
-          {/* Hero Banner Skeleton */}
-          <div className="h-[380px] sm:h-[460px] rounded-3xl bg-white/[0.04] border border-white/10 relative overflow-hidden flex flex-col justify-end p-6 sm:p-10 space-y-4">
-            <div className="h-6 w-32 bg-white/10 rounded-full" />
-            <div className="h-10 sm:h-14 w-2/3 max-w-md bg-white/15 rounded-2xl" />
-            <div className="h-4 w-96 max-w-full bg-white/10 rounded-lg" />
-            <div className="flex gap-3 pt-2">
-              <div className="h-11 w-36 bg-sky-500/20 rounded-full" />
-              <div className="h-11 w-11 bg-white/10 rounded-full" />
-              <div className="h-11 w-11 bg-white/10 rounded-full" />
+      <div className="min-h-screen pb-32 bg-[#080808] text-white">
+        {/* 1. CINEMATIC HERO BANNER SKELETON */}
+        <div className="relative w-full min-h-[520px] md:min-h-[580px] flex items-end pt-24 md:pt-28 pb-8 md:pb-12">
+          {/* Ambient Glow Backdrop Skeleton */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className="w-full h-full bg-white/[0.02] filter blur-3xl scale-110" />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-[#080808]/70 to-black/30" />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#080808]/80 via-transparent to-transparent hidden md:block" />
+          </div>
+
+          {/* Hero Meta Info */}
+          <div className="relative z-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full flex flex-col md:flex-row items-center md:items-start gap-6 sm:gap-8 lg:gap-10 text-center md:text-left">
+            {/* Vertical Poster with Glass Glow - Strict 2:3 Cinema Aspect Ratio */}
+            <div className="relative w-52 sm:w-64 md:w-72 lg:w-80 shrink-0 aspect-[2/3] rounded-2xl sm:rounded-3xl overflow-hidden shadow-[0_30px_70px_rgba(0,0,0,0.95)] border border-white/15 bg-white/[0.04] animate-pulse self-center md:self-start flex items-center justify-center">
+              <Film className="w-12 sm:w-16 h-12 sm:h-16 text-white/10" />
+            </div>
+
+            {/* Right: Meta Block, Title, Ratings, Categories, Actions, Synopsis */}
+            <div className="flex-1 flex flex-col justify-between w-full py-1 md:py-2 space-y-4 md:space-y-0">
+              <div className="space-y-3.5">
+                {/* Top Badges Row: Flag & Country, Content Type, Year, Episodes, Views */}
+                <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
+                  <div className="h-7 w-20 rounded-full bg-white/[0.08] border border-white/15 animate-pulse" />
+                  <div className="h-7 w-16 rounded-full bg-white/[0.08] border border-white/15 animate-pulse" />
+                  <div className="h-7 w-14 rounded-full bg-white/[0.05] border border-white/10 animate-pulse" />
+                  <div className="h-7 w-20 rounded-full bg-white/[0.05] border border-white/10 animate-pulse" />
+                  <div className="h-7 w-28 rounded-full bg-sky-500/15 border border-sky-400/25 animate-pulse" />
+                </div>
+
+                {/* Title & Native Title */}
+                <div className="space-y-2">
+                  <div className="h-9 sm:h-12 md:h-14 w-4/5 max-w-xl rounded-2xl bg-white/[0.08] animate-pulse mx-auto md:mx-0" />
+                  <div className="h-4 sm:h-5 w-2/5 max-w-xs rounded-lg bg-white/[0.04] animate-pulse mx-auto md:mx-0" />
+                </div>
+
+                {/* Ratings Bar */}
+                <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 pt-0.5">
+                  <div className="h-7 w-28 rounded-full bg-sky-500/20 border border-sky-400/30 animate-pulse" />
+                  <div className="h-7 w-20 rounded-full bg-amber-400/15 border border-amber-400/25 animate-pulse" />
+                  <div className="h-7 w-22 rounded-full bg-sky-500/15 border border-sky-400/25 animate-pulse" />
+                  <div className="h-7 w-36 rounded-full bg-emerald-500/15 border border-emerald-400/25 animate-pulse" />
+                </div>
+
+                {/* Categories Chips */}
+                <div className="flex flex-wrap justify-center md:justify-start gap-1.5 pt-0.5">
+                  <div className="h-6 w-16 rounded-lg bg-white/[0.06] border border-white/10 animate-pulse" />
+                  <div className="h-6 w-20 rounded-lg bg-white/[0.06] border border-white/10 animate-pulse" />
+                  <div className="h-6 w-14 rounded-lg bg-white/[0.06] border border-white/10 animate-pulse" />
+                  <div className="h-6 w-24 rounded-lg bg-white/[0.06] border border-white/10 animate-pulse" />
+                </div>
+              </div>
+
+              {/* Bottom Action Bar */}
+              <div className="pt-4 md:pt-4 overflow-visible">
+                <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 sm:gap-2.5 w-full py-3">
+                  {/* Primary Watch Button */}
+                  <div className="h-10 sm:h-11 w-36 rounded-full bg-[#2997ff]/30 border border-[#2997ff]/40 animate-pulse" />
+                  {/* Fragmanı İzle */}
+                  <div className="h-10 sm:h-11 w-32 rounded-full bg-white/10 border border-white/15 animate-pulse" />
+                  {/* Kütüphane */}
+                  <div className="h-10 sm:h-11 w-28 rounded-full bg-white/10 border border-white/15 animate-pulse" />
+                  {/* Favorile */}
+                  <div className="h-10 sm:h-11 w-24 rounded-full bg-white/10 border border-white/15 animate-pulse" />
+                  {/* Puan Ver */}
+                  <div className="h-10 sm:h-11 w-24 rounded-full bg-white/10 border border-white/15 animate-pulse" />
+                  {/* Takip Et */}
+                  <div className="h-10 sm:h-11 w-24 rounded-full bg-white/10 border border-white/15 animate-pulse" />
+                  {/* Listeye Ekle */}
+                  <div className="h-10 sm:h-11 w-28 rounded-full bg-sky-500/10 border border-sky-400/20 animate-pulse" />
+                  {/* Sorun Bildir */}
+                  <div className="h-10 w-10 rounded-full bg-amber-400/10 border border-amber-400/20 animate-pulse hidden sm:block" />
+                </div>
+
+                {/* Synopsis Paragraph */}
+                <div className="pt-3.5 space-y-2">
+                  <div className="h-4 w-full rounded bg-white/[0.05] animate-pulse" />
+                  <div className="h-4 w-11/12 rounded bg-white/[0.05] animate-pulse" />
+                  <div className="h-4 w-4/5 rounded bg-white/[0.05] animate-pulse" />
+                </div>
+              </div>
             </div>
           </div>
-          {/* Episode List Skeleton */}
-          <div className="space-y-4">
-            <div className="h-6 w-44 bg-white/10 rounded-lg" />
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="h-24 rounded-2xl bg-white/[0.03] border border-white/[0.06]" />
+        </div>
+
+        {/* 2. MAIN BODY CONTENT */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-10 space-y-12">
+          {/* EPISODES GRID SKELETON */}
+          <section className="p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08]">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 rounded-md bg-sky-400/20 animate-pulse" />
+                <div className="h-6 w-44 rounded-lg bg-white/10 animate-pulse" />
+              </div>
+              <div className="h-9 w-28 rounded-full bg-white/[0.06] border border-white/10 animate-pulse" />
+            </div>
+
+            {/* Grid of Episode Cards (Matches 1 sm:2 md:3 lg:4) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="p-3 sm:p-3.5 rounded-2xl border border-white/[0.06] bg-white/[0.03] flex items-center justify-between gap-3 animate-pulse"
+                >
+                  <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                    <div className="min-w-[38px] w-9.5 h-9.5 rounded-xl bg-white/10 border border-white/10 shrink-0" />
+                    <div className="space-y-1.5 min-w-0">
+                      <div className="h-3.5 w-24 rounded bg-white/10" />
+                      <div className="h-2.5 w-16 rounded bg-white/[0.05]" />
+                    </div>
+                  </div>
+                  <div className="w-9 h-5 rounded-full bg-white/10 shrink-0" />
+                </div>
               ))}
             </div>
-          </div>
+          </section>
         </div>
       </div>
     );

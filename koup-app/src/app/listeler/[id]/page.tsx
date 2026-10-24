@@ -589,10 +589,34 @@ export default function ListDetailPage({
 
   if (isLoading || authLoading) {
     return (
-      <div className="min-h-[70vh] flex items-center justify-center pt-36 sm:pt-40 bg-[#080808]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
-          <p className="text-xs text-white/50 font-mono tracking-wider">Liste Yükleniyor...</p>
+      <div className="min-h-screen pb-32 bg-[#080808] text-white">
+        {/* Hero Skeleton */}
+        <div className="relative w-full min-h-[460px] md:min-h-[540px] flex items-end pt-28 md:pt-32 pb-8 md:pb-12">
+          <div className="relative z-20 max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 w-full space-y-6">
+            <div className="h-4 w-48 rounded bg-white/10 animate-pulse" />
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 sm:gap-8">
+              <div className="flex flex-col sm:flex-row items-center sm:items-end gap-6 sm:gap-8 flex-1 text-center sm:text-left">
+                <div className="w-40 sm:w-48 md:w-52 shrink-0 aspect-[2/3] rounded-2xl sm:rounded-3xl bg-white/[0.04] border border-white/15 animate-pulse" />
+                <div className="space-y-3 w-full">
+                  <div className="h-7 w-28 rounded-full bg-sky-500/15 border border-sky-400/20 animate-pulse" />
+                  <div className="h-10 sm:h-12 w-3/4 max-w-lg rounded-2xl bg-white/[0.08] animate-pulse" />
+                  <div className="h-4 w-1/2 max-w-sm rounded bg-white/[0.04] animate-pulse" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Media Grid Skeleton */}
+        <div className="max-w-[1680px] mx-auto px-5 sm:px-8 lg:px-14 pt-8">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div
+                key={i}
+                className="aspect-[2/3] rounded-2xl sm:rounded-3xl bg-white/[0.03] border border-white/[0.06] animate-pulse"
+              />
+            ))}
+          </div>
         </div>
       </div>
     );

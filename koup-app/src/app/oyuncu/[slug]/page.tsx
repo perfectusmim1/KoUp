@@ -437,10 +437,42 @@ export default function PersonDetailPage({
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center pt-24 bg-[#080808]">
-        <div className="text-sm font-mono text-sky-400 animate-pulse flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-sky-400" />
-          <span>Oyuncu / Karakter Profili ve İlişki Ağı Yükleniyor...</span>
+      <div className="pt-28 pb-24 max-w-[1680px] mx-auto px-4 sm:px-8 lg:px-14 space-y-12 bg-[#080808] text-white min-h-screen">
+        {/* Profile Card Skeleton */}
+        <div className="rounded-3xl apple-glass p-6 sm:p-10 border border-white/15 flex flex-col md:flex-row items-center md:items-start gap-8 sm:gap-10">
+          <div className="w-44 h-44 sm:w-56 sm:h-56 rounded-3xl overflow-hidden border-2 border-white/15 bg-white/[0.04] animate-pulse shrink-0 flex items-center justify-center">
+            <User className="w-16 h-16 text-white/10" />
+          </div>
+          <div className="flex-1 text-center md:text-left space-y-4 w-full">
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
+              <div className="h-7 w-24 rounded-full bg-white/10 border border-white/15 animate-pulse" />
+              <div className="h-7 w-20 rounded-full bg-rose-500/15 border border-rose-400/25 animate-pulse" />
+              <div className="h-7 w-24 rounded-full bg-white/10 border border-white/15 animate-pulse" />
+            </div>
+            <div className="space-y-2">
+              <div className="h-10 sm:h-12 w-3/5 max-w-md rounded-2xl bg-white/[0.08] animate-pulse mx-auto md:mx-0" />
+              <div className="h-4 w-1/4 rounded-lg bg-white/[0.04] animate-pulse mx-auto md:mx-0" />
+            </div>
+            <div className="space-y-2 pt-2">
+              <div className="h-3.5 w-full max-w-2xl rounded bg-white/[0.04] animate-pulse" />
+              <div className="h-3.5 w-5/6 max-w-xl rounded bg-white/[0.04] animate-pulse" />
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 pt-2 max-w-3xl">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="h-14 rounded-2xl bg-white/[0.04] border border-white/10 animate-pulse" />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Filmography Section Skeleton */}
+        <div className="space-y-6">
+          <div className="h-7 w-40 rounded-xl bg-white/10 animate-pulse" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div key={i} className="aspect-[2/3] rounded-2xl bg-white/[0.03] border border-white/[0.06] animate-pulse" />
+            ))}
+          </div>
         </div>
       </div>
     );
