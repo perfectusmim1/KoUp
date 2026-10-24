@@ -2901,21 +2901,21 @@ export default function NetflixPlayer({
       {ambientLightingEnabled && !isFullscreen && !isTrailerMode && (
         <div
           aria-hidden="true"
-          className={`ambient-light-aura absolute pointer-events-none select-none -z-10 transition-opacity duration-1000 ease-out -top-28 sm:-top-36 md:-top-48 lg:-top-64 xl:-top-72 -bottom-36 sm:-bottom-52 md:-bottom-72 lg:-bottom-[460px] xl:-bottom-[560px] -left-24 sm:-left-36 md:-left-56 lg:-left-72 xl:-left-[360px] ${
+          className={`ambient-light-aura absolute pointer-events-none select-none -z-10 transition-opacity duration-1000 ease-out -top-36 sm:-top-48 md:-top-64 lg:-top-80 xl:-top-[380px] -bottom-48 sm:-bottom-64 md:-bottom-80 lg:-bottom-[540px] xl:-bottom-[680px] -left-36 sm:-left-48 md:-left-72 lg:-left-96 xl:-left-[460px] ${
             hasRail
-              ? '-right-28 sm:-right-40 md:-right-60 lg:-right-[580px] xl:-right-[720px]'
-              : '-right-24 sm:-right-36 md:-right-56 lg:-right-72 xl:-right-[360px]'
+              ? '-right-36 sm:-right-52 md:-right-72 lg:-right-[700px] xl:-right-[880px]'
+              : '-right-36 sm:-right-48 md:-right-72 lg:-right-96 xl:-right-[460px]'
           }`}
           style={{
-            opacity: isPlaying ? 0.95 : 0.45,
+            opacity: isPlaying ? 0.98 : 0.60,
             transform: 'translateZ(0)',
             backfaceVisibility: 'hidden',
-            maskImage: `radial-gradient(ellipse 48% 44% at ${hasRail ? '41% 38%' : '50% 38%'}, black 0%, black 16%, rgba(0,0,0,0.85) 28%, rgba(0,0,0,0.60) 44%, rgba(0,0,0,0.35) 60%, rgba(0,0,0,0.16) 74%, rgba(0,0,0,0.05) 86%, rgba(0,0,0,0.01) 94%, transparent 100%)`,
-            WebkitMaskImage: `radial-gradient(ellipse 48% 44% at ${hasRail ? '41% 38%' : '50% 38%'}, black 0%, black 16%, rgba(0,0,0,0.85) 28%, rgba(0,0,0,0.60) 44%, rgba(0,0,0,0.35) 60%, rgba(0,0,0,0.16) 74%, rgba(0,0,0,0.05) 86%, rgba(0,0,0,0.01) 94%, transparent 100%)`,
+            maskImage: `radial-gradient(ellipse 62% 58% at ${hasRail ? '42% 40%' : '50% 40%'}, black 0%, black 28%, rgba(0,0,0,0.92) 42%, rgba(0,0,0,0.72) 60%, rgba(0,0,0,0.48) 78%, rgba(0,0,0,0.22) 90%, rgba(0,0,0,0.05) 96%, transparent 100%)`,
+            WebkitMaskImage: `radial-gradient(ellipse 62% 58% at ${hasRail ? '42% 40%' : '50% 40%'}, black 0%, black 28%, rgba(0,0,0,0.92) 42%, rgba(0,0,0,0.72) 60%, rgba(0,0,0,0.48) 78%, rgba(0,0,0,0.22) 90%, rgba(0,0,0,0.05) 96%, transparent 100%)`,
           }}
         >
           {/* Dual-buffer real-time ambient canvases with fluid 1200ms crossfade and organic wave motion */}
-          <div className="w-full h-full relative animate-ambient-wave filter blur-[64px] sm:blur-[88px] md:blur-[116px] lg:blur-[140px] saturate-[1.45] brightness-[1.14]">
+          <div className="w-full h-full relative animate-ambient-wave filter blur-[80px] sm:blur-[110px] md:blur-[140px] lg:blur-[180px] saturate-[1.50] brightness-[1.18]">
             <canvas
               ref={ambientCanvasRefA}
               width={32}
