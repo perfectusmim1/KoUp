@@ -430,6 +430,9 @@ def sync_asyaanimeleri_calendar():
             if not a_tag:
                 continue
             title = a_tag.get("title") or a_tag.get_text(strip=True)
+            title_upper = title.upper()
+            if any(j in title_upper for j in ["[ASMV]", "ASMV", "[AMV]", " AMV ", "TANITIM", "FRAGMAN"]):
+                continue
             href = a_tag.get("href", "")
             img = a_tag.find("img")
             cover = img.get("src") or img.get("data-src") or "" if img else ""
@@ -437,6 +440,8 @@ def sync_asyaanimeleri_calendar():
             ep_num = ep_span.get_text(strip=True) if ep_span else ""
             ep_label = f"{ep_num}. Bölüm" if ep_num and ep_num != "??" else "Yeni Bölüm"
             slug = href.rstrip("/").split("/")[-1] if href else re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+            if "anime-asmv" in slug.lower():
+                continue
 
             item = {
                 "source_site": "asyaanimeleri",
