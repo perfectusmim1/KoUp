@@ -84,20 +84,10 @@ const COUNTRIES = [
 
 const YEAR_OPTIONS = [
   { value: 'ALL', label: 'Tüm Yıllar' },
-  { value: '2026', label: '2026' },
-  { value: '2025', label: '2025' },
-  { value: '2024', label: '2024' },
-  { value: '2023', label: '2023' },
-  { value: '2022', label: '2022' },
-  { value: '2021', label: '2021' },
-  { value: '2020', label: '2020' },
-  { value: '2019', label: '2019' },
-  { value: '2018', label: '2018' },
-  { value: '2015-2017', label: '2015 - 2017' },
-  { value: '2010-2014', label: '2010 - 2014' },
-  { value: '2000-2009', label: '2000 - 2009' },
-  { value: '1990-1999', label: '1990 - 1999' },
-  { value: '1990 Öncesi', label: '1990 Öncesi' },
+  ...Array.from({ length: 2027 - 1970 + 1 }, (_, i) => {
+    const yr = String(2027 - i);
+    return { value: yr, label: yr };
+  }),
 ];
 
 const GENRES = [
@@ -131,21 +121,18 @@ const GENRES = [
   'İntikam',
 ];
 
-function applyYearFilter(query: any, yearFilter: string) {
-  if (!yearFilter || yearFilter === 'ALL') return query;
-  if (/^\d{4}$/.test(yearFilter)) {
-    return query.eq('release_year', Number(yearFilter));
+function applyYearFilter(query: any, yearFilter: string[] | string) {
+  const years = Array.isArray(yearFilter)
+    ? yearFilter.filter((y) => y && y !== 'ALL')
+    : yearFilter && yearFilter !== 'ALL'
+    ? yearFilter.split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+
+  if (years.length === 0) return query;
+  if (years.length === 1) {
+    return query.eq('release_year', Number(years[0]));
   }
-  if (yearFilter.includes('-')) {
-    const [start, end] = yearFilter.split('-').map(Number);
-    if (start && end) {
-      return query.gte('release_year', start).lte('release_year', end);
-    }
-  }
-  if (yearFilter === '1990 Öncesi' || yearFilter.toLowerCase().includes('öncesi')) {
-    return query.lt('release_year', 1990);
-  }
-  return query;
+  return query.in('release_year', years.map(Number));
 }
 
 function DiscoverContent() {
@@ -157,7 +144,10 @@ function DiscoverContent() {
 
   const initialType = searchParams.get('type') || 'ALL';
   const initialCountry = searchParams.get('country') || 'ALL';
-  const initialYear = searchParams.get('year') || 'ALL';
+  const initialYearParam = searchParams.get('year') || '';
+  const initialYears = initialYearParam && initialYearParam !== 'ALL'
+    ? initialYearParam.split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
   const initialCategoryParam = searchParams.get('category') || searchParams.get('genre') || '';
   const initialGenres = initialCategoryParam && initialCategoryParam !== 'Tümü'
     ? initialCategoryParam.split(',').map((s) => s.trim()).filter(Boolean)
@@ -169,7 +159,7 @@ function DiscoverContent() {
   const [isMounted, setIsMounted] = useState(false);
   const [typeFilter, setTypeFilter] = useState(initialType);
   const [countryFilter, setCountryFilter] = useState(initialCountry);
-  const [yearFilter, setYearFilter] = useState(initialYear);
+  const [selectedYears, setSelectedYears] = useState<string[]>(initialYears);
   const [selectedGenres, setSelectedGenres] = useState<string[]>(initialGenres);
   const [sortBy, setSortBy] = useState<'latest' | 'views' | 'rating' | 'year'>(initialSort);
   const [searchQuery, setSearchQuery] = useState(initialQ);
@@ -213,7 +203,14 @@ function DiscoverContent() {
     const cat = searchParams.get('category') || searchParams.get('genre');
     if (t) setTypeFilter(t);
     if (c) setCountryFilter(c.toUpperCase());
-    if (y) setYearFilter(y);
+    if (y !== null) {
+      if (!y || y === 'ALL') {
+        setSelectedYears([]);
+      } else {
+        const parts = y.split(',').map((s) => s.trim()).filter(Boolean);
+        setSelectedYears(parts);
+      }
+    }
     if (q !== null) {
       setSearchQuery(q);
       setDebouncedQuery(q);
@@ -239,9 +236,11 @@ function DiscoverContent() {
 
     async function loadCatalog() {
       const { normalized, raw } = normalizeSearchQuery(debouncedQuery);
+      const isAllYears = selectedYears.length === 0 || selectedYears.includes('ALL');
+      const yearsKey = selectedYears.length > 0 ? selectedYears.slice().sort().join('-') : 'all';
       const genresKey = selectedGenres.length > 0 ? selectedGenres.slice().sort().join('-') : 'all';
-      const cacheKey = `kesfet_v2_${typeFilter}_${countryFilter}_${yearFilter}_${genresKey}_${sortBy}_${normalized || 'all'}_p${currentPage}`;
-      const countKey = `kesfet_count_v2_${typeFilter}_${countryFilter}_${yearFilter}_${genresKey}_${normalized || 'all'}`;
+      const cacheKey = `kesfet_v2_${typeFilter}_${countryFilter}_${yearsKey}_${genresKey}_${sortBy}_${normalized || 'all'}_p${currentPage}`;
+      const countKey = `kesfet_count_v2_${typeFilter}_${countryFilter}_${yearsKey}_${genresKey}_${normalized || 'all'}`;
 
       const cached = getCache<MediaItem[]>(cacheKey, true);
       const cachedCount = getCache<number>(countKey, true);
@@ -261,7 +260,7 @@ function DiscoverContent() {
         const [data, countRes] = await Promise.all([
           cachedQuery(cacheKey, 60_000, async () => {
             // 1. High-performance multi-token fuzzy search via search_media RPC if standard filters
-            if (yearFilter === 'ALL' && selectedGenres.length <= 1 && raw.length >= 2) {
+            if (isAllYears && selectedGenres.length <= 1 && raw.length >= 2) {
               try {
                 const rpcRes = await supabase.rpc('search_media', {
                   p_query: raw,
@@ -294,7 +293,7 @@ function DiscoverContent() {
             if (selectedGenres.length > 0) {
               query = query.contains('categories', selectedGenres);
             }
-            query = applyYearFilter(query, yearFilter);
+            query = applyYearFilter(query, selectedYears);
 
             if (normalized.length >= 2 || raw.length >= 2) {
               query = query.or(`title.ilike.%${raw}%,slug.ilike.%${normalized || raw}%,search_text.ilike.%${normalized || raw}%`);
@@ -329,7 +328,7 @@ function DiscoverContent() {
           }),
           cachedQuery(countKey, 120_000, async () => {
             if (
-              yearFilter === 'ALL' &&
+              isAllYears &&
               selectedGenres.length === 0 &&
               typeFilter === 'ALL' &&
               countryFilter === 'ALL' &&
@@ -339,7 +338,7 @@ function DiscoverContent() {
               return 24746;
             }
 
-            if (yearFilter === 'ALL' && selectedGenres.length <= 1) {
+            if (isAllYears && selectedGenres.length <= 1) {
               try {
                 const rpcCount = await supabase.rpc('count_search_media', {
                   p_query: raw,
@@ -360,7 +359,7 @@ function DiscoverContent() {
               if (typeFilter !== 'ALL') cQuery = cQuery.eq('content_type', typeFilter);
               if (countryFilter !== 'ALL') cQuery = cQuery.eq('country_code', countryFilter);
               if (selectedGenres.length > 0) cQuery = cQuery.contains('categories', selectedGenres);
-              cQuery = applyYearFilter(cQuery, yearFilter);
+              cQuery = applyYearFilter(cQuery, selectedYears);
               if (normalized.length >= 2 || raw.length >= 2) {
                 cQuery = cQuery.or(`title.ilike.%${raw}%,slug.ilike.%${normalized || raw}%,search_text.ilike.%${normalized || raw}%`);
               }
@@ -391,7 +390,7 @@ function DiscoverContent() {
     return () => {
       active = false;
     };
-  }, [typeFilter, countryFilter, yearFilter, selectedGenres, sortBy, debouncedQuery, currentPage]);
+  }, [typeFilter, countryFilter, selectedYears, selectedGenres, sortBy, debouncedQuery, currentPage]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / ITEMS_PER_PAGE));
 
@@ -473,13 +472,23 @@ function DiscoverContent() {
               />
 
               <CustomSelect
-                value={yearFilter}
-                onChange={(val) => {
-                  setYearFilter(val);
+                multiple={true}
+                value={selectedYears}
+                onChange={(val: string[]) => {
+                  setSelectedYears(val);
                   setCurrentPage(1);
+                  const url = new URL(window.location.href);
+                  if (val.length > 0) {
+                    url.searchParams.set('year', val.join(','));
+                  } else {
+                    url.searchParams.delete('year');
+                  }
+                  url.searchParams.set('page', '1');
+                  window.history.replaceState(null, '', url.toString());
                 }}
                 variant="pill"
                 aria-label="Yıl Filtresi"
+                placeholder="Tüm Yıllar"
                 options={YEAR_OPTIONS}
               />
 
@@ -623,7 +632,7 @@ function DiscoverContent() {
         </div>
       ) : (
         <motion.div
-          key={`${typeFilter}-${countryFilter}-${yearFilter}-${selectedGenres.join(',')}-${sortBy}-${debouncedQuery}-${currentPage}`}
+          key={`${typeFilter}-${countryFilter}-${selectedYears.slice().sort().join('-')}-${selectedGenres.join(',')}-${sortBy}-${debouncedQuery}-${currentPage}`}
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}

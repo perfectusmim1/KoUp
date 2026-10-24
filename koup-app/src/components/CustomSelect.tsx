@@ -13,9 +13,7 @@ export interface SelectOption {
   disabled?: boolean;
 }
 
-export interface CustomSelectProps {
-  value: string;
-  onChange: (value: string) => void;
+export interface BaseCustomSelectProps {
   options: SelectOption[];
   placeholder?: string;
   triggerLabel?: React.ReactNode;
@@ -36,28 +34,44 @@ export interface CustomSelectProps {
   'aria-label'?: string;
 }
 
-export default function CustomSelect({
-  value,
-  onChange,
-  options,
-  placeholder = 'Seçiniz...',
-  triggerLabel,
-  leftIcon,
-  className = '',
-  triggerClassName = '',
-  menuClassName = '',
-  variant = 'glass',
-  size = 'md',
-  direction = 'auto',
-  searchable,
-  searchPlaceholder = 'Seçenek ara...',
-  portal = true,
-  disabled = false,
-  allowDeselect = false,
-  id: explicitId,
-  name,
-  'aria-label': ariaLabel,
-}: CustomSelectProps) {
+export interface SingleCustomSelectProps extends BaseCustomSelectProps {
+  multiple?: false;
+  value: string;
+  onChange: (value: string) => void;
+}
+
+export interface MultiCustomSelectProps extends BaseCustomSelectProps {
+  multiple: true;
+  value: string[];
+  onChange: (value: string[]) => void;
+}
+
+export type CustomSelectProps = SingleCustomSelectProps | MultiCustomSelectProps;
+
+export default function CustomSelect(props: CustomSelectProps) {
+  const {
+    value,
+    onChange,
+    options,
+    multiple = false,
+    placeholder = 'Seçiniz...',
+    triggerLabel,
+    leftIcon,
+    className = '',
+    triggerClassName = '',
+    menuClassName = '',
+    variant = 'glass',
+    size = 'md',
+    direction = 'auto',
+    searchable,
+    searchPlaceholder = 'Seçenek ara...',
+    portal = true,
+    disabled = false,
+    allowDeselect = false,
+    id: explicitId,
+    name,
+    'aria-label': ariaLabel,
+  } = props;
   const [mounted, setMounted] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [openUpwards, setOpenUpwards] = useState(direction === 'up');
@@ -84,10 +98,86 @@ export default function CustomSelect({
 
   const isSearchable = searchable ?? options.length >= 8;
 
-  const selectedOption = useMemo(
-    () => options.find((o) => o.value === value),
-    [options, value]
+  const isOptionSelected = useCallback(
+    (optValue: string) => {
+      if (multiple) {
+        const arr = Array.isArray(value) ? value : [];
+        if (optValue === 'ALL') {
+          return arr.length === 0 || arr.includes('ALL');
+        }
+        return arr.includes(optValue);
+      }
+      return value === optValue;
+    },
+    [multiple, value]
   );
+
+  const handleOptionSelect = useCallback(
+    (opt: SelectOption) => {
+      if (opt.disabled) return;
+      if (multiple) {
+        const arr = Array.isArray(value) ? [...value] : [];
+        const multiOnChange = onChange as (val: string[]) => void;
+        if (opt.value === 'ALL') {
+          multiOnChange([]);
+        } else {
+          const withoutAll = arr.filter((v) => v !== 'ALL');
+          const exists = withoutAll.includes(opt.value);
+          let nextArr: string[];
+          if (exists) {
+            nextArr = withoutAll.filter((v) => v !== opt.value);
+          } else {
+            nextArr = [...withoutAll, opt.value];
+          }
+          multiOnChange(nextArr);
+        }
+        // Keep focus on search input or trigger without closing menu
+        if (searchInputRef.current) {
+          searchInputRef.current.focus();
+        } else {
+          triggerRef.current?.focus();
+        }
+      } else {
+        const singleOnChange = onChange as (val: string) => void;
+        if (allowDeselect && opt.value === value) {
+          singleOnChange('');
+        } else {
+          singleOnChange(opt.value);
+        }
+        setIsOpen(false);
+        triggerRef.current?.focus();
+      }
+    },
+    [multiple, value, onChange, allowDeselect]
+  );
+
+  const selectedOption = useMemo(() => {
+    if (multiple) return undefined;
+    return options.find((o) => o.value === value);
+  }, [multiple, options, value]);
+
+  const displayLabel = useMemo(() => {
+    if (triggerLabel !== undefined) return triggerLabel;
+    if (multiple) {
+      const arr = Array.isArray(value) ? value.filter((v) => v !== 'ALL') : [];
+      if (arr.length === 0) {
+        const allOpt = options.find((o) => o.value === 'ALL');
+        return allOpt?.label || placeholder;
+      }
+      if (arr.length === 1) {
+        const single = options.find((o) => o.value === arr[0]);
+        return single?.label || arr[0];
+      }
+      if (arr.length === 2) {
+        const o1 = options.find((o) => o.value === arr[0])?.label || arr[0];
+        const o2 = options.find((o) => o.value === arr[1])?.label || arr[1];
+        return `${o1}, ${o2}`;
+      }
+      const isYearSelect = placeholder.includes('Yıl') || options.some((o) => /^\d{4}$/.test(o.value));
+      return isYearSelect ? `${arr.length} Yıl Seçildi` : `${arr.length} Seçildi`;
+    }
+    return selectedOption?.label || placeholder;
+  }, [triggerLabel, multiple, value, options, placeholder, selectedOption]);
 
   const filteredOptions = useMemo(() => {
     if (!isSearchable || !searchQuery.trim()) return options;
@@ -291,9 +381,7 @@ export default function CustomSelect({
         e.preventDefault();
         const targetOption = filteredOptions[highlightedIndex];
         if (targetOption && !targetOption.disabled) {
-          onChange(targetOption.value);
-          setIsOpen(false);
-          triggerRef.current?.focus();
+          handleOptionSelect(targetOption);
         }
         break;
       }
@@ -405,9 +493,7 @@ export default function CustomSelect({
                       e.preventDefault();
                       const targetOption = filteredOptions[highlightedIndex];
                       if (targetOption && !targetOption.disabled) {
-                        onChange(targetOption.value);
-                        setIsOpen(false);
-                        triggerRef.current?.focus();
+                        handleOptionSelect(targetOption);
                       }
                     }
                   }}
@@ -447,34 +533,26 @@ export default function CustomSelect({
               </div>
             ) : (
               filteredOptions.map((opt, idx) => {
-                const isSelected = opt.value === value;
                 const isHighlighted = idx === highlightedIndex;
                 const optionId = `${selectId}-opt-${opt.value}`;
+                const selected = isOptionSelected(opt.value);
 
                 return (
                   <button
                     key={opt.value}
                     id={optionId}
                     type="button"
-                    role="option"
-                    aria-selected={isSelected}
+                    role={multiple ? 'checkbox' : 'option'}
+                    aria-selected={selected}
+                    aria-checked={multiple ? selected : undefined}
                     aria-disabled={opt.disabled}
                     disabled={opt.disabled}
-                    onClick={() => {
-                      if (opt.disabled) return;
-                      if (allowDeselect && opt.value === value) {
-                        onChange('');
-                      } else {
-                        onChange(opt.value);
-                      }
-                      setIsOpen(false);
-                      triggerRef.current?.focus();
-                    }}
+                    onClick={() => handleOptionSelect(opt)}
                     onMouseEnter={() => !opt.disabled && setHighlightedIndex(idx)}
                     className={`w-full flex items-center justify-between px-3.5 py-2 text-xs text-left rounded-xl transition-colors duration-150 cursor-pointer ${
                       opt.disabled
                         ? 'opacity-35 cursor-not-allowed text-white/40'
-                        : isSelected
+                        : selected
                         ? 'bg-gradient-to-r from-[var(--accent-blue)]/25 via-[var(--accent-blue)]/15 to-transparent text-white font-bold border-l-2 border-[var(--accent-blue)] shadow-xs'
                         : isHighlighted
                         ? 'bg-white/10 text-white'
@@ -496,7 +574,7 @@ export default function CustomSelect({
                         )}
                       </div>
                     </div>
-                    {isSelected && (
+                    {selected && (
                       <Check className="w-3.5 h-3.5 text-[var(--accent-blue)] shrink-0 ml-2" />
                     )}
                   </button>
@@ -512,7 +590,7 @@ export default function CustomSelect({
   return (
     <div ref={containerRef} className={`relative inline-block ${className}`}>
       {/* Hidden input for HTML form submissions if name is supplied */}
-      {name && <input type="hidden" name={name} value={value} />}
+      {name && <input type="hidden" name={name} value={Array.isArray(value) ? value.join(',') : value} />}
 
       {/* Trigger Button with Apple Spring Micro-Interaction & Lumina Focus Ring */}
       <button
@@ -555,7 +633,7 @@ export default function CustomSelect({
             selectedOption?.icon
           )}
           <span className="font-semibold tracking-tight truncate">
-            {triggerLabel !== undefined ? triggerLabel : (selectedOption?.label || placeholder)}
+            {displayLabel}
           </span>
         </span>
         <ChevronDown

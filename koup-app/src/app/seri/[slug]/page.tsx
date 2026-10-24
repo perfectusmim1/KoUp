@@ -499,7 +499,7 @@ export default function SeriesDetailPage({
               }
             }
 
-            return rankRelatedMedia(item, candidatePool, 12);
+            return rankRelatedMedia(item, candidatePool, 8);
           }
         );
 
@@ -2005,7 +2005,7 @@ export default function SeriesDetailPage({
               ref={relatedScrollRef}
               className="koup-accordion-rail flex items-center gap-4 overflow-x-auto overflow-y-hidden w-full h-[266px] sm:h-[296px] md:h-[324px] no-scrollbar py-2 [-webkit-overflow-scrolling:touch]"
             >
-              {relatedMedia.map((item) => (
+              {relatedMedia.slice(0, 8).map((item) => (
                 <AccordionMediaCard key={item.id} item={item} />
               ))}
             </div>
