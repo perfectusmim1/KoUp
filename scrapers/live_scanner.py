@@ -625,14 +625,23 @@ def fetch_animecix_json(endpoint: str, qs: str, retries: int = 3):
     for attempt in range(retries):
         try:
             h = make_animecix_header(qs)
-            req = urllib.request.Request(url, headers={
+            headers = {
                 'X-E-H': h,
                 'Accept': 'application/json',
+                'Referer': 'https://animecix.tv/',
+                'Origin': 'https://animecix.tv',
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-            })
-            with urllib.request.urlopen(req, timeout=12) as resp:
-                if resp.status == 200:
-                    return json.loads(resp.read().decode('utf-8'))
+            }
+            try:
+                from curl_cffi import requests as cffi_requests
+                resp = cffi_requests.get(url, headers=headers, impersonate='chrome120', timeout=15)
+                if resp.status_code == 200:
+                    return resp.json()
+            except ImportError:
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=12) as resp:
+                    if resp.status == 200:
+                        return json.loads(resp.read().decode('utf-8'))
         except Exception as e:
             if attempt == retries - 1:
                 log("UYARI", f"AnimeciX API isteği başarısız ({endpoint}): {e}")
