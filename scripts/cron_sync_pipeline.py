@@ -411,6 +411,91 @@ def run_watchdog_check() -> int:
         return 0
 
 
+def run_gap_backfill(limit: int = 15) -> int:
+    """
+    Detects ongoing series that have missing earlier or intermediate episodes
+    (e.g. latest episode is 35, but total episode count is < 35 or min episode > 1),
+    and automatically backfills all missing episodes using target synchronizers.
+    """
+    print("[Eksik Bölüm Otomasyonu] Seri boşluk kontrolü ve otomatik tamamlama başlatılıyor...", flush=True)
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT d.id, d.title, d.source_url, MIN(e.episode_number), MAX(e.episode_number), COUNT(e.id)
+            FROM dramas d
+            JOIN episodes e ON e.drama_id = d.id
+            WHERE d.status_broadcast != 'Final'
+              AND d.content_type IN ('dizi', 'anime')
+            GROUP BY d.id
+            HAVING (MIN(e.episode_number) > 1 OR (MAX(e.episode_number) - MIN(e.episode_number) + 1) > COUNT(e.id))
+            ORDER BY MAX(e.episode_number) DESC
+            LIMIT ?
+        """, (limit,))
+        gap_dramas = cur.fetchall()
+        if not gap_dramas:
+            print("[Eksik Bölüm Otomasyonu] Eksik/atlanan bölümlü seri tespit edilmedi (Tüm seriler tam).", flush=True)
+            return 0
+
+        print(f"[Eksik Bölüm Otomasyonu] {len(gap_dramas)} seride eksik/aralık bölüm tespit edildi. Otomatik tamamlama başlatılıyor...", flush=True)
+        from scrapers.sync_target_drama import (
+            sync_ddizi_target, sync_dizibox_target, sync_dizikorea_target,
+            sync_dizifon_target, sync_asyawatch_target, sync_animecix_target,
+            sync_bldrama_target, sync_asyaanimeleri_target, sync_hdfilm_target,
+            sync_drama_bundle_and_counts,
+        )
+
+        resolved_count = 0
+        for did, dtitle, dsrc, min_e, max_e, cnt_e in gap_dramas:
+            missing_est = (max_e - min_e + 1) - cnt_e + (min_e - 1)
+            print(f"[Eksik Bölüm Otomasyonu] #{did} '{dtitle}' -> Min Ep: {min_e}, Max Ep: {max_e}, Mevcut: {cnt_e} (~{missing_est} eksik bölüm). Tam senkronizasyon tetikleniyor...", flush=True)
+            cur.execute("SELECT * FROM dramas WHERE id = ?", (did,))
+            d_row = cur.fetchone()
+            if not d_row:
+                continue
+            drama_dict = dict(d_row)
+
+            eps_add = 0
+            src_low = (dsrc or '').lower()
+            try:
+                if 'ddizi' in src_low:
+                    eps_add, _ = sync_ddizi_target(conn, cur, drama_dict)
+                elif 'dizibox' in src_low:
+                    eps_add, _ = sync_dizibox_target(conn, cur, drama_dict)
+                elif 'dizikorea' in src_low:
+                    eps_add, _ = sync_dizikorea_target(conn, cur, drama_dict)
+                elif 'asyawatch' in src_low:
+                    eps_add, _ = sync_asyawatch_target(conn, cur, drama_dict)
+                elif 'animecix' in src_low:
+                    eps_add, _ = sync_animecix_target(conn, cur, drama_dict)
+                elif any(x in src_low for x in ('dizifon', 'asyadizi', 'asyaluna', 'asyaking')):
+                    eps_add, _ = sync_dizifon_target(conn, cur, drama_dict)
+                elif any(x in src_low for x in ('bldrama', 'webdramaturkey')):
+                    eps_add, _ = sync_bldrama_target(conn, cur, drama_dict)
+                elif 'asyaanimeleri' in src_low:
+                    eps_add, _ = sync_asyaanimeleri_target(conn, cur, drama_dict)
+                else:
+                    c = (drama_dict.get('country') or '').upper()
+                    if c == 'TR':
+                        eps_add, _ = sync_ddizi_target(conn, cur, drama_dict)
+                    elif c in ('KR', 'JP', 'CN', 'TH', 'TW'):
+                        eps_add, _ = sync_dizikorea_target(conn, cur, drama_dict)
+                    else:
+                        eps_add, _ = sync_dizibox_target(conn, cur, drama_dict)
+            except Exception as e_sync:
+                print(f"[Eksik Bölüm Otomasyonu] #{did} '{dtitle}' senkronizasyon hatası: {e_sync}", flush=True)
+
+            if eps_add > 0:
+                resolved_count += 1
+                sync_drama_bundle_and_counts(conn, cur, did)
+                safe_commit(conn)
+                print(f"[Eksik Bölüm Otomasyonu] #{did} '{dtitle}' için +{eps_add} eksik bölüm başarıyla eklendi!", flush=True)
+
+        return resolved_count
+    finally:
+        conn.close()
+
+
 # =========================================================================
 # MAIN PIPELINE RUNNER WITH FULL STATS GATHERING
 # =========================================================================
@@ -619,6 +704,13 @@ def main():
                 run_scraper_step("series_automation", "Seri Otomasyonu", sync_all_active_series, 5)
             except Exception as e:
                 record_log(f"[Seri Otomasyonu] Hata: {e}")
+
+        # Otomatik Eksik Bölüm & Boşluk Tamamlama Motoru
+        if target in ("all", "gap_backfill", "gaps", "series_automation", "series_auto"):
+            try:
+                run_scraper_step("gap_backfill", "Eksik Bölüm Otomasyonu", run_gap_backfill, limit=15)
+            except Exception as e:
+                record_log(f"[Eksik Bölüm Otomasyonu] Hata: {e}")
 
         if target in ("all", "calendar", "takvim"):
             try:

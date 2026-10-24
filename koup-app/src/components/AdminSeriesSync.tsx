@@ -11,6 +11,7 @@ import {
   X,
   Link as LinkIcon,
   ExternalLink,
+  Sparkles,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import CustomSelect, { SelectOption } from '@/components/CustomSelect';
@@ -24,18 +25,147 @@ interface AdminSeriesSyncProps {
 }
 
 const SYNC_OPTIONS: SelectOption[] = [
-  { value: 'auto', label: 'Otomatik Akıllı Tespit', description: 'Mevcut kaynaklar ve yapım ülkesine göre otomatik seçer', icon: '⚡' },
-  { value: 'asyawatch', label: 'AsyaWatch (HLS)', description: 'four.pichive.online 1080p Native HLS', icon: '🌸' },
-  { value: 'bldrama', label: 'BLDrama & WebDramaTurkey', description: 'BL & Asya Dizileri Doğrudan HLS & Alternatifler', icon: '🌈' },
-  { value: 'dizikorea', label: 'DiziKorea Asya', description: 'playerdkorea 1080p HLS akışları', icon: '🎎' },
-  { value: 'dizifon', label: 'DiziFon / AsyaDizi', description: 'Asya Dizi & Film alternatif akışları', icon: '🎭' },
-  { value: 'dizibox', label: 'DiziBOX Global', description: 'DBX Pro 1080p HLS akışları', icon: '📦' },
-  { value: 'hdfilm', label: 'HDFilmcehennemi', description: 'Close Dual & Rapidrame Doğrudan 1080p HLS', icon: '🔥' },
-  { value: 'dizilla', label: 'Dizilla Global & Anime', description: 'AES-256 Çözülmüş 1080p Native HLS', icon: '🎬' },
-  { value: 'animecix', label: 'AnimeciX', description: 'Tau-Video & Sibnet alternatifleri', icon: '⚡' },
-  { value: 'asyaanimeleri', label: 'AsyaAnimeleri', description: 'Asya Animeleri & Dizi alternatifleri', icon: '⛩️' },
-  { value: 'ddizi', label: 'DDizi Yerli & Klasik', description: 'YouTube HD & HLS resmi yayınlar', icon: '📺' },
-  { value: '__manual__', label: 'Özel Dizi URL\'si Gir...', description: 'DiziBOX, HDFilm vb. doğrudan dizi URL\'si yapıştırın', icon: <LinkIcon className="w-3.5 h-3.5 text-sky-400" /> },
+  {
+    value: 'auto',
+    label: 'Otomatik Akıllı Tespit',
+    description: 'Mevcut kaynaklar ve yapım ülkesine göre otomatik seçer',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-gradient-to-tr from-sky-500/20 to-indigo-500/20 border border-sky-500/30 flex items-center justify-center flex-shrink-0 text-sky-400">
+        <Sparkles className="w-3.5 h-3.5 text-sky-400" />
+      </div>
+    ),
+  },
+  {
+    value: 'asyawatch',
+    label: 'AsyaWatch (HLS)',
+    description: 'four.pichive.online 1080p Native HLS',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-sky-950/40 border border-sky-500/30 flex items-center justify-center flex-shrink-0 text-sky-400 shadow-sm shadow-sky-500/10">
+        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2L14.2 8.3L20.8 9.2L16.2 13.9L17.4 20.6L12 17.6L6.6 20.6L7.8 13.9L3.2 9.2L9.8 8.3L12 2Z" fill="#38bdf8" />
+          <circle cx="12" cy="12" r="2.5" fill="#0f172a" />
+        </svg>
+      </div>
+    ),
+  },
+  {
+    value: 'bldrama',
+    label: 'BLDrama & WebDramaTurkey',
+    description: 'BL & Asya Dizileri Doğrudan HLS & Alternatifler',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-gradient-to-tr from-pink-500 via-purple-500 to-indigo-500 p-[1px] flex-shrink-0">
+        <div className="w-full h-full bg-zinc-950 rounded-[5px] flex items-center justify-center">
+          <span className="text-[8.5px] font-black tracking-tight bg-gradient-to-r from-pink-400 to-indigo-300 bg-clip-text text-transparent">BL</span>
+        </div>
+      </div>
+    ),
+  },
+  {
+    value: 'dizikorea',
+    label: 'DiziKorea Asya',
+    description: 'playerdkorea 1080p HLS akışları',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-amber-950/40 border border-amber-500/30 flex items-center justify-center flex-shrink-0 shadow-sm shadow-amber-500/10">
+        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="10" stroke="#f59e0b" strokeWidth="1.5" />
+          <path d="M12 3C7 3 3 7 3 12C3 15 5 17 8 18C10 16 11 14 11 12C11 9 13 8 16 9C19 10 20 12 21 12C21 7 17 3 12 3Z" fill="#ef4444" />
+          <path d="M12 21C17 21 21 17 21 12C21 9 19 7 16 6C14 8 13 10 13 12C13 15 11 16 8 15C5 14 4 12 3 12C3 17 7 21 12 21Z" fill="#3b82f6" />
+        </svg>
+      </div>
+    ),
+  },
+  {
+    value: 'dizifon',
+    label: 'DiziFon / AsyaDizi',
+    description: 'Asya Dizi & Film alternatif akışları',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-purple-950/40 border border-purple-500/30 flex items-center justify-center flex-shrink-0 text-purple-300 shadow-sm shadow-purple-500/10">
+        <span className="text-[8px] font-extrabold tracking-tighter text-purple-400">DF</span>
+      </div>
+    ),
+  },
+  {
+    value: 'dizibox',
+    label: 'DiziBOX Global',
+    description: 'DBX Pro 1080p HLS akışları',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-emerald-950/40 border border-emerald-500/30 flex items-center justify-center flex-shrink-0 text-emerald-400 shadow-sm shadow-emerald-500/10">
+        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+          <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+          <line x1="12" y1="22.08" x2="12" y2="12" />
+        </svg>
+      </div>
+    ),
+  },
+  {
+    value: 'hdfilm',
+    label: 'HDFilmcehennemi',
+    description: 'Close Dual & Rapidrame Doğrudan 1080p HLS',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-orange-950/40 border border-orange-500/30 flex items-center justify-center flex-shrink-0 text-orange-400 shadow-sm shadow-orange-500/10">
+        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 23c-4.97 0-9-3.58-9-8 0-4.07 3.53-7.57 6-10.5.58-.7 1.45-1.72 2-2.5.55.78 1.42 1.8 2 2.5 2.47 2.93 6 6.43 6 10.5 0 4.42-4.03 8-9 8zm0-15.5c-1.8 2.25-4.5 5.25-4.5 7.5 0 2.48 2.02 4.5 4.5 4.5s4.5-2.02 4.5-4.5c0-2.25-2.7-5.25-4.5-7.5z" fill="#f97316" />
+        </svg>
+      </div>
+    ),
+  },
+  {
+    value: 'dizilla',
+    label: 'Dizilla Global & Anime',
+    description: 'AES-256 Çözülmüş 1080p Native HLS',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-rose-950/40 border border-rose-500/30 flex items-center justify-center flex-shrink-0 text-rose-400 shadow-sm shadow-rose-500/10">
+        <span className="text-[8px] font-black italic tracking-tighter text-rose-400">DZ</span>
+      </div>
+    ),
+  },
+  {
+    value: 'animecix',
+    label: 'AnimeciX',
+    description: 'Tau-Video & Sibnet alternatifleri',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-cyan-950/40 border border-cyan-500/30 flex items-center justify-center flex-shrink-0 text-cyan-400 shadow-sm shadow-cyan-500/10">
+        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" fill="#22d3ee" />
+        </svg>
+      </div>
+    ),
+  },
+  {
+    value: 'asyaanimeleri',
+    label: 'AsyaAnimeleri',
+    description: 'Asya Animeleri & Dizi alternatifleri',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-red-950/40 border border-red-600/30 flex items-center justify-center flex-shrink-0 text-red-400 shadow-sm shadow-red-600/10">
+        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M2 5h20v2H2V5zm3 3h14v2H5V8zm2 3h10v11h-2v-9h-6v9H7V11z" fill="#f43f5e" />
+        </svg>
+      </div>
+    ),
+  },
+  {
+    value: 'ddizi',
+    label: 'DDizi Yerli & Klasik',
+    description: 'YouTube HD & HLS resmi yayınlar',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-red-950/40 border border-red-500/30 flex items-center justify-center flex-shrink-0 text-red-400 shadow-sm shadow-red-500/10">
+        <div className="w-3.5 h-3 rounded-[3px] bg-red-600 flex items-center justify-center text-[7.5px] font-black text-white leading-none">
+          d
+        </div>
+      </div>
+    ),
+  },
+  {
+    value: '__manual__',
+    label: 'Özel Dizi URL\'si Gir...',
+    description: 'DiziBOX, HDFilm vb. doğrudan dizi URL\'si yapıştırın',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-sky-950/30 border border-sky-500/30 flex items-center justify-center flex-shrink-0 text-sky-400">
+        <LinkIcon className="w-3.5 h-3.5" />
+      </div>
+    ),
+  },
 ];
 
 export default function AdminSeriesSync({

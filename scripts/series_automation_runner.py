@@ -262,29 +262,58 @@ def sync_single_series(drama_id: int) -> dict:
 
         site_delta = 0
         try:
+            cur.execute("SELECT * FROM dramas WHERE id = ?", (drama_id,))
+            d_current = cur.fetchone()
+            dr_dict = dict(d_current) if d_current else {}
+            manual_u = target_term if target_term and target_term.startswith('http') else None
+
             if site_id == "asyawatch":
-                site_delta, _ = scan_asyawatch(conn, cur, idx, limit=30, target=target_term)
+                from scrapers.sync_target_drama import sync_asyawatch_target
+                eps_a, srcs_a = sync_asyawatch_target(conn, cur, dr_dict, target_url=manual_u)
+                site_delta = eps_a + srcs_a
             elif site_id == "dizikorea":
-                site_delta, _ = scan_dizikorea(conn, cur, idx, limit=30, target=target_term)
+                from scrapers.sync_target_drama import sync_dizikorea_target
+                eps_a, srcs_a = sync_dizikorea_target(conn, cur, dr_dict, target_url=manual_u)
+                site_delta = eps_a + srcs_a
             elif site_id == "dizifon":
-                site_delta, _ = scan_dizifon(conn, cur, idx, limit=30, target=target_term)
+                from scrapers.sync_target_drama import sync_dizifon_target
+                eps_a, srcs_a = sync_dizifon_target(conn, cur, dr_dict, target_url=manual_u)
+                site_delta = eps_a + srcs_a
             elif site_id == "dizibox":
-                site_delta, _ = scan_dizibox(conn, cur, idx, limit=30, target=target_term)
+                from scrapers.sync_target_drama import sync_dizibox_target
+                eps_a, srcs_a = sync_dizibox_target(conn, cur, dr_dict, target_url=manual_u)
+                site_delta = eps_a + srcs_a
             elif site_id == "dizilla":
-                site_delta, _ = scan_dizilla(conn, cur, idx, limit=30, target=target_term)
+                from scrapers.sync_target_drama import sync_dizilla_target
+                eps_a, srcs_a = sync_dizilla_target(conn, cur, dr_dict, target_url=manual_u)
+                site_delta = eps_a + srcs_a
             elif site_id == "animecix":
-                site_delta, _ = scan_animecix(conn, cur, idx, limit=30, target=target_term)
+                from scrapers.sync_target_drama import sync_animecix_target
+                eps_a, srcs_a = sync_animecix_target(conn, cur, dr_dict, target_url=manual_u)
+                site_delta = eps_a + srcs_a
             elif site_id == "ddizi":
-                site_delta, _ = scan_ddizi(conn, cur, idx, limit=30, target=target_term)
+                from scrapers.sync_target_drama import sync_ddizi_target
+                eps_a, srcs_a = sync_ddizi_target(conn, cur, dr_dict, target_url=manual_u)
+                site_delta = eps_a + srcs_a
             elif site_id == "hdfilm":
-                site_delta, _ = scan_hdfilm(conn, cur, idx, limit=30, target=target_term)
+                from scrapers.sync_target_drama import sync_hdfilm_target
+                eps_a, srcs_a = sync_hdfilm_target(conn, cur, dr_dict, target_url=manual_u)
+                site_delta = eps_a + srcs_a
+            elif site_id == "bldrama":
+                from scrapers.sync_target_drama import sync_bldrama_target
+                eps_a, srcs_a = sync_bldrama_target(conn, cur, dr_dict, target_url=manual_u)
+                site_delta = eps_a + srcs_a
+            elif site_id == "asyaanimeleri":
+                from scrapers.sync_target_drama import sync_asyaanimeleri_target
+                eps_a, srcs_a = sync_asyaanimeleri_target(conn, cur, dr_dict, target_url=manual_u)
+                site_delta = eps_a + srcs_a
             else:
                 emit_log(f"[{site_id}] Bilinmeyen site atlandı.")
                 continue
 
             results_by_site[site_id] = {"ok": True, "delta": site_delta}
             total_added_streams += site_delta
-            emit_log(f"[{site_id.upper()}] Tamamlandı: +{site_delta} akış bulundu.")
+            emit_log(f"[{site_id.upper()}] Tamamlandı: +{site_delta} yeni bölüm/akış işlendi.")
         except Exception as e:
             results_by_site[site_id] = {"ok": False, "error": str(e)}
             emit_log(f"[{site_id.upper()}] Hata oluştu: {e}")
@@ -509,6 +538,17 @@ def add_and_bind_series(
         src_count = dr[1] if dr else 0
         status_broadcast = dr[2] if dr else "Devam Ediyor"
 
+    # Deduplicate: Check if a series with same media_id OR matching title/slug is already in series_automations
+    norm_incoming = norm_title(dtitle)
+    cur.execute("SELECT media_id, title, slug FROM series_automations")
+    for ex_mid, ex_title, ex_slug in cur.fetchall():
+        if ex_mid == did or norm_title(ex_title) == norm_incoming or (dslug and ex_slug == dslug):
+            emit_log(f"[DEDUP] '{dtitle}' zaten seri otomasyonunda kayıtlı (#{ex_mid}). Tekrarlanan kayıt engellendi.")
+            did = ex_mid
+            dtitle = ex_title
+            dslug = ex_slug
+            break
+
     # Insert or update series_automations
     cur.execute("""
         INSERT INTO series_automations (
@@ -531,9 +571,9 @@ def add_and_bind_series(
     cur.execute("PRAGMA wal_checkpoint(TRUNCATE);")
     conn.close()
 
-    # Sync to Supabase series_automations
+    # Sync to Supabase series_automations with explicit on_conflict=media_id
     try:
-        sb_request("POST", "/rest/v1/series_automations", body={
+        sb_request("POST", "/rest/v1/series_automations?on_conflict=media_id", body={
             "media_id": did,
             "title": dtitle,
             "slug": dslug,

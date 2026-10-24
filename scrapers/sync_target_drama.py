@@ -72,6 +72,27 @@ def log(tag: str, msg: str):
     now = datetime.now().strftime("%H:%M:%S")
     print(f"[{now}] [{tag}] {msg}", flush=True)
 
+def _decode_response_content(content: bytes, text: str, url: str = "") -> str:
+    if not content:
+        return ""
+    # DDizi specifically serves windows-1254 (CP1254) Turkish content
+    if url and "ddizi" in url.lower():
+        try:
+            return content.decode("windows-1254")
+        except Exception:
+            pass
+    # If text has replacement character (\ufffd), attempt Turkish / Western decodings
+    if "\ufffd" in text:
+        for enc in ("windows-1254", "iso-8859-9", "utf-8"):
+            try:
+                decoded = content.decode(enc)
+                if "\ufffd" not in decoded:
+                    return decoded
+            except Exception:
+                pass
+    return text
+
+
 def fetch_html(url: str, referer: str = None, timeout: int = 15) -> str:
     h = dict(DEFAULT_HEADERS)
     if referer:
@@ -83,7 +104,7 @@ def fetch_html(url: str, referer: str = None, timeout: int = 15) -> str:
             s = cfr.Session(impersonate="chrome120")
             r = s.get(url, headers=h, timeout=timeout)
             if r.status_code == 200:
-                return r.text
+                return _decode_response_content(r.content, r.text, url)
         except Exception:
             pass
 
@@ -92,7 +113,7 @@ def fetch_html(url: str, referer: str = None, timeout: int = 15) -> str:
         s = requests.Session()
         r = s.get(url, headers=h, timeout=timeout)
         if r.status_code == 200:
-            return r.text
+            return _decode_response_content(r.content, r.text, url)
     except Exception:
         pass
 
@@ -100,7 +121,8 @@ def fetch_html(url: str, referer: str = None, timeout: int = 15) -> str:
     try:
         req = urllib.request.Request(url, headers=h)
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read().decode('utf-8', errors='replace')
+            raw_bytes = resp.read()
+            return _decode_response_content(raw_bytes, raw_bytes.decode('utf-8', errors='replace'), url)
     except Exception:
         return ""
 
@@ -474,6 +496,21 @@ def sync_dizibox_target(conn, cur, drama, target_url=None):
     if not detail_url and 'dizibox' in (d.get('source_url') or '').lower():
         detail_url = d['source_url']
 
+    if detail_url and ('-sezon-' in detail_url or '-bolum' in detail_url):
+        m_slug = re.match(r'https?://(?:www\.)?dizibox\.[^/]+/([^/]+?)-\d+-(?:sezon|bolum)', detail_url)
+        if m_slug:
+            detail_url = f"https://www.dizibox.live/diziler/{m_slug.group(1)}/"
+            log("DiziBOX", f"Bölüm URL'si ana dizi sayfasına çevrildi: {detail_url}")
+        else:
+            ep_h = fetch_html(detail_url, referer="https://www.dizibox.live/")
+            if ep_h:
+                soup_ep = BeautifulSoup(ep_h, 'html.parser')
+                for a in soup_ep.find_all('a', href=True):
+                    if '/diziler/' in a['href']:
+                        detail_url = a['href']
+                        log("DiziBOX", f"Bölüm sayfasından ana dizi sayfası çözümlendi: {detail_url}")
+                        break
+
     if not detail_url:
         for q in get_drama_search_queries(d)[:3]:
             cand_slug = re.sub(r'[^a-zA-Z0-9]+', '-', q).strip('-').lower()
@@ -746,6 +783,10 @@ def sync_dizikorea_target(conn, cur, drama, target_url=None):
     detail_url = target_url
     if not detail_url and 'dizikorea' in (d.get('source_url') or '').lower():
         detail_url = d['source_url']
+
+    if detail_url and ('/sezon-' in detail_url or '/bolum-' in detail_url):
+        detail_url = re.sub(r'/(?:sezon|bolum)[^/]*.*$', '', detail_url.rstrip('/'))
+        log("DiziKorea", f"Bölüm URL'si ana dizi sayfasına çevrildi: {detail_url}")
 
     if not detail_url:
         for q in get_drama_search_queries(d)[:3]:
@@ -1169,6 +1210,28 @@ def sync_dizifon_target(conn, cur, drama, target_url=None):
         if src_u not in candidate_series_urls:
             candidate_series_urls.append(src_u)
 
+    # Resolve any episode URLs to the official series page
+    resolved_candidates = []
+    for cand_u in candidate_series_urls:
+        if ('/bolum/' in cand_u or '-bolum' in cand_u) and '/dizi/' not in cand_u:
+            try:
+                ep_h = fetch_html(cand_u, referer=cand_u, timeout=10)
+                if ep_h:
+                    soup_ep = BeautifulSoup(ep_h, 'html.parser')
+                    found_s_link = None
+                    for a in soup_ep.find_all('a', href=True):
+                        if '/dizi/' in a['href']:
+                            found_s_link = a['href']
+                            break
+                    if found_s_link:
+                        log("DiziFon", f"Bölüm URL'si ana dizi sayfasına çevrildi: {found_s_link}")
+                        resolved_candidates.append(found_s_link)
+                        continue
+            except Exception:
+                pass
+        resolved_candidates.append(cand_u)
+    candidate_series_urls = list(dict.fromkeys(resolved_candidates))
+
     # Search dizifon.cc for the drama
     for q in get_drama_search_queries(d)[:3]:
         q_enc = urllib.parse.quote(q)
@@ -1348,6 +1411,19 @@ def sync_bldrama_target(conn, cur, drama, target_url=None):
     if not detail_url:
         log("BLDrama", "Uygun BLDrama sayfası bulunamadı.")
         return 0, 0
+
+    if detail_url and ('-bolum' in detail_url or '/bolum-' in detail_url) and '/dizi/' not in detail_url:
+        try:
+            ep_h = fetch_html(detail_url)
+            if ep_h:
+                soup_ep = BeautifulSoup(ep_h, 'html.parser')
+                for a in soup_ep.find_all('a', href=True):
+                    if '/dizi/' in a['href']:
+                        detail_url = a['href']
+                        log("BLDrama", f"Bölüm URL'si ana dizi sayfasına çevrildi: {detail_url}")
+                        break
+        except Exception:
+            pass
 
     try:
         detail_html = fetch_html(detail_url)
@@ -1714,6 +1790,19 @@ def sync_asyaanimeleri_target(conn, cur, drama, target_url=None):
     if not series_url and 'asyaanimeleri.top/series/' in (d.get('source_url') or ''):
         series_url = d['source_url']
 
+    if series_url and '/series/' not in series_url:
+        try:
+            ep_h = fetch_html(series_url, referer="https://asyaanimeleri.top/", timeout=8)
+            if ep_h:
+                soup_ep = BeautifulSoup(ep_h, 'html.parser')
+                for a in soup_ep.find_all('a', href=True):
+                    if '/series/' in a['href']:
+                        series_url = a['href']
+                        log("AsyaAnimeleri", f"Bölüm URL'si ana seri sayfasına çevrildi: {series_url}")
+                        break
+        except Exception:
+            pass
+
     if not series_url:
         for q in get_drama_search_queries(d)[:3]:
             cand_slug = re.sub(r'[^a-z0-9]+', '-', q.lower()).strip('-')
@@ -1833,42 +1922,72 @@ def sync_ddizi_target(conn, cur, drama, target_url=None):
         log("DDizi", "Uygun DDizi sayfası bulunamadı.")
         return 0, 0
 
+    # 4. If detail_url is an episode link (/izle/), resolve to the official series page (/diziler/)
+    if '/izle/' in detail_url:
+        log("DDizi", f"Bölüm URL'si tespit edildi, ana dizi sayfası çözümleniyor: {detail_url}")
+        ep_raw = fetch_html(detail_url, referer="https://www.ddizi.tel/")
+        if ep_raw:
+            ep_soup = BeautifulSoup(ep_raw, 'html.parser')
+            resolved_series_url = None
+            for a in ep_soup.find_all('a', href=True):
+                h = a['href']
+                t = (a.get_text(strip=True) + ' ' + a.get('title', '')).lower()
+                if '/diziler/' in h:
+                    if 'dizi sayfasina git' in t or score_drama_match(d, a.get_text(strip=True), h) >= 0.70:
+                        resolved_series_url = h if h.startswith('http') else f"https://www.ddizi.tel{h}"
+                        break
+            if resolved_series_url:
+                detail_url = resolved_series_url
+                log("DDizi", f"Ana dizi sayfası başarıyla çözümlendi: {detail_url}")
+                try:
+                    cur.execute("UPDATE dramas SET source_url = ?, updated_at = datetime('now') WHERE id = ?", (detail_url, d['id']))
+                    safe_commit(conn)
+                except Exception:
+                    pass
+
     detail_html = fetch_html(detail_url, referer="https://www.ddizi.tel/")
     if not detail_html:
         log("DDizi", f"Sayfa yüklenemedi: {detail_url}")
         return 0, 0
 
-    soup = BeautifulSoup(detail_html, 'html.parser')
+    # Dinamik Çoklu Sayfa Taraması (DDizi /sayfa-0, /sayfa-1, /sayfa-2, ... tüm bölümleri keşfeder)
+    clean_base = re.sub(r'/sayfa-\d+.*$', '', detail_url.rstrip('/'))
+    visited_pages = set()
+    to_visit = set([clean_base])
 
-    # Sayfalandırma (Bazı diziler 5-30 sayfaya yayılmıştır)
-    pages = set([detail_url])
-    m_base = re.search(r'/diziler/(\d+)/', detail_url)
-    dizi_pattern = m_base.group(0) if m_base else None
-
-    for a in soup.find_all('a', href=True):
-        h = a['href']
-        if '/sayfa-' in h or '/sayfa/' in h:
-            if not dizi_pattern or dizi_pattern in h:
-                full_p = h if h.startswith('http') else 'https://www.ddizi.tel' + h
-                pages.add(full_p)
-
+    # Sayfadaki mevcut sayfa numaralarını önceden topla
     found_nums = [int(n) for n in re.findall(r'/sayfa-(\d+)', detail_html)]
     if found_nums:
-        max_p = min(max(found_nums), 40)
-        clean_u = detail_url.rstrip('/')
-        for p_i in range(1, max_p + 1):
-            pages.add(f"{clean_u}/sayfa-{p_i}")
+        max_p = min(max(found_nums), 50)
+        for p_i in range(0, max_p + 1):
+            to_visit.add(f"{clean_base}/sayfa-{p_i}")
 
-    log("DDizi", f"{len(pages)} sayfa taranıyor...")
+    log("DDizi", f"DDizi çoklu sayfa ve eksik bölüm taraması başlatılıyor...")
 
     all_episodes = []
     seen_urls = set()
 
-    for p_url in sorted(list(pages)):
-        p_html = detail_html if p_url == detail_url else fetch_html(p_url, referer=detail_url)
+    while to_visit:
+        p_url = to_visit.pop()
+        if p_url in visited_pages:
+            continue
+        visited_pages.add(p_url)
+
+        p_html = detail_html if p_url == detail_url else fetch_html(p_url, referer=clean_base)
         if not p_html:
             continue
         p_soup = BeautifulSoup(p_html, 'html.parser')
+
+        # Yeni sayfa bağlantıları varsa kuyruğa ekle
+        for a in p_soup.find_all('a', href=True):
+            href = a['href']
+            if '/diziler/' in href and ('/sayfa-' in href or '/sayfa/' in href):
+                m_sub = re.search(r'/sayfa-(\d+)', href)
+                if m_sub:
+                    sub_p = f"{clean_base}/sayfa-{m_sub.group(1)}"
+                    if sub_p not in visited_pages:
+                        to_visit.add(sub_p)
+
         p_content = p_soup.find('div', class_='content_') or p_soup
         cards = p_content.find_all('div', class_='dizi-boxpost-cat')
         link_elements = [c.find('a', href=True) for c in cards] if cards else p_content.find_all('a', href=True)
@@ -1895,7 +2014,7 @@ def sync_ddizi_target(conn, cur, drama, target_url=None):
                 })
 
     all_episodes.sort(key=lambda x: (x['season'], x['number']))
-    log("DDizi", f"{len(all_episodes)} adet bölüm tespit edildi.")
+    log("DDizi", f"{len(visited_pages)} sayfa tarandı, toplam {len(all_episodes)} adet bölüm tespit edildi.")
 
     for ep in all_episodes:
         s_num = ep['season']
@@ -1918,20 +2037,32 @@ def sync_ddizi_target(conn, cur, drama, target_url=None):
             ep_html = fetch_html(ep_url, referer=detail_url)
             if ep_html:
                 is_ph = page_is_placeholder(ep_html)
-                # 1. Doğrudan YouTube embed / telif
-                yt_match = re.search(r'src=["\'](?:/player/telif/index\.php\?id=)?(https?://(?:www\.)?youtube\.com/watch\?v=[a-zA-Z0-9_\-]+|https?://youtu\.be/[a-zA-Z0-9_\-]+)["\']', ep_html)
-                if yt_match:
-                    raw_yt = yt_match.group(1)
-                    v_id_m = re.search(r'(?:v=|youtu\.be/)([a-zA-Z0-9_\-]+)', raw_yt)
-                    if v_id_m:
-                        embed_url = f"https://www.youtube.com/embed/{v_id_m.group(1)}?autoplay=1&enablejsapi=1"
-                        if add_source(cur, ep_id, 'YouTube HD', embed_url, 'youtube', 'ddizi'):
-                            sources_added += 1
-                            safe_commit(conn)
-                            log("DDizi", f"S{s_num}E{e_num} -> YouTube HD eklendi.")
-                            reconcile_episode(cur, ep_id, is_placeholder=False)
-                            safe_commit(conn)
-                            continue
+                # 1. Doğrudan YouTube embed / telif / player/youtube.php / og:video
+                yt_id = None
+                m_yt_php = re.search(r'youtube\.php\?id=([a-zA-Z0-9_\-]+)', ep_html)
+                if m_yt_php:
+                    yt_id = m_yt_php.group(1)
+                if not yt_id:
+                    m_og = re.search(r'og:video["\']\s*content=["\']https?://(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_\-]+)', ep_html)
+                    if m_og:
+                        yt_id = m_og.group(1)
+                if not yt_id:
+                    yt_match = re.search(r'src=["\'](?:/player/telif/index\.php\?id=)?(https?://(?:www\.)?youtube\.com/watch\?v=[a-zA-Z0-9_\-]+|https?://youtu\.be/[a-zA-Z0-9_\-]+)["\']', ep_html)
+                    if yt_match:
+                        raw_yt = yt_match.group(1)
+                        v_id_m = re.search(r'(?:v=|youtu\.be/)([a-zA-Z0-9_\-]+)', raw_yt)
+                        if v_id_m:
+                            yt_id = v_id_m.group(1)
+
+                if yt_id:
+                    embed_url = f"https://www.youtube.com/embed/{yt_id}?autoplay=1&enablejsapi=1"
+                    if add_source(cur, ep_id, 'YouTube HD', embed_url, 'youtube', 'ddizi'):
+                        sources_added += 1
+                        safe_commit(conn)
+                        log("DDizi", f"S{s_num}E{e_num} -> YouTube HD eklendi.")
+                        reconcile_episode(cur, ep_id, is_placeholder=False)
+                        safe_commit(conn)
+                        continue
 
                 # 2. DDizi Native JWPlayer (/player/oynat/{hash})
                 player_paths = re.findall(r'<iframe[^>]+src=["\'](/player/oynat/[a-zA-Z0-9]+)["\']', ep_html)

@@ -89,6 +89,25 @@ def log(tag: str, msg: str):
     print(line, flush=True)
 
 
+def _decode_response_content(content: bytes, text: str, url: str = "") -> str:
+    if not content:
+        return ""
+    if url and "ddizi" in url.lower():
+        try:
+            return content.decode("windows-1254")
+        except Exception:
+            pass
+    if "\ufffd" in text:
+        for enc in ("windows-1254", "iso-8859-9", "utf-8"):
+            try:
+                dec = content.decode(enc)
+                if "\ufffd" not in dec:
+                    return dec
+            except Exception:
+                pass
+    return text
+
+
 def fetch_url(url: str, headers: dict = None, timeout: int = 12) -> str:
     h = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -101,12 +120,13 @@ def fetch_url(url: str, headers: dict = None, timeout: int = 12) -> str:
         try:
             resp = cffi_requests.get(url, headers=h, impersonate="chrome", timeout=timeout)
             if resp.status_code == 200 and 'Just a moment...' not in resp.text:
-                return resp.text
+                return _decode_response_content(resp.content, resp.text, url)
         except Exception:
             pass
     req = urllib.request.Request(url, headers=h)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read().decode('utf-8', errors='replace')
+        raw_bytes = resp.read()
+        return _decode_response_content(raw_bytes, raw_bytes.decode('utf-8', errors='replace'), url)
 
 
 # =========================================================================
@@ -390,6 +410,22 @@ def scan_dizikorea(conn, cur, idx, limit=30, target=None):
 def scan_ddizi(conn, cur, idx, limit=30, target=None):
     log("BAŞLATILDI", "DDizi canlı tarama motoru devrede (https://www.ddizi.tel)...")
     headers = {'Referer': 'https://www.ddizi.tel/'}
+
+    if target:
+        log("HEDEF", f"DDizi hedef seri taraması: '{target}'")
+        from scrapers.sync_target_drama import sync_ddizi_target
+        match = find_in_index(idx, target)
+        if match:
+            did, dtitle, dslug = match
+            cur.execute("SELECT * FROM dramas WHERE id = ?", (did,))
+            dr = cur.fetchone()
+            if dr:
+                eps_added, srcs_added = sync_ddizi_target(conn, cur, dict(dr), target_url=target if target.startswith('http') else None)
+                sync_drama_bundle_and_counts(conn, cur, did)
+                safe_commit(conn)
+                return eps_added, []
+        return 0, []
+
     ep_links = []
 
     try:
@@ -433,6 +469,38 @@ def scan_ddizi(conn, cur, idx, limit=30, target=None):
             ep_id, _ = match_or_create_episode(cur, did, season_num, ep_num, clean_name, ep_url)
             ep_html = fetch_url(ep_url, headers=headers)
             is_ph = page_is_placeholder(ep_html)
+
+            # If drama's source_url is an episode URL or missing, resolve to full series page
+            try:
+                cur.execute("SELECT source_url FROM dramas WHERE id = ?", (did,))
+                cur_src = cur.fetchone()
+                if not cur_src or not cur_src[0] or '/izle/' in cur_src[0]:
+                    ep_soup = BeautifulSoup(ep_html, 'html.parser')
+                    for a_tag in ep_soup.find_all('a', href=True):
+                        h_dizi = a_tag['href']
+                        t_dizi = (a_tag.get_text(strip=True) + ' ' + a_tag.get('title', '')).lower()
+                        if '/diziler/' in h_dizi and ('dizi sayfasina git' in t_dizi or clean_title.lower() in t_dizi):
+                            full_dizi_u = h_dizi if h_dizi.startswith('http') else f"https://www.ddizi.tel{h_dizi}"
+                            cur.execute("UPDATE dramas SET source_url = ?, updated_at = datetime('now') WHERE id = ?", (full_dizi_u, did))
+                            safe_commit(conn)
+                            break
+            except Exception:
+                pass
+
+            # Automatic Gap Detection: If latest episode is > 1 and DB doesn't have all episodes, backfill!
+            try:
+                cur.execute("SELECT MIN(episode_number), MAX(episode_number), COUNT(*) FROM episodes WHERE drama_id = ?", (did,))
+                m_row = cur.fetchone()
+                if m_row and m_row[1] and (m_row[0] > 1 or (m_row[1] - m_row[0] + 1) > m_row[2]):
+                    log("BOŞLUK TESPİTİ", f"'{clean_title}' için eksik bölümler tespit edildi (Min: {m_row[0]}, Max: {m_row[1]}, Sayı: {m_row[2]}). Tam seri taranıyor...")
+                    from scrapers.sync_target_drama import sync_ddizi_target
+                    cur.execute("SELECT * FROM dramas WHERE id = ?", (did,))
+                    dr_full = cur.fetchone()
+                    if dr_full:
+                        sync_ddizi_target(conn, cur, dict(dr_full))
+            except Exception as e_gap:
+                log("BOŞLUK UYARISI", f"Boşluk taraması uyarısı: {e_gap}")
+
             # DDizi: Prioritize full player stream (/player/oynat/) over YouTube trailers
             m_p = re.search(r'<iframe[^>]+src=["\'](/player/oynat/[a-zA-Z0-9]+)["\']', ep_html)
             source_obj = None
@@ -452,12 +520,22 @@ def scan_ddizi(conn, cur, idx, limit=30, target=None):
                         yt_id = yt_thumb.group(1)
                         source_obj = ("YouTube HD", f"https://www.youtube.com/embed/{yt_id}?autoplay=1&enablejsapi=1", "youtube")
 
-            if not source_obj:
-                yt_match = re.search(r'src=["\'](?:/player/telif/index\.php\?id=)?(https?://(?:www\.)?youtube\.com/watch\?v=[a-zA-Z0-9_\-]+|https?://youtu\.be/[a-zA-Z0-9_\-]+)["\']', ep_html)
-                if yt_match and not is_fragman:
-                    raw_yt = yt_match.group(1)
-                    v_id = re.search(r'(?:v=|youtu\.be/)([a-zA-Z0-9_\-]+)', raw_yt).group(1)
+            if not source_obj and not is_fragman:
+                m_yt_php = re.search(r'youtube\.php\?id=([a-zA-Z0-9_\-]+)', ep_html)
+                if m_yt_php:
+                    v_id = m_yt_php.group(1)
                     source_obj = ("YouTube HD", f"https://www.youtube.com/embed/{v_id}?autoplay=1&enablejsapi=1", "youtube")
+                if not source_obj:
+                    m_og = re.search(r'og:video["\']\s*content=["\']https?://(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_\-]+)', ep_html)
+                    if m_og:
+                        v_id = m_og.group(1)
+                        source_obj = ("YouTube HD", f"https://www.youtube.com/embed/{v_id}?autoplay=1&enablejsapi=1", "youtube")
+                if not source_obj:
+                    yt_match = re.search(r'src=["\'](?:/player/telif/index\.php\?id=)?(https?://(?:www\.)?youtube\.com/watch\?v=[a-zA-Z0-9_\-]+|https?://youtu\.be/[a-zA-Z0-9_\-]+)["\']', ep_html)
+                    if yt_match:
+                        raw_yt = yt_match.group(1)
+                        v_id = re.search(r'(?:v=|youtu\.be/)([a-zA-Z0-9_\-]+)', raw_yt).group(1)
+                        source_obj = ("YouTube HD", f"https://www.youtube.com/embed/{v_id}?autoplay=1&enablejsapi=1", "youtube")
 
             if is_fragman and not source_obj:
                 is_ph = True

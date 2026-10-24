@@ -54,7 +54,26 @@ export async function GET(req: NextRequest) {
       .order('updated_at', { ascending: false });
 
     if (!error && supaRows && supaRows.length > 0) {
-      return NextResponse.json({ automations: supaRows });
+      // Deduplicate automations by media_id and normalized title
+      const seenMediaIds = new Set<number>();
+      const seenTitles = new Set<string>();
+      const deduped: any[] = [];
+
+      for (const row of supaRows) {
+        const mid = Number(row.media_id);
+        const normT = (row.title || '')
+          .toLowerCase()
+          .replace(/[^\p{L}\p{N}]/gu, '')
+          .trim();
+        if (seenMediaIds.has(mid) || (normT && seenTitles.has(normT))) {
+          continue;
+        }
+        seenMediaIds.add(mid);
+        if (normT) seenTitles.add(normT);
+        deduped.push(row);
+      }
+
+      return NextResponse.json({ automations: deduped });
     }
 
     // SQLite fallback
@@ -69,13 +88,31 @@ export async function GET(req: NextRequest) {
         ORDER BY is_active DESC, updated_at DESC
       `);
       const rows = stmt.all() as any[];
-      const mapped = rows.map((r) => ({
-        ...r,
-        is_active: Boolean(r.is_active),
-        connected_sites: typeof r.connected_sites === 'string' ? JSON.parse(r.connected_sites) : r.connected_sites,
-        site_slugs: typeof r.site_slugs === 'string' ? JSON.parse(r.site_slugs) : r.site_slugs,
-      }));
-      return NextResponse.json({ automations: mapped });
+      const seenMediaIds = new Set<number>();
+      const seenTitles = new Set<string>();
+      const deduped: any[] = [];
+
+      for (const r of rows) {
+        const mid = Number(r.media_id);
+        const normT = (r.title || '')
+          .toLowerCase()
+          .replace(/[^\p{L}\p{N}]/gu, '')
+          .trim();
+        if (seenMediaIds.has(mid) || (normT && seenTitles.has(normT))) {
+          continue;
+        }
+        seenMediaIds.add(mid);
+        if (normT) seenTitles.add(normT);
+
+        deduped.push({
+          ...r,
+          is_active: Boolean(r.is_active),
+          connected_sites: typeof r.connected_sites === 'string' ? JSON.parse(r.connected_sites) : r.connected_sites,
+          site_slugs: typeof r.site_slugs === 'string' ? JSON.parse(r.site_slugs) : r.site_slugs,
+        });
+      }
+
+      return NextResponse.json({ automations: deduped });
     }
 
     return NextResponse.json({ automations: [] });
