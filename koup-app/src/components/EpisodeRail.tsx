@@ -179,7 +179,7 @@ const EpisodeRailRow = memo(function EpisodeRailRow({
             <span>{formatViewCount(ep.views_count || 0)}</span>
           </span>
 
-          {epProg && (
+          {!epWatched && epProg && epProg.remainingMinutes > 0 && (
             <span className="inline-flex items-center gap-1 text-sky-300/80">
               <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
               <span>{epProg.remainingMinutes} dk</span>
@@ -188,7 +188,7 @@ const EpisodeRailRow = memo(function EpisodeRailRow({
         </div>
 
         {/* In-progress mini bar */}
-        {epProg && (
+        {!epWatched && epProg && (
           <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden mt-1 max-w-[120px]">
             <div
               style={{ width: `${epProg.percent}%` }}

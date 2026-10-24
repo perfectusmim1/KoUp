@@ -1835,12 +1835,12 @@ export default function SeriesDetailPage({
                           <span>{formatViewCount(ep.views_count || 0)}</span>
                         </span>
 
-                        {epProg.position > 15 && (
+                        {!epWatched && epProg.position > 15 && epProg.remainingMinutes > 0 && (
                           <div className="flex items-center gap-1.5 shrink-0">
                             <div className="w-12 h-1 bg-white/20 rounded-full overflow-hidden">
                               <div
                                 style={{ width: `${epProg.percent}%` }}
-                                className={`h-full ${epWatched ? 'bg-emerald-400/80' : 'bg-[#E50914]'}`}
+                                className="h-full bg-[#E50914]"
                               />
                             </div>
                             <span className="text-[9px] font-mono text-white/50 whitespace-nowrap">

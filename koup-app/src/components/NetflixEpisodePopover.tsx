@@ -110,17 +110,17 @@ const NetflixEpisodeRow = memo(function NetflixEpisodeRow({
   let epProgressPct = 0;
   let epRemainingLabel: string | null = null;
 
-  if (isCurrent) {
+  if (isEpWatched) {
+    epProgressPct = 100;
+    epRemainingLabel = null;
+  } else if (isCurrent) {
     const currentRatio = safeDuration > 0 ? effectiveTime / safeDuration : 0;
     epProgressPct = Math.min(100, Math.max(6, Math.round(currentRatio * 100)));
     const remMin = Math.max(1, Math.ceil((safeDuration - effectiveTime) / 60));
-    epRemainingLabel = `${remMin} dk kaldı`;
-  } else if (isEpWatched) {
-    epProgressPct = 100;
-    epRemainingLabel = 'İzlendi';
+    epRemainingLabel = remMin > 0 ? `${remMin} dk kaldı` : null;
   } else if (epSavedProg.percent > 0 || epSavedProg.position > 5) {
     epProgressPct = epSavedProg.percent;
-    epRemainingLabel = `${epSavedProg.remainingMinutes} dk kaldı`;
+    epRemainingLabel = epSavedProg.remainingMinutes > 0 ? `${epSavedProg.remainingMinutes} dk kaldı` : null;
   }
 
   const epSubtitle = cleanEpisodeName(
@@ -223,9 +223,9 @@ const NetflixEpisodeRow = memo(function NetflixEpisodeRow({
                 <Eye className="w-3 h-3 text-red-500 shrink-0" />
                 <span>{formatViewCount(ep.views_count || 0)}</span>
               </span>
-              {epRemainingLabel && (
-                <span className={isEpWatched ? 'text-emerald-400 font-semibold' : 'text-white/60'}>
-                  • {isEpWatched ? '✓ İzlendi' : `⏱ ${epRemainingLabel}`}
+              {!isEpWatched && epRemainingLabel && (
+                <span className="text-white/60">
+                  • ⏱ {epRemainingLabel}
                 </span>
               )}
             </div>
