@@ -1820,11 +1820,6 @@ export default function SeriesDetailPage({
                         >
                           {epTitle}
                         </div>
-                        {epWatched && (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 shrink-0 select-none">
-                            İzlendi
-                          </span>
-                        )}
                         {(ep.pending || ep.status === 'pending_source') && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0 select-none">
                             Yakında
