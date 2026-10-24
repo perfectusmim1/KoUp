@@ -3484,14 +3484,14 @@ export default function NetflixPlayer({
                  ================================================================ */
               <div
                 className={`netflix-hud-layer absolute inset-0 z-30 flex flex-col justify-between h-full overflow-hidden transition-colors duration-200 pointer-events-none will-change-[opacity] ${
-                  showOverlay ? 'bg-black/40' : 'bg-transparent'
+                  showOverlay ? 'bg-black/10' : 'bg-transparent'
                 }`}
               >
                 {/* 1. TOP BAR */}
                 <div
                   data-netflix-control="true"
                   onClick={(e) => e.stopPropagation()}
-                  className={`w-full px-3 sm:px-8 pt-2 sm:pt-6 pb-1 sm:pb-6 bg-gradient-to-b from-black/85 via-black/40 to-transparent flex items-center justify-between gap-2.5 sm:gap-4 shrink-0 transition-opacity duration-200 ${
+                  className={`w-full px-3 sm:px-8 pt-2 sm:pt-4 pb-2 sm:pb-4 bg-gradient-to-b from-black/75 via-black/20 to-transparent flex items-center justify-between gap-2.5 sm:gap-4 shrink-0 transition-opacity duration-200 ${
                     showOverlay ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
                   }`}
                 >
@@ -3874,7 +3874,7 @@ export default function NetflixPlayer({
                     isHoveringBottomControlsRef.current = false;
                     scheduleHideOverlay();
                   }}
-                  className={`w-full px-3 sm:px-8 pb-1.5 sm:pb-5 pt-1.5 sm:pt-6 bg-gradient-to-t from-black/80 via-black/40 to-transparent space-y-1 sm:space-y-2.5 shrink-0 transition-opacity duration-200 ${
+                  className={`w-full px-3 sm:px-8 pb-1.5 sm:pb-4 pt-1.5 sm:pt-4 bg-gradient-to-t from-black/75 via-black/20 to-transparent space-y-1 sm:space-y-2.5 shrink-0 transition-opacity duration-200 ${
                     showOverlay ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
                   }`}
                 >
@@ -4914,7 +4914,7 @@ export default function NetflixPlayer({
             {/* Netflix Top Bar in Fullscreen for Iframe Mode */}
             {isFullscreen && (
               <div
-                className={`netflix-hud-layer absolute top-0 left-0 right-0 z-40 px-6 py-4 bg-gradient-to-b from-black/90 via-black/40 to-transparent flex items-center justify-between gap-4 ${
+                className={`netflix-hud-layer absolute top-0 left-0 right-0 z-40 px-6 py-4 bg-gradient-to-b from-black/75 via-black/20 to-transparent flex items-center justify-between gap-4 ${
                   showOverlay ? 'opacity-100' : 'opacity-0 pointer-events-none'
                 }`}
               >
