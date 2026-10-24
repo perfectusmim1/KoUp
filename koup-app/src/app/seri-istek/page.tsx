@@ -110,7 +110,7 @@ const SOURCE_CONFIG: Record<
 };
 
 export default function SeriesRequestPage() {
-  const { user, openAuthModal } = useKoUp();
+  const { user, openAuthModal, triggerSound } = useKoUp();
 
   const [urlInput, setUrlInput] = useState('');
   const [userNote, setUserNote] = useState('');
@@ -702,44 +702,36 @@ export default function SeriesRequestPage() {
               </button>
             </div>
 
-            {/* Filter Pills */}
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
+            {/* Filter Pills with Fluid Spring Sliding Active Pill */}
+            <div className="flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 overflow-x-auto no-scrollbar">
               {[
                 {
                   id: 'all' as const,
                   label: 'Tümü',
                   count: counts.all,
-                  activeCls:
-                    'bg-gradient-to-r from-sky-500 to-blue-600 text-white font-extrabold shadow-lg shadow-sky-500/25 border-sky-400/40',
-                  inactiveCls:
-                    'bg-white/[0.04] text-white/80 hover:text-white hover:bg-white/[0.08] border-white/10',
+                  activeGlow:
+                    'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40',
                 },
                 {
                   id: 'pending' as const,
                   label: 'Bekliyor',
                   count: counts.pending,
-                  activeCls:
-                    'bg-gradient-to-r from-amber-500 to-orange-600 text-white font-extrabold shadow-lg shadow-amber-500/25 border-amber-400/40',
-                  inactiveCls:
-                    'bg-amber-500/10 text-amber-300 hover:text-white hover:bg-amber-500/20 border-amber-500/25',
+                  activeGlow:
+                    'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40',
                 },
                 {
                   id: 'approved' as const,
                   label: 'Onaylandı',
                   count: counts.approved,
-                  activeCls:
-                    'bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-extrabold shadow-lg shadow-emerald-500/25 border-emerald-400/40',
-                  inactiveCls:
-                    'bg-emerald-500/10 text-emerald-300 hover:text-white hover:bg-emerald-500/20 border-emerald-500/25',
+                  activeGlow:
+                    'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40',
                 },
                 {
                   id: 'rejected' as const,
                   label: 'Reddedildi',
                   count: counts.rejected,
-                  activeCls:
-                    'bg-gradient-to-r from-rose-500 to-red-600 text-white font-extrabold shadow-lg shadow-rose-500/25 border-rose-400/40',
-                  inactiveCls:
-                    'bg-rose-500/10 text-rose-300 hover:text-white hover:bg-rose-500/20 border-rose-500/25',
+                  activeGlow:
+                    'bg-gradient-to-r from-rose-500 to-red-600 shadow-[0_0_18px_rgba(244,63,94,0.45)] border border-rose-400/40',
                 },
               ].map((tab) => {
                 const active = statusFilter === tab.id;
@@ -747,15 +739,31 @@ export default function SeriesRequestPage() {
                   <button
                     key={tab.id}
                     type="button"
-                    onClick={() => setStatusFilter(tab.id)}
-                    className={`px-4 py-2 rounded-2xl text-xs font-bold border transition-all flex items-center gap-2 shrink-0 cursor-pointer active:scale-95 ${
-                      active ? tab.activeCls : tab.inactiveCls
+                    onClick={() => {
+                      triggerSound?.('click');
+                      setStatusFilter(tab.id);
+                    }}
+                    className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-colors duration-200 cursor-pointer select-none active:scale-95 ${
+                      active ? 'text-white font-extrabold' : 'text-white/70 hover:text-white'
                     }`}
                   >
-                    <span>{tab.label}</span>
+                    {active && (
+                      <motion.span
+                        layoutId="seri-istek-filter-active-pill"
+                        initial={false}
+                        transition={{
+                          type: 'spring',
+                          stiffness: 480,
+                          damping: 34,
+                          mass: 0.6,
+                        }}
+                        className={`absolute inset-0 rounded-xl ${tab.activeGlow} z-0`}
+                      />
+                    )}
+                    <span className="relative z-10">{tab.label}</span>
                     <span
-                      className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                        active ? 'bg-white/25 text-white' : 'bg-white/10 text-white'
+                      className={`relative z-10 px-1.5 py-0.2 rounded-full text-[10px] font-mono transition-colors ${
+                        active ? 'bg-white/25 text-white' : 'bg-white/10 text-white/75'
                       }`}
                     >
                       {tab.count}
