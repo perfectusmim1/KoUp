@@ -17,6 +17,7 @@ const FLAG_MAP: Record<string, string> = {
   GB: '/flags/gb.svg',
   HK: '/flags/hk.svg',
   PH: '/flags/ph.svg',
+  BR: '/flags/br.svg',
 };
 
 function CountryFlag({
@@ -69,6 +70,8 @@ function CountryFlag({
     normalizedCode = 'HK';
   } else if (raw.includes('PHILIP') || raw.includes('FILIP') || raw.includes('FİLİP')) {
     normalizedCode = 'PH';
+  } else if (raw.includes('BREZ') || raw.includes('BRAZ')) {
+    normalizedCode = 'BR';
   }
 
   const src =
