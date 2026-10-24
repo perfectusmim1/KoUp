@@ -4591,18 +4591,20 @@ export default function NetflixPlayer({
               {/* A. AUTHENTIC NETFLIX PLAYBACK SPEED POPOVER */}
               {activePanel === 'speed' && (() => {
                 const SPEED_RATES = [
+                  { value: 0.25, label: '0.25x' },
                   { value: 0.5, label: '0.5x' },
                   { value: 0.75, label: '0.75x' },
                   { value: 1, label: '1x (Normal)' },
                   { value: 1.25, label: '1.25x' },
                   { value: 1.5, label: '1.5x' },
+                  { value: 2, label: '2x' },
                 ];
 
                 const currentRate = playbackRate || 1;
                 let activeIndex = SPEED_RATES.findIndex((r) => r.value === currentRate);
                 if (activeIndex === -1) {
                   let minDiff = Infinity;
-                  let closestIdx = 2;
+                  let closestIdx = 3;
                   SPEED_RATES.forEach((r, idx) => {
                     const diff = Math.abs(r.value - currentRate);
                     if (diff < minDiff) {
@@ -4668,7 +4670,7 @@ export default function NetflixPlayer({
                     onClick={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
                     onPointerUp={(e) => e.stopPropagation()}
-                    className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 sm:top-auto sm:bottom-20 sm:left-6 md:left-8 sm:translate-x-0 sm:translate-y-0 z-50 w-[92vw] sm:w-[430px] max-w-[430px] p-3.5 sm:p-6 rounded-xl bg-[#222222] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.9)] select-none"
+                    className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 sm:top-auto sm:bottom-20 sm:left-6 md:left-8 sm:translate-x-0 sm:translate-y-0 z-50 w-[94vw] sm:w-[480px] max-w-[500px] p-3.5 sm:p-6 rounded-xl bg-[#222222] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.9)] select-none"
                   >
                     {/* Header: Title + Close Button */}
                     <div className="flex items-center justify-between mb-5 sm:mb-8">
@@ -4687,7 +4689,7 @@ export default function NetflixPlayer({
 
                     {/* Horizontal Segmented Track with Equal Spacing */}
                     <div
-                      className="relative mx-4 sm:mx-6 h-8 flex items-center cursor-pointer select-none touch-none mb-6"
+                      className="relative mx-3 sm:mx-6 h-8 flex items-center cursor-pointer select-none touch-none mb-6"
                       onPointerDown={handleTrackPointerDown}
                       onPointerMove={handleTrackPointerMove}
                       onPointerUp={handleTrackPointerUp}
@@ -4732,8 +4734,8 @@ export default function NetflixPlayer({
                             <span
                               className={`absolute top-7 whitespace-nowrap transition-colors duration-150 select-none ${
                                 isSelected
-                                  ? 'text-white font-bold text-xs sm:text-[14px]'
-                                  : 'text-[#a3a3a3] font-medium text-xs sm:text-[14px] group-hover:text-white'
+                                  ? 'text-white font-bold text-[11px] sm:text-xs md:text-[13px]'
+                                  : 'text-[#a3a3a3] font-medium text-[11px] sm:text-xs md:text-[13px] group-hover:text-white'
                               }`}
                             >
                               {item.label}
