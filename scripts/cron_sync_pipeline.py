@@ -719,12 +719,18 @@ def main():
                     sync_dizibox,
                     sync_animecix_calendar,
                     sync_asyaanimeleri_calendar,
+                    sync_anilist_airing_schedule,
+                    sync_tmdb_ongoing_series,
+                    cleanup_stale_calendar_entries,
                 )
                 sync_dizikorea()
                 sync_dizibox()
                 sync_animecix_calendar()
                 sync_asyaanimeleri_calendar()
-                record_log("[Takvim] Güncel yayın takvimi başarıyla eşitlendi.")
+                sync_anilist_airing_schedule()
+                sync_tmdb_ongoing_series()
+                cleanup_stale_calendar_entries()
+                record_log("[Takvim] Güncel yayın takvimi (DiziKorea, DiziBox, AnimeciX, AsyaAnimeleri, AniList, TMDB) başarıyla eşitlendi.")
             except Exception as e:
                 record_log(f"[Takvim] Hata: {e}")
 

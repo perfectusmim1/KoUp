@@ -8,6 +8,7 @@ import {
   Bell,
   Play,
   ShieldCheck,
+  Clock,
 } from 'lucide-react';
 import {
   supabase,
@@ -32,6 +33,10 @@ interface CalendarScheduleItem {
   source_url: string;
   media_id: number | null;
   media?: MediaItem | null;
+  air_days?: number[];
+  air_day_names?: string[];
+  days_until?: number;
+  countdown_label?: string;
 }
 
 const DAYS = [
@@ -341,10 +346,36 @@ export default function CalendarPage() {
                       {categoryBadge.label}
                     </span>
 
-                    {/* Day Badge - Replaced Episode Count as Requested */}
+                    {/* Countdown Badge - Top Right */}
+                    {item.countdown_label && (
+                      <span
+                        className={`absolute top-2.5 right-2.5 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border shadow-md flex items-center gap-1 ${
+                          item.days_until === 0
+                            ? 'bg-emerald-950/90 text-emerald-300 border-emerald-400/60'
+                            : item.days_until === 1
+                            ? 'bg-amber-950/90 text-amber-300 border-amber-400/60'
+                            : 'bg-black/85 text-sky-300 border-sky-400/50'
+                        }`}
+                      >
+                        <Clock className="w-2.5 h-2.5 shrink-0" />
+                        <span>
+                          {item.days_until === 0
+                            ? 'Bugün'
+                            : item.days_until === 1
+                            ? 'Yarın'
+                            : `${item.days_until} Gün Sonra`}
+                        </span>
+                      </span>
+                    )}
+
+                    {/* Day Badge - Shows All Weekly Broadcast Days */}
                     <span className="absolute bottom-2.5 left-2.5 right-2.5 text-[11px] font-mono font-bold px-2 py-1 rounded-xl bg-black/90 text-white border border-white/25 truncate text-center shadow-md flex items-center justify-center gap-1.5">
                       <Calendar className="w-3 h-3 text-sky-400 shrink-0" />
-                      <span>{dayLabel}</span>
+                      <span className="truncate">
+                        {item.air_day_names && item.air_day_names.length > 1
+                          ? item.air_day_names.join(' • ')
+                          : dayLabel}
+                      </span>
                     </span>
                   </Link>
 
@@ -352,9 +383,9 @@ export default function CalendarPage() {
                   <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
                     <div>
                       <div className="flex items-center justify-between text-[10px] font-mono text-white/50 mb-1">
-                        <span className="truncate max-w-[60%]">{cleanCat}</span>
-                        <span className="truncate ml-1 text-white/70">
-                          {dayLabel}
+                        <span className="truncate max-w-[55%]">{item.episode_label || cleanCat}</span>
+                        <span className="truncate ml-1 text-sky-300/90 font-semibold">
+                          {item.countdown_label || dayLabel}
                         </span>
                       </div>
 

@@ -1103,6 +1103,19 @@ export default function Navbar() {
                   </Link>
 
                   <Link
+                    href="/seri-istek"
+                    prefetch={true}
+                    onClick={() => {
+                      triggerSound('click');
+                      setProfileDropdownOpen(false);
+                    }}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/[0.10] transition-colors duration-100 ease-out"
+                  >
+                    <Sparkles className="w-4 h-4 text-sky-400" />
+                    <span>Seri İstek</span>
+                  </Link>
+
+                  <Link
                     href="/ayarlar"
                     prefetch={true}
                     onClick={() => {
@@ -1385,6 +1398,18 @@ export default function Navbar() {
                       >
                         <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500/20 shrink-0" />
                         <span className="truncate">Favorilerim</span>
+                      </Link>
+                      <Link
+                        href="/seri-istek"
+                        prefetch={true}
+                        onClick={() => {
+                          triggerSound('click');
+                          setMobileMenuOpen(false);
+                        }}
+                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                        <span className="truncate">Seri İstek</span>
                       </Link>
                       <Link
                         href="/ayarlar"

@@ -65,6 +65,7 @@ import AdminSeriesAutomation from '@/components/AdminSeriesAutomation';
 import AdminSeriesSync from '@/components/AdminSeriesSync';
 import AdminMaintenanceHub, { SystemHealthData, AdminJobRow } from '@/components/admin/AdminMaintenanceHub';
 import AdminSettingsAndAudit, { AuditLogRow } from '@/components/admin/AdminSettingsAndAudit';
+import AdminSeriesRequests from '@/components/admin/AdminSeriesRequests';
 
 type AdminTab =
   | 'overview'
@@ -72,6 +73,7 @@ type AdminTab =
   | 'series'
   | 'series_automation'
   | 'episodes'
+  | 'requests'
   | 'comments'
   | 'scrapers'
   | 'maintenance'
@@ -473,8 +475,19 @@ export default function AdminDashboardPage() {
   } = useKoUp();
 
   const [activeTab, setActiveTabState] = useState<AdminTab>('overview');
+  const [pendingSeriesRequestsCount, setPendingSeriesRequestsCount] = useState<number>(0);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [cmdPaletteQuery, setCmdPaletteQuery] = useState('');
+
+  useEffect(() => {
+    supabase
+      .from('series_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending')
+      .then(({ count }) => {
+        if (typeof count === 'number') setPendingSeriesRequestsCount(count);
+      });
+  }, []);
 
   // Sync activeTab with URL ?tab= query parameter & browser Back/Forward (B3)
   const setActiveTab = useCallback((nextTab: AdminTab) => {
@@ -494,6 +507,7 @@ export default function AdminDashboardPage() {
       'series',
       'series_automation',
       'episodes',
+      'requests',
       'comments',
       'scrapers',
       'maintenance',
@@ -2766,6 +2780,7 @@ export default function AdminDashboardPage() {
           { id: 'series', label: 'Seri & Medya', icon: Film, badge: stats.totalMedia, adminOnly: true },
           { id: 'series_automation', label: 'Seri Otomasyonu', icon: Workflow, adminOnly: true },
           { id: 'episodes', label: 'Bölümler & Kaynaklar', icon: Tv, adminOnly: true },
+          { id: 'requests', label: 'Seri İstekleri', icon: Sparkles, badge: pendingSeriesRequestsCount },
           { id: 'comments', label: 'Yorum Moderasyonu', icon: MessageSquare, badge: stats.totalComments },
           { id: 'scrapers', label: 'Scraper Botları & Cron', icon: Radio, adminOnly: true },
           { id: 'maintenance', label: 'Bakım & Sağlık', icon: Wrench, adminOnly: true },
@@ -4282,6 +4297,11 @@ export default function AdminDashboardPage() {
                               SPOILER
                             </span>
                           )}
+                          {(c as any).is_pinned && (
+                            <span className="px-2 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[10px] font-mono font-bold">
+                              SABİTLENDİ
+                            </span>
+                          )}
                           {isHidden && (
                             <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold">
                               GİZLENDİ
@@ -4332,6 +4352,40 @@ export default function AdminDashboardPage() {
                             Uyar
                           </button>
                         )}
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const nextPinned = !Boolean((c as any).is_pinned);
+                            const nextPinnedAt = nextPinned ? new Date().toISOString() : null;
+                            const { error } = await supabase
+                              .from('comments')
+                              .update({ is_pinned: nextPinned, pinned_at: nextPinnedAt })
+                              .eq('id', c.id);
+                            if (!error) {
+                              setCommentsList((prev) =>
+                                prev.map((item) =>
+                                  item.id === c.id
+                                    ? ({ ...item, is_pinned: nextPinned, pinned_at: nextPinnedAt } as any)
+                                    : item
+                                )
+                              );
+                              pushNotification(
+                                nextPinned ? 'Yorum Sabitlendi' : 'Sabitleme Kaldırıldı',
+                                nextPinned
+                                  ? 'Yorum ilgili sayfada en üste sabitlendi.'
+                                  : 'Yorum sabitlemesi kaldırıldı.',
+                                'success'
+                              );
+                            }
+                          }}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-colors ${
+                            (c as any).is_pinned
+                              ? 'bg-amber-400/20 text-amber-300 border border-amber-400/35 hover:bg-amber-400/30'
+                              : 'bg-white/10 text-white/80 hover:text-white hover:bg-white/15'
+                          }`}
+                        >
+                          {(c as any).is_pinned ? 'Sabitlemeyi Kaldır' : 'Sabitle'}
+                        </button>
                         <button
                           onClick={() => handleToggleSpoiler(c)}
                           className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-colors ${
@@ -5015,6 +5069,11 @@ export default function AdminDashboardPage() {
             </button>
           </form>
         </div>
+      )}
+
+      {/* ================= TAB: SERİ İSTEKLERİ ================= */}
+      {activeTab === 'requests' && (
+        <AdminSeriesRequests onPendingCountChange={setPendingSeriesRequestsCount} />
       )}
 
       {/* ================= TAB: SİTE AYARLARI & DENETİM KAYDI ================= */}
@@ -5977,6 +6036,7 @@ export default function AdminDashboardPage() {
                   { id: 'users', label: 'Kullanıcı & Üye Yönetimi', desc: 'E-posta ile üye ara, rol ata veya banla', tab: 'users' as AdminTab, adminOnly: false },
                   { id: 'series', label: 'Seri & Medya Kataloğu', desc: 'Yeni dizi/anime ekle, TMDB/AniList otomatik doldur', tab: 'series' as AdminTab, adminOnly: true },
                   { id: 'episodes', label: 'Bölümler & Video Kaynakları', desc: 'Kaynak ekle/sırala, canlı URL probe testi yap', tab: 'episodes' as AdminTab, adminOnly: true },
+                  { id: 'requests', label: 'Seri İstekleri', desc: 'Kullanıcıların AniList, TMDB, MDL ve IMDb seri isteklerini onayla/reddet', tab: 'requests' as AdminTab, adminOnly: false },
                   { id: 'series_automation', label: 'Seri Otomasyonu', desc: 'Çoklu kaynak eşleştirme ve otomatik bölüm takibi', tab: 'series_automation' as AdminTab, adminOnly: true },
                   { id: 'scrapers', label: 'Scraper Botları & Cron Merkezi', desc: 'Botları çalıştır, gerçek başarı oranlarını incele', tab: 'scrapers' as AdminTab, adminOnly: true },
                   { id: 'maintenance', label: 'Bakım & Tam Senkron Merkezi', desc: 'Auto-heal, mükerrer birleştirme, R2 & Supabase senkron', tab: 'maintenance' as AdminTab, adminOnly: true },

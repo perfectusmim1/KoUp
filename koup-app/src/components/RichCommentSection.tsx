@@ -25,6 +25,8 @@ import {
   Check,
   X,
   Lock,
+  Unlock,
+  Pin,
   ChevronDown,
   ShieldAlert,
   Search,
@@ -69,6 +71,8 @@ interface CommentRow {
   is_deleted?: boolean;
   status?: string;
   is_approved?: boolean;
+  is_pinned?: boolean;
+  pinned_at?: string | null;
   profiles?: CommentProfile | null;
 }
 
@@ -305,6 +309,61 @@ export default function RichCommentSection({
   const [isLoadingComments, setIsLoadingComments] = useState<boolean>(true);
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
 
+  const targetKey = useMemo(() => {
+    if (targetType === 'media') return `media:${mediaId || 0}`;
+    if (targetType === 'episode')
+      return `episode:${mediaId || 0}:${seasonNumber || 1}:${episodeNumber || 1}`;
+    if (targetType === 'person') return `person:${personId || 0}`;
+    if (targetType === 'magazine') return `magazine:${magazineId || 0}`;
+    return 'other:0';
+  }, [targetType, mediaId, seasonNumber, episodeNumber, personId, magazineId]);
+
+  const [isCommentsClosed, setIsCommentsClosed] = useState<boolean>(false);
+  const [isTogglingLock, setIsTogglingLock] = useState<boolean>(false);
+  const [pinningId, setPinningId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    async function fetchLockState() {
+      try {
+        const { data } = await supabase
+          .from('comment_locks')
+          .select('is_closed')
+          .eq('target_key', targetKey)
+          .maybeSingle();
+        if (active) {
+          setIsCommentsClosed(Boolean(data?.is_closed));
+        }
+      } catch {}
+    }
+    fetchLockState();
+
+    const channel = supabase
+      .channel(`comment-lock-${targetKey}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'comment_locks',
+          filter: `target_key=eq.${targetKey}`,
+        },
+        (payload: any) => {
+          if (payload?.new && typeof payload.new.is_closed === 'boolean') {
+            setIsCommentsClosed(payload.new.is_closed);
+          } else {
+            fetchLockState();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
+  }, [targetKey]);
+
   // Form State
   const [selectedColor, setSelectedColor] = useState('#FFFFFF');
   const [isBold, setIsBold] = useState(false);
@@ -513,6 +572,8 @@ export default function RichCommentSection({
             count: 'exact',
           })
           .eq('target_type', targetType)
+          .order('is_pinned', { ascending: false })
+          .order('pinned_at', { ascending: false, nullsFirst: false })
           .order('created_at', { ascending: false })
           .range((pageToLoad - 1) * PAGE_SIZE, pageToLoad * PAGE_SIZE - 1);
 
@@ -887,6 +948,14 @@ export default function RichCommentSection({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isCommentsClosed) {
+      pushNotification(
+        'Yorumlar Kapalı',
+        'Bu içerik için yorum gönderimi yönetici tarafından kapatılmıştır.',
+        'info'
+      );
+      return;
+    }
     if (!user) {
       openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
       return;
@@ -1070,7 +1139,8 @@ export default function RichCommentSection({
       return;
     }
 
-    const isAdmin = user.role === 'admin' || user.role === 'editor';
+    const isAdmin =
+      user.role === 'admin' || user.role === 'moderator' || user.role === 'editor';
     if (!isAdmin) {
       pushNotification(
         'Topluluk Kuralı',
@@ -1103,6 +1173,122 @@ export default function RichCommentSection({
       pushNotification('Yorum Silindi', 'Topluluk yorumunuz kaldırıldı.', 'info');
     } catch (err: any) {
       pushNotification('Hata', err?.message || 'İşlem gerçekleştirilemedi.', 'info');
+    }
+  };
+
+  const handleTogglePinComment = async (c: CommentRow) => {
+    if (
+      !user ||
+      !(user.role === 'admin' || user.role === 'moderator' || user.role === 'editor')
+    ) {
+      return;
+    }
+    if (pinningId === c.id) return;
+    setPinningId(c.id);
+
+    const nextPinned = !Boolean(c.is_pinned);
+    const nextPinnedAt = nextPinned ? new Date().toISOString() : null;
+
+    setComments((prev) =>
+      prev.map((item) =>
+        item.id === c.id
+          ? { ...item, is_pinned: nextPinned, pinned_at: nextPinnedAt }
+          : item
+      )
+    );
+
+    try {
+      const { error } = await supabase
+        .from('comments')
+        .update({ is_pinned: nextPinned, pinned_at: nextPinnedAt })
+        .eq('id', c.id);
+
+      if (error) {
+        setComments((prev) =>
+          prev.map((item) =>
+            item.id === c.id
+              ? { ...item, is_pinned: c.is_pinned, pinned_at: c.pinned_at }
+              : item
+          )
+        );
+        pushNotification(
+          'Sabitleme Hatası',
+          error.message || 'Yorum sabitlenemedi.',
+          'info'
+        );
+        return;
+      }
+
+      invalidateCache('comments');
+      pushNotification(
+        nextPinned ? 'Yorum Sabitlendi' : 'Sabitleme Kaldırıldı',
+        nextPinned
+          ? 'Yorum en üste sabitlendi.'
+          : 'Yorum sabitlemesi kaldırıldı.',
+        'success'
+      );
+    } catch (err: any) {
+      pushNotification('Hata', err?.message || 'İşlem gerçekleştirilemedi.', 'info');
+    } finally {
+      setPinningId(null);
+    }
+  };
+
+  const handleToggleCommentsLock = async () => {
+    if (
+      !user ||
+      !(user.role === 'admin' || user.role === 'moderator' || user.role === 'editor')
+    ) {
+      return;
+    }
+    if (isTogglingLock) return;
+    setIsTogglingLock(true);
+
+    const nextClosed = !isCommentsClosed;
+    try {
+      const { error } = await supabase.from('comment_locks').upsert(
+        {
+          target_key: targetKey,
+          target_type: targetType,
+          media_id: mediaId || null,
+          season_number: targetType === 'episode' ? seasonNumber || 1 : null,
+          episode_number: targetType === 'episode' ? episodeNumber || 1 : null,
+          person_id: personId || null,
+          magazine_id: magazineId || null,
+          target_title: targetTitle,
+          is_closed: nextClosed,
+          closed_by: user.id,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'target_key' }
+      );
+
+      if (error) {
+        pushNotification(
+          'Hata',
+          error.message || 'Yorum durumu güncellenemedi.',
+          'info'
+        );
+        return;
+      }
+
+      setIsCommentsClosed(nextClosed);
+      if (nextClosed) {
+        setReplyTo(null);
+        setInlineReplyId(null);
+      }
+
+      pushNotification(
+        nextClosed ? 'Yorumlar Kapatıldı' : 'Yorumlar Açıldı',
+        nextClosed
+          ? `"${targetTitle}" için yorum gönderimi tüm kullanıcılara kapatıldı.`
+          : `"${targetTitle}" için yorum gönderimi tekrar açıldı.`,
+        'info'
+      );
+    } catch (err: any) {
+      pushNotification('Hata', err?.message || 'İşlem gerçekleştirilemedi.', 'info');
+    } finally {
+      setIsTogglingLock(false);
     }
   };
 
@@ -1362,6 +1548,14 @@ export default function RichCommentSection({
   };
 
   const handleOpenInlineReply = (c: CommentRow) => {
+    if (isCommentsClosed) {
+      pushNotification(
+        'Yorumlar Kapalı',
+        'Bu içerik için yorum ve yanıt gönderimi kapatılmıştır.',
+        'info'
+      );
+      return;
+    }
     if (!user) {
       openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
       return;
@@ -1387,6 +1581,14 @@ export default function RichCommentSection({
   };
 
   const handleSubmitInlineReply = async (parentComment: CommentRow) => {
+    if (isCommentsClosed) {
+      pushNotification(
+        'Yorumlar Kapalı',
+        'Bu içerik için yorum ve yanıt gönderimi kapatılmıştır.',
+        'info'
+      );
+      return;
+    }
     if (!user) {
       openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
       return;
@@ -1519,6 +1721,20 @@ export default function RichCommentSection({
       }
     });
 
+    // Sort root comments so pinned comments always appear at the top
+    roots.sort((a, b) => {
+      const aPin = Boolean(a.is_pinned);
+      const bPin = Boolean(b.is_pinned);
+      if (aPin !== bPin) return aPin ? -1 : 1;
+      if (aPin && bPin) {
+        return (
+          new Date(b.pinned_at || b.created_at).getTime() -
+          new Date(a.pinned_at || a.created_at).getTime()
+        );
+      }
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+
     // Sort replies chronologically (oldest first) so conversational flow is natural
     Object.keys(repliesMap).forEach((rId) => {
       repliesMap[rId].sort(
@@ -1540,7 +1756,9 @@ export default function RichCommentSection({
       (c.is_approved !== undefined && c.is_approved === false);
 
     const isAuthor = Boolean(user?.id && c.user_id === user.id);
-    const isAdmin = Boolean(user?.role === 'admin' || user?.role === 'editor');
+    const isAdmin = Boolean(
+      user?.role === 'admin' || user?.role === 'moderator' || user?.role === 'editor'
+    );
 
     // If comment is moderated and viewer is neither owner nor admin, do not render
     if (isHiddenByModeration && !isAuthor && !isAdmin) {
@@ -1584,13 +1802,23 @@ export default function RichCommentSection({
         key={c.id}
         id={`comment-${c.id}`}
         className={`rounded-2xl border transition-[border-color,background-color] max-w-full overflow-hidden break-words ${
-          isReply
+          c.is_pinned
+            ? 'p-3.5 sm:p-5 bg-amber-500/[0.04] border-amber-400/35 hover:border-amber-400/50 shadow-[0_0_25px_rgba(245,158,11,0.08)]'
+            : isReply
             ? 'p-3 sm:p-4 bg-white/[0.02] border-white/[0.06] hover:border-white/[0.12]'
             : 'p-3.5 sm:p-5 bg-white/[0.03] border-white/[0.08] hover:border-white/[0.14]'
         } ${
           isHiddenByModeration ? 'bg-rose-950/20 border-rose-500/30' : ''
         }`}
       >
+        {/* Pinned Comment Badge */}
+        {c.is_pinned && (
+          <div className="flex items-center gap-1.5 px-3 py-1 mb-3 rounded-xl bg-amber-400/15 border border-amber-400/30 text-[11px] font-bold text-amber-300 w-fit">
+            <Pin className="w-3 h-3 fill-amber-400 text-amber-400 rotate-45 shrink-0" />
+            <span>Sabitlenen Yorum</span>
+          </div>
+        )}
+
         {/* Moderation Alert Banner for Owner/Admin */}
         {isHiddenByModeration && (
           <div className="flex items-center gap-1.5 px-3 py-1 mb-3 rounded-lg bg-rose-500/15 border border-rose-400/30 text-[11px] text-rose-300">
@@ -1799,14 +2027,16 @@ export default function RichCommentSection({
               </button>
 
               {/* Reply Button */}
-              <button
-                type="button"
-                onClick={() => handleOpenInlineReply(c)}
-                className="flex items-center gap-1 text-xs text-white/50 hover:text-white transition-colors cursor-pointer py-1 px-1.5 rounded-lg hover:bg-white/[0.04]"
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>Yanıt</span>
-              </button>
+              {!isCommentsClosed && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenInlineReply(c)}
+                  className="flex items-center gap-1 text-xs text-white/50 hover:text-white transition-colors cursor-pointer py-1 px-1.5 rounded-lg hover:bg-white/[0.04]"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>Yanıt</span>
+                </button>
+              )}
 
               {/* Custom Report Button (No window.prompt) */}
               <button
@@ -1829,6 +2059,28 @@ export default function RichCommentSection({
                 <Link2 className="w-3.5 h-3.5" />
               </button>
 
+              {/* Pin/Unpin Button (Admin/Moderator only, root comments) */}
+              {isAdmin && !isReply && (
+                <button
+                  type="button"
+                  disabled={pinningId === c.id}
+                  onClick={() => handleTogglePinComment(c)}
+                  className={`flex items-center gap-1 text-xs py-1 px-2 rounded-lg transition-colors cursor-pointer ${
+                    c.is_pinned
+                      ? 'bg-amber-400/20 text-amber-300 border border-amber-400/35 font-bold'
+                      : 'text-white/40 hover:text-amber-300 hover:bg-white/[0.04]'
+                  }`}
+                  title={c.is_pinned ? 'Sabitlemeyi Kaldır' : 'Yorumu En Üste Sabitle'}
+                >
+                  <Pin
+                    className={`w-3.5 h-3.5 ${
+                      c.is_pinned ? 'fill-amber-400 text-amber-400 rotate-45' : ''
+                    }`}
+                  />
+                  <span>{c.is_pinned ? 'Sabitlendi' : 'Sabitle'}</span>
+                </button>
+              )}
+
               {/* Delete Button (if author or admin) */}
               {canDelete && (
                 <button
@@ -1843,7 +2095,7 @@ export default function RichCommentSection({
             </div>
 
             {/* Inline Reply Box */}
-            {inlineReplyId === c.id && (
+            {!isCommentsClosed && inlineReplyId === c.id && (
               <div className="mt-3.5 pt-3 border-t border-white/[0.08] flex items-start gap-3">
                 {/* Current user's avatar */}
                 <div className="shrink-0 pt-0.5">
@@ -1923,13 +2175,45 @@ export default function RichCommentSection({
     <section className="mt-10 rounded-3xl apple-glass p-4 sm:p-8 border border-white/10 overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3 pb-5 mb-5 border-b border-white/10">
         <div>
-          <h3 className="text-lg sm:text-xl font-bold text-white">
+          <h3 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2.5">
             <span>Yorumlar ({totalCount})</span>
+            {isCommentsClosed && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-[11px] font-bold text-rose-300">
+                <Lock className="w-3 h-3" />
+                <span>Yorumlara Kapalı</span>
+              </span>
+            )}
           </h3>
           <p className="text-xs text-white/55 mt-0.5">
             {targetTitle} hakkında düşüncelerini, teorilerini ve sahne analizlerini paylaş.
           </p>
         </div>
+
+        {(user?.role === 'admin' ||
+          user?.role === 'moderator' ||
+          user?.role === 'editor') && (
+          <button
+            type="button"
+            disabled={isTogglingLock}
+            onClick={handleToggleCommentsLock}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold border transition-all cursor-pointer ${
+              isCommentsClosed
+                ? 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-500/30 text-emerald-300'
+                : 'bg-rose-500/15 hover:bg-rose-500/25 border-rose-500/30 text-rose-300'
+            }`}
+          >
+            {isTogglingLock ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : isCommentsClosed ? (
+              <Unlock className="w-3.5 h-3.5" />
+            ) : (
+              <Lock className="w-3.5 h-3.5" />
+            )}
+            <span>
+              {isCommentsClosed ? 'Yorumları Tekrar Aç' : 'Yorumları Kapat'}
+            </span>
+          </button>
+        )}
       </div>
 
       {/* KoUp Community Rules Warning Banner (Collapsible / Default Minimized) */}
@@ -1968,8 +2252,20 @@ export default function RichCommentSection({
         )}
       </div>
 
-      {/* REQUIRE AUTHENTICATION GATE */}
-      {!user ? (
+      {/* REQUIRE AUTHENTICATION OR LOCKED GATE */}
+      {isCommentsClosed ? (
+        <div className="rounded-2xl bg-rose-500/10 border border-rose-500/30 p-6 sm:p-8 text-center space-y-2.5 mb-8">
+          <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center mx-auto text-rose-400">
+            <Lock className="w-5 h-5" />
+          </div>
+          <h4 className="text-base font-bold text-white">
+            Bu Bölümde Yorumlar Kapatılmıştır
+          </h4>
+          <p className="text-xs text-white/65 max-w-md mx-auto leading-relaxed">
+            Bu içerik için yeni yorum ve yanıt gönderimi yönetici tarafından kapatılmıştır. Yorumlar tekrar açılana kadar kimse yorum gönderemez.
+          </p>
+        </div>
+      ) : !user ? (
         <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-6 sm:p-8 text-center space-y-4 mb-8">
           <div className="w-12 h-12 rounded-2xl bg-sky-500/10 border border-sky-400/25 flex items-center justify-center mx-auto text-sky-400">
             <Lock className="w-5 h-5" />

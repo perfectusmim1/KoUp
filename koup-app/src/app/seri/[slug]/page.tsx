@@ -27,6 +27,7 @@ import {
   ChevronRight,
   ListPlus,
   X,
+  Calendar,
 } from 'lucide-react';
 import { motion, LayoutGroup, AnimatePresence } from 'motion/react';
 import {
@@ -171,6 +172,21 @@ export default function SeriesDetailPage({
   const [seriesReportNote, setSeriesReportNote] = useState('');
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const [reportCooldownSec, setReportCooldownSec] = useState<number>(0);
+
+  const [seriesSchedule, setSeriesSchedule] = useState<{
+    supported: boolean;
+    air_days: number[];
+    air_day_names: string[];
+    air_time?: string;
+    next_air_day_of_week: number;
+    next_air_day_name: string;
+    days_until: number;
+    hours_until?: number | null;
+    countdown_label: string;
+    next_episode_label: string;
+    next_episode_number?: number | null;
+    next_episode_at?: string | null;
+  } | null>(null);
 
   // Issue report rate-limit cooldown tracker
   useEffect(() => {
@@ -644,6 +660,98 @@ export default function SeriesDetailPage({
         .catch(() => {});
     }
   }, [media?.id, media?.slug]);
+
+  // Fetch live broadcast calendar schedule & countdown for supported series
+  useEffect(() => {
+    if (!media || media.content_type === 'film' || media.content_type === 'movie') {
+      setSeriesSchedule(null);
+      return;
+    }
+
+    let cancelled = false;
+    const DAY_LABELS_TR: Record<number, string> = {
+      1: 'Pazartesi',
+      2: 'Salı',
+      3: 'Çarşamba',
+      4: 'Perşembe',
+      5: 'Cuma',
+      6: 'Cumartesi',
+      7: 'Pazar',
+    };
+
+    // Immediate client fallback if media already has air_days and is ongoing
+    const st = (media.status_broadcast || '').trim();
+    if (
+      st !== 'Final' &&
+      st !== 'Canceled' &&
+      st !== 'Tamamlandı' &&
+      Array.isArray((media as any).air_days) &&
+      (media as any).air_days.length > 0
+    ) {
+      const validDays: number[] = Array.from(
+        new Set<number>(((media as any).air_days as number[]).map(Number).filter((d) => d >= 1 && d <= 7))
+      ).sort((a, b) => a - b);
+      if (validDays.length > 0) {
+        const nowTr = new Date(Date.now() + 3 * 3600_000);
+        const jsDay = nowTr.getUTCDay();
+        const todayDow = jsDay === 0 ? 7 : jsDay;
+        let minDelta = 7;
+        let nextDow = validDays[0];
+        for (const d of validDays) {
+          const delta = (d - todayDow + 7) % 7;
+          if (delta < minDelta) {
+            minDelta = delta;
+            nextDow = d;
+          }
+        }
+        setSeriesSchedule((prev) =>
+          prev || {
+            supported: true,
+            air_days: validDays,
+            air_day_names: validDays.map((d) => DAY_LABELS_TR[d] || 'Pazartesi'),
+            next_air_day_of_week: nextDow,
+            next_air_day_name: DAY_LABELS_TR[nextDow] || 'Pazartesi',
+            days_until: minDelta,
+            countdown_label:
+              minDelta === 0
+                ? 'Bugün Yayınlanıyor'
+                : minDelta === 1
+                ? 'Yarın (1 Gün Sonra)'
+                : `${minDelta} Gün Sonra`,
+            next_episode_label:
+              (media as any).next_episode_number
+                ? `${(media as any).next_episode_number}. Bölüm`
+                : 'Yeni Bölüm',
+          }
+        );
+      }
+    }
+
+    cachedQuery(
+      `series_schedule_${media.id}`,
+      120_000,
+      async () => {
+        const r = await fetch(
+          `/api/takvim/live?mediaId=${media.id}&slug=${encodeURIComponent(media.slug)}`
+        );
+        if (!r.ok) return null;
+        return r.json();
+      }
+    )
+      .then((res) => {
+        if (cancelled) return;
+        if (res?.supported) {
+          setSeriesSchedule(res);
+        } else {
+          setSeriesSchedule(null);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [media?.id, media?.slug, media?.status_broadcast, media?.content_type]);
 
   if (isLoading && !media) {
     return (
@@ -1213,6 +1321,37 @@ export default function SeriesDetailPage({
                     </span>
                   );
                 })()}
+
+                {/* Broadcast Schedule & Next Episode Countdown Pill (Hero) */}
+                {!isFilm && seriesSchedule?.supported && (
+                  <Link
+                    href="/takvim"
+                    className="px-3.5 py-1 rounded-full bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/35 hover:border-sky-400/60 text-xs font-semibold text-sky-200 inline-flex items-center gap-1.5 transition-colors shadow-[0_0_15px_rgba(56,189,248,0.18)]"
+                    title="Yayın Takvimini Görüntüle"
+                  >
+                    <Calendar className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                    <span className="text-sky-300/85 font-normal">Yayın:</span>
+                    <span className="font-bold text-white">
+                      {seriesSchedule.air_day_names.join(' & ')}
+                    </span>
+                    <span className="text-sky-400/60">•</span>
+                    <span
+                      className={`font-mono font-bold ${
+                        seriesSchedule.days_until === 0
+                          ? 'text-emerald-300'
+                          : seriesSchedule.days_until === 1
+                          ? 'text-amber-300'
+                          : 'text-sky-300'
+                      }`}
+                    >
+                      {seriesSchedule.days_until === 0
+                        ? 'Bugün Yeni Bölüm'
+                        : seriesSchedule.days_until === 1
+                        ? 'Yarın (1 Gün Sonra)'
+                        : `${seriesSchedule.days_until} Gün Sonra`}
+                    </span>
+                  </Link>
+                )}
               </div>
 
               {/* Categories (Tekilleştirilmiş & Eşsiz Anahtarlı) */}
@@ -1791,6 +1930,94 @@ export default function SeriesDetailPage({
         {/* 4. FULL EPISODES GRID (Series only, hidden for films) */}
         {!isFilm && (
           <section className="p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08] relative z-20 overflow-visible">
+          {/* Broadcast Calendar & Next Episode Countdown Banner */}
+          {seriesSchedule?.supported && (
+            <div className="mb-6 rounded-2xl bg-gradient-to-r from-sky-500/[0.10] via-white/[0.03] to-emerald-500/[0.08] border border-sky-400/25 p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-[0_10px_30px_rgba(0,0,0,0.45)]">
+              <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                <div className="w-11 h-11 rounded-2xl bg-sky-500/20 border border-sky-400/35 flex items-center justify-center shrink-0 text-sky-400 shadow-[0_0_20px_rgba(56,189,248,0.25)]">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm sm:text-base font-extrabold text-white tracking-tight">
+                      Yayın Takvimi & Sıradaki Bölüm
+                    </span>
+                    {seriesSchedule.next_episode_label && (
+                      <span className="px-2.5 py-0.5 rounded-full bg-white/10 border border-white/15 text-[11px] font-mono font-bold text-sky-300">
+                        Sıradaki: {seriesSchedule.next_episode_label}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs sm:text-sm text-white/75">
+                    Yeni bölümler her hafta{' '}
+                    <strong className="text-sky-300 font-bold">
+                      {seriesSchedule.air_day_names.join(' ve ')}
+                    </strong>{' '}
+                    {seriesSchedule.air_day_names.length > 1 ? 'günleri' : 'günü'} yayınlanmaktadır.
+                  </p>
+                </div>
+              </div>
+
+              {/* 7-Day Weekly Strip + Countdown Pill */}
+              <div className="flex flex-wrap sm:flex-nowrap items-center justify-between lg:justify-end gap-3 shrink-0">
+                {/* 7-Day Visual Strip */}
+                <div className="grid grid-cols-7 gap-1 p-1 rounded-xl bg-black/50 border border-white/10 w-full sm:w-auto">
+                  {[
+                    { id: 1, short: 'PZT', full: 'Pazartesi' },
+                    { id: 2, short: 'SAL', full: 'Salı' },
+                    { id: 3, short: 'ÇAR', full: 'Çarşamba' },
+                    { id: 4, short: 'PER', full: 'Perşembe' },
+                    { id: 5, short: 'CUM', full: 'Cuma' },
+                    { id: 6, short: 'CMT', full: 'Cumartesi' },
+                    { id: 7, short: 'PAZ', full: 'Pazar' },
+                  ].map((d) => {
+                    const isAirDay = seriesSchedule.air_days.includes(d.id);
+                    const isNextDay = seriesSchedule.next_air_day_of_week === d.id;
+                    return (
+                      <div
+                        key={d.id}
+                        title={
+                          isAirDay
+                            ? `${d.full} — Yayın Günü`
+                            : d.full
+                        }
+                        className={`px-2 py-1.5 rounded-lg text-[10px] font-mono font-bold text-center transition-colors select-none ${
+                          isAirDay
+                            ? isNextDay
+                              ? 'bg-[#2997ff] text-white shadow-[0_0_12px_rgba(41,151,255,0.5)] border border-sky-300/60'
+                              : 'bg-sky-500/25 text-sky-200 border border-sky-400/40'
+                            : 'text-white/30 bg-white/[0.02]'
+                        }`}
+                      >
+                        {d.short}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Days Until Next Episode Badge */}
+                <div
+                  className={`w-full sm:w-auto px-4 py-2 rounded-xl border font-mono text-xs font-extrabold flex items-center justify-center gap-2 shrink-0 ${
+                    seriesSchedule.days_until === 0
+                      ? 'bg-emerald-500/20 border-emerald-400/45 text-emerald-300 shadow-[0_0_18px_rgba(16,185,129,0.25)]'
+                      : seriesSchedule.days_until === 1
+                      ? 'bg-amber-500/20 border-amber-400/45 text-amber-300 shadow-[0_0_18px_rgba(245,158,11,0.25)]'
+                      : 'bg-sky-500/20 border-sky-400/40 text-sky-200 shadow-[0_0_18px_rgba(56,189,248,0.2)]'
+                  }`}
+                >
+                  <Clock className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    {seriesSchedule.days_until === 0
+                      ? 'Sıradaki Bölüm: Bugün!'
+                      : seriesSchedule.days_until === 1
+                      ? 'Sıradaki Bölüm: Yarın (1 Gün Sonra)'
+                      : `Sıradaki Bölüm: ${seriesSchedule.days_until} Gün Sonra (${seriesSchedule.next_air_day_name})`}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div>
               <div className="flex flex-wrap items-center gap-3 relative z-30">
