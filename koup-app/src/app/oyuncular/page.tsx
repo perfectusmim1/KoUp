@@ -34,14 +34,14 @@ const PERSON_TABS = [
   },
   {
     id: 'actor',
-    label: 'Dizi & Sinema Oyuncuları (MDL)',
+    label: 'Dizi & Sinema Oyuncuları',
     icon: Clapperboard,
     activePillClass: 'bg-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.45)]',
     activeTextClass: 'text-black font-extrabold',
   },
   {
     id: 'character',
-    label: 'Anime Karakterleri (AniList)',
+    label: 'Anime Karakterleri',
     icon: UserCheck,
     activePillClass: 'bg-purple-500 shadow-[0_0_18px_rgba(168,85,247,0.45)]',
     activeTextClass: 'text-white font-extrabold',

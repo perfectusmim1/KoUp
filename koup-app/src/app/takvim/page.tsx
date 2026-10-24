@@ -192,7 +192,17 @@ export default function CalendarPage() {
                 }`}
               >
                 {active && (
-                  <span className="absolute inset-0 rounded-xl bg-sky-400 shadow-[0_0_20px_rgba(56,189,248,0.45)]" />
+                  <motion.span
+                    layoutId="takvim-day-pill"
+                    initial={false}
+                    transition={{
+                      type: 'spring',
+                      stiffness: 480,
+                      damping: 34,
+                      mass: 0.6,
+                    }}
+                    className="absolute inset-0 rounded-xl bg-sky-400 shadow-[0_0_20px_rgba(56,189,248,0.45)] z-0"
+                  />
                 )}
                 <span className="w-full text-center relative z-10 text-xs font-mono font-bold">
                   {d.short}

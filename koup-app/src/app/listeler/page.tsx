@@ -332,9 +332,27 @@ export default function PublicListsPage() {
         <div className="flex items-center gap-1.5 p-1 rounded-full glass-pill-dark border border-white/10 overflow-x-auto no-scrollbar shrink-0">
           {(
             [
-              { id: 'popular', label: 'En Popüler', icon: TrendingUp },
-              { id: 'items', label: 'En Çok İçerik', icon: Layers },
-              { id: 'newest', label: 'En Yeni', icon: Clock },
+              {
+                id: 'popular',
+                label: 'En Popüler',
+                icon: TrendingUp,
+                activePillClass: 'bg-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.45)]',
+                activeTextClass: 'text-black font-extrabold',
+              },
+              {
+                id: 'items',
+                label: 'En Çok İçerik',
+                icon: Layers,
+                activePillClass: 'bg-sky-400 shadow-[0_0_20px_rgba(56,189,248,0.45)]',
+                activeTextClass: 'text-black font-extrabold',
+              },
+              {
+                id: 'newest',
+                label: 'En Yeni',
+                icon: Clock,
+                activePillClass: 'bg-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.45)]',
+                activeTextClass: 'text-black font-extrabold',
+              },
             ] as const
           ).map((opt) => {
             const Icon = opt.icon;
@@ -348,7 +366,7 @@ export default function PublicListsPage() {
                   setCurrentPage(1);
                 }}
                 className={`relative shrink-0 flex items-center gap-2 px-4 sm:px-5 py-2 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors duration-200 select-none ${
-                  active ? 'text-black font-extrabold' : 'text-white/70 hover:text-white'
+                  active ? opt.activeTextClass : 'text-white/70 hover:text-white'
                 }`}
               >
                 {active && (
@@ -361,7 +379,7 @@ export default function PublicListsPage() {
                       damping: 34,
                       mass: 0.6,
                     }}
-                    className="absolute inset-0 rounded-full bg-white shadow-[0_0_20px_rgba(255,255,255,0.4)]"
+                    className={`absolute inset-0 rounded-full ${opt.activePillClass}`}
                   />
                 )}
                 <Icon className="w-3.5 h-3.5 relative z-10" />

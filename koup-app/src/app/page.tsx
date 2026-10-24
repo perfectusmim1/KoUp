@@ -102,7 +102,7 @@ const COUNTRY_OPTIONS: SelectOption[] = [
 let memoryHomeBundle: HomeDataBundle | null = null;
 
 const AWARD_BADGES = [
-  'MDL 9.0+ Seçkisi',
+  '9.0+ Başyapıt Seçkisi',
   'Kore Reyting Rekortmeni',
   'Eleştirmenlerin Favorisi',
   'Öne Çıkan Yapım',

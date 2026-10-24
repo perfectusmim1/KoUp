@@ -141,9 +141,24 @@ export default function WatchHistoryPage() {
       <div className="rounded-3xl bg-[#0f0f11] p-4 sm:p-5 border border-white/[0.08] flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
         <div className="flex items-center gap-2 overflow-x-auto py-1.5 -my-1.5 px-0.5 no-scrollbar">
           {[
-            { id: 'ALL' as const, label: `Tüm Geçmiş (${allHistoryItems.length})` },
-            { id: 'in_progress' as const, label: 'Kaldığım Yerden Devam Et' },
-            { id: 'completed' as const, label: 'Tamamlananlar' },
+            {
+              id: 'ALL' as const,
+              label: `Tüm Geçmiş (${allHistoryItems.length})`,
+              activePillClass: 'bg-white shadow-[0_0_18px_rgba(255,255,255,0.35)]',
+              activeTextClass: 'text-black font-extrabold',
+            },
+            {
+              id: 'in_progress' as const,
+              label: 'Kaldığım Yerden Devam Et',
+              activePillClass: 'bg-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.45)]',
+              activeTextClass: 'text-black font-extrabold',
+            },
+            {
+              id: 'completed' as const,
+              label: 'Tamamlananlar',
+              activePillClass: 'bg-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.45)]',
+              activeTextClass: 'text-black font-extrabold',
+            },
           ].map((flt) => {
             const active = filterType === flt.id;
             return (
@@ -154,9 +169,9 @@ export default function WatchHistoryPage() {
                   setFilterType(flt.id);
                   setCurrentPage(1);
                 }}
-                className={`relative px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors duration-200 cursor-pointer shrink-0 ${
+                className={`relative px-4 py-2 rounded-full text-xs font-semibold transition-colors duration-200 cursor-pointer shrink-0 select-none ${
                   active
-                    ? 'text-black'
+                    ? flt.activeTextClass
                     : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10'
                 }`}
               >
@@ -165,7 +180,7 @@ export default function WatchHistoryPage() {
                     layoutId="gecmis-filter-active-pill"
                     initial={false}
                     transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
-                    className="absolute inset-0 rounded-full bg-white shadow-md"
+                    className={`absolute inset-0 rounded-full ${flt.activePillClass}`}
                   />
                 )}
                 <span className="relative z-10">{flt.label}</span>

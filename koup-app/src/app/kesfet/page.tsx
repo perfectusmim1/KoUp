@@ -43,14 +43,14 @@ const CONTENT_TYPES = [
   },
   {
     id: 'dizi',
-    label: 'Diziler (K-Drama / C-Drama / Global)',
+    label: 'Diziler',
     icon: Tv,
     activePillClass: 'bg-sky-400 shadow-[0_0_20px_rgba(56,189,248,0.45)]',
     activeTextClass: 'text-black font-extrabold',
   },
   {
     id: 'anime',
-    label: 'Animeler (AniList)',
+    label: 'Animeler',
     icon: Sparkles,
     activePillClass: 'bg-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.45)]',
     activeTextClass: 'text-white font-extrabold',
