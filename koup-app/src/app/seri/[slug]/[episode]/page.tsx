@@ -200,7 +200,16 @@ export default function EpisodeWatchPage({
 
       const targetSlug = media?.slug || slug;
       const newUrl = `/seri/${targetSlug}/${e}?season=${targetSeason}`;
-      window.history.pushState(null, '', newUrl);
+      const curY = typeof window !== 'undefined' ? Math.round(window.scrollY) : 0;
+      const st = typeof window !== 'undefined' && window.history.state ? window.history.state : {};
+      window.history.pushState(
+        { ...st, __koup_keepScroll: true, __koup_scrollY: curY },
+        '',
+        newUrl
+      );
+      try {
+        sessionStorage.setItem(`koup_scroll_${newUrl}`, String(curY));
+      } catch {}
     },
     [media?.slug, slug, currentSeason, episodes]
   );
@@ -294,10 +303,6 @@ export default function EpisodeWatchPage({
     toggleEpisodeWatched(media, ep.episode_number);
   };
 
-  // Reset source selection on episode change
-  useEffect(() => {
-    setSelectedSourceIdx(0);
-  }, [activeEpNum]);
 
   // 1. Fetch series media item and episodes list only when series slug changes (prevents redundant fetches and DOM unmounting on episode clicks)
   useEffect(() => {

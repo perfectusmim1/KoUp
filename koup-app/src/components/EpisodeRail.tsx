@@ -286,12 +286,26 @@ function EpisodeRailComponent({
     [watchedEpisodes]
   );
 
-  // Auto-scroll cleanly to active episode when episode or season changes (smooth, zero layout jitter)
+  // Auto-scroll cleanly to active episode inside rail container without affecting window scroll
   useEffect(() => {
-    if (!railListRef.current) return;
-    const activeEl = railListRef.current.querySelector<HTMLElement>('[data-active="true"]');
-    if (activeEl) {
-      activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    const container = railListRef.current;
+    if (!container) return;
+    const activeEl = container.querySelector<HTMLElement>('[data-active="true"]');
+    if (!activeEl) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const activeRect = activeEl.getBoundingClientRect();
+
+    const isAbove = activeRect.top < containerRect.top + 8;
+    const isBelow = activeRect.bottom > containerRect.bottom - 8;
+
+    if (isAbove || isBelow) {
+      const currentRelativeTop = activeRect.top - containerRect.top + container.scrollTop;
+      const targetScroll = currentRelativeTop - container.clientHeight / 2 + activeEl.clientHeight / 2;
+      container.scrollTo({
+        top: Math.max(0, targetScroll),
+        behavior: 'smooth',
+      });
     }
   }, [currentEpNum, currentSeason]);
 

@@ -47,6 +47,7 @@ function ScrollRestorationInner() {
     // Intercept pushState
     const origPushState = window.history.pushState;
     window.history.pushState = function (...args) {
+      const stateObj = (args[0] && typeof args[0] === 'object' ? args[0] : {}) as any;
       const oldKey = window.location.pathname + window.location.search;
       const oldY = Math.round(window.scrollY);
       if (oldY > 0) {
@@ -56,7 +57,9 @@ function ScrollRestorationInner() {
           window.history.replaceState({ ...st, __koup_scrollY: oldY }, '');
         } catch {}
       }
-      isNavigatingRef.current = true;
+      if (!stateObj?.__koup_keepScroll) {
+        isNavigatingRef.current = true;
+      }
       return origPushState.apply(this, args);
     };
 
@@ -157,6 +160,34 @@ function ScrollRestorationInner() {
         const raw = sessionStorage.getItem(storageKey);
         if (raw !== null) savedY = parseInt(raw, 10) || 0;
       } catch {}
+    }
+
+    // Detect in-series episode switching (e.g. /seri/slug/1 -> /seri/slug/2) or explicit keepScroll
+    const isEpisodeSwitch = Boolean(
+      (typeof window !== 'undefined' && window.history.state?.__koup_keepScroll) ||
+      (prevKeyRef.current &&
+        currentKey &&
+        (() => {
+          const prevMatch = prevKeyRef.current.match(/^\/seri\/([^/?#]+)\/(\d+)/);
+          const currMatch = currentKey.match(/^\/seri\/([^/?#]+)\/(\d+)/);
+          return Boolean(prevMatch && currMatch && prevMatch[1] === currMatch[1]);
+        })())
+    );
+
+    // If switching episodes within the same series and not via browser popstate (back/forward),
+    // retain the current viewport scroll position and record it for this episode
+    if (isEpisodeSwitch && !isPopState) {
+      const curY = typeof window !== 'undefined' ? Math.round(window.scrollY) : 0;
+      if (curY > 0) {
+        lastScrollYRef.current = curY;
+        try {
+          sessionStorage.setItem(storageKey, String(curY));
+          const st = window.history.state || {};
+          window.history.replaceState({ ...st, __koup_scrollY: curY }, '');
+        } catch {}
+      }
+      isNavigatingRef.current = false;
+      return;
     }
 
     const shouldRestore = isPopState || (isFirstMount && savedY > 15);
