@@ -648,12 +648,12 @@ export default function EpisodeWatchPage({
     }
   }, [media?.title, activeEpNum]);
 
-  // Robust episode bounds checking
+  // Strict content_type checking: only true films/movies are films
   const isFilm = Boolean(
     media && (
       media.content_type === 'film' ||
       media.content_type === 'movie' ||
-      ((media.episode_count === 1 || episodes.length <= 1) && media.content_type !== 'dizi')
+      media.content_type === 'sinema'
     )
   );
   const isMovie = isFilm;
@@ -1035,8 +1035,12 @@ export default function EpisodeWatchPage({
                   })}
                 />
               </div>
-            ) : isLoading || episodes.length === 0 ? (
+            ) : isLoading ? (
               <span className="text-xs text-white/40 font-mono">Kaynak Hazırlanıyor...</span>
+            ) : episodes.length === 0 ? (
+              <span className="px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-mono font-medium">
+                Henüz Bölüm Eklenmedi
+              </span>
             ) : (currentEpObj?.pending || currentEpObj?.status === 'pending_source') ? (
               <span className="px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-mono font-medium">
                 Bölüm Yakında Eklenecek
@@ -1066,6 +1070,10 @@ export default function EpisodeWatchPage({
             {isFilm ? (
               <span className="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 font-mono text-xs font-bold tracking-wider">
                 FİLM
+              </span>
+            ) : episodes.length === 0 ? (
+              <span className="px-3 py-1 rounded-full bg-amber-500/15 border border-amber-400/30 text-amber-300 font-mono text-xs font-bold">
+                BÖLÜMLER YAKINDA
               </span>
             ) : (
               <span className="px-3 py-1 rounded-full bg-sky-500/15 border border-sky-400/30 text-sky-300 font-mono text-xs font-bold">
@@ -1141,37 +1149,61 @@ export default function EpisodeWatchPage({
           {/* LEFT: Video Player Area */}
           <div className="space-y-2.5 sm:space-y-3 min-w-0">
             <div ref={playerContainerRef} className="relative">
-              {/* Netflix Player */}
-              <NetflixPlayer
-                media={media}
-                episodes={episodes}
-                isLoadingEpisodes={isLoading || episodes.length === 0}
-                currentSeason={currentSeason}
-                currentEpisode={activeEpNum}
-                onSelectEpisode={handleSelectEpisode}
-                selectedSourceIdx={selectedSourceIdx}
-                onSelectSourceIdx={handleSelectSourceIdx}
-                ambientLightingEnabled={ambientLightingEnabled}
-                onToggleAmbientLighting={handleToggleAmbientLighting}
-                autoNextEnabled={autoNextEnabled}
-                onToggleAutoNext={handleToggleAutoNext}
-                hasRail={!isMovie}
-                initialSeekTime={(() => {
-                  const urlT = Number(searchParams.get('t')) || 0;
-                  if (urlT > 0) return urlT;
-                  if (!media?.id) return 0;
-                  const epProg = getEpisodeProgress(
-                    progressMap[media.id],
-                    media.id,
-                    currentSeason,
-                    activeEpNum
-                  );
-                  if (epProg.position > 15 && epProg.position < epProg.duration * 0.95) {
-                    return epProg.position;
-                  }
-                  return epProg.isWatched ? 0 : (epProg.position || 0);
-                })()}
-              />
+              {!isFilm && episodes.length === 0 ? (
+                <div className="aspect-video w-full rounded-2xl sm:rounded-3xl bg-[#0f0f12] border border-white/10 flex flex-col items-center justify-center p-6 text-center space-y-4 shadow-2xl">
+                  <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-amber-400">
+                    <Clock className="w-7 h-7" />
+                  </div>
+                  <div className="space-y-1.5 max-w-md">
+                    <h3 className="text-base sm:text-lg font-bold text-white">
+                      Bu Seri İçin Henüz Bölüm Yüklenmedi
+                    </h3>
+                    <p className="text-xs sm:text-sm text-white/55 leading-relaxed">
+                      "{cleanMediaTitle(media.title)}" serisine ait bölümler henüz eklenmemiştir. Yeni bölümler yayınlandığında burada listelenecektir.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
+                    <Link
+                      href={`/seri/${media.slug}`}
+                      className="px-5 py-2.5 rounded-full bg-white text-black font-bold text-xs hover:bg-white/90 transition-colors shadow-md cursor-pointer"
+                    >
+                      Seri Sayfasına Dön
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                /* Netflix Player */
+                <NetflixPlayer
+                  media={media}
+                  episodes={episodes}
+                  isLoadingEpisodes={isLoading || episodes.length === 0}
+                  currentSeason={currentSeason}
+                  currentEpisode={activeEpNum}
+                  onSelectEpisode={handleSelectEpisode}
+                  selectedSourceIdx={selectedSourceIdx}
+                  onSelectSourceIdx={handleSelectSourceIdx}
+                  ambientLightingEnabled={ambientLightingEnabled}
+                  onToggleAmbientLighting={handleToggleAmbientLighting}
+                  autoNextEnabled={autoNextEnabled}
+                  onToggleAutoNext={handleToggleAutoNext}
+                  hasRail={!isMovie}
+                  initialSeekTime={(() => {
+                    const urlT = Number(searchParams.get('t')) || 0;
+                    if (urlT > 0) return urlT;
+                    if (!media?.id) return 0;
+                    const epProg = getEpisodeProgress(
+                      progressMap[media.id],
+                      media.id,
+                      currentSeason,
+                      activeEpNum
+                    );
+                    if (epProg.position > 15 && epProg.position < epProg.duration * 0.95) {
+                      return epProg.position;
+                    }
+                    return epProg.isWatched ? 0 : (epProg.position || 0);
+                  })()}
+                />
+              )}
             </div>
 
             {/* Quick Navigation, Reactions & Report Under Player */}

@@ -1237,28 +1237,51 @@ export default function SeriesDetailPage({
               <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 w-full py-3 relative z-20 overflow-visible">
               {/* Primary Watch & Trailer Button Pair (Full-width row on mobile, compact on desktop) */}
               <div className="w-full sm:w-auto flex items-center gap-2 sm:gap-2.5 relative z-30">
-                {/* Primary Watch Button */}
-                <Link
-                  href={`/seri/${media.slug}/${resumeEp}?season=${resumeSeason}`}
-                  className="flex-1 sm:flex-initial sm:w-auto shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white font-bold text-xs transition-[background-color,transform] glow-blue active:scale-[0.98] cursor-pointer"
-                >
-                  <Play className="w-4 h-4 fill-white shrink-0" />
-                  <span className="truncate">
-                    {hasResumeProgress
-                      ? (isFilm ? 'Filme Devam Et' : `${resumeEp}. Bölümden Devam Et`)
-                      : (isFilm ? 'Filmi İzle' : '1. Bölümü İzle')}
-                  </span>
-                </Link>
+                {/* Primary Action Button (Watch / Trailer / Coming Soon) */}
+                {!isFilm && episodes.length === 0 ? (
+                  <>
+                    {media.trailer_url ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowTrailerModal(true)}
+                        className="flex-1 sm:flex-initial sm:w-auto shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white font-bold text-xs transition-[background-color,transform] glow-blue active:scale-[0.98] cursor-pointer"
+                      >
+                        <Film className="w-4 h-4 text-white shrink-0" />
+                        <span className="truncate">Fragmanı İzle</span>
+                      </button>
+                    ) : null}
 
-                {/* Fragmanı İzle */}
-                <button
-                  type="button"
-                  onClick={() => setShowTrailerModal(true)}
-                  className="flex-1 sm:flex-initial sm:w-auto shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 hover:border-sky-400/50 text-white font-bold text-xs transition-[background-color,border-color,box-shadow,transform] hover:shadow-[0_0_18px_rgba(56,189,248,0.3)] active:scale-[0.98] cursor-pointer"
-                >
-                  <Film className="w-4 h-4 text-sky-400 shrink-0" />
-                  <span className="truncate">Fragmanı İzle</span>
-                </button>
+                    <div className="flex-1 sm:flex-initial sm:w-auto shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 rounded-full bg-white/[0.08] border border-white/15 text-white/60 font-semibold text-xs cursor-default select-none">
+                      <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>Bölümler Yakında</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Primary Watch Button */}
+                    <Link
+                      href={`/seri/${media.slug}/${resumeEp}?season=${resumeSeason}`}
+                      className="flex-1 sm:flex-initial sm:w-auto shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full bg-[#2997ff] hover:bg-sky-400 text-white font-bold text-xs transition-[background-color,transform] glow-blue active:scale-[0.98] cursor-pointer"
+                    >
+                      <Play className="w-4 h-4 fill-white shrink-0" />
+                      <span className="truncate">
+                        {hasResumeProgress
+                          ? (isFilm ? 'Filme Devam Et' : `${resumeEp}. Bölümden Devam Et`)
+                          : (isFilm ? 'Filmi İzle' : '1. Bölümü İzle')}
+                      </span>
+                    </Link>
+
+                    {/* Fragmanı İzle */}
+                    <button
+                      type="button"
+                      onClick={() => setShowTrailerModal(true)}
+                      className="flex-1 sm:flex-initial sm:w-auto shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 hover:border-sky-400/50 text-white font-bold text-xs transition-[background-color,border-color,box-shadow,transform] hover:shadow-[0_0_18px_rgba(56,189,248,0.3)] active:scale-[0.98] cursor-pointer"
+                    >
+                      <Film className="w-4 h-4 text-sky-400 shrink-0" />
+                      <span className="truncate">Fragmanı İzle</span>
+                    </button>
+                  </>
+                )}
 
                 {/* Film İzlendi / Tamamlandı Toggle Button */}
                 {isFilm && (
