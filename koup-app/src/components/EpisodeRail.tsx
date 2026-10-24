@@ -2,16 +2,26 @@
 
 import React, { useState, useEffect, useRef, useMemo, memo } from 'react';
 import { Film, Play, Check, Eye } from 'lucide-react';
-import { MediaItem, EpisodeData, formatEpisodeTitle, getEpisodeProgress, UserMediaProgress, formatViewCount } from '@/lib/supabase';
+import {
+  MediaItem,
+  EpisodeData,
+  cleanEpisodeName,
+  getEpisodeProgress,
+  UserMediaProgress,
+  formatViewCount,
+  getProxiedImageUrl,
+} from '@/lib/supabase';
 import CustomSelect from '@/components/CustomSelect';
 
-const RAIL_ITEM_HEIGHT_NORMAL = 64;
-const RAIL_ITEM_HEIGHT_COMPACT = 52;
+const RAIL_ITEM_HEIGHT_NORMAL = 84;
+const RAIL_ITEM_HEIGHT_COMPACT = 70;
 
 interface EpisodeRailProps {
   mediaSlug: string;
   mediaTitle: string;
   mediaId: number;
+  mediaBackdrop?: string | null;
+  mediaCover?: string | null;
   episodes: EpisodeData[];
   currentSeason: number;
   currentEpNum: number;
@@ -33,6 +43,7 @@ interface EpisodeRailRowProps {
   cinemaLightsOff: boolean;
   currentSeason: number;
   mediaId: number;
+  thumbnailUrl: string;
   userProgress?: UserMediaProgress | null;
   onSelectEpisode: (epNum: number, seasonNum: number) => void;
   onToggleWatched: (ep: EpisodeData) => void;
@@ -45,15 +56,39 @@ const EpisodeRailRow = memo(function EpisodeRailRow({
   cinemaLightsOff,
   currentSeason,
   mediaId,
+  thumbnailUrl,
   userProgress,
   onSelectEpisode,
   onToggleWatched,
 }: EpisodeRailRowProps) {
-  const epTitle = formatEpisodeTitle(
-    ep.episode_name,
-    ep.season_number || currentSeason,
-    ep.episode_number
-  );
+  const cleanSubtitle = useMemo(() => {
+    if (!ep.episode_name) return null;
+    const cleaned = cleanEpisodeName(
+      ep.episode_name,
+      ep.season_number || currentSeason,
+      ep.episode_number
+    );
+    if (
+      !cleaned ||
+      cleaned === `${ep.episode_number}. Bölüm` ||
+      cleaned === `Bölüm ${ep.episode_number}` ||
+      cleaned === `${ep.season_number || currentSeason}. Sezon ${ep.episode_number}. Bölüm`
+    ) {
+      return null;
+    }
+    return cleaned;
+  }, [ep.episode_name, ep.season_number, ep.episode_number, currentSeason]);
+
+  const epProg = useMemo(() => {
+    if (epWatched) return null;
+    const p = getEpisodeProgress(
+      userProgress,
+      mediaId,
+      ep.season_number || currentSeason,
+      ep.episode_number
+    );
+    return p && p.position > 15 ? p : null;
+  }, [userProgress, mediaId, ep.season_number, ep.episode_number, currentSeason, epWatched]);
 
   return (
     <div
@@ -65,114 +100,122 @@ const EpisodeRailRow = memo(function EpisodeRailRow({
           );
         }
       }}
-      aria-label={epTitle}
-      title={`${epTitle}${epWatched ? ' (İzlendi)' : ''}`}
+      aria-label={`${ep.episode_number}. Bölüm`}
+      title={`${ep.episode_number}. Bölüm${cleanSubtitle ? ` - ${cleanSubtitle}` : ''}`}
       style={{ contain: 'content' }}
-      className={`rounded-2xl border transition-colors duration-150 cursor-pointer flex items-center justify-between group select-none ${
-        cinemaLightsOff ? 'p-2 gap-2' : 'p-2.5 sm:p-3 gap-3'
-      } ${
+      className={`relative rounded-2xl border transition-all duration-200 cursor-pointer flex items-center gap-2.5 sm:gap-3 p-2 sm:p-2.5 group select-none ${
         isPlayingThis
-          ? epWatched
-            ? 'bg-emerald-500/15 border-emerald-400/60 shadow-[0_0_12px_rgba(16,185,129,0.28)]'
-            : 'bg-sky-500/15 border-sky-400/60 shadow-[0_0_12px_rgba(41,151,255,0.28)]'
+          ? 'bg-sky-500/[0.12] border-sky-400/60 shadow-[0_0_18px_rgba(41,151,255,0.22)] ring-1 ring-sky-400/30'
           : epWatched
-          ? 'bg-emerald-500/[0.05] hover:bg-emerald-500/[0.09] border-emerald-500/35 hover:border-emerald-400/65 shadow-[0_0_8px_rgba(16,185,129,0.12)] hover:shadow-[0_0_14px_rgba(16,185,129,0.22)]'
-          : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/[0.06] hover:border-sky-400/60 hover:shadow-[0_0_12px_rgba(56,189,248,0.18)]'
+          ? 'bg-emerald-500/[0.04] hover:bg-emerald-500/[0.08] border-emerald-500/25 hover:border-emerald-400/50'
+          : 'bg-white/[0.025] hover:bg-white/[0.06] border-white/[0.06] hover:border-white/15'
       }`}
     >
-      {/* Left: Number (& Title only when NOT in Sinema Modu on desktop) */}
+      {/* 16:9 Thumbnail Image */}
       <div
-        className={`flex items-center gap-2 sm:gap-2.5 min-w-0 ${
-          cinemaLightsOff ? 'shrink-0' : ''
-        }`}
+        className={`relative ${
+          cinemaLightsOff ? 'w-20 sm:w-22' : 'w-24 sm:w-28'
+        } aspect-video shrink-0 rounded-xl overflow-hidden bg-[#16161d] border border-white/10 group-hover:border-white/20 transition-colors shadow-xs`}
       >
-        <div
-          className={`rounded-xl flex items-center justify-center font-mono font-bold text-xs shrink-0 border transition-colors ${
-            cinemaLightsOff
-              ? 'min-w-[32px] w-8 h-8 text-[11px]'
-              : 'min-w-[36px] w-9 h-9'
-          } ${
-            isPlayingThis
-              ? epWatched
-                ? 'bg-emerald-500 border-emerald-400 text-white shadow-[0_0_10px_rgba(16,185,129,0.4)]'
-                : 'bg-[#2997ff] border-sky-400 text-white shadow-[0_0_10px_rgba(41,151,255,0.4)]'
-              : epWatched
-              ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
-              : 'bg-white/10 border-white/10 text-white/90'
+        <img
+          src={thumbnailUrl}
+          alt=""
+          loading="lazy"
+          className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 ${
+            epWatched && !isPlayingThis ? 'opacity-70 saturate-75' : ''
           }`}
-        >
-          {isPlayingThis ? (
-            <Play className="w-3.5 h-3.5 fill-white ml-0.5" />
-          ) : (
-            ep.episode_number
+          onError={(e) => {
+            const target = e.currentTarget;
+            if (!target.dataset.failed) {
+              target.dataset.failed = 'true';
+              target.src = '/logo-dark.png';
+            }
+          }}
+        />
+        {/* Subtle ambient gradient overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+
+        {/* If Playing: Vibrant Play Badge */}
+        {isPlayingThis && (
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex items-center justify-center">
+            <div className="w-7 h-7 rounded-full bg-sky-400 text-black flex items-center justify-center shadow-[0_0_12px_rgba(56,189,248,0.6)]">
+              <Play className="w-3.5 h-3.5 fill-black ml-0.5" />
+            </div>
+          </div>
+        )}
+
+        {/* If Watched: Discreet Emerald Check badge in top-left */}
+        {epWatched && (
+          <div className="absolute top-1 left-1 w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-md">
+            <Check className="w-2.5 h-2.5 stroke-[3]" />
+          </div>
+        )}
+
+        {/* Episode Number badge bottom-right of thumbnail */}
+        <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-black/80 text-white/90 backdrop-blur-xs border border-white/10 leading-none">
+          B{ep.episode_number}
+        </span>
+      </div>
+
+      {/* Middle: Title, Subtitle, Views & Progress */}
+      <div className="min-w-0 flex-1 flex flex-col justify-center gap-0.5">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span
+            className={`text-xs sm:text-[13px] font-bold truncate transition-colors ${
+              isPlayingThis
+                ? 'text-sky-300 font-extrabold'
+                : epWatched
+                ? 'text-white/80 group-hover:text-white'
+                : 'text-white group-hover:text-white'
+            }`}
+          >
+            {ep.episode_number}. Bölüm
+          </span>
+
+          {(ep.pending || ep.status === 'pending_source') && (
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0">
+              Yakında
+            </span>
           )}
         </div>
 
-        <div
-          className={
-            cinemaLightsOff ? 'min-w-0 lg:hidden' : 'min-w-0'
-          }
-        >
-          <div
-            className={`text-xs font-bold truncate transition-colors flex items-center gap-1.5 ${
-              isPlayingThis
-                ? epWatched
-                  ? 'text-emerald-300'
-                  : 'text-sky-300'
-                : epWatched
-                ? 'text-white group-hover:text-emerald-300'
-                : 'text-white group-hover:text-sky-200'
-            }`}
+        {/* Secondary title if distinct from episode number */}
+        {cleanSubtitle && (
+          <p className="text-[11px] text-white/45 truncate leading-tight">
+            {cleanSubtitle}
+          </p>
+        )}
+
+        {/* Görüntülenme Sayısı (Views) & Watch Progress */}
+        <div className="flex items-center gap-2 text-[10px] font-mono text-white/50 mt-0.5">
+          <span
+            className="inline-flex items-center gap-1 text-white/55"
+            title="Bölüm Görüntülenme Sayısı"
           >
-            <span className="truncate">{epTitle}</span>
-            <span
-              className="inline-flex items-center gap-0.5 text-[10px] font-mono font-normal text-white/45 shrink-0 ml-0.5"
-              title="Bölüm Görüntülenme Sayısı"
-            >
-              <Eye className="w-3 h-3 text-sky-400/80 shrink-0" />
-              <span>{formatViewCount(ep.views_count || 0)}</span>
+            <Eye className="w-3 h-3 text-sky-400/80 shrink-0" />
+            <span>{formatViewCount(ep.views_count || 0)}</span>
+          </span>
+
+          {epProg && (
+            <span className="inline-flex items-center gap-1 text-sky-300/80">
+              <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+              <span>{epProg.remainingMinutes} dk</span>
             </span>
-            {(ep.pending || ep.status === 'pending_source') && (
-              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0">
-                Yakında
-              </span>
-            )}
-          </div>
-          {(() => {
-            if (epWatched) {
-              return (
-                <div className="mt-0.5 flex items-center flex-wrap gap-2 text-[10px] font-mono">
-                  <span className="text-emerald-400 font-medium">• İzlendi</span>
-                </div>
-              );
-            }
-            const epProg = getEpisodeProgress(
-              userProgress,
-              mediaId,
-              ep.season_number || currentSeason,
-              ep.episode_number
-            );
-            if (epProg.position > 15) {
-              return (
-                <div className="mt-0.5 flex items-center gap-1.5 text-[10px] font-mono">
-                  <div className="w-12 h-1 bg-white/20 rounded-full overflow-hidden">
-                    <div
-                      style={{ width: `${epProg.percent}%` }}
-                      className="h-full bg-sky-400"
-                    />
-                  </div>
-                  <span className="text-[9px] font-mono text-white/50">
-                    {epProg.remainingMinutes} dk kaldı
-                  </span>
-                </div>
-              );
-            }
-            return null;
-          })()}
+          )}
         </div>
+
+        {/* In-progress mini bar */}
+        {epProg && (
+          <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden mt-1 max-w-[120px]">
+            <div
+              style={{ width: `${epProg.percent}%` }}
+              className="h-full bg-sky-400 rounded-full"
+            />
+          </div>
+        )}
       </div>
 
-      {/* Right: Custom Watched Toggle Switch */}
+      {/* Right: Custom Watched Toggle Switch (Okundu / İzlendi İşaretleme) */}
       <div
         onClick={(e) => {
           e.stopPropagation();
@@ -183,22 +226,27 @@ const EpisodeRailRow = memo(function EpisodeRailRow({
             ? 'İzlendi (Kaldırmak için tıkla)'
             : 'İzlendi olarak işaretle'
         }
-        className="shrink-0 flex items-center ml-auto"
+        title={
+          epWatched
+            ? 'İzlendi (Kaldırmak için tıkla)'
+            : 'İzlendi olarak işaretle'
+        }
+        className="shrink-0 flex items-center pl-1"
       >
         <div
-          className={`relative rounded-full transition-colors duration-150 cursor-pointer flex items-center px-0.5 border ${
-            cinemaLightsOff ? 'w-9 h-5' : 'w-11 h-6'
+          className={`relative rounded-full transition-all duration-200 cursor-pointer flex items-center px-0.5 border ${
+            cinemaLightsOff ? 'w-8 h-4.5' : 'w-10 h-5.5'
           } ${
             epWatched
-              ? 'bg-emerald-500 border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.5)]'
-              : 'bg-white/10 border-white/20 hover:border-white/40'
+              ? 'bg-emerald-500 border-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.45)]'
+              : 'bg-white/10 border-white/20 hover:border-white/40 hover:bg-white/15'
           }`}
         >
           <div
             className={`rounded-full bg-white shadow-md flex items-center justify-center transition-transform duration-200 ${
               cinemaLightsOff
-                ? `w-4 h-4 ${epWatched ? 'translate-x-3.5' : 'translate-x-0'}`
-                : `w-5 h-5 ${epWatched ? 'translate-x-5' : 'translate-x-0'}`
+                ? `w-3.5 h-3.5 ${epWatched ? 'translate-x-3.5' : 'translate-x-0'}`
+                : `w-4.5 h-4.5 ${epWatched ? 'translate-x-4.5' : 'translate-x-0'}`
             }`}
           >
             {epWatched ? (
@@ -215,6 +263,8 @@ function EpisodeRailComponent({
   mediaSlug,
   mediaTitle,
   mediaId,
+  mediaBackdrop,
+  mediaCover,
   episodes,
   currentSeason,
   currentEpNum,
@@ -235,6 +285,17 @@ function EpisodeRailComponent({
   const railRowHeight = cinemaLightsOff
     ? RAIL_ITEM_HEIGHT_COMPACT
     : RAIL_ITEM_HEIGHT_NORMAL;
+
+  // Memoized thumbnail URL for all episode rows
+  const thumbnailUrl = useMemo(() => {
+    return getProxiedImageUrl(
+      mediaBackdrop || mediaCover,
+      mediaCover,
+      mediaTitle,
+      'w300',
+      'banner'
+    );
+  }, [mediaBackdrop, mediaCover, mediaTitle]);
 
   // Filter episodes for current season (memoized)
   const currentSeasonEpisodes = useMemo(
@@ -285,11 +346,11 @@ function EpisodeRailComponent({
 
   // Virtualization window calculation
   const totalRailEpisodes = currentSeasonEpisodes.length;
-  const visibleRailCount = 14;
-  const railStartIdx = Math.max(0, Math.floor(railScrollTop / railRowHeight) - 4);
+  const visibleRailCount = 12;
+  const railStartIdx = Math.max(0, Math.floor(railScrollTop / railRowHeight) - 3);
   const railEndIdx = Math.min(
     totalRailEpisodes,
-    railStartIdx + visibleRailCount + 8
+    railStartIdx + visibleRailCount + 6
   );
   const visibleRailEpisodes = currentSeasonEpisodes.slice(
     railStartIdx,
@@ -315,8 +376,8 @@ function EpisodeRailComponent({
             : 'bg-[#0e0e12] border-white/10 shadow-xl'
         } ${
           cinemaLightsOff
-            ? 'p-2 sm:p-2.5 h-[380px] sm:h-[420px]'
-            : 'p-4 sm:p-4.5 h-[470px] sm:h-[490px]'
+            ? 'p-2 sm:p-2.5 h-[400px] sm:h-[440px]'
+            : 'p-3.5 sm:p-4 h-[500px] sm:h-[540px]'
         }`}
       >
         {/* Rail Header */}
@@ -369,13 +430,13 @@ function EpisodeRailComponent({
         <div
           ref={railListRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto custom-scrollbar min-h-0 p-1.5 [-webkit-overflow-scrolling:touch]"
+          className="flex-1 overflow-y-auto custom-scrollbar min-h-0 p-1 [-webkit-overflow-scrolling:touch]"
         >
           {railTopSpacer > 0 && (
             <div style={{ height: railTopSpacer }} aria-hidden="true" />
           )}
 
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             {visibleRailEpisodes.map((ep) => {
               const isPlayingThis =
                 (ep.season_number || 1) === currentSeason &&
@@ -391,6 +452,7 @@ function EpisodeRailComponent({
                   cinemaLightsOff={cinemaLightsOff}
                   currentSeason={currentSeason}
                   mediaId={mediaId}
+                  thumbnailUrl={thumbnailUrl}
                   userProgress={userProgress}
                   onSelectEpisode={onSelectEpisode}
                   onToggleWatched={onToggleWatched}

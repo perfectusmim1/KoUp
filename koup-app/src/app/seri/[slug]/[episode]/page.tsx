@@ -890,7 +890,7 @@ export default function EpisodeWatchPage({
 
 
   const cinemaStageStyle: React.CSSProperties = {
-    maxWidth: isFilm ? '1020px' : '1360px',
+    maxWidth: isFilm ? '1020px' : '1440px',
   };
 
   return (
@@ -1086,7 +1086,7 @@ export default function EpisodeWatchPage({
         style={cinemaStageStyle}
         className="relative z-20 mx-auto px-3 sm:px-6 w-full transition-[max-width,padding] duration-300"
       >
-        <div className={`grid gap-3 sm:gap-3.5 items-start ${isMovie ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-[1fr_310px] xl:grid-cols-[1fr_330px]'} transition-[grid-template-columns] duration-300`}>
+        <div className={`grid gap-3 sm:gap-3.5 items-start ${isMovie ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-[1fr_370px] xl:grid-cols-[1fr_400px]'} transition-[grid-template-columns] duration-300`}>
           {/* LEFT: Video Player Area */}
           <div className="space-y-2.5 sm:space-y-3 min-w-0">
             <div ref={playerContainerRef} className="relative">
@@ -1312,6 +1312,8 @@ export default function EpisodeWatchPage({
               mediaSlug={media.slug}
               mediaTitle={media.title}
               mediaId={media.id}
+              mediaBackdrop={media.backdrop_image}
+              mediaCover={media.cover_image}
               episodes={episodes}
               currentSeason={currentSeason}
               currentEpNum={activeEpNum}
