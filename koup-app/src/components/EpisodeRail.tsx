@@ -13,9 +13,6 @@ import {
 } from '@/lib/supabase';
 import CustomSelect from '@/components/CustomSelect';
 
-const RAIL_ITEM_HEIGHT_NORMAL = 84;
-const RAIL_ITEM_HEIGHT_COMPACT = 70;
-
 interface EpisodeRailProps {
   mediaSlug: string;
   mediaTitle: string;
@@ -103,11 +100,14 @@ const EpisodeRailRow = memo(function EpisodeRailRow({
       aria-label={`${ep.episode_number}. Bölüm`}
       title={`${ep.episode_number}. Bölüm${cleanSubtitle ? ` - ${cleanSubtitle}` : ''}`}
       style={{ contain: 'content' }}
-      className={`relative rounded-2xl border transition-colors duration-150 cursor-pointer flex items-center gap-2.5 sm:gap-3 p-2 sm:p-2.5 group select-none ${
-        isPlayingThis
+      data-active={isPlayingThis}
+      className={`relative rounded-2xl border transition-[background-color,border-color,box-shadow] duration-200 cursor-pointer flex items-center gap-2.5 sm:gap-3 p-2 sm:p-2.5 group select-none ${
+        epWatched && isPlayingThis
+          ? 'bg-emerald-500/[0.16] border-emerald-400/80 shadow-[0_0_20px_rgba(16,185,129,0.3)] ring-1 ring-emerald-400/50'
+          : epWatched && !isPlayingThis
+          ? 'bg-emerald-500/[0.05] hover:bg-emerald-500/[0.10] border-emerald-500/25 hover:border-emerald-400/50'
+          : isPlayingThis
           ? 'bg-sky-500/[0.12] border-sky-400/60 shadow-[0_0_18px_rgba(41,151,255,0.22)] ring-1 ring-sky-400/30'
-          : epWatched
-          ? 'bg-emerald-500/[0.04] hover:bg-emerald-500/[0.08] border-emerald-500/25 hover:border-emerald-400/50'
           : 'bg-white/[0.025] hover:bg-white/[0.06] border-white/[0.06] hover:border-white/15'
       }`}
     >
@@ -136,24 +136,6 @@ const EpisodeRailRow = memo(function EpisodeRailRow({
         />
         {/* Subtle ambient gradient overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
-
-        {/* If Watched: Discreet Emerald Check badge in top-left */}
-        {epWatched && (
-          <div className="absolute top-1 left-1 w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-md">
-            <Check className="w-2.5 h-2.5 stroke-[3]" />
-          </div>
-        )}
-
-        {/* Episode Number badge bottom-right of thumbnail */}
-        <span
-          className={`absolute bottom-1 right-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold leading-none ${
-            isPlayingThis
-              ? 'bg-sky-500 text-white shadow-[0_0_8px_rgba(56,189,248,0.6)] font-extrabold'
-              : 'bg-black/85 text-white/90 border border-white/10'
-          }`}
-        >
-          B{ep.episode_number}
-        </span>
       </div>
 
       {/* Middle: Title, Subtitle, Views & Progress */}
@@ -161,11 +143,13 @@ const EpisodeRailRow = memo(function EpisodeRailRow({
         <div className="flex items-center gap-1.5 min-w-0">
           <span
             className={`text-xs sm:text-[13px] font-bold truncate transition-colors ${
-              isPlayingThis
+              epWatched && isPlayingThis
+                ? 'text-emerald-300 font-extrabold'
+                : epWatched && !isPlayingThis
+                ? 'text-emerald-100/90 group-hover:text-white font-bold'
+                : isPlayingThis
                 ? 'text-sky-300 font-extrabold'
-                : epWatched
-                ? 'text-white/80 group-hover:text-white'
-                : 'text-white group-hover:text-white'
+                : 'text-white group-hover:text-white font-bold'
             }`}
           >
             {ep.episode_number}. Bölüm
@@ -278,12 +262,6 @@ function EpisodeRailComponent({
   ambientLightingEnabled = false,
 }: EpisodeRailProps) {
   const railListRef = useRef<HTMLDivElement | null>(null);
-  const rafIdRef = useRef<number | null>(null);
-  const [railScrollTop, setRailScrollTop] = useState(0);
-
-  const railRowHeight = cinemaLightsOff
-    ? RAIL_ITEM_HEIGHT_COMPACT
-    : RAIL_ITEM_HEIGHT_NORMAL;
 
   // Memoized thumbnail URL for all episode rows
   const thumbnailUrl = useMemo(() => {
@@ -308,58 +286,14 @@ function EpisodeRailComponent({
     [watchedEpisodes]
   );
 
-  // Auto-scroll to active episode when season, episode or row height changes
+  // Auto-scroll cleanly to active episode when episode or season changes (smooth, zero layout jitter)
   useEffect(() => {
-    if (currentSeasonEpisodes.length === 0) return;
-    const idx = currentSeasonEpisodes.findIndex(
-      (e) => e.episode_number === currentEpNum
-    );
-    if (idx >= 0) {
-      const targetScroll = Math.max(0, idx * railRowHeight - railRowHeight * 2);
-      setRailScrollTop(targetScroll);
-      requestAnimationFrame(() => {
-        if (railListRef.current) {
-          railListRef.current.scrollTop = targetScroll;
-        }
-      });
+    if (!railListRef.current) return;
+    const activeEl = railListRef.current.querySelector<HTMLElement>('[data-active="true"]');
+    if (activeEl) {
+      activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
-  }, [currentEpNum, currentSeason, currentSeasonEpisodes.length, railRowHeight]);
-
-  // Throttled onScroll to ensure buttery smooth 60-120fps scrolling with zero parent re-renders
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const st = e.currentTarget.scrollTop;
-    if (rafIdRef.current !== null) return;
-    rafIdRef.current = requestAnimationFrame(() => {
-      setRailScrollTop(st);
-      rafIdRef.current = null;
-    });
-  };
-
-  useEffect(() => {
-    return () => {
-      if (rafIdRef.current !== null) {
-        cancelAnimationFrame(rafIdRef.current);
-      }
-    };
-  }, []);
-
-  // Virtualization window calculation
-  const totalRailEpisodes = currentSeasonEpisodes.length;
-  const visibleRailCount = 12;
-  const railStartIdx = Math.max(0, Math.floor(railScrollTop / railRowHeight) - 3);
-  const railEndIdx = Math.min(
-    totalRailEpisodes,
-    railStartIdx + visibleRailCount + 6
-  );
-  const visibleRailEpisodes = currentSeasonEpisodes.slice(
-    railStartIdx,
-    railEndIdx
-  );
-  const railTopSpacer = railStartIdx * railRowHeight;
-  const railBottomSpacer = Math.max(
-    0,
-    (totalRailEpisodes - railEndIdx) * railRowHeight
-  );
+  }, [currentEpNum, currentSeason]);
 
   return (
     <div className="w-full min-h-0 relative z-20">
@@ -425,18 +359,13 @@ function EpisodeRailComponent({
           )}
         </div>
 
-        {/* Virtualized Vertical Scroll List with O(1) Lookups & zero parent re-renders */}
+        {/* Vertical Scroll List with zero layout jitter & instant response */}
         <div
           ref={railListRef}
-          onScroll={handleScroll}
           className="flex-1 overflow-y-auto custom-scrollbar min-h-0 p-1 [-webkit-overflow-scrolling:touch]"
         >
-          {railTopSpacer > 0 && (
-            <div style={{ height: railTopSpacer }} aria-hidden="true" />
-          )}
-
           <div className="space-y-2">
-            {visibleRailEpisodes.map((ep) => {
+            {currentSeasonEpisodes.map((ep) => {
               const isPlayingThis =
                 (ep.season_number || 1) === currentSeason &&
                 ep.episode_number === currentEpNum;
@@ -459,10 +388,6 @@ function EpisodeRailComponent({
               );
             })}
           </div>
-
-          {railBottomSpacer > 0 && (
-            <div style={{ height: railBottomSpacer }} aria-hidden="true" />
-          )}
         </div>
       </div>
     </div>

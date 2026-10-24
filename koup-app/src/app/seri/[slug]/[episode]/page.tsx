@@ -42,7 +42,7 @@ import {
   formatViewCount,
 } from '@/lib/supabase';
 import { trackMediaView } from '@/lib/viewTracker';
-import { cachedQuery, getCache, getMediaFromCache, registerMediaItem, updateCachedMedia } from '@/lib/cache';
+import { cachedQuery, getCache, setCache, getMediaFromCache, registerMediaItem, updateCachedMedia } from '@/lib/cache';
 import { recordTasteSignal } from '@/lib/tasteProfile';
 import { cleanSourceName } from '@/lib/cleanFansub';
 import dynamic from 'next/dynamic';
@@ -299,9 +299,21 @@ export default function EpisodeWatchPage({
     setSelectedSourceIdx(0);
   }, [activeEpNum]);
 
+  // 1. Fetch series media item and episodes list only when series slug changes (prevents redundant fetches and DOM unmounting on episode clicks)
   useEffect(() => {
     let isCancelled = false;
     const decodedSlug = decodeURIComponent(slug);
+
+    // If media and episodes are already in memory for this series, do not refetch or show skeleton!
+    if (
+      media &&
+      (media.slug === decodedSlug || String(media.id) === decodedSlug) &&
+      episodes.length > 0
+    ) {
+      setIsLoading(false);
+      return;
+    }
+
     const cachedMedia = getMediaFromCache(decodedSlug);
     const cachedEpisodesRaw = cachedMedia
       ? getCache<EpisodeData[]>(`episodes_${cachedMedia.id}`, true) || []
@@ -338,102 +350,96 @@ export default function EpisodeWatchPage({
     }
 
     async function loadEpisodeData() {
-      const rawMediaItem = await cachedQuery<any>(
-        `media_item_${decodedSlug}`,
-        300_000,
-        async () => {
-          let { data: mData } = await supabase
-            .from('media')
-            .select('*')
-            .eq('slug', decodedSlug)
-            .single();
+      try {
+        const rawMediaItem = await cachedQuery<any>(
+          `media_item_${decodedSlug}`,
+          300_000,
+          async () => {
+            let { data: mData } = await supabase
+              .from('media')
+              .select('*')
+              .eq('slug', decodedSlug)
+              .single();
 
-          if (!mData) {
-            const cleanedSlug = cleanScrapedSlug(decodedSlug);
-            if (cleanedSlug && cleanedSlug !== decodedSlug) {
-              const { data: cleanRow } = await supabase
-                .from('media')
-                .select('*')
-                .eq('slug', cleanedSlug)
-                .maybeSingle();
-              mData = cleanRow;
-
-              if (!mData) {
-                const { data: prefixRows } = await supabase
+            if (!mData) {
+              const cleanedSlug = cleanScrapedSlug(decodedSlug);
+              if (cleanedSlug && cleanedSlug !== decodedSlug) {
+                const { data: cleanRow } = await supabase
                   .from('media')
                   .select('*')
-                  .ilike('slug', `${cleanedSlug}%`)
-                  .limit(1);
-                if (prefixRows && prefixRows[0]) {
-                  mData = prefixRows[0];
+                  .eq('slug', cleanedSlug)
+                  .maybeSingle();
+                mData = cleanRow;
+
+                if (!mData) {
+                  const { data: prefixRows } = await supabase
+                    .from('media')
+                    .select('*')
+                    .ilike('slug', `${cleanedSlug}%`)
+                    .limit(1);
+                  if (prefixRows && prefixRows[0]) {
+                    mData = prefixRows[0];
+                  }
                 }
               }
             }
-          }
 
-          if (!mData) {
-            const { data: akaRows } = await supabase
-              .from('media')
-              .select('*')
-              .contains('aka_titles', [decodedSlug])
-              .limit(1);
-            if (akaRows && akaRows[0]) {
-              mData = akaRows[0];
+            if (!mData) {
+              const { data: akaRows } = await supabase
+                .from('media')
+                .select('*')
+                .contains('aka_titles', [decodedSlug])
+                .limit(1);
+              if (akaRows && akaRows[0]) {
+                mData = akaRows[0];
+              }
             }
-          }
 
-          if (!mData) {
-            const { data: fallbackRows } = await supabase
-              .from('media')
-              .select('*')
-              .or(`slug.eq.${decodedSlug}-izle,slug.ilike.${decodedSlug}%`)
-              .limit(1);
-            if (fallbackRows && fallbackRows[0]) {
-              mData = fallbackRows[0];
+            if (!mData) {
+              const { data: fallbackRows } = await supabase
+                .from('media')
+                .select('*')
+                .or(`slug.eq.${decodedSlug}-izle,slug.ilike.${decodedSlug}%`)
+                .limit(1);
+              if (fallbackRows && fallbackRows[0]) {
+                mData = fallbackRows[0];
+              }
             }
+
+            if (!mData && !Number.isNaN(Number(decodedSlug))) {
+              const byId = await supabase
+                .from('media')
+                .select('*')
+                .eq('id', Number(decodedSlug))
+                .single();
+              mData = byId.data;
+            }
+
+            return (mData as MediaItem) || null;
           }
-
-          if (!mData && !Number.isNaN(Number(decodedSlug))) {
-            const byId = await supabase
-              .from('media')
-              .select('*')
-              .eq('id', Number(decodedSlug))
-              .single();
-            mData = byId.data;
-          }
-
-          return (mData as MediaItem) || null;
-        }
-      );
-
-      if (isCancelled) return;
-
-      const mediaItem: MediaItem | null =
-        rawMediaItem?.media ? rawMediaItem.media : rawMediaItem;
-
-      if (!mediaItem || !mediaItem.id) {
-        setIsLoading(false);
-        return;
-      }
-
-      if (typeof window !== 'undefined' && mediaItem.slug && mediaItem.slug !== decodedSlug) {
-        window.history.replaceState(
-          null,
-          '',
-          `/seri/${mediaItem.slug}/${currentEpNum}${window.location.search}`
         );
-      }
-      registerMediaItem(mediaItem, true);
-      recordTasteSignal(mediaItem, 'watch');
-      setMedia(mediaItem);
 
-      // Fetch verified episode sources directly from edge resolver
-      try {
-        if (typeof window !== 'undefined') {
-          try {
-            localStorage.removeItem(`koup_cache_episodes_${mediaItem.id}`);
-          } catch {}
+        if (isCancelled) return;
+
+        const mediaItem: MediaItem | null =
+          rawMediaItem?.media ? rawMediaItem.media : rawMediaItem;
+
+        if (!mediaItem || !mediaItem.id) {
+          setIsLoading(false);
+          return;
         }
+
+        if (typeof window !== 'undefined' && mediaItem.slug && mediaItem.slug !== decodedSlug) {
+          window.history.replaceState(
+            null,
+            '',
+            `/seri/${mediaItem.slug}/${currentEpNum}${window.location.search}`
+          );
+        }
+        registerMediaItem(mediaItem, true);
+        setMedia(mediaItem);
+
+        // Fetch verified episode sources directly from edge resolver
         const res = await fetch(`/api/sources/${mediaItem.id}`, { cache: 'no-store' });
         const payload = await res.json();
         const rawEps: EpisodeData[] = (payload.episodes || []).map((ep: EpisodeData) => ({
@@ -451,56 +457,20 @@ export default function EpisodeWatchPage({
             a.episode_number - b.episode_number
         );
         setEpisodes(sortedEps);
+        setCache(`episodes_${mediaItem.id}`, sortedEps, 300_000);
 
-        const currentEp =
-          (urlSeasonNum
-            ? sortedEps.find(
-                (e) =>
-                  (e.season_number || 1) === urlSeasonNum &&
-                  e.episode_number === currentEpNum
-              )
-            : null) ||
-          sortedEps.find(
-            (e) =>
-              (e.season_number || 1) === currentSeason &&
-              e.episode_number === currentEpNum
-          ) ||
-          sortedEps.find((e) => e.episode_number === currentEpNum) ||
-          sortedEps[0];
-        const activeSeason = currentEp?.season_number || urlSeasonNum || currentSeason || 1;
-        setCurrentSeason(activeSeason);
-
-        // Update watching status in KoUpContext progress map (authenticated users only)
-        if (user) {
-          const existingProg = progressMap[mediaItem.id];
-          const urlSeekSec = Number(searchParams.get('t')) || 0;
-          const targetEpNum = currentEp?.episode_number !== undefined ? currentEp.episode_number : currentEpNum;
-          const savedEpProg = getEpisodeProgress(
-            existingProg,
-            mediaItem.id,
-            activeSeason,
-            targetEpNum
-          );
-          const initialPos = urlSeekSec > 0 ? urlSeekSec : (savedEpProg.position || 0);
-          const mediaDuration =
-            (mediaItem.duration_minutes ? mediaItem.duration_minutes * 60 : 0) ||
-            savedEpProg.duration ||
-            (existingProg?.resume_duration_sec || 3600);
-
-          updateEpisodeProgress(
-            mediaItem,
-            activeSeason,
-            targetEpNum,
-            formatEpisodeTitle(
-              currentEp?.episode_name,
-              activeSeason,
-              targetEpNum
-            ),
-            initialPos,
-            mediaDuration,
-            false,
-            { reason: 'playback' }
-          );
+        if (!urlSeasonNum) {
+          const currentEp =
+            sortedEps.find(
+              (e) =>
+                (e.season_number || 1) === currentSeason &&
+                e.episode_number === currentEpNum
+            ) ||
+            sortedEps.find((e) => e.episode_number === currentEpNum) ||
+            sortedEps[0];
+          if (currentEp?.season_number) {
+            setCurrentSeason(currentEp.season_number);
+          }
         }
       } catch (err) {
         console.error('Error loading episode data:', err);
@@ -514,7 +484,55 @@ export default function EpisodeWatchPage({
     return () => {
       isCancelled = true;
     };
-  }, [slug, currentEpNum, urlSeasonNum]);
+  }, [slug]);
+
+  // 2. Track episode watch progress and taste signal on episode or season change (instant, 0ms, zero lag)
+  useEffect(() => {
+    if (!media?.id || episodes.length === 0) return;
+
+    recordTasteSignal(media, 'watch');
+
+    if (user) {
+      const currentEp =
+        episodes.find(
+          (e) =>
+            (e.season_number || 1) === currentSeason &&
+            e.episode_number === activeEpNum
+        ) ||
+        episodes.find((e) => e.episode_number === activeEpNum) ||
+        episodes[0];
+
+      const existingProg = progressMap[media.id];
+      const urlSeekSec = Number(searchParams.get('t')) || 0;
+      const targetEpNum = currentEp?.episode_number !== undefined ? currentEp.episode_number : activeEpNum;
+      const savedEpProg = getEpisodeProgress(
+        existingProg,
+        media.id,
+        currentSeason,
+        targetEpNum
+      );
+      const initialPos = urlSeekSec > 0 ? urlSeekSec : (savedEpProg.position || 0);
+      const mediaDuration =
+        (media.duration_minutes ? media.duration_minutes * 60 : 0) ||
+        savedEpProg.duration ||
+        (existingProg?.resume_duration_sec || 3600);
+
+      updateEpisodeProgress(
+        media,
+        currentSeason,
+        targetEpNum,
+        formatEpisodeTitle(
+          currentEp?.episode_name,
+          currentSeason,
+          targetEpNum
+        ),
+        initialPos,
+        mediaDuration,
+        false,
+        { reason: 'playback' }
+      );
+    }
+  }, [media?.id, currentSeason, activeEpNum, user?.id]);
 
   // Real-time synchronization of episode reaction counts & logged-in user reaction on mount, season/ep switch, and auth change
   useEffect(() => {
@@ -924,14 +942,14 @@ export default function EpisodeWatchPage({
               target.src = `/api/image-proxy?tmdbId=${encodeURIComponent(String(media.tmdb_id || ''))}&title=${encodeURIComponent(media.title)}&type=banner`;
             }
           }}
-          style={{ transform: 'translateZ(0)', backfaceVisibility: 'hidden' }}
-          className="w-full h-full object-cover filter blur-[120px] scale-125 transition-opacity duration-700 opacity-35 brightness-105 saturate-140"
+          style={{ transform: 'translateZ(0)', backfaceVisibility: 'hidden', willChange: 'opacity' }}
+          className="w-full h-full object-cover filter blur-[100px] scale-110 transition-opacity duration-700 opacity-35 brightness-105 saturate-140 pointer-events-none"
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-[#060608]/50 via-[#060608]/85 to-[#060608] transition-colors duration-700" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#060608]/50 via-[#060608]/85 to-[#060608] transition-colors duration-700 pointer-events-none" />
       </div>
 
-      {/* 7% Proportional UI Scaling Wrapper for Episode Watch Interface */}
-      <div className="w-full [zoom:0.93] origin-top">
+      {/* Main Watch Page Stage Wrapper */}
+      <div className="w-full max-w-full origin-top">
         {/* Top Header Navigation & Source Selector Bar */}
       <div
         style={cinemaStageStyle}
