@@ -214,7 +214,11 @@ export async function PATCH(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const id = typeof body?.id === 'string' ? body.id.trim() : '';
+    const rawId = body?.id;
+    const id =
+      rawId !== undefined && rawId !== null && String(rawId).trim() !== ''
+        ? String(rawId).trim()
+        : '';
     const status = typeof body?.status === 'string' ? body.status.trim() : '';
     const adminNote =
       typeof body?.admin_note === 'string' ? body.admin_note.trim().slice(0, 600) : null;
@@ -262,15 +266,18 @@ export async function PATCH(req: NextRequest) {
         resolvedMediaSlug = matchedMedia.slug;
       }
     } else if (!resolvedMediaSlug && existing.title) {
-      const { data: byTitle } = await db
-        .from('media')
-        .select('id, slug')
-        .or(`title.ilike.${existing.title.replace(/[,%()]/g, ' ').trim()}`)
-        .limit(1)
-        .maybeSingle();
-      if (byTitle) {
-        resolvedMediaId = byTitle.id;
-        resolvedMediaSlug = byTitle.slug;
+      const cleanTitle = existing.title.replace(/[%_']/g, '').trim();
+      if (cleanTitle) {
+        const { data: byTitle } = await db
+          .from('media')
+          .select('id, slug')
+          .ilike('title', `%${cleanTitle}%`)
+          .limit(1)
+          .maybeSingle();
+        if (byTitle) {
+          resolvedMediaId = byTitle.id;
+          resolvedMediaSlug = byTitle.slug;
+        }
       }
     }
 
@@ -319,7 +326,7 @@ export async function PATCH(req: NextRequest) {
       actorRole: auth.role,
       action: `series_request_${status}`,
       targetType: 'series_request',
-      targetId: id,
+      targetId: String(id),
       summary: `"${existing.title}" seri isteği ${status === 'approved' ? 'onaylandı' : status === 'rejected' ? 'reddedildi' : 'beklemeye alındı'}.`,
       metadata: {
         source_type: existing.source_type,
@@ -352,10 +359,16 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
+    const urlId = req.nextUrl.searchParams.get('id');
+    const rawId =
+      urlId !== null && urlId !== undefined && urlId.trim() !== ''
+        ? urlId.trim()
+        : (await req.json().catch(() => ({})))?.id;
+
     const id =
-      req.nextUrl.searchParams.get('id')?.trim() ||
-      (await req.json().catch(() => ({})))?.id ||
-      '';
+      rawId !== undefined && rawId !== null && String(rawId).trim() !== ''
+        ? String(rawId).trim()
+        : '';
 
     if (!id) {
       return NextResponse.json({ ok: false, error: 'İstek ID belirtilmedi.' }, { status: 400 });

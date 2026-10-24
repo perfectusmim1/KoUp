@@ -54,7 +54,7 @@ interface PreviewMetadata {
 }
 
 interface SeriesRequestItem {
-  id: string;
+  id: string | number;
   user_id: string;
   source_type: 'anilist' | 'tmdb' | 'mdl' | 'imdb';
   source_url: string;
@@ -128,7 +128,7 @@ export default function SeriesRequestPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>(
     'all'
   );
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | number | null>(null);
 
   const getAccessToken = useCallback(async (): Promise<string | null> => {
     const { data } = await supabase.auth.getSession();
@@ -315,11 +315,11 @@ export default function SeriesRequestPage() {
     }
   };
 
-  const handleDeleteRequest = async (id: string) => {
+  const handleDeleteRequest = async (id: string | number) => {
     setDeletingId(id);
     try {
       const token = await getAccessToken();
-      const res = await fetch(`/api/series-requests?id=${encodeURIComponent(id)}`, {
+      const res = await fetch(`/api/series-requests?id=${encodeURIComponent(String(id))}`, {
         method: 'DELETE',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -709,31 +709,59 @@ export default function SeriesRequestPage() {
             </div>
 
             {/* Filter Pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
-              {(
-                [
-                  { id: 'all', label: 'Tümü', count: counts.all },
-                  { id: 'pending', label: 'Bekliyor', count: counts.pending },
-                  { id: 'approved', label: 'Onaylandı', count: counts.approved },
-                  { id: 'rejected', label: 'Reddedildi', count: counts.rejected },
-                ] as const
-              ).map((tab) => {
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
+              {[
+                {
+                  id: 'all' as const,
+                  label: 'Tümü',
+                  count: counts.all,
+                  activeCls:
+                    'bg-gradient-to-r from-sky-500 to-blue-600 text-white font-extrabold shadow-lg shadow-sky-500/25 border-sky-400/40',
+                  inactiveCls:
+                    'bg-white/[0.04] text-white/80 hover:text-white hover:bg-white/[0.08] border-white/10',
+                },
+                {
+                  id: 'pending' as const,
+                  label: 'Bekliyor',
+                  count: counts.pending,
+                  activeCls:
+                    'bg-gradient-to-r from-amber-500 to-orange-600 text-white font-extrabold shadow-lg shadow-amber-500/25 border-amber-400/40',
+                  inactiveCls:
+                    'bg-amber-500/10 text-amber-300 hover:text-white hover:bg-amber-500/20 border-amber-500/25',
+                },
+                {
+                  id: 'approved' as const,
+                  label: 'Onaylandı',
+                  count: counts.approved,
+                  activeCls:
+                    'bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-extrabold shadow-lg shadow-emerald-500/25 border-emerald-400/40',
+                  inactiveCls:
+                    'bg-emerald-500/10 text-emerald-300 hover:text-white hover:bg-emerald-500/20 border-emerald-500/25',
+                },
+                {
+                  id: 'rejected' as const,
+                  label: 'Reddedildi',
+                  count: counts.rejected,
+                  activeCls:
+                    'bg-gradient-to-r from-rose-500 to-red-600 text-white font-extrabold shadow-lg shadow-rose-500/25 border-rose-400/40',
+                  inactiveCls:
+                    'bg-rose-500/10 text-rose-300 hover:text-white hover:bg-rose-500/20 border-rose-500/25',
+                },
+              ].map((tab) => {
                 const active = statusFilter === tab.id;
                 return (
                   <button
                     key={tab.id}
                     type="button"
                     onClick={() => setStatusFilter(tab.id)}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-                      active
-                        ? 'bg-white text-black shadow-sm'
-                        : 'bg-white/[0.04] text-zinc-400 hover:text-white hover:bg-white/[0.08] border border-white/5'
+                    className={`px-4 py-2 rounded-2xl text-xs font-bold border transition-all flex items-center gap-2 shrink-0 cursor-pointer active:scale-95 ${
+                      active ? tab.activeCls : tab.inactiveCls
                     }`}
                   >
                     <span>{tab.label}</span>
                     <span
-                      className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                        active ? 'bg-black/15 text-black' : 'bg-white/10 text-zinc-300'
+                      className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                        active ? 'bg-white/25 text-white' : 'bg-white/10 text-white'
                       }`}
                     >
                       {tab.count}

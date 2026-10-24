@@ -27,7 +27,7 @@ import CustomSelect from '@/components/CustomSelect';
 import KoupInput from '@/components/KoupInput';
 
 export interface AdminSeriesRequestRow {
-  id: string;
+  id: string | number;
   user_id: string;
   source_type: 'anilist' | 'tmdb' | 'mdl' | 'imdb';
   source_url: string;
@@ -95,9 +95,9 @@ export default function AdminSeriesRequests({
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
-  const [draftSlugs, setDraftSlugs] = useState<Record<string, string>>({});
-  const [processingId, setProcessingId] = useState<string | null>(null);
+  const [draftNotes, setDraftNotes] = useState<Record<string | number, string>>({});
+  const [draftSlugs, setDraftSlugs] = useState<Record<string | number, string>>({});
+  const [processingId, setProcessingId] = useState<string | number | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(
     null
   );
@@ -322,31 +322,59 @@ export default function AdminSeriesRequests({
 
         {/* Filter Bar */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-2 border-t border-white/10">
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-            {(
-              [
-                { id: 'all', label: 'Tümü', count: counts.all },
-                { id: 'pending', label: 'Bekleyenler', count: counts.pending },
-                { id: 'approved', label: 'Onaylananlar', count: counts.approved },
-                { id: 'rejected', label: 'Reddedilenler', count: counts.rejected },
-              ] as const
-            ).map((tab) => {
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
+            {[
+              {
+                id: 'all' as const,
+                label: 'Tümü',
+                count: counts.all,
+                activeCls:
+                  'bg-gradient-to-r from-sky-500 to-blue-600 text-white font-extrabold shadow-lg shadow-sky-500/25 border-sky-400/40',
+                inactiveCls:
+                  'bg-white/[0.04] text-white/80 hover:text-white hover:bg-white/[0.08] border-white/10',
+              },
+              {
+                id: 'pending' as const,
+                label: 'Bekliyor',
+                count: counts.pending,
+                activeCls:
+                  'bg-gradient-to-r from-amber-500 to-orange-600 text-white font-extrabold shadow-lg shadow-amber-500/25 border-amber-400/40',
+                inactiveCls:
+                  'bg-amber-500/10 text-amber-300 hover:text-white hover:bg-amber-500/20 border-amber-500/25',
+              },
+              {
+                id: 'approved' as const,
+                label: 'Onaylandı',
+                count: counts.approved,
+                activeCls:
+                  'bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-extrabold shadow-lg shadow-emerald-500/25 border-emerald-400/40',
+                inactiveCls:
+                  'bg-emerald-500/10 text-emerald-300 hover:text-white hover:bg-emerald-500/20 border-emerald-500/25',
+              },
+              {
+                id: 'rejected' as const,
+                label: 'Reddedildi',
+                count: counts.rejected,
+                activeCls:
+                  'bg-gradient-to-r from-rose-500 to-red-600 text-white font-extrabold shadow-lg shadow-rose-500/25 border-rose-400/40',
+                inactiveCls:
+                  'bg-rose-500/10 text-rose-300 hover:text-white hover:bg-rose-500/20 border-rose-500/25',
+              },
+            ].map((tab) => {
               const active = statusFilter === tab.id;
               return (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => setStatusFilter(tab.id)}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                    active
-                      ? 'bg-white text-black shadow-md'
-                      : 'bg-white/[0.04] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
+                  className={`px-4 py-2 rounded-2xl text-xs font-bold border transition-all flex items-center gap-2 shrink-0 cursor-pointer active:scale-95 ${
+                    active ? tab.activeCls : tab.inactiveCls
                   }`}
                 >
                   <span>{tab.label}</span>
                   <span
                     className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                      active ? 'bg-black/15 text-black' : 'bg-white/10 text-white/80'
+                      active ? 'bg-white/25 text-white' : 'bg-white/10 text-white'
                     }`}
                   >
                     {tab.count}
@@ -600,12 +628,12 @@ export default function AdminSeriesRequests({
                       type="button"
                       disabled={isBusy}
                       onClick={() => handleUpdateStatus(req, 'approved')}
-                      className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                      className="flex-1 py-2.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-extrabold text-xs shadow-lg shadow-emerald-500/25 border border-emerald-400/30 flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all disabled:opacity-50"
                     >
                       {isBusy ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
                       ) : (
-                        <Check className="w-3.5 h-3.5" />
+                        <Check className="w-3.5 h-3.5 text-white" />
                       )}
                       <span>Onayla</span>
                     </button>
@@ -614,9 +642,9 @@ export default function AdminSeriesRequests({
                       type="button"
                       disabled={isBusy}
                       onClick={() => handleUpdateStatus(req, 'rejected')}
-                      className="flex-1 py-2.5 px-3 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/35 disabled:opacity-50 text-rose-300 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                      className="flex-1 py-2.5 px-4 rounded-2xl bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-400 hover:to-red-500 text-white font-extrabold text-xs shadow-lg shadow-rose-500/25 border border-rose-400/30 flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all disabled:opacity-50"
                     >
-                      <XCircle className="w-3.5 h-3.5" />
+                      <XCircle className="w-3.5 h-3.5 text-white" />
                       <span>Reddet</span>
                     </button>
 
@@ -626,9 +654,9 @@ export default function AdminSeriesRequests({
                         disabled={isBusy}
                         onClick={() => handleUpdateStatus(req, 'pending')}
                         title="Tekrar Beklemeye Al"
-                        className="p-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 cursor-pointer transition-all"
+                        className="p-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-bold text-xs shadow-lg shadow-amber-500/25 border border-amber-400/30 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
                       >
-                        <Clock className="w-3.5 h-3.5" />
+                        <Clock className="w-3.5 h-3.5 text-white" />
                       </button>
                     )}
 
@@ -637,9 +665,9 @@ export default function AdminSeriesRequests({
                       disabled={isBusy}
                       onClick={() => handleDelete(req)}
                       title="İsteği Sil"
-                      className="p-2.5 rounded-xl bg-white/5 hover:bg-rose-500/20 border border-white/10 hover:border-rose-500/30 text-white/60 hover:text-rose-300 cursor-pointer transition-all"
+                      className="p-2.5 rounded-2xl bg-white/10 hover:bg-rose-600 text-white border border-white/15 hover:border-rose-500/40 shadow-sm flex items-center justify-center cursor-pointer active:scale-95 transition-all"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-3.5 h-3.5 text-white" />
                     </button>
                   </div>
 
