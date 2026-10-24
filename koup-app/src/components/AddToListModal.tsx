@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useKoUpSelector } from '@/context/KoUpContext';
 import { supabase, MediaItem, getProxiedImageUrl } from '@/lib/supabase';
+import { adminFetch } from '@/lib/adminClient';
 
 interface AddToListModalProps {
   isOpen: boolean;
@@ -162,7 +163,7 @@ export default function AddToListModal({
     });
 
     try {
-      const res = await fetch(`/api/lists/${list.id}`, {
+      const res = await adminFetch(`/api/lists/${list.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -215,7 +216,7 @@ export default function AddToListModal({
     triggerSound('click');
 
     try {
-      const res = await fetch('/api/lists', {
+      const res = await adminFetch('/api/lists', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

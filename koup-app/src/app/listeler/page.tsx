@@ -23,6 +23,7 @@ import {
 import { getProxiedImageUrl } from '@/lib/supabase';
 import { useKoUpSelector } from '@/context/KoUpContext';
 import Pagination from '@/components/Pagination';
+import { adminFetch } from '@/lib/adminClient';
 
 interface ListCreator {
   id: string;
@@ -153,7 +154,7 @@ export default function PublicListsPage() {
 
     triggerSound('click');
     try {
-      const res = await fetch(`/api/lists/${targetList.id}?user_id=${encodeURIComponent(user.id)}`, {
+      const res = await adminFetch(`/api/lists/${targetList.id}?user_id=${encodeURIComponent(user.id)}`, {
         method: 'DELETE',
       });
       const data = await res.json().catch(() => ({}));
@@ -197,7 +198,7 @@ export default function PublicListsPage() {
 
     setIsSubmitting(true);
     try {
-      const res = await fetch('/api/lists', {
+      const res = await adminFetch('/api/lists', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

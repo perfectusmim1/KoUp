@@ -29,6 +29,7 @@ import { useKoUpSelector } from '@/context/KoUpContext';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 import CustomSelect, { SelectOption } from '@/components/CustomSelect';
 import { rankSearchResults } from '@/lib/searchRanking';
+import { adminFetch } from '@/lib/adminClient';
 
 type ListItemSortBy = 'default' | 'newest' | 'oldest' | 'rating' | 'title_asc';
 
@@ -317,7 +318,7 @@ export default function ListDetailPage({
     const remainingIds = remainingItems.map((item) => item.id);
 
     try {
-      const res = await fetch(`/api/lists/${list.id}`, {
+      const res = await adminFetch(`/api/lists/${list.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -427,7 +428,7 @@ export default function ListDetailPage({
     triggerSound('click');
 
     try {
-      const res = await fetch(`/api/lists/${list.id}`, {
+      const res = await adminFetch(`/api/lists/${list.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -475,7 +476,7 @@ export default function ListDetailPage({
     triggerSound('click');
 
     try {
-      const res = await fetch(`/api/lists/${list.id}`, {
+      const res = await adminFetch(`/api/lists/${list.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -507,7 +508,7 @@ export default function ListDetailPage({
     if (!list || !editTitle.trim()) return;
 
     try {
-      const res = await fetch(`/api/lists/${list.id}`, {
+      const res = await adminFetch(`/api/lists/${list.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -556,7 +557,7 @@ export default function ListDetailPage({
     if (!confirmed) return;
 
     try {
-      const res = await fetch(`/api/lists/${list.id}?user_id=${user?.id}`, {
+      const res = await adminFetch(`/api/lists/${list.id}?user_id=${user?.id}`, {
         method: 'DELETE',
       });
       const data = await res.json().catch(() => ({}));

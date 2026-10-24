@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import dns from 'node:dns';
 import sharp from 'sharp';
 import { supabaseAdmin } from '@/lib/supabase';
 
@@ -92,6 +93,17 @@ function isBlockedIpOrHost(hostname: string): boolean {
   }
 
   return false;
+}
+
+async function isBlockedAfterDnsLookup(hostname: string): Promise<boolean> {
+  if (isBlockedIpOrHost(hostname)) return true;
+  try {
+    const records = await dns.promises.lookup(hostname, { all: true });
+    if (!records || records.length === 0) return true;
+    return records.some((rec) => isBlockedIpOrHost(rec.address));
+  } catch {
+    return true;
+  }
 }
 
 const ALLOWED_CONTENT_TYPES = new Set([
@@ -770,7 +782,7 @@ export async function GET(req: NextRequest) {
 
         if (!['http:', 'https:'].includes(parsed.protocol)) continue;
         if (parsed.port && !['80', '443'].includes(parsed.port)) continue;
-        if (isBlockedIpOrHost(parsed.hostname)) continue;
+        if (await isBlockedAfterDnsLookup(parsed.hostname)) continue;
 
         const resp = await fetch(parsed.toString(), {
           headers: {

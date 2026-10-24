@@ -214,7 +214,8 @@ export async function POST(req: NextRequest) {
   const auth = await verifyAdminAuth(req);
   if (!auth.authorized) return auth.response!;
 
-  if (!checkAdminRateLimit(`maintenance:${auth.userId}`, 25, 60_000)) {
+  const rate = checkAdminRateLimit(`maintenance:${auth.userId}`, 25, 60_000);
+  if (!rate.allowed) {
     return NextResponse.json({ error: 'Çok fazla bakım isteği gönderildi. Lütfen biraz bekleyin.' }, { status: 429 });
   }
 
@@ -391,8 +392,8 @@ export async function POST(req: NextRequest) {
   const firstScriptPath = path.join(rootDir, steps[0].scriptRelPath);
   if (!fs.existsSync(firstScriptPath) || !fs.existsSync(dbPath)) {
     // Cloud fallback via GitHub Actions if token exists
-    const githubPat = process.env.GITHUB_PAT || process.env.GH_PAT;
-    const githubRepo = process.env.GITHUB_REPO || 'CaganErdil/KoUp';
+    const githubPat = process.env.GITHUB_TOKEN || process.env.GITHUB_PAT || process.env.GH_PAT;
+    const githubRepo = process.env.GITHUB_REPO || 'perfectusmim1/KoUp';
     if (githubPat) {
       try {
         await fetch(`https://api.github.com/repos/${githubRepo}/actions/workflows/scraper_cron.yml/dispatches`, {

@@ -12,7 +12,7 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-const TMDB_API_KEY = process.env.TMDB_API_KEY || '8ef4d73f362f0081c0d1f73c7df5632f';
+const TMDB_API_KEY = process.env.TMDB_API_KEY || '';
 
 function getS3Client(): S3Client | null {
   const endpoint = process.env.CF_R2_ENDPOINT;
@@ -229,6 +229,13 @@ export async function GET(req: NextRequest) {
         }
       }
 
+      if (!TMDB_API_KEY) {
+        return NextResponse.json(
+          { ok: false, error: 'TMDB_API_KEY ortam değişkeni tanımlı değil.' },
+          { status: 500 }
+        );
+      }
+
       const endpoint = contentType === 'film' ? 'search/movie' : 'search/tv';
       const yearParam = year ? (contentType === 'film' ? `&year=${encodeURIComponent(year)}` : `&first_air_date_year=${encodeURIComponent(year)}`) : '';
       const trRes = await fetch(
@@ -277,7 +284,8 @@ export async function POST(req: NextRequest) {
   const auth = await verifyAdminAuth(req);
   if (!auth.authorized) return auth.response!;
 
-  if (!checkAdminRateLimit(`catalog:${auth.userId}`, 60, 60_000)) {
+  const rate = checkAdminRateLimit(`catalog:${auth.userId}`, 60, 60_000);
+  if (!rate.allowed) {
     return NextResponse.json({ error: 'Çok fazla katalog isteği gönderildi. Lütfen biraz bekleyin.' }, { status: 429 });
   }
 

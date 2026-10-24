@@ -25,6 +25,7 @@ import { useKoUpSelector } from '@/context/KoUpContext';
 import { supabase, getProxiedImageUrl } from '@/lib/supabase';
 import Pagination from '@/components/Pagination';
 import CustomSelect, { SelectOption } from '@/components/CustomSelect';
+import { adminFetch } from '@/lib/adminClient';
 
 interface UserCustomList {
   id: number;
@@ -214,7 +215,7 @@ export default function MyListsPage() {
     triggerSound('click');
 
     try {
-      const res = await fetch('/api/lists', {
+      const res = await adminFetch('/api/lists', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -270,7 +271,7 @@ export default function MyListsPage() {
     triggerSound('click');
 
     try {
-      const res = await fetch(`/api/lists/${id}?user_id=${user.id}`, {
+      const res = await adminFetch(`/api/lists/${id}?user_id=${user.id}`, {
         method: 'DELETE',
       });
       const d = await res.json().catch(() => ({}));

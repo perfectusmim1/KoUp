@@ -1,16 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase, supabaseAdmin } from '@/lib/supabase';
+import { verifyUserSession } from '@/lib/adminAuth';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await verifyUserSession(req);
     const body = await req.json();
-    const userId = typeof body.user_id === 'string' ? body.user_id.trim() : '';
+    const bodyUserId = typeof body.user_id === 'string' ? body.user_id.trim() : '';
+
+    // Enforce authenticated caller; prevent IDOR spoofing of another user's ID
+    const userId = session.authenticated ? session.userId! : '';
+    if (!userId || (bodyUserId && bodyUserId !== userId)) {
+      return NextResponse.json(
+        { success: false, error: 'Yetkisiz işlem: Oturum doğrulanamadı.' },
+        { status: 401 }
+      );
+    }
+
     const targetType = body.target_type === 'person' ? 'person' : 'media';
     const targetId = Number(body.target_id);
 
-    if (!userId || !targetId || Number.isNaN(targetId)) {
+    if (!targetId || Number.isNaN(targetId) || targetId <= 0) {
       return NextResponse.json(
         { success: false, error: 'Geçersiz parametreler.' },
         { status: 400 }

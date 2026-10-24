@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase, supabaseAdmin } from '@/lib/supabase';
+import { verifyUserSession } from '@/lib/adminAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -120,9 +121,18 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await verifyUserSession(req);
     const { id } = await params;
     const body = await req.json();
-    const { action, media_id, title, description, visibility, user_id, cover_image_url, backdrop_image_url } = body;
+    const { action, media_id, title, description, visibility, user_id: bodyUserId, cover_image_url, backdrop_image_url } = body;
+
+    const user_id = session.authenticated ? session.userId! : null;
+    if (!user_id || (bodyUserId && bodyUserId !== user_id && session.role !== 'admin')) {
+      return NextResponse.json(
+        { success: false, error: 'Bu işlem için oturum açmalısınız.' },
+        { status: 401 }
+      );
+    }
 
     const isNum = /^[0-9]+$/.test(id);
     let query = (supabaseAdmin || supabase).from('custom_lists').select('*');
@@ -137,8 +147,8 @@ export async function PATCH(
       );
     }
 
-    // Check ownership if user_id is provided
-    if (user_id && existingList.user_id !== user_id) {
+    // Strict ownership check (only list owner or admin may modify)
+    if (existingList.user_id !== user_id && session.role !== 'admin') {
       return NextResponse.json(
         { success: false, error: 'Bu listeyi düzenleme yetkiniz yok.' },
         { status: 403 }
@@ -233,11 +243,13 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await verifyUserSession(req);
     const { id } = await params;
     const { searchParams } = new URL(req.url);
-    const userId = searchParams.get('user_id');
+    const queryUserId = searchParams.get('user_id');
+    const userId = session.authenticated ? session.userId! : null;
 
-    if (!userId) {
+    if (!userId || (queryUserId && queryUserId !== userId && session.role !== 'admin')) {
       return NextResponse.json(
         { success: false, error: 'Kullanıcı oturumu gereklidir.' },
         { status: 401 }

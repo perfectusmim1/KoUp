@@ -121,9 +121,13 @@ export async function verifyAdminAuth(
 ): Promise<AdminAuthResult> {
   const token = extractBearerOrCookieToken(req);
 
-  // Strict environment check: NEVER trust spoofable Host or Referer headers
+  // Strict environment check: NEVER trust spoofable Host or Referer headers.
+  // Dev fallback requires explicit ADMIN_DEV_BYPASS=1 in local development only.
   const isStrictLocalDev =
-    process.env.NODE_ENV === 'development' && !process.env.VERCEL && !process.env.CF_PAGES;
+    process.env.NODE_ENV === 'development' &&
+    process.env.ADMIN_DEV_BYPASS === '1' &&
+    !process.env.VERCEL &&
+    !process.env.CF_PAGES;
 
   if (!token) {
     if (isStrictLocalDev) {

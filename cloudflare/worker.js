@@ -4,6 +4,89 @@
  * URL: https://koup-edge-worker.caganhuseyinerdil.workers.dev
  */
 
+const PRIVATE_HOST_RE =
+  /^(localhost|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+|169\.254\.\d+\.\d+|0\.0\.0\.0|\[?::1?\]?|\[?fc[0-9a-f]{2}:.*|\[?fd[0-9a-f]{2}:.*|\[?fe80:.*)$/i;
+
+function isSafeHttpUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    const host = parsed.hostname.toLowerCase();
+    if (!host || PRIVATE_HOST_RE.test(host) || host.endsWith('.local') || host.endsWith('.internal')) {
+      return null;
+    }
+    if (/^(?:0x[0-9a-f]+|\d+)$/i.test(host)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function isAllowedPichiveTarget(parsedUrl) {
+  const host = parsedUrl.hostname.toLowerCase();
+  const pathAndQuery = (parsedUrl.pathname + parsedUrl.search).toLowerCase();
+  if (
+    host === 'pichive.online' ||
+    host.endsWith('.pichive.online') ||
+    host === 'asyawatch.com' ||
+    host.endsWith('.asyawatch.com')
+  ) {
+    return true;
+  }
+  // Allow CDN segment/playlist nodes referenced by Pichive manifests
+  if (
+    pathAndQuery.includes('.m3u8') ||
+    pathAndQuery.includes('.ts') ||
+    pathAndQuery.includes('.m4s') ||
+    pathAndQuery.includes('.vtt') ||
+    pathAndQuery.includes('/m.php') ||
+    pathAndQuery.includes('/l.php') ||
+    pathAndQuery.includes('/ld.php') ||
+    pathAndQuery.includes('/hls/') ||
+    pathAndQuery.includes('/seg') ||
+    pathAndQuery.includes('/chunk')
+  ) {
+    return true;
+  }
+  return false;
+}
+
+const RESOLVE_HOST_KEYWORDS = [
+  'vidmoly',
+  'ok.ru',
+  'odnoklassniki',
+  'sibnet',
+  'uqload',
+  'mail.ru',
+  'molystream',
+  'dizibox',
+  'dizikorea',
+  'morencius',
+  'rapidrame',
+  'hdfilm',
+  'tau-video',
+  'pichive',
+  'asyawatch',
+  'dizilla',
+  'dizifon',
+  'voe',
+  'filemoon',
+  'streamtape',
+];
+
+function timingSafeEqualStr(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const enc = new TextEncoder();
+  const aBytes = enc.encode(a);
+  const bBytes = enc.encode(b);
+  if (aBytes.length !== bBytes.length) return false;
+  let diff = 0;
+  for (let i = 0; i < aBytes.length; i++) {
+    diff |= aBytes[i] ^ bBytes[i];
+  }
+  return diff === 0;
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -14,6 +97,7 @@ export default {
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Range, Authorization',
       'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
+      'X-Content-Type-Options': 'nosniff',
     };
 
     if (request.method === 'OPTIONS') {
@@ -22,7 +106,8 @@ export default {
 
     // 1. Live Magazin & News Edge Cache
     if (url.pathname === '/magazin') {
-      const limit = url.searchParams.get('limit') || '20';
+      const rawLimit = parseInt(url.searchParams.get('limit') || '20', 10);
+      const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 50) : 20;
       const cacheKey = new Request(url.toString(), request);
       const cache = caches.default;
       let cached = await cache.match(cacheKey);
@@ -88,6 +173,16 @@ export default {
         });
       }
 
+      let normalizedIframe = targetIframe;
+      if (normalizedIframe.startsWith('//')) normalizedIframe = 'https:' + normalizedIframe;
+      const parsedIframeCheck = isSafeHttpUrl(normalizedIframe);
+      if (!parsedIframeCheck || !isAllowedPichiveTarget(parsedIframeCheck)) {
+        return new Response(JSON.stringify({ error: 'Forbidden target host' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       // Edge Cache (1 hour cache to prevent Cloudflare 1015 rate limiting)
       const cacheKey = new Request(url.toString(), request);
       const cache = caches.default;
@@ -97,8 +192,7 @@ export default {
       } catch {}
 
       try {
-        let iframeUrl = targetIframe;
-        if (iframeUrl.startsWith('//')) iframeUrl = 'https:' + iframeUrl;
+        const iframeUrl = parsedIframeCheck.toString();
 
         const iframeResp = await fetch(iframeUrl, {
           headers: {
@@ -138,8 +232,7 @@ export default {
         }
 
         const token = tokenMatch[1];
-        const parsedIframe = new URL(iframeUrl);
-        const origin = parsedIframe.origin;
+        const origin = parsedIframeCheck.origin;
         const source2Url = `${origin}/source2.php?v=${encodeURIComponent(token)}`;
 
         const s2Resp = await fetch(source2Url, {
@@ -209,9 +302,19 @@ export default {
         return new Response('Missing url', { status: 400, headers: corsHeaders });
       }
 
+      const parsedTarget = isSafeHttpUrl(targetUrl);
+      if (!parsedTarget || !isAllowedPichiveTarget(parsedTarget)) {
+        return new Response(JSON.stringify({ error: 'Forbidden proxy target' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       try {
-        const customRef = url.searchParams.get('ref') || 'https://four.pichive.online/';
-        const origin = 'https://four.pichive.online';
+        const rawRef = url.searchParams.get('ref');
+        const safeRefParsed = rawRef ? isSafeHttpUrl(rawRef) : null;
+        const customRef = safeRefParsed ? safeRefParsed.toString() : 'https://four.pichive.online/';
+        const origin = safeRefParsed ? safeRefParsed.origin : 'https://four.pichive.online';
 
         const forwardHeaders = {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -223,7 +326,7 @@ export default {
         const range = request.headers.get('Range');
         if (range) forwardHeaders['Range'] = range;
 
-        const upstreamRes = await fetch(targetUrl, {
+        const upstreamRes = await fetch(parsedTarget.toString(), {
           headers: forwardHeaders,
         });
 
@@ -318,15 +421,26 @@ export default {
         });
       }
 
+      const parsed = isSafeHttpUrl(targetUrl);
+      const hostLower = parsed ? parsed.hostname.toLowerCase() : '';
+      const isAllowedHost =
+        parsed && RESOLVE_HOST_KEYWORDS.some((kw) => hostLower.includes(kw));
+
+      if (!parsed || !isAllowedHost) {
+        return new Response(JSON.stringify({ error: 'Forbidden resolver host' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       try {
-        const parsed = new URL(targetUrl);
         const headers = {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
           'Accept': '*/*',
           'Referer': `${parsed.protocol}//${parsed.host}/`,
         };
 
-        const res = await fetch(targetUrl, { headers });
+        const res = await fetch(parsed.toString(), { headers });
         const html = await res.text();
 
         // Extract potential m3u8 or mp4 sources from embedded scripts
@@ -335,7 +449,7 @@ export default {
 
         return new Response(
           JSON.stringify({
-            target: targetUrl,
+            target: parsed.toString(),
             found_m3u8: m3u8Match ? m3u8Match[1] : null,
             found_mp4: mp4Match ? mp4Match[1] : null,
             status: 'resolved',
@@ -358,15 +472,32 @@ export default {
 
     // 4. R2 Object Storage: Ultra-Fast Distributed Catalog & Episode Cache
     if (url.pathname.startsWith('/archive/')) {
-      const key = url.pathname.replace('/archive/', '').trim();
-      if (!key) {
-        return new Response(JSON.stringify({ error: 'Missing object key' }), {
+      let key = '';
+      try {
+        key = decodeURIComponent(url.pathname.slice('/archive/'.length)).trim();
+      } catch {
+        return new Response(JSON.stringify({ error: 'Invalid object key' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
+      if (!key || key.includes('..') || key.includes('\\') || key.startsWith('/')) {
+        return new Response(JSON.stringify({ error: 'Not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       if (request.method === 'GET') {
+        // Strictly restrict public GET to sources/{id}.json bundles only — never expose db/* or internal files
+        if (!/^sources\/[a-zA-Z0-9_-]+\.json$/.test(key)) {
+          return new Response(JSON.stringify({ error: 'Not found' }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
         if (!env.ARCHIVE_BUCKET) {
           return new Response(JSON.stringify({ error: 'R2 bucket binding not configured' }), {
             status: 503,
@@ -388,10 +519,16 @@ export default {
       }
 
       if (request.method === 'PUT' || request.method === 'POST') {
-        const auth = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') || url.searchParams.get('secret');
-        if (!env.R2_SECRET || auth !== env.R2_SECRET) {
+        const auth = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') || '';
+        if (!env.R2_SECRET || !timingSafeEqualStr(auth, String(env.R2_SECRET))) {
           return new Response(JSON.stringify({ error: 'Unauthorized' }), {
             status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        if (!/^sources\/[a-zA-Z0-9_-]+\.json$/.test(key)) {
+          return new Response(JSON.stringify({ error: 'Forbidden object key' }), {
+            status: 403,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }

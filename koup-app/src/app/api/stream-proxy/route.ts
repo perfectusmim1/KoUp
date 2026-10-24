@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import dns from 'node:dns';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,6 +45,17 @@ function isBlockedIpOrHost(hostname: string): boolean {
   return false;
 }
 
+async function isBlockedAfterDnsLookup(hostname: string): Promise<boolean> {
+  if (isBlockedIpOrHost(hostname)) return true;
+  try {
+    const records = await dns.promises.lookup(hostname, { all: true });
+    if (!records || records.length === 0) return true;
+    return records.some((rec) => isBlockedIpOrHost(rec.address));
+  } catch {
+    return true;
+  }
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   let targetUrl = searchParams.get('url');
@@ -68,7 +80,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const parsedTarget = new URL(targetUrl);
-    if (!['http:', 'https:'].includes(parsedTarget.protocol) || isBlockedIpOrHost(parsedTarget.hostname)) {
+    if (!['http:', 'https:'].includes(parsedTarget.protocol) || (await isBlockedAfterDnsLookup(parsedTarget.hostname))) {
       return NextResponse.json({ error: 'Blocked host or protocol' }, { status: 403 });
     }
 

@@ -33,6 +33,7 @@ import { invalidateCache, invalidateMediaCache, updateCachedMedia } from '@/lib/
 import { getClientFingerprint } from '@/lib/fingerprint';
 import { registerOrHeartbeatDevice } from '@/lib/deviceTracker';
 import ConfirmModal from '@/components/ConfirmModal';
+import { adminFetch } from '@/lib/adminClient';
 
 export interface ConfirmDialogOptions {
   title: string;
@@ -1857,7 +1858,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       } catch {}
 
       // Persist to user_follows in Supabase via server-side API route
-      void fetch('/api/follow', {
+      void adminFetch('/api/follow', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1947,7 +1948,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       } catch {}
 
       // Persist to user_follows in Supabase via server-side API route
-      void fetch('/api/follow', {
+      void adminFetch('/api/follow', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2340,7 +2341,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
 
     async function loadBlocks() {
       try {
-        const res = await fetch(`/api/users/block?user_id=${user!.id}`);
+        const res = await adminFetch(`/api/users/block?user_id=${user!.id}`);
         const data = await res.json();
         if (data.success) {
           setBlockedUsers(data.blocked_users || []);
@@ -2398,7 +2399,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       );
 
       try {
-        await fetch('/api/users/block', {
+        await adminFetch('/api/users/block', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2431,7 +2432,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
 
       if (user?.id) {
         try {
-          await fetch('/api/users/block', {
+          await adminFetch('/api/users/block', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

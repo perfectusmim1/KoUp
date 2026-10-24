@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase, supabaseAdmin } from '@/lib/supabase';
+import { verifyUserSession } from '@/lib/adminAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -118,8 +119,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await verifyUserSession(req);
     const body = await req.json();
-    const { title, description, visibility, user_id, media_ids, cover_image_url, backdrop_image_url } = body;
+    const { title, description, visibility, user_id: bodyUserId, media_ids, cover_image_url, backdrop_image_url } = body;
 
     if (!title || title.trim().length < 2) {
       return NextResponse.json(
@@ -128,7 +130,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!user_id) {
+    const user_id = session.authenticated ? session.userId! : null;
+    if (!user_id || (bodyUserId && bodyUserId !== user_id)) {
       return NextResponse.json(
         { success: false, error: 'Liste oluşturmak için giriş yapmalısınız.' },
         { status: 401 }

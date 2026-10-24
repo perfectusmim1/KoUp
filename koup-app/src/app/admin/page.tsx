@@ -472,7 +472,61 @@ export default function AdminDashboardPage() {
     confirmDialog,
   } = useKoUp();
 
-  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+  const [activeTab, setActiveTabState] = useState<AdminTab>('overview');
+  const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
+  const [cmdPaletteQuery, setCmdPaletteQuery] = useState('');
+
+  // Sync activeTab with URL ?tab= query parameter & browser Back/Forward (B3)
+  const setActiveTab = useCallback((nextTab: AdminTab) => {
+    setActiveTabState(nextTab);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', nextTab);
+      window.history.pushState({ tab: nextTab }, '', url.toString());
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const validTabs = new Set<string>([
+      'overview',
+      'users',
+      'series',
+      'series_automation',
+      'episodes',
+      'comments',
+      'scrapers',
+      'maintenance',
+      'reports',
+      'broadcast',
+      'settings',
+      'audit_log',
+    ]);
+    const readTabFromUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      const t = params.get('tab');
+      if (t && validTabs.has(t)) {
+        setActiveTabState(t as AdminTab);
+      }
+    };
+    readTabFromUrl();
+    window.addEventListener('popstate', readTabFromUrl);
+    return () => window.removeEventListener('popstate', readTabFromUrl);
+  }, []);
+
+  // Global Ctrl+K / Cmd+K Command Palette listener (Faz 2)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCmdPaletteOpen((prev) => !prev);
+      } else if (e.key === 'Escape' && cmdPaletteOpen) {
+        setCmdPaletteOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [cmdPaletteOpen]);
 
   // Moderation Modal State (for Warning, Soft Ban, Hard Ban)
   const [modModalOpen, setModModalOpen] = useState(false);
@@ -482,7 +536,7 @@ export default function AdminDashboardPage() {
   const [modDuration, setModDuration] = useState<'24h' | '3d' | '7d' | '30d' | 'permanent'>('permanent');
   const [modSubmitting, setModSubmitting] = useState(false);
 
-  // Live Stats (Real DB counts — no hardcoded fake defaults)
+  // Live Stats (Real DB counts via admin_dashboard_stats RPC — no hardcoded fake defaults)
   const [stats, setStats] = useState({
     totalMedia: 0,
     totalPeople: 0,
@@ -490,6 +544,12 @@ export default function AdminDashboardPage() {
     totalUsers: 0,
     totalComments: 0,
     openReports: 0,
+    newUsers24h: 0,
+    newComments24h: 0,
+    views24h: 0,
+    mediaNoOverview: 0,
+    overdueScheduled: 0,
+    brokenEpisodes: 0,
   });
 
   // Maintenance, Health, Audit Logs & Site Settings State
@@ -692,29 +752,14 @@ export default function AdminDashboardPage() {
     return () => clearTimeout(t);
   }, [epMediaSearchInput]);
 
-  // Load Initial Admin Data & Exact Database Counts
+  // Load Initial Admin Data & Fast RPC Dashboard Stats (P1)
   useEffect(() => {
     if (!hasAdminPanelAccess) return;
 
     async function loadInitial() {
       try {
-        const [
-          mCountRes,
-          pCountRes,
-          epCountRes,
-          uCountRes,
-          cCountRes,
-          rCountRes,
-          sRes,
-          rRes,
-          fRes,
-        ] = await Promise.all([
-          supabase.from('media').select('id', { count: 'exact', head: true }),
-          supabase.from('people').select('id', { count: 'exact', head: true }),
-          supabase.from('episodes').select('id', { count: 'exact', head: true }),
-          supabase.from('profiles').select('id', { count: 'exact', head: true }),
-          supabase.from('comments').select('id', { count: 'exact', head: true }),
-          supabase.from('issue_reports').select('id', { count: 'exact', head: true }).neq('status', 'resolved'),
+        const [dashRpcRes, sRes, rRes, fRes] = await Promise.all([
+          supabase.rpc('admin_dashboard_stats'),
           supabase.from('scraper_configs').select('*').order('id'),
           supabase.from('issue_reports').select('*').order('created_at', { ascending: false }).limit(80),
           supabase.from('media').select('*').eq('is_featured', true).order('featured_order', { ascending: true }).limit(16),
@@ -736,14 +781,40 @@ export default function AdminDashboardPage() {
         setScrapers(filteredScrapers);
         setReports((rRes.data as IssueReportRow[]) || []);
         setFeaturedMedia((fRes.data as MediaItem[]) || []);
-        setStats({
-          totalMedia: mCountRes.count ?? 0,
-          totalPeople: pCountRes.count ?? 0,
-          totalEpisodes: epCountRes.count ?? 0,
-          totalUsers: uCountRes.count ?? 0,
-          totalComments: cCountRes.count ?? 0,
-          openReports: rCountRes.count ?? 0,
-        });
+
+        if (!dashRpcRes.error && dashRpcRes.data) {
+          const d = dashRpcRes.data as Record<string, any>;
+          setStats({
+            totalMedia: Number(d.totalMedia || 0),
+            totalPeople: Number(d.totalPeople || 0),
+            totalEpisodes: Number(d.totalEpisodes || 0),
+            totalUsers: Number(d.totalUsers || 0),
+            totalComments: Number(d.totalComments || 0),
+            openReports: Number(d.openReports || 0),
+            newUsers24h: Number(d.newUsers24h || 0),
+            newComments24h: Number(d.newComments24h || 0),
+            views24h: Number(d.views24h || 0),
+            mediaNoOverview: Number(d.mediaNoOverview || 0),
+            overdueScheduled: Number(d.overdueScheduled || 0),
+            brokenEpisodes: Number(d.brokenEpisodes || 0),
+          });
+        } else {
+          const [mCountRes, pCountRes, uCountRes, cCountRes, rCountRes] = await Promise.all([
+            supabase.from('media').select('id', { count: 'exact', head: true }),
+            supabase.from('people').select('id', { count: 'exact', head: true }),
+            supabase.from('profiles').select('id', { count: 'exact', head: true }),
+            supabase.from('comments').select('id', { count: 'exact', head: true }),
+            supabase.from('issue_reports').select('id', { count: 'exact', head: true }).neq('status', 'resolved'),
+          ]);
+          setStats((prev) => ({
+            ...prev,
+            totalMedia: mCountRes.count ?? 0,
+            totalPeople: pCountRes.count ?? 0,
+            totalUsers: uCountRes.count ?? 0,
+            totalComments: cCountRes.count ?? 0,
+            openReports: rCountRes.count ?? 0,
+          }));
+        }
       } catch (err) {
         console.error('Admin initial load error:', err);
       }
@@ -754,7 +825,7 @@ export default function AdminDashboardPage() {
     }
   }, [hasAdminPanelAccess, isAdmin, refreshMaintenanceTelemetry]);
 
-  // Load Users Tab (Server-Side Paginated with 50 items/page)
+  // Load Users Tab via parameterized admin_search_users RPC (Fixes S11 & B2)
   useEffect(() => {
     if (!hasAdminPanelAccess || activeTab !== 'users') return;
     async function loadUsers() {
@@ -762,18 +833,38 @@ export default function AdminDashboardPage() {
       try {
         const PAGE_SIZE = 50;
         const from = (usersPage - 1) * PAGE_SIZE;
-        const to = from + PAGE_SIZE - 1;
 
+        const { data: rpcRes, error: rpcErr } = await supabase.rpc('admin_search_users', {
+          p_query: debouncedUserSearch || '',
+          p_role: userRoleFilter || 'ALL',
+          p_sort: 'newest',
+          p_limit: PAGE_SIZE,
+          p_offset: from,
+        });
+
+        if (!rpcErr && rpcRes) {
+          const parsed = rpcRes as { total?: number; users?: UserProfileRow[] };
+          const list = Array.isArray(parsed.users) ? parsed.users : [];
+          const total = typeof parsed.total === 'number' ? parsed.total : list.length;
+          setUsersList(list);
+          setUsersTotalCount(total);
+          if (!debouncedUserSearch && userRoleFilter === 'ALL') {
+            setStats((prev) => ({ ...prev, totalUsers: total }));
+          }
+          return;
+        }
+
+        // Fallback with sanitized query string (S11 protection)
+        const to = from + PAGE_SIZE - 1;
+        const safeQ = debouncedUserSearch.replace(/[,()\\]/g, '').trim();
         let q = supabase
           .from('profiles')
           .select('*', { count: 'exact' })
           .order('created_at', { ascending: false })
           .range(from, to);
 
-        if (debouncedUserSearch) {
-          q = q.or(
-            `username.ilike.%${debouncedUserSearch}%,display_name.ilike.%${debouncedUserSearch}%,email.ilike.%${debouncedUserSearch}%`
-          );
+        if (safeQ) {
+          q = q.or(`username.ilike.%${safeQ}%,display_name.ilike.%${safeQ}%`);
         }
 
         if (userRoleFilter === 'banned') {
@@ -1383,20 +1474,17 @@ export default function AdminDashboardPage() {
           : null;
 
       let sentCount = 0;
-      const { data: rpcRes, error: rpcErr } = await supabase.rpc(
-        'distribute_broadcast_notification',
-        {
-          p_title: bTitle,
-          p_body: bBody,
-          p_link_url: bLink,
-          p_type: broadcastNotifType || 'system',
-          p_target_type: broadcastTargetType,
-          p_target_media_id: targetMediaId,
-        }
-      );
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc('admin_send_broadcast', {
+        p_title: bTitle,
+        p_message: bBody,
+        p_link_url: bLink,
+        p_thumbnail_url: null,
+        p_audience_type: broadcastTargetType === 'followers' ? 'media_followers' : 'global',
+        p_audience_value: targetMediaId ? String(targetMediaId) : null,
+      });
 
       if (!rpcErr && rpcRes) {
-        sentCount = Number((rpcRes as any).recipients_count || 0);
+        sentCount = Number((rpcRes as any).recipient_count || (rpcRes as any).recipients_count || 0);
       } else {
         // Fallback if RPC not reachable
         await supabase.from('broadcast_events').insert({
@@ -2447,22 +2535,35 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // Issue Reports
-  const resolveIssue = async (reportId: number) => {
+  // Issue Reports (via admin_triage_report RPC with reporter notification & audit log — B4 & Faz 3.6)
+  const resolveIssue = async (reportId: number, status: 'resolved' | 'in_progress' | 'dismissed' = 'resolved') => {
     try {
-      const { error } = await supabase
-        .from('issue_reports')
-        .update({ status: 'resolved' })
-        .eq('id', reportId);
-      if (error) throw error;
+      const { error: rpcErr } = await supabase.rpc('admin_triage_report', {
+        p_report_id: reportId,
+        p_status: status,
+        p_admin_note: status === 'resolved' ? 'Admin panelinden incelenip onarıldı.' : null,
+        p_notify_reporter: status === 'resolved',
+      });
+
+      if (rpcErr) {
+        const { error } = await supabase
+          .from('issue_reports')
+          .update({ status })
+          .eq('id', reportId);
+        if (error) throw error;
+      }
 
       setReports((prev) =>
-        prev.map((r) => (r.id === reportId ? { ...r, status: 'resolved' } : r))
+        prev.map((r) => (r.id === reportId ? { ...r, status } : r))
       );
-      setStats((s) => ({ ...s, openReports: Math.max(0, s.openReports - 1) }));
+      if (status === 'resolved' || status === 'dismissed') {
+        setStats((s) => ({ ...s, openReports: Math.max(0, s.openReports - 1) }));
+      }
       pushNotification(
-        'Sorun Çözüldü İşaretlendi',
-        `Bildirim #${reportId} onarıldı ve kapatıldı.`,
+        status === 'resolved' ? 'Sorun Çözüldü İşaretlendi' : 'Rapor Durumu Güncellendi',
+        status === 'resolved'
+          ? `Bildirim #${reportId} onarıldı, kapatıldı ve raporlayana bildirim gönderildi.`
+          : `Bildirim #${reportId} durumu "${status}" olarak güncellendi.`,
         'success'
       );
     } catch (err: any) {
@@ -2591,9 +2692,21 @@ export default function AdminDashboardPage() {
       {/* 1. TOP HEADER & METRICS */}
       <div className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/15 flex flex-col xl:flex-row xl:items-center justify-between gap-6 shadow-2xl">
         <div className="space-y-2">
-          <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-amber-300">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-mono uppercase tracking-widest text-amber-300">
             <ShieldCheck className="w-4 h-4 text-amber-400" />
             <span>{isAdmin ? 'KoUp Master Yönetim & Denetim Merkezi · RLS Aktif' : 'KoUp Moderasyon Merkezi · RLS Aktif'}</span>
+            <button
+              type="button"
+              onClick={() => setCmdPaletteOpen(true)}
+              className="ml-2 px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-[11px] font-mono text-white/85 flex items-center gap-1.5 cursor-pointer transition-all"
+              title="Hızlı Komut Paleti (Ctrl+K)"
+            >
+              <Search className="w-3 h-3 text-amber-300" />
+              <span>Komut Paleti</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-black/60 border border-white/15 text-[10px] text-white/60">
+                Ctrl+K
+              </kbd>
+            </button>
           </div>
           <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
             {isAdmin ? 'Sistem Yönetim Paneli' : 'Moderatör Denetim Paneli'}
@@ -3050,24 +3163,16 @@ export default function AdminDashboardPage() {
 
             {/* Filters */}
             <div className="flex flex-col sm:flex-row items-center gap-3">
-              <div className="relative flex-1 w-full">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
-                <input
+              <div className="flex-1 w-full">
+                <KoupInput
                   type="text"
                   placeholder="Kullanıcı adı, isim veya e-posta ile ara..."
                   value={userSearchInput}
                   onChange={(e) => setUserSearchInput(e.target.value)}
-                  className="w-full pl-10 pr-10 py-2.5 rounded-2xl bg-black/50 border border-white/10 text-xs text-white placeholder-white/40 focus:outline-none focus:border-white/30"
+                  leftIcon={<Search className="w-4 h-4" />}
+                  clearable
+                  onClear={() => setUserSearchInput('')}
                 />
-                {userSearchInput && (
-                  <button
-                    type="button"
-                    onClick={() => setUserSearchInput('')}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
               </div>
 
               <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto no-scrollbar">
@@ -3338,24 +3443,16 @@ export default function AdminDashboardPage() {
 
             {/* Search & Filters */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="relative">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
-                <input
+              <div>
+                <KoupInput
                   type="text"
                   placeholder="Seri adı veya slug ile ara..."
                   value={seriesSearchInput}
                   onChange={(e) => setSeriesSearchInput(e.target.value)}
-                  className="w-full pl-10 pr-10 py-2.5 rounded-2xl bg-black/50 border border-white/10 text-xs text-white placeholder-white/40 focus:outline-none"
+                  leftIcon={<Search className="w-4 h-4" />}
+                  clearable
+                  onClear={() => setSeriesSearchInput('')}
                 />
-                {seriesSearchInput && (
-                  <button
-                    type="button"
-                    onClick={() => setSeriesSearchInput('')}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
               </div>
 
               <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
@@ -5774,19 +5871,14 @@ export default function AdminDashboardPage() {
                 </div>
 
                 {/* Reason Text */}
-                <div>
-                  <label className="block text-[11px] font-medium text-white/70 mb-1">
-                    Gerekçe / Açıklama *
-                  </label>
-                  <textarea
-                    required
-                    rows={3}
-                    placeholder="İhlal gerekçesini detaylıca belirtiniz..."
-                    value={modReason}
-                    onChange={(e) => setModReason(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-2xl bg-black/60 border border-white/15 text-xs text-white placeholder-white/40 focus:outline-none focus:border-white/35 resize-none"
-                  />
-                </div>
+                <KoupTextarea
+                  label="Gerekçe / Açıklama *"
+                  required
+                  rows={3}
+                  placeholder="İhlal gerekçesini detaylıca belirtiniz..."
+                  value={modReason}
+                  onChange={(e) => setModReason(e.target.value)}
+                />
 
                 {/* Target User Metadata */}
                 <div className="p-3 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between text-[11px] text-white/50 font-mono">
@@ -5845,6 +5937,82 @@ export default function AdminDashboardPage() {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ================= MODAL: KOMUT PALETİ (CTRL+K / CMD+K) ================= */}
+      <AnimatePresence>
+        {cmdPaletteOpen && (
+          <div className="fixed inset-0 z-50 flex items-start justify-center pt-24 p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setCmdPaletteOpen(false)}
+              className="fixed inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: -12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: -12 }}
+              transition={{ duration: 0.18 }}
+              className="relative w-full max-w-xl rounded-3xl apple-glass p-5 border border-white/20 shadow-2xl z-10 space-y-4"
+            >
+              <KoupInput
+                autoFocus
+                type="text"
+                placeholder="Sekme, bakım aracı veya hızlı aksiyon ara..."
+                value={cmdPaletteQuery}
+                onChange={(e) => setCmdPaletteQuery(e.target.value)}
+                leftIcon={<Search className="w-4 h-4 text-amber-300" />}
+                clearable
+                onClear={() => setCmdPaletteQuery('')}
+              />
+
+              <div className="max-h-80 overflow-y-auto space-y-1.5 pr-1">
+                {[
+                  { id: 'overview', label: 'Genel Bakış & Canlı Telemetri', desc: 'Sistem sağlığı, vitrin ve metrikler', tab: 'overview' as AdminTab, adminOnly: true },
+                  { id: 'users', label: 'Kullanıcı & Üye Yönetimi', desc: 'E-posta ile üye ara, rol ata veya banla', tab: 'users' as AdminTab, adminOnly: false },
+                  { id: 'series', label: 'Seri & Medya Kataloğu', desc: 'Yeni dizi/anime ekle, TMDB/AniList otomatik doldur', tab: 'series' as AdminTab, adminOnly: true },
+                  { id: 'episodes', label: 'Bölümler & Video Kaynakları', desc: 'Kaynak ekle/sırala, canlı URL probe testi yap', tab: 'episodes' as AdminTab, adminOnly: true },
+                  { id: 'series_automation', label: 'Seri Otomasyonu', desc: 'Çoklu kaynak eşleştirme ve otomatik bölüm takibi', tab: 'series_automation' as AdminTab, adminOnly: true },
+                  { id: 'scrapers', label: 'Scraper Botları & Cron Merkezi', desc: 'Botları çalıştır, gerçek başarı oranlarını incele', tab: 'scrapers' as AdminTab, adminOnly: true },
+                  { id: 'maintenance', label: 'Bakım & Tam Senkron Merkezi', desc: 'Auto-heal, mükerrer birleştirme, R2 & Supabase senkron', tab: 'maintenance' as AdminTab, adminOnly: true },
+                  { id: 'comments', label: 'Yorum Moderasyonu', desc: 'Kelime filtreli toplu yorum denetimi', tab: 'comments' as AdminTab, adminOnly: false },
+                  { id: 'reports', label: 'Sorun Bildirimleri (Triage)', desc: 'Kırık bölüm bildirimlerini incele ve çöz', tab: 'reports' as AdminTab, adminOnly: true },
+                  { id: 'broadcast', label: 'Toplu Bildirim Merkezi', desc: 'Tüm üyelere veya dizi takipçilerine RPC duyuru gönder', tab: 'broadcast' as AdminTab, adminOnly: true },
+                  { id: 'settings', label: 'Site Ayarları & Başyapıtlar', desc: 'Başyapıtlar rotasyonu, duyuru bandı, kelime filtresi', tab: 'settings' as AdminTab, adminOnly: true },
+                  { id: 'audit_log', label: 'Denetim Kaydı (Audit Log)', desc: 'Tüm yönetici ve moderatör işlemlerinin geçmişi', tab: 'audit_log' as AdminTab, adminOnly: true },
+                ]
+                  .filter((item) => (!item.adminOnly || isAdmin))
+                  .filter((item) => {
+                    const q = cmdPaletteQuery.trim().toLowerCase();
+                    if (!q) return true;
+                    return item.label.toLowerCase().includes(q) || item.desc.toLowerCase().includes(q);
+                  })
+                  .map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        setActiveTab(item.tab);
+                        setCmdPaletteOpen(false);
+                        setCmdPaletteQuery('');
+                      }}
+                      className="w-full p-3 rounded-2xl bg-white/[0.03] hover:bg-white/10 border border-white/[0.06] hover:border-white/20 flex items-center justify-between text-left transition-all cursor-pointer"
+                    >
+                      <div>
+                        <div className="text-xs font-bold text-white">{item.label}</div>
+                        <div className="text-[11px] text-white/50">{item.desc}</div>
+                      </div>
+                      <span className="text-[10px] font-mono text-amber-300 px-2 py-0.5 rounded-lg bg-amber-400/10 border border-amber-400/25">
+                        Git →
+                      </span>
+                    </button>
+                  ))}
+              </div>
             </motion.div>
           </div>
         )}
