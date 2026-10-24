@@ -524,16 +524,29 @@ export default function KutuphanePage() {
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
-          {paginatedMedia.map((m) => {
+        <motion.div
+          key={`kutuphane-grid-${activeType}-${activeStatus}-${searchQuery}-${sortBy}-${currentPage}`}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5"
+        >
+          {paginatedMedia.map((m, idx) => {
             const prog = progressMap[m.id];
             const currentStatus = prog?.status || 'watching';
             const watchedCount = prog?.watched_episodes?.length || 0;
             const totalEps = m.episode_count || 0;
 
             return (
-              <div
+              <motion.div
                 key={m.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  duration: 0.22,
+                  delay: Math.min(idx * 0.015, 0.18),
+                  ease: [0.16, 1, 0.3, 1],
+                }}
                 className="group relative flex flex-col rounded-2xl bg-[#0f0f12] border border-white/10 hover:border-white/25 overflow-hidden transition-[border-color,box-shadow] duration-200 shadow-lg hover:shadow-2xl"
               >
                 {/* Poster & Direct Play */}
@@ -602,10 +615,10 @@ export default function KutuphanePage() {
                     </div>
                   )}
                 </div>
-              </div>
+              </motion.div>
             );
           })}
-        </div>
+        </motion.div>
       )}
 
       {/* PAGINATION DECK (Apple TV+ Cinema Glass Design) */}

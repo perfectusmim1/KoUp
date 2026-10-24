@@ -368,19 +368,35 @@ export default function MagazineHubPage() {
           )}
 
           {/* ARTICLES BENTO GRID */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {restPosts.map((post) => {
+          <motion.div
+            key={`magazin-grid-${activeCategory}-${activeSource}-${searchQuery}`}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+          >
+            {restPosts.map((post, idx) => {
               const isKoreZin =
                 post.source_site === 'KoreZin' ||
                 post.slug.startsWith('kz-') ||
                 post.source_url?.includes('korezin.com');
 
               return (
-                <Link
+                <motion.div
                   key={post.slug}
-                  href={`/magazin/${post.slug}`}
-                  className="koup-projection-card rounded-3xl overflow-hidden bg-[#121216] border border-white/10 flex flex-col group"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    duration: 0.22,
+                    delay: Math.min(idx * 0.02, 0.18),
+                    ease: [0.16, 1, 0.3, 1],
+                  }}
+                  className="h-full"
                 >
+                  <Link
+                    href={`/magazin/${post.slug}`}
+                    className="koup-projection-card rounded-3xl overflow-hidden bg-[#121216] border border-white/10 flex flex-col group h-full"
+                  >
                   <div className="relative h-52 overflow-hidden">
                     <img
                       src={getProxiedImageUrl(post.featured_image)}
@@ -429,9 +445,10 @@ export default function MagazineHubPage() {
                     </div>
                   </div>
                 </Link>
-              );
-            })}
-          </div>
+              </motion.div>
+            );
+          })}
+        </motion.div>
         </>
       )}
     </div>

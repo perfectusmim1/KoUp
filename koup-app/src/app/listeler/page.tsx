@@ -428,18 +428,33 @@ export default function PublicListsPage() {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {paginatedLists.map((list) => {
+        <motion.div
+          key={`listeler-grid-${sortBy}-${searchQuery}-${currentPage}`}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+          className="grid grid-cols-1 lg:grid-cols-2 gap-6"
+        >
+          {paginatedLists.map((list, idx) => {
             const posters = list.preview_posters || [];
             const bgImage = list.backdrop_image_url || list.cover_image_url || (posters[0]?.cover_image) || null;
 
             return (
-              <Link
+              <motion.div
                 key={list.id}
-                href={`/listeler/${list.slug || list.id}`}
-                onClick={() => triggerSound('click')}
-                className="group relative rounded-3xl overflow-hidden min-h-[270px] sm:min-h-[290px] border border-white/10 hover:border-sky-400/50 p-6 flex flex-col justify-between transition-all duration-300 hover:shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_35px_rgba(56,189,248,0.22)]"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  duration: 0.22,
+                  delay: Math.min(idx * 0.02, 0.18),
+                  ease: [0.16, 1, 0.3, 1],
+                }}
               >
+                <Link
+                  href={`/listeler/${list.slug || list.id}`}
+                  onClick={() => triggerSound('click')}
+                  className="group relative rounded-3xl overflow-hidden min-h-[270px] sm:min-h-[290px] border border-white/10 hover:border-sky-400/50 p-6 flex flex-col justify-between transition-all duration-300 hover:shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_35px_rgba(56,189,248,0.22)] w-full h-full"
+                >
                 {/* GPU Ambient Glow */}
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-sky-500/20 via-sky-400/10 to-indigo-500/20 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none -z-10" />
 
@@ -553,9 +568,10 @@ export default function PublicListsPage() {
                   </div>
                 </div>
               </Link>
-            );
-          })}
-        </div>
+            </motion.div>
+          );
+        })}
+      </motion.div>
       )}
 
       {/* PAGINATION DECK (Apple TV+ Cinema Glass Design) */}

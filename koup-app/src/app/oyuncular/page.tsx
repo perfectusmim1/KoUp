@@ -209,7 +209,13 @@ export default function ActorsLeaderboardPage() {
           Oyuncu ve Karakter Sıralaması Yükleniyor...
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <motion.div
+          key={`oyuncular-grid-${filterType}-${searchQuery}-${sortBy}-${currentPage}`}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4"
+        >
           {people.map((person, idx) => {
             const rank = (currentPage - 1) * PAGE_SIZE + idx + 1;
             const isFav = favPersonIds.includes(person.id);
@@ -217,8 +223,15 @@ export default function ActorsLeaderboardPage() {
             const displayFavs = person.favorites_count || 0;
 
             return (
-              <div
+              <motion.div
                 key={person.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  duration: 0.22,
+                  delay: Math.min(idx * 0.015, 0.18),
+                  ease: [0.16, 1, 0.3, 1],
+                }}
                 className="rounded-3xl p-4 flex flex-col justify-between group bg-[#0f0f11] border border-white/[0.08] hover:border-white/30 hover:shadow-[0_0_24px_-4px_rgba(41,151,255,0.25),0_10px_24px_rgba(0,0,0,0.7)] transition-colors duration-200"
               >
                 <div>
@@ -306,10 +319,10 @@ export default function ActorsLeaderboardPage() {
                     <Bell className={`w-3.5 h-3.5 ${isFol ? 'fill-slate-950' : ''}`} />
                   </button>
                 </div>
-              </div>
+              </motion.div>
             );
           })}
-        </div>
+        </motion.div>
       )}
 
       {/* PAGINATION DECK (Apple TV+ Cinema Glass Design) */}

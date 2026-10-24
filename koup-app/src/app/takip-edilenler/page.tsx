@@ -617,11 +617,24 @@ export default function FollowedPage() {
         ) : (
           /* Grid of Followed Media */
           <div className="space-y-8 pt-1 sm:pt-2">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
+            <motion.div
+              key={`takip-media-${mediaFilter}-${searchQuery}-${sortBy}-${currentPage}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5"
+            >
               {paginatedMedia.map((m, idx) => {
                 return (
-                  <div
+                  <motion.div
                     key={m.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: 0.22,
+                      delay: Math.min(idx * 0.015, 0.18),
+                      ease: [0.16, 1, 0.3, 1],
+                    }}
                     className="group relative flex flex-col rounded-2xl bg-[#0f0f12] border border-white/10 hover:border-white/25 overflow-hidden transition-[border-color,box-shadow] duration-200 shadow-lg hover:shadow-2xl"
                   >
                     {/* Poster with Accordion Hover Interaction */}
@@ -647,10 +660,10 @@ export default function FollowedPage() {
                         <span className="hidden sm:inline">Takipte</span>
                       </button>
                     </div>
-                  </div>
+                  </motion.div>
                 );
               })}
-            </div>
+            </motion.div>
 
             {/* Media Pagination */}
             <Pagination
@@ -709,15 +722,28 @@ export default function FollowedPage() {
         ) : (
           /* Grid of Followed People (Matches Oyuncular page design) */
           <div className="space-y-8 pt-1 sm:pt-2">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {paginatedPeople.map((person) => {
+            <motion.div
+              key={`takip-people-${personFilter}-${searchQuery}-${sortBy}-${currentPage}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4"
+            >
+              {paginatedPeople.map((person, idx) => {
                 const isFav = favPersonIds.includes(person.id);
                 const isFol = followedPersonIds.includes(person.id);
                 const displayFavs = person.favorites_count || 0;
 
                 return (
-                  <div
+                  <motion.div
                     key={person.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: 0.22,
+                      delay: Math.min(idx * 0.015, 0.18),
+                      ease: [0.16, 1, 0.3, 1],
+                    }}
                     className="rounded-3xl p-4 flex flex-col justify-between group bg-[#0f0f11] border border-white/[0.08] hover:border-white/30 hover:shadow-[0_0_24px_-4px_rgba(41,151,255,0.25),0_10px_24px_rgba(0,0,0,0.7)] transition-all duration-200"
                   >
                     <div>
@@ -794,10 +820,10 @@ export default function FollowedPage() {
                         <Bell className="w-3.5 h-3.5 fill-current" />
                       </button>
                     </div>
-                  </div>
+                  </motion.div>
                 );
               })}
-            </div>
+            </motion.div>
 
             {/* People Pagination */}
             <Pagination

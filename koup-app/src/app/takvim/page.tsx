@@ -257,11 +257,14 @@ export default function CalendarPage() {
           </p>
         </div>
       ) : (
-        <div
-          key={selectedDay}
+        <motion.div
+          key={`takvim-grid-${selectedDay}`}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
           className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4"
         >
-          {displayedSchedules.map((item) => {
+          {displayedSchedules.map((item, idx) => {
               const targetSlug = item.media?.slug || item.slug;
               const coverImg =
                 item.media?.cover_image ||
@@ -284,8 +287,15 @@ export default function CalendarPage() {
                 : { label: cleanCat || 'DİZİ', color: 'bg-[#0f1d2e] text-blue-200 border-blue-400/60 shadow-md font-bold' };
 
               return (
-                <div
+                <motion.div
                   key={`${item.source_site}-${item.id}`}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    duration: 0.22,
+                    delay: Math.min(idx * 0.015, 0.18),
+                    ease: [0.16, 1, 0.3, 1],
+                  }}
                   className="group rounded-2xl apple-glass overflow-hidden border border-white/10 hover:border-white/30 transition-[border-color] duration-200 flex flex-col"
                 >
                   {/* Poster Thumbnail */}
@@ -382,10 +392,10 @@ export default function CalendarPage() {
                       )}
                     </div>
                   </div>
-                </div>
+                </motion.div>
               );
             })}
-        </div>
+        </motion.div>
       )}
     </div>
   );

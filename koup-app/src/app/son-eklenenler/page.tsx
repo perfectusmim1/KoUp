@@ -340,8 +340,14 @@ function RecentEpisodesContent() {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-5">
-          {episodes.map((ep) => {
+        <motion.div
+          key={`son-eklenenler-grid-${typeFilter}-${currentPage}`}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-5"
+        >
+          {episodes.map((ep, idx) => {
             const m = ep.media as MediaItem;
             if (!m) return null;
             const seasonNum = ep.season_number || 1;
@@ -355,11 +361,21 @@ function RecentEpisodesContent() {
               : `${epNum}. Bölüm Eklendi`;
 
             return (
-              <Link
+              <motion.div
                 key={`${ep.id}-${m.id}-${seasonNum}-${epNum}`}
-                href={`/seri/${m.slug}/${epNum}?season=${seasonNum}`}
-                className="w-full group relative rounded-2xl sm:rounded-3xl overflow-hidden aspect-[16/10] sm:aspect-[21/9] min-h-[160px] sm:min-h-[175px] bg-[#0c0c0e] border border-white/10 hover:border-white/30 transition-all duration-300 active:scale-[0.99] shadow-xl cursor-pointer block"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  duration: 0.22,
+                  delay: Math.min(idx * 0.015, 0.18),
+                  ease: [0.16, 1, 0.3, 1],
+                }}
+                className="w-full"
               >
+                <Link
+                  href={`/seri/${m.slug}/${epNum}?season=${seasonNum}`}
+                  className="w-full group relative rounded-2xl sm:rounded-3xl overflow-hidden aspect-[16/10] sm:aspect-[21/9] min-h-[160px] sm:min-h-[175px] bg-[#0c0c0e] border border-white/10 hover:border-white/30 transition-all duration-300 active:scale-[0.99] shadow-xl cursor-pointer block"
+                >
                 {/* Full Card Cover Image with gentle zoom on hover */}
                 <img
                   src={getProxiedImageUrl(
@@ -397,9 +413,10 @@ function RecentEpisodesContent() {
                   </div>
                 </div>
               </Link>
-            );
-          })}
-        </div>
+            </motion.div>
+          );
+        })}
+      </motion.div>
       )}
 
       {/* Pagination Component */}

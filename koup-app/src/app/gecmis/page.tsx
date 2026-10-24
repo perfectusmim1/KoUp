@@ -231,7 +231,13 @@ export default function WatchHistoryPage() {
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+        <motion.div
+          key={`gecmis-grid-${filterType}-${searchQuery}-${currentPage}`}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5"
+        >
           {paginatedHistory.map((item, idx) => {
             const media = item.media;
             const stats = getEpisodeProgressStats(item, media);
@@ -246,8 +252,15 @@ export default function WatchHistoryPage() {
               : `/seri/${item.media_id}`;
 
             return (
-              <div
+              <motion.div
                 key={`history-${item.media_id}-${stats.season}-${stats.nextEpisode}-${idx}`}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  duration: 0.22,
+                  delay: Math.min(idx * 0.015, 0.18),
+                  ease: [0.16, 1, 0.3, 1],
+                }}
                 className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-4 sm:p-5 flex gap-4 hover:border-white/20 transition-[border-color] duration-200 group relative overflow-hidden shadow-xl"
               >
                 {/* Poster image */}
@@ -360,10 +373,10 @@ export default function WatchHistoryPage() {
                     </Link>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             );
           })}
-        </div>
+        </motion.div>
       )}
 
       {/* PAGINATION DECK (Apple TV+ Cinema Glass Design) */}

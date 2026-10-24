@@ -409,13 +409,28 @@ export default function FavorilerPage() {
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
+        <motion.div
+          key={`favoriler-grid-${activeType}-${searchQuery}-${sortBy}-${currentPage}`}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5"
+        >
           {paginatedMedia.map((m, idx) => (
-            <div key={m.id}>
+            <motion.div
+              key={m.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{
+                duration: 0.22,
+                delay: Math.min(idx * 0.015, 0.18),
+                ease: [0.16, 1, 0.3, 1],
+              }}
+            >
               <AccordionMediaCard item={m} priority={idx < 6} fluidWidth={true} />
-            </div>
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
       )}
 
       {!isLoading && filteredMedia.length > 0 && (

@@ -622,16 +622,32 @@ function DiscoverContent() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3.5 sm:gap-4 pt-2.5 pb-6 [contain:layout_paint_style]">
+        <motion.div
+          key={`${typeFilter}-${countryFilter}-${yearFilter}-${selectedGenres.join(',')}-${sortBy}-${debouncedQuery}-${currentPage}`}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3.5 sm:gap-4 pt-2.5 pb-6 [contain:layout_paint_style]"
+        >
           {items.map((item, idx) => (
-            <AccordionMediaCard
+            <motion.div
               key={item.id}
-              item={item}
-              fluidWidth={true}
-              priority={idx < 6}
-            />
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{
+                duration: 0.22,
+                delay: Math.min(idx * 0.015, 0.18),
+                ease: [0.16, 1, 0.3, 1],
+              }}
+            >
+              <AccordionMediaCard
+                item={item}
+                fluidWidth={true}
+                priority={idx < 6}
+              />
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
       )}
 
       {/* PAGINATION DECK (Apple TV+ Cinema Glass Design) */}

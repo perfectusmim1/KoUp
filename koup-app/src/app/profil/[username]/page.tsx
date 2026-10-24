@@ -1307,15 +1307,31 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                       )}
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5 sm:gap-4 w-full">
+                    <motion.div
+                      key={`profile-library-grid-${libraryFilter}`}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                      className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5 sm:gap-4 w-full"
+                    >
                       {filteredWatchedMedia.map((m, idx) => (
-                        <DirectMediaCard
+                        <motion.div
                           key={m.id}
-                          item={m}
-                          priority={idx < 6}
-                        />
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{
+                            duration: 0.22,
+                            delay: Math.min(idx * 0.015, 0.18),
+                            ease: [0.16, 1, 0.3, 1],
+                          }}
+                        >
+                          <DirectMediaCard
+                            item={m}
+                            priority={idx < 6}
+                          />
+                        </motion.div>
                       ))}
-                    </div>
+                    </motion.div>
                   )}
                 </>
               )}
@@ -1362,7 +1378,13 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                   )}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+                <motion.div
+                  key="profile-history-grid"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                  className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5"
+                >
                   {activeWatchingList.map((item, idx) => {
                     const media = item.media;
                     const stats = getEpisodeProgressStats(item, media);
@@ -1380,8 +1402,15 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                       : `/seri/${item.media_id}`;
 
                     return (
-                      <div
+                      <motion.div
                         key={`profile-history-${item.media_id}-${stats.season}-${stats.nextEpisode}-${idx}`}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{
+                          duration: 0.22,
+                          delay: Math.min(idx * 0.015, 0.18),
+                          ease: [0.16, 1, 0.3, 1],
+                        }}
                         className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-4 sm:p-5 flex gap-4 hover:border-white/20 transition-colors group relative overflow-hidden shadow-xl"
                       >
                         {/* Poster image (NO zoom or scale on hover/focus) */}
@@ -1501,10 +1530,10 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                             </Link>
                           </div>
                         </div>
-                      </div>
+                      </motion.div>
                     );
                   })}
-                </div>
+                </motion.div>
               )}
             </motion.div>
           )}
