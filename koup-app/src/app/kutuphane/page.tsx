@@ -393,8 +393,8 @@ export default function KutuphanePage() {
               id: 'drama' as const,
               label: 'Dizi',
               icon: Tv,
-              activePillClass: 'bg-sky-400 shadow-[0_0_20px_rgba(56,189,248,0.45)]',
-              activeTextClass: 'text-black font-extrabold',
+              activePillClass: 'bg-sky-500 shadow-[0_0_20px_rgba(56,189,248,0.45)]',
+              activeTextClass: 'text-white font-extrabold',
             },
             {
               id: 'anime' as const,
@@ -407,8 +407,8 @@ export default function KutuphanePage() {
               id: 'movie' as const,
               label: 'Film',
               icon: Film,
-              activePillClass: 'bg-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.45)]',
-              activeTextClass: 'text-black font-extrabold',
+              activePillClass: 'bg-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.45)]',
+              activeTextClass: 'text-white font-extrabold',
             },
           ].map((tp) => {
             const Icon = tp.icon;
@@ -534,7 +534,7 @@ export default function KutuphanePage() {
             return (
               <div
                 key={m.id}
-                className="group relative flex flex-col rounded-2xl bg-[#0f0f12] border border-white/10 hover:border-white/25 overflow-hidden transition-[border-color,box-shadow] duration-200 shadow-lg hover:shadow-2xl [content-visibility:auto] [contain-intrinsic-size:auto_400px]"
+                className="group relative flex flex-col rounded-2xl bg-[#0f0f12] border border-white/10 hover:border-white/25 overflow-hidden transition-[border-color,box-shadow] duration-200 shadow-lg hover:shadow-2xl"
               >
                 {/* Poster & Direct Play */}
                 <div className="relative aspect-[2/3] w-full overflow-hidden bg-black/60">

@@ -930,7 +930,7 @@ export default function ListDetailPage({
                       toggleSelectItem(item.id);
                     }
                   }}
-                  className={`relative group ${isSelectMode ? 'cursor-pointer select-none' : ''} [content-visibility:auto] [contain-intrinsic-size:auto_340px]`}
+                  className={`relative group ${isSelectMode ? 'cursor-pointer select-none' : ''}`}
                 >
                   <div
                     className={`relative transition-all duration-200 rounded-2xl overflow-hidden ${

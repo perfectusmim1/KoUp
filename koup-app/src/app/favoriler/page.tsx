@@ -411,10 +411,7 @@ export default function FavorilerPage() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
           {paginatedMedia.map((m, idx) => (
-            <div
-              key={m.id}
-              className="[content-visibility:auto] [contain-intrinsic-size:auto_340px]"
-            >
+            <div key={m.id}>
               <AccordionMediaCard item={m} priority={idx < 6} fluidWidth={true} />
             </div>
           ))}

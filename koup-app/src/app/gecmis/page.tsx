@@ -124,17 +124,6 @@ export default function WatchHistoryPage() {
             İzleme Geçmişim
           </h1>
         </div>
-
-        <div className="flex items-center gap-3">
-          <Link
-            href="/kesfet"
-            onClick={() => triggerSound('click')}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-bold text-white transition-colors cursor-pointer"
-          >
-            <Compass className="w-4 h-4 text-sky-400" />
-            <span>Yeni İçerik Keşfet</span>
-          </Link>
-        </div>
       </div>
 
       {/* Filter and Search Bar */}
@@ -150,14 +139,14 @@ export default function WatchHistoryPage() {
             {
               id: 'in_progress' as const,
               label: 'Kaldığım Yerden Devam Et',
-              activePillClass: 'bg-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.45)]',
-              activeTextClass: 'text-black font-extrabold',
+              activePillClass: 'bg-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.45)]',
+              activeTextClass: 'text-white font-extrabold',
             },
             {
               id: 'completed' as const,
               label: 'Tamamlananlar',
-              activePillClass: 'bg-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.45)]',
-              activeTextClass: 'text-black font-extrabold',
+              activePillClass: 'bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.45)]',
+              activeTextClass: 'text-white font-extrabold',
             },
           ].map((flt) => {
             const active = filterType === flt.id;
@@ -259,7 +248,7 @@ export default function WatchHistoryPage() {
             return (
               <div
                 key={`history-${item.media_id}-${stats.season}-${stats.nextEpisode}-${idx}`}
-                className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-4 sm:p-5 flex gap-4 hover:border-white/20 transition-[border-color] duration-200 group relative overflow-hidden shadow-xl [content-visibility:auto] [contain-intrinsic-size:auto_180px]"
+                className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-4 sm:p-5 flex gap-4 hover:border-white/20 transition-[border-color] duration-200 group relative overflow-hidden shadow-xl"
               >
                 {/* Poster image */}
                 <Link

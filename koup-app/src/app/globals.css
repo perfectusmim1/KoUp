@@ -653,15 +653,13 @@ textarea.koup-input {
   box-shadow: 0 0 12px rgba(99, 102, 241, 0.2);
 }
 
-/* Performance: Deferred rendering for heavy sections strictly below the fold */
+/* Performance: Smooth render optimizations without discarding GPU textures on Alt-Tab */
 .cv-auto {
-  content-visibility: auto;
-  contain-intrinsic-size: auto none auto 380px;
+  contain: layout style;
 }
 
 .cv-card {
-  content-visibility: auto;
-  contain-intrinsic-size: auto none auto 300px;
+  contain: layout style;
 }
 
 /* Exact ui/code.html Top 10 Stroke Numerals */

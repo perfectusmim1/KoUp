@@ -46,8 +46,8 @@ const TYPE_FILTERS = [
     id: 'dizi',
     label: 'Diziler',
     icon: Tv,
-    activePillClass: 'bg-sky-400 shadow-[0_0_20px_rgba(56,189,248,0.45)]',
-    activeTextClass: 'text-black font-extrabold',
+    activePillClass: 'bg-sky-500 shadow-[0_0_20px_rgba(56,189,248,0.45)]',
+    activeTextClass: 'text-white font-extrabold',
   },
   {
     id: 'anime',
@@ -60,8 +60,8 @@ const TYPE_FILTERS = [
     id: 'film',
     label: 'Filmler',
     icon: Film,
-    activePillClass: 'bg-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.45)]',
-    activeTextClass: 'text-black font-extrabold',
+    activePillClass: 'bg-amber-500 shadow-[0_0_20px_rgba(251,191,36,0.45)]',
+    activeTextClass: 'text-white font-extrabold',
   },
 ];
 

@@ -719,22 +719,22 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
       id: 'overview',
       label: 'Genel Bakış & Drama DNA',
       icon: BarChart3,
-      activePillClass: 'bg-sky-400 shadow-[0_0_18px_rgba(56,189,248,0.45)]',
-      activeTextClass: 'text-black font-extrabold',
+      activePillClass: 'bg-sky-500 shadow-[0_0_18px_rgba(56,189,248,0.45)]',
+      activeTextClass: 'text-white font-extrabold',
     },
     {
       id: 'library',
       label: !isOwner && hideLibrary ? 'Kütüphane (Gizli)' : `Kütüphane (${watchedMedia.length})`,
       icon: !isOwner && hideLibrary ? Lock : Library,
       activePillClass: 'bg-emerald-500 shadow-[0_0_18px_rgba(16,185,129,0.45)]',
-      activeTextClass: 'text-black font-extrabold',
+      activeTextClass: 'text-white font-extrabold',
     },
     {
       id: 'history',
       label: !isOwner && hideHistory ? 'İzleme Geçmişi (Gizli)' : `İzleme Geçmişi (${activeWatchingList.length})`,
       icon: !isOwner && hideHistory ? Lock : Clock,
-      activePillClass: 'bg-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
-      activeTextClass: 'text-black font-extrabold',
+      activePillClass: 'bg-amber-500 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
+      activeTextClass: 'text-white font-extrabold',
     },
     {
       id: 'lists',
@@ -1225,7 +1225,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                         icon: Clock,
                         iconColor: 'text-sky-400',
                         activePillClass: 'bg-sky-500 shadow-[0_0_18px_rgba(14,165,233,0.45)]',
-                        activeTextClass: 'text-black font-bold',
+                        activeTextClass: 'text-white font-bold',
                         inactiveClass: 'glass-pill text-sky-300/80 hover:text-sky-200 border-sky-500/20 hover:border-sky-500/40',
                       },
                       {
@@ -1234,7 +1234,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                         icon: CheckCircle2,
                         iconColor: 'text-emerald-400',
                         activePillClass: 'bg-emerald-500 shadow-[0_0_18px_rgba(16,185,129,0.45)]',
-                        activeTextClass: 'text-black font-bold',
+                        activeTextClass: 'text-white font-bold',
                         inactiveClass: 'glass-pill text-emerald-300/80 hover:text-emerald-200 border-emerald-500/20 hover:border-emerald-500/40',
                       },
                       {
@@ -1242,8 +1242,8 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                         label: 'Planlanan',
                         icon: Bookmark,
                         iconColor: 'text-amber-400',
-                        activePillClass: 'bg-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
-                        activeTextClass: 'text-black font-bold',
+                        activePillClass: 'bg-amber-500 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
+                        activeTextClass: 'text-white font-bold',
                         inactiveClass: 'glass-pill text-amber-300/80 hover:text-amber-200 border-amber-500/20 hover:border-amber-500/40',
                       },
                       {
@@ -1382,7 +1382,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                     return (
                       <div
                         key={`profile-history-${item.media_id}-${stats.season}-${stats.nextEpisode}-${idx}`}
-                        className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-4 sm:p-5 flex gap-4 hover:border-white/20 transition-colors group relative overflow-hidden shadow-xl [content-visibility:auto] [contain-intrinsic-size:auto_160px]"
+                        className="rounded-3xl bg-[#0f0f11] border border-white/[0.08] p-4 sm:p-5 flex gap-4 hover:border-white/20 transition-colors group relative overflow-hidden shadow-xl"
                       >
                         {/* Poster image (NO zoom or scale on hover/focus) */}
                         <Link
@@ -1672,7 +1672,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                         key={lst.id}
                         href={`/listeler/${lst.slug || lst.id}`}
                         onClick={() => triggerSound('click')}
-                        className="group relative rounded-3xl overflow-hidden min-h-[260px] sm:min-h-[280px] border border-white/10 hover:border-sky-400/50 p-5 sm:p-6 flex flex-col justify-between transition-all duration-300 hover:shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_35px_rgba(56,189,248,0.22)] [content-visibility:auto] [contain-intrinsic-size:auto_280px]"
+                        className="group relative rounded-3xl overflow-hidden min-h-[260px] sm:min-h-[280px] border border-white/10 hover:border-sky-400/50 p-5 sm:p-6 flex flex-col justify-between transition-all duration-300 hover:shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_35px_rgba(56,189,248,0.22)]"
                       >
                         {/* GPU Ambient Glow */}
                         <div className="absolute -inset-0.5 bg-gradient-to-r from-sky-500/20 via-sky-400/10 to-indigo-500/20 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none -z-10" />
@@ -1852,7 +1852,7 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                         return (
                           <div
                             key={comment.id}
-                            className="rounded-3xl bg-[#0e0e13] border border-white/[0.08] hover:border-white/20 p-4 sm:p-5 transition-colors duration-120 flex items-start gap-4 sm:gap-5 shadow-lg [content-visibility:auto] [contain-intrinsic-size:auto_120px]"
+                            className="rounded-3xl bg-[#0e0e13] border border-white/[0.08] hover:border-white/20 p-4 sm:p-5 transition-colors duration-120 flex items-start gap-4 sm:gap-5 shadow-lg"
                           >
                             {/* Left: Fixed-size Larger Poster Thumbnail (Zero scale/zoom on hover or focus) */}
                             <Link

@@ -45,8 +45,8 @@ const CONTENT_TYPES = [
     id: 'dizi',
     label: 'Diziler',
     icon: Tv,
-    activePillClass: 'bg-sky-400 shadow-[0_0_20px_rgba(56,189,248,0.45)]',
-    activeTextClass: 'text-black font-extrabold',
+    activePillClass: 'bg-sky-500 shadow-[0_0_20px_rgba(56,189,248,0.45)]',
+    activeTextClass: 'text-white font-extrabold',
   },
   {
     id: 'anime',
@@ -59,15 +59,15 @@ const CONTENT_TYPES = [
     id: 'film',
     label: 'Sinema Filmleri',
     icon: Film,
-    activePillClass: 'bg-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.45)]',
-    activeTextClass: 'text-black font-extrabold',
+    activePillClass: 'bg-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.45)]',
+    activeTextClass: 'text-white font-extrabold',
   },
   {
     id: 'program',
     label: 'Varyete & TV Programları',
     icon: Mic,
-    activePillClass: 'bg-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.45)]',
-    activeTextClass: 'text-black font-extrabold',
+    activePillClass: 'bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.45)]',
+    activeTextClass: 'text-white font-extrabold',
   },
 ];
 

@@ -188,7 +188,7 @@ export default function CalendarPage() {
                   setSelectedDay(d.id);
                 }}
                 className={`flex flex-col items-center justify-center text-center w-full min-w-0 p-1 sm:p-2.5 rounded-xl cursor-pointer relative transition-colors ${
-                  active ? 'text-black font-extrabold' : 'text-white/70 hover:text-white'
+                  active ? 'text-white font-extrabold' : 'text-white/70 hover:text-white'
                 }`}
               >
                 {active && (
@@ -201,7 +201,7 @@ export default function CalendarPage() {
                       damping: 34,
                       mass: 0.6,
                     }}
-                    className="absolute inset-0 rounded-xl bg-sky-400 shadow-[0_0_20px_rgba(56,189,248,0.45)] z-0"
+                    className="absolute inset-0 rounded-xl bg-sky-500 shadow-[0_0_20px_rgba(56,189,248,0.45)] z-0"
                   />
                 )}
                 <span className="w-full text-center relative z-10 text-xs font-mono font-bold">
@@ -286,7 +286,7 @@ export default function CalendarPage() {
               return (
                 <div
                   key={`${item.source_site}-${item.id}`}
-                  className="group rounded-2xl apple-glass cv-card overflow-hidden border border-white/10 hover:border-white/30 transition-[border-color] duration-200 flex flex-col"
+                  className="group rounded-2xl apple-glass overflow-hidden border border-white/10 hover:border-white/30 transition-[border-color] duration-200 flex flex-col"
                 >
                   {/* Poster Thumbnail */}
                   <Link

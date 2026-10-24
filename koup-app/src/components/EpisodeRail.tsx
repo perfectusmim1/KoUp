@@ -148,7 +148,7 @@ const EpisodeRailRow = memo(function EpisodeRailRow({
         <span
           className={`absolute bottom-1 right-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold leading-none ${
             isPlayingThis
-              ? 'bg-sky-400 text-black shadow-[0_0_8px_rgba(56,189,248,0.6)] font-extrabold'
+              ? 'bg-sky-500 text-white shadow-[0_0_8px_rgba(56,189,248,0.6)] font-extrabold'
               : 'bg-black/85 text-white/90 border border-white/10'
           }`}
         >

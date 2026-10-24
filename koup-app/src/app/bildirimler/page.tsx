@@ -368,9 +368,9 @@ export default function NotificationsPage() {
                 label: 'Bölümler',
                 icon: Tv,
                 countKey: 'episode' as const,
-                activePillClass: 'bg-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
-                activeTextClass: 'text-black font-bold',
-                badgeActiveBg: 'bg-black/20 text-black',
+                activePillClass: 'bg-amber-500 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
+                activeTextClass: 'text-white font-bold',
+                badgeActiveBg: 'bg-white/20 text-white',
                 badgeInactiveBg: 'bg-amber-500/20 text-amber-300',
               },
               {
@@ -379,8 +379,8 @@ export default function NotificationsPage() {
                 icon: UserCheck,
                 countKey: 'actor' as const,
                 activePillClass: 'bg-emerald-500 shadow-[0_0_18px_rgba(16,185,129,0.45)]',
-                activeTextClass: 'text-black font-bold',
-                badgeActiveBg: 'bg-black/20 text-black',
+                activeTextClass: 'text-white font-bold',
+                badgeActiveBg: 'bg-white/20 text-white',
                 badgeInactiveBg: 'bg-emerald-500/20 text-emerald-300',
               },
               {
@@ -388,9 +388,9 @@ export default function NotificationsPage() {
                 label: 'Yorum Yanıtları',
                 icon: MessageSquare,
                 countKey: 'reply' as const,
-                activePillClass: 'bg-sky-400 shadow-[0_0_18px_rgba(56,189,248,0.45)]',
-                activeTextClass: 'text-black font-bold',
-                badgeActiveBg: 'bg-black/20 text-black',
+                activePillClass: 'bg-sky-500 shadow-[0_0_18px_rgba(56,189,248,0.45)]',
+                activeTextClass: 'text-white font-bold',
+                badgeActiveBg: 'bg-white/20 text-white',
                 badgeInactiveBg: 'bg-sky-500/20 text-sky-300',
               },
               {
@@ -495,7 +495,7 @@ export default function NotificationsPage() {
               return (
                 <div
                   key={n.id}
-                  className={`group relative rounded-3xl border transition-colors duration-150 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer [content-visibility:auto] [contain-intrinsic-size:auto_90px] ${
+                  className={`group relative rounded-3xl border transition-colors duration-150 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer ${
                     isUnread
                       ? 'bg-[#14141a] hover:bg-[#181822] border-white/20 shadow-[0_12px_32px_rgba(0,0,0,0.6)]'
                       : 'bg-[#0e0e12] hover:bg-[#131318] border-white/[0.08] hover:border-white/15 opacity-85 hover:opacity-100'

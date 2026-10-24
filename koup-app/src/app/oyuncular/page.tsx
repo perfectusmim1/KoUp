@@ -36,8 +36,8 @@ const PERSON_TABS = [
     id: 'actor',
     label: 'Dizi & Sinema Oyuncuları',
     icon: Clapperboard,
-    activePillClass: 'bg-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.45)]',
-    activeTextClass: 'text-black font-extrabold',
+    activePillClass: 'bg-emerald-500 shadow-[0_0_18px_rgba(52,211,153,0.45)]',
+    activeTextClass: 'text-white font-extrabold',
   },
   {
     id: 'character',
@@ -50,8 +50,8 @@ const PERSON_TABS = [
     id: 'seiyuu',
     label: 'Seslendirmenler (Seiyuu)',
     icon: Mic,
-    activePillClass: 'bg-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
-    activeTextClass: 'text-black font-extrabold',
+    activePillClass: 'bg-amber-500 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
+    activeTextClass: 'text-white font-extrabold',
   },
 ] as const;
 
@@ -219,7 +219,7 @@ export default function ActorsLeaderboardPage() {
             return (
               <div
                 key={person.id}
-                className="cv-card rounded-3xl p-4 flex flex-col justify-between group bg-[#0f0f11] border border-white/[0.08] hover:border-white/30 hover:shadow-[0_0_24px_-4px_rgba(41,151,255,0.25),0_10px_24px_rgba(0,0,0,0.7)] transition-colors duration-200 [content-visibility:auto] [contain-intrinsic-size:auto_280px]"
+                className="rounded-3xl p-4 flex flex-col justify-between group bg-[#0f0f11] border border-white/[0.08] hover:border-white/30 hover:shadow-[0_0_24px_-4px_rgba(41,151,255,0.25),0_10px_24px_rgba(0,0,0,0.7)] transition-colors duration-200"
               >
                 <div>
                   <div className="relative aspect-square rounded-2xl overflow-hidden mb-3 bg-black/50 border border-white/10 group-hover:border-white/30 transition-colors">

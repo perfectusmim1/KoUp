@@ -323,28 +323,6 @@ export default function FollowedPage() {
             Takip Edilenler
           </h1>
         </div>
-
-        {/* Quick Discovery Actions */}
-        <div className="flex items-center gap-3 shrink-0">
-          <Link
-            href="/kesfet"
-            onClick={() => triggerSound?.('click')}
-            prefetch={true}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-bold text-white/90 hover:text-white transition-all cursor-pointer shadow-xs"
-          >
-            <Compass className="w-3.5 h-3.5 text-sky-400" />
-            <span>Dizileri Keşfet</span>
-          </Link>
-          <Link
-            href="/oyuncular"
-            onClick={() => triggerSound?.('click')}
-            prefetch={true}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-bold text-white/90 hover:text-white transition-all cursor-pointer shadow-xs"
-          >
-            <Users className="w-3.5 h-3.5 text-amber-400" />
-            <span>Oyuncuları Keşfet</span>
-          </Link>
-        </div>
       </div>
 
       {/* Guest Warning Banner if not logged in but viewing local storage */}
@@ -375,14 +353,14 @@ export default function FollowedPage() {
           <button
             onClick={() => handleTabChange('media')}
             className={`relative flex items-center gap-2 px-4 sm:px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-colors cursor-pointer duration-200 ${
-              activeTab === 'media' ? 'text-black font-extrabold' : 'text-white/60 hover:text-white'
+              activeTab === 'media' ? 'text-white font-extrabold' : 'text-white/60 hover:text-white'
             }`}
           >
             {activeTab === 'media' && (
               <motion.span
                 layoutId="takip-main-tab-pill"
                 transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                className="absolute inset-0 rounded-xl bg-sky-400 shadow-[0_0_18px_rgba(56,189,248,0.4)]"
+                className="absolute inset-0 rounded-xl bg-sky-500 shadow-[0_0_18px_rgba(56,189,248,0.45)]"
               />
             )}
             <Tv className="w-4 h-4 relative z-10" />
@@ -390,7 +368,7 @@ export default function FollowedPage() {
             <span
               className={`relative z-10 ml-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-extrabold ${
                 activeTab === 'media'
-                  ? 'bg-black/20 text-black'
+                  ? 'bg-white/20 text-white'
                   : 'bg-white/10 text-white/80'
               }`}
             >
@@ -401,14 +379,14 @@ export default function FollowedPage() {
           <button
             onClick={() => handleTabChange('people')}
             className={`relative flex items-center gap-2 px-4 sm:px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-colors cursor-pointer duration-200 ${
-              activeTab === 'people' ? 'text-black font-extrabold' : 'text-white/60 hover:text-white'
+              activeTab === 'people' ? 'text-white font-extrabold' : 'text-white/60 hover:text-white'
             }`}
           >
             {activeTab === 'people' && (
               <motion.span
                 layoutId="takip-main-tab-pill"
                 transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                className="absolute inset-0 rounded-xl bg-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.4)]"
+                className="absolute inset-0 rounded-xl bg-emerald-500 shadow-[0_0_18px_rgba(52,211,153,0.45)]"
               />
             )}
             <Users className="w-4 h-4 relative z-10" />
@@ -416,7 +394,7 @@ export default function FollowedPage() {
             <span
               className={`relative z-10 ml-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-extrabold ${
                 activeTab === 'people'
-                  ? 'bg-black/20 text-black'
+                  ? 'bg-white/20 text-white'
                   : 'bg-white/10 text-white/80'
               }`}
             >
@@ -490,8 +468,8 @@ export default function FollowedPage() {
               {
                 id: 'dizi' as const,
                 label: 'Diziler',
-                activePillClass: 'bg-sky-400 shadow-[0_0_18px_rgba(56,189,248,0.45)]',
-                activeTextClass: 'text-black font-extrabold',
+                activePillClass: 'bg-sky-500 shadow-[0_0_18px_rgba(56,189,248,0.45)]',
+                activeTextClass: 'text-white font-extrabold',
               },
               {
                 id: 'anime' as const,
@@ -502,8 +480,8 @@ export default function FollowedPage() {
               {
                 id: 'film' as const,
                 label: 'Filmler',
-                activePillClass: 'bg-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
-                activeTextClass: 'text-black font-extrabold',
+                activePillClass: 'bg-amber-500 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
+                activeTextClass: 'text-white font-extrabold',
               },
             ].map((flt) => {
               const active = mediaFilter === flt.id;
@@ -545,8 +523,8 @@ export default function FollowedPage() {
               {
                 id: 'actor' as const,
                 label: 'Oyuncular',
-                activePillClass: 'bg-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.45)]',
-                activeTextClass: 'text-black font-extrabold',
+                activePillClass: 'bg-emerald-500 shadow-[0_0_18px_rgba(52,211,153,0.45)]',
+                activeTextClass: 'text-white font-extrabold',
               },
               {
                 id: 'character' as const,
@@ -557,8 +535,8 @@ export default function FollowedPage() {
               {
                 id: 'seiyuu' as const,
                 label: 'Seslendirmenler',
-                activePillClass: 'bg-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
-                activeTextClass: 'text-black font-extrabold',
+                activePillClass: 'bg-amber-500 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
+                activeTextClass: 'text-white font-extrabold',
               },
             ].map((flt) => {
               const active = personFilter === flt.id;
@@ -644,7 +622,7 @@ export default function FollowedPage() {
                 return (
                   <div
                     key={m.id}
-                    className="group relative flex flex-col rounded-2xl bg-[#0f0f12] border border-white/10 hover:border-white/25 overflow-hidden transition-[border-color,box-shadow] duration-200 shadow-lg hover:shadow-2xl [content-visibility:auto] [contain-intrinsic-size:auto_400px]"
+                    className="group relative flex flex-col rounded-2xl bg-[#0f0f12] border border-white/10 hover:border-white/25 overflow-hidden transition-[border-color,box-shadow] duration-200 shadow-lg hover:shadow-2xl"
                   >
                     {/* Poster with Accordion Hover Interaction */}
                     <div className="relative aspect-[2/3] w-full overflow-hidden bg-black/60">
@@ -740,7 +718,7 @@ export default function FollowedPage() {
                 return (
                   <div
                     key={person.id}
-                    className="cv-card rounded-3xl p-4 flex flex-col justify-between group bg-[#0f0f11] border border-white/[0.08] hover:border-white/30 hover:shadow-[0_0_24px_-4px_rgba(41,151,255,0.25),0_10px_24px_rgba(0,0,0,0.7)] transition-all duration-200 [content-visibility:auto] [contain-intrinsic-size:auto_280px]"
+                    className="rounded-3xl p-4 flex flex-col justify-between group bg-[#0f0f11] border border-white/[0.08] hover:border-white/30 hover:shadow-[0_0_24px_-4px_rgba(41,151,255,0.25),0_10px_24px_rgba(0,0,0,0.7)] transition-all duration-200"
                   >
                     <div>
                       <div className="relative aspect-square rounded-2xl overflow-hidden mb-3 bg-black/50 border border-white/10 group-hover:border-white/30 transition-colors">

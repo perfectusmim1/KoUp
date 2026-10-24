@@ -45,19 +45,19 @@ function getMagCategoryActivePill(cat: string): { pill: string; text: string } {
     case 'Dedikodu':
       return { pill: 'bg-rose-500 shadow-[0_0_18px_rgba(244,63,94,0.45)]', text: 'text-white font-extrabold' };
     case 'Kore':
-      return { pill: 'bg-emerald-500 shadow-[0_0_18px_rgba(16,185,129,0.45)]', text: 'text-black font-extrabold' };
+      return { pill: 'bg-emerald-500 shadow-[0_0_18px_rgba(16,185,129,0.45)]', text: 'text-white font-extrabold' };
     case 'Çin':
       return { pill: 'bg-orange-500 shadow-[0_0_18px_rgba(249,115,22,0.45)]', text: 'text-white font-extrabold' };
     case 'Dizi':
-      return { pill: 'bg-sky-400 shadow-[0_0_18px_rgba(56,189,248,0.45)]', text: 'text-black font-extrabold' };
+      return { pill: 'bg-sky-500 shadow-[0_0_18px_rgba(56,189,248,0.45)]', text: 'text-white font-extrabold' };
     case 'Müzik':
       return { pill: 'bg-purple-500 shadow-[0_0_18px_rgba(168,85,247,0.45)]', text: 'text-white font-extrabold' };
     case 'Film':
-      return { pill: 'bg-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.45)]', text: 'text-black font-extrabold' };
+      return { pill: 'bg-amber-500 shadow-[0_0_18px_rgba(251,191,36,0.45)]', text: 'text-white font-extrabold' };
     case 'BL GL':
       return { pill: 'bg-pink-500 shadow-[0_0_18px_rgba(236,72,153,0.45)]', text: 'text-white font-extrabold' };
     case 'Tayland':
-      return { pill: 'bg-teal-400 shadow-[0_0_18px_rgba(45,212,191,0.45)]', text: 'text-black font-extrabold' };
+      return { pill: 'bg-teal-500 shadow-[0_0_18px_rgba(20,184,166,0.45)]', text: 'text-white font-extrabold' };
     default:
       return { pill: 'bg-white shadow-[0_0_18px_rgba(255,255,255,0.35)]', text: 'text-black font-extrabold' };
   }
@@ -379,7 +379,7 @@ export default function MagazineHubPage() {
                 <Link
                   key={post.slug}
                   href={`/magazin/${post.slug}`}
-                  className="koup-projection-card cv-card rounded-3xl overflow-hidden bg-[#121216] border border-white/10 flex flex-col group [content-visibility:auto] [contain-intrinsic-size:auto_380px]"
+                  className="koup-projection-card rounded-3xl overflow-hidden bg-[#121216] border border-white/10 flex flex-col group"
                 >
                   <div className="relative h-52 overflow-hidden">
                     <img

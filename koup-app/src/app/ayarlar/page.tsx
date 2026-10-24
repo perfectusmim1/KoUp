@@ -806,7 +806,7 @@ export default function SettingsPage() {
                     type="button"
                     onClick={() => handleImport('mdl')}
                     disabled={isImporting}
-                    className="px-4 py-2.5 rounded-full bg-amber-400 text-black font-bold text-xs hover:bg-amber-300 transition-colors cursor-pointer shrink-0 disabled:opacity-50 flex items-center gap-1.5 shadow-md"
+                    className="px-4 py-2.5 rounded-full bg-amber-500 text-white font-bold text-xs hover:bg-amber-400 transition-colors cursor-pointer shrink-0 disabled:opacity-50 flex items-center gap-1.5 shadow-md"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>{isImporting ? '...' : 'Aktar'}</span>
@@ -840,7 +840,7 @@ export default function SettingsPage() {
                     type="button"
                     onClick={() => handleImport('anilist')}
                     disabled={isImporting}
-                    className="px-4 py-2.5 rounded-full bg-sky-400 text-black font-bold text-xs hover:bg-sky-300 transition-colors cursor-pointer shrink-0 disabled:opacity-50 flex items-center gap-1.5 shadow-md"
+                    className="px-4 py-2.5 rounded-full bg-sky-500 text-white font-bold text-xs hover:bg-sky-400 transition-colors cursor-pointer shrink-0 disabled:opacity-50 flex items-center gap-1.5 shadow-md"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>{isImporting ? '...' : 'Aktar'}</span>
