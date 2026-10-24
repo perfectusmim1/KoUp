@@ -48,6 +48,8 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   let targetUrl = searchParams.get('url');
   const customRef = searchParams.get('ref');
+  const embedUrl = searchParams.get('embed');
+  const requestedQuality = searchParams.get('q') || 'hd';
 
   if (targetUrl && !targetUrl.startsWith('http')) {
     if (targetUrl.startsWith('//')) {
@@ -200,6 +202,8 @@ export async function GET(req: NextRequest) {
       targetUrl.includes('.mp4') ||
       targetUrl.includes('.m4s') ||
       targetUrl.includes('.webm') ||
+      targetUrl.includes('okcdn.ru') ||
+      targetUrl.includes('mycdn.me') ||
       (targetUrl.includes('.jpg') && (targetUrl.includes('/f/') || targetUrl.includes('/o/a/') || targetUrl.includes('/m/a/') || targetUrl.includes('/dual')));
     const fetchTimeoutMs = isMediaChunk ? 60000 : 20000;
 
@@ -221,6 +225,55 @@ export async function GET(req: NextRequest) {
           signal: AbortSignal.timeout(fetchTimeoutMs),
         });
       } catch {}
+    }
+
+    // Self-healing for OK.ru / okcdn.ru on HTTP 400 (IP mismatch between Lambdas or token rotation)
+    if (
+      (!upstreamRes || upstreamRes.status === 400 || upstreamRes.status === 403) &&
+      (targetUrl.includes('okcdn.ru') || targetUrl.includes('mycdn.me') || targetUrl.includes('ok.ru')) &&
+      embedUrl
+    ) {
+      try {
+        const embedRes = await fetch(embedUrl, {
+          headers: {
+            'User-Agent': upstreamHeaders['User-Agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            Referer: 'https://ok.ru/',
+            Accept: 'text/html,application/xhtml+xml',
+          },
+          signal: AbortSignal.timeout(6000),
+        });
+        if (embedRes.ok) {
+          const embedHtml = await embedRes.text();
+          const match =
+            embedHtml.match(/data-options="([^"]+)"/i) ||
+            embedHtml.match(/data-options=(["'])(.*?)\1/s);
+          const raw = match ? (match[2] || match[1]) : null;
+          if (raw) {
+            const decoded = raw
+              .replace(/&quot;/g, '"')
+              .replace(/&amp;/g, '&')
+              .replace(/&#39;/g, "'")
+              .replace(/&lt;/g, '<')
+              .replace(/&gt;/g, '>');
+            const opts = JSON.parse(decoded);
+            const metaRaw = opts?.flashvars?.metadata;
+            const meta = typeof metaRaw === 'string' ? JSON.parse(metaRaw) : (metaRaw || {});
+            const videos = Array.isArray(meta?.videos) ? meta.videos : [];
+            const matched = videos.find((v: any) => v?.name === requestedQuality) || videos[0];
+            const freshUrl = matched?.url || meta?.ondemandHls;
+
+            if (freshUrl && typeof freshUrl === 'string') {
+              upstreamRes = await fetch(freshUrl, {
+                headers: upstreamHeaders,
+                redirect: 'follow',
+                signal: AbortSignal.timeout(fetchTimeoutMs),
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Self-healing okcdn fetch error:', err);
+      }
     }
 
     // If upstream fetch failed or returned 403 (e.g. Cloudflare on Pichive/Hotlinger playlists/subtitles), fall back to curl!
@@ -368,7 +421,7 @@ export async function GET(req: NextRequest) {
       (targetUrl.includes('.jpg') && (targetUrl.includes('/f/') || targetUrl.includes('/o/a/') || targetUrl.includes('/m/a/') || targetUrl.includes('/dual')))
     ) {
       responseHeaders.set('content-type', 'video/mp2t');
-    } else if (targetUrl.includes('.mp4')) {
+    } else if (targetUrl.includes('.mp4') || targetUrl.includes('okcdn.ru') || targetUrl.includes('mycdn.me')) {
       responseHeaders.set('content-type', 'video/mp4');
     } else if (targetUrl.includes('.vtt')) {
       responseHeaders.set('content-type', 'text/vtt; charset=utf-8');

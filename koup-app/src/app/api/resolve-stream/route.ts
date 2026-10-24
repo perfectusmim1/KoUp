@@ -1600,42 +1600,70 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 4c. OK.RU (ok.ru/videoembed/... or odnoklassniki) -> Direct HLS / MP4
-  if (provider === 'ok.ru' || provider === 'odnoklassniki' || lowerUrl.includes('ok.ru/videoembed')) {
+  // 4c. OK.RU (ok.ru/videoembed/... or odnoklassniki) -> Direct Native MP4 / HLS
+  const lowerProv = (provider || '').toLowerCase();
+  const isOkRu =
+    lowerProv.includes('ok.ru') ||
+    lowerProv.includes('odnoklassniki') ||
+    lowerProv === 'ok' ||
+    lowerUrl.includes('ok.ru') ||
+    lowerUrl.includes('odnoklassniki');
+
+  if (isOkRu) {
     try {
-      const resp = await fetch(url, {
+      const okIdMatch =
+        url.match(/(?:videoembed|video)\/(\d+)/i) ||
+        url.match(/\/(\d+)(?:\?|$)/);
+      const okId = okIdMatch ? okIdMatch[1] : null;
+      const targetEmbedUrl = okId
+        ? `https://www.ok.ru/videoembed/${okId}`
+        : url.startsWith('//')
+        ? `https:${url}`
+        : url;
+
+      const resp = await fetch(targetEmbedUrl, {
         headers: {
           'User-Agent': commonUA,
           Referer: 'https://ok.ru/',
           Accept: 'text/html,application/xhtml+xml',
         },
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(6000),
       });
+
       if (resp.ok) {
         const html = await resp.text();
-        const dataOptsMatch = html.match(/data-options="([^"]+)"/i);
-        if (dataOptsMatch?.[1]) {
-          const decodedOpts = dataOptsMatch[1]
+        const dataOptsMatch =
+          html.match(/data-options="([^"]+)"/i) ||
+          html.match(/data-options=(["'])(.*?)\1/s);
+        const rawOpts = dataOptsMatch ? (dataOptsMatch[2] || dataOptsMatch[1]) : null;
+
+        if (rawOpts) {
+          const decodedOpts = rawOpts
             .replace(/&quot;/g, '"')
             .replace(/&amp;/g, '&')
             .replace(/&#39;/g, "'")
             .replace(/&lt;/g, '<')
             .replace(/&gt;/g, '>');
-          const optsJson = JSON.parse(decodedOpts);
-          const metaStr = optsJson?.flashvars?.metadata;
-          if (typeof metaStr === 'string') {
-            const meta = JSON.parse(metaStr);
-            const hlsUrl = meta?.ondemandHls || meta?.hlsManifestUrl;
-            if (hlsUrl && typeof hlsUrl === 'string') {
-              const result = {
-                mode: 'native_hls',
-                streamUrl: hlsUrl,
-                qualities: [{ label: '1080p', url: hlsUrl }],
-                fallbackIframe: url,
-              };
-              setCachedStream(url, result, 8 * 60 * 1000);
-              return NextResponse.json(result, { headers: CACHE_HEADERS });
-            }
+
+          let optsJson: any = null;
+          try {
+            optsJson = JSON.parse(decodedOpts);
+          } catch {}
+
+          const metaRaw = optsJson?.flashvars?.metadata;
+          let meta: any = null;
+          if (typeof metaRaw === 'string') {
+            try {
+              meta = JSON.parse(metaRaw);
+            } catch {}
+          } else if (typeof metaRaw === 'object' && metaRaw !== null) {
+            meta = metaRaw;
+          }
+
+          if (meta) {
+            const poster = meta?.movie?.poster || null;
+
+            // Direct MP4 videos with multiple resolutions (Ultra 4K, Quad 2K, Full HD 1080p, HD 720p, SD 480p)
             if (Array.isArray(meta?.videos) && meta.videos.length > 0) {
               const rank: Record<string, number> = {
                 ultra: 6,
@@ -1648,38 +1676,58 @@ export async function GET(req: NextRequest) {
                 mobile: 0,
               };
               const labelMap: Record<string, string> = {
-                ultra: '2160p',
-                quad: '1440p',
-                full: '1080p',
-                hd: '720p',
-                sd: '480p',
+                ultra: '2160p (4K)',
+                quad: '1440p (2K)',
+                full: '1080p (Full HD)',
+                hd: '720p (HD)',
+                sd: '480p (SD)',
                 low: '360p',
                 lowest: '240p',
                 mobile: '144p',
               };
+
               const validVideos = meta.videos
                 .filter((v: any) => v?.url && !v.disallowed)
                 .sort((a: any, b: any) => (rank[b.name] ?? 0) - (rank[a.name] ?? 0));
+
               if (validVideos.length > 0) {
                 const qualities = validVideos.map((v: any) => ({
-                  label: labelMap[v.name] || v.name || 'HD',
-                  url: `/api/stream-proxy?url=${encodeURIComponent(v.url)}&ref=${encodeURIComponent('https://ok.ru/')}`,
+                  label: labelMap[v.name] || (v.name ? String(v.name).toUpperCase() : 'HD'),
+                  url: `/api/stream-proxy?url=${encodeURIComponent(v.url)}&ref=${encodeURIComponent('https://ok.ru/')}&embed=${encodeURIComponent(targetEmbedUrl)}&q=${encodeURIComponent(v.name || 'hd')}`,
                 }));
+
                 const result = {
                   mode: 'native_mp4',
                   streamUrl: qualities[0].url,
                   qualities,
-                  fallbackIframe: url,
+                  posterImage: poster,
+                  fallbackIframe: targetEmbedUrl,
                 };
                 setCachedStream(url, result, 8 * 60 * 1000);
                 return NextResponse.json(result, { headers: CACHE_HEADERS });
               }
             }
+
+            // Fallback: HLS stream
+            const hlsUrl = meta?.ondemandHls || meta?.hlsManifestUrl;
+            if (hlsUrl && typeof hlsUrl === 'string') {
+              const proxiedHls = `/api/stream-proxy?url=${encodeURIComponent(hlsUrl)}&ref=${encodeURIComponent('https://ok.ru/')}&embed=${encodeURIComponent(targetEmbedUrl)}`;
+              const result = {
+                mode: 'native_hls',
+                streamUrl: proxiedHls,
+                qualities: [{ label: '1080p', url: proxiedHls }],
+                posterImage: poster,
+                fallbackIframe: targetEmbedUrl,
+              };
+              setCachedStream(url, result, 8 * 60 * 1000);
+              return NextResponse.json(result, { headers: CACHE_HEADERS });
+            }
           }
         }
       }
-    } catch {
-      // fall through to iframe
+    } catch (okErr) {
+      console.warn('OK.ru resolution error:', okErr);
+      // fall through to iframe fallback
     }
   }
 
