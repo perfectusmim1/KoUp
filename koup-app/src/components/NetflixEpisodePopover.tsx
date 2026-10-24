@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo, memo } from 'react';
 import { motion } from 'motion/react';
-import { X, Check, Play, ChevronDown, Eye } from 'lucide-react';
+import { X, Play, ChevronDown, Eye } from 'lucide-react';
 import {
   MediaItem,
   EpisodeData,
@@ -173,43 +173,6 @@ const NetflixEpisodeRow = memo(function NetflixEpisodeRow({
               </span>
             )}
           </div>
-
-          <div className="flex items-center gap-1.5 shrink-0">
-            {epProgressPct > 0 && (
-              <div className="flex items-center gap-1.5">
-                {epRemainingLabel && !isEpWatched && (
-                  <span className="text-[10px] font-mono text-white/50 hidden sm:inline">
-                    {epRemainingLabel}
-                  </span>
-                )}
-                <div className="w-8 sm:w-12 h-1 bg-white/20 rounded-full overflow-hidden">
-                  <div
-                    style={{ width: `${epProgressPct}%` }}
-                    className={`h-full ${isEpWatched ? 'bg-emerald-400' : 'bg-[#E50914]'}`}
-                  />
-                </div>
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleEpisodeWatched(media, ep.episode_number);
-              }}
-              aria-label={
-                isEpWatched
-                  ? 'İzlendi işaretini kaldır'
-                  : 'İzlendi olarak işaretle'
-              }
-              className={`w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center transition-colors cursor-pointer ${
-                isEpWatched
-                  ? 'bg-white text-black'
-                  : 'bg-white/10 text-white/40 hover:text-white'
-              }`}
-            >
-              <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-            </button>
-          </div>
         </div>
 
         <div className="flex items-center gap-2.5">
@@ -314,11 +277,11 @@ const NetflixEpisodeRow = memo(function NetflixEpisodeRow({
         {epProgressPct > 0 && (
           <div className="flex items-center gap-1.5">
             {epRemainingLabel && !isEpWatched && (
-              <span className="text-[10px] font-mono text-white/50 hidden sm:inline">
+              <span className="text-[10px] font-mono text-white/50">
                 {epRemainingLabel}
               </span>
             )}
-            <div className="w-10 sm:w-12 h-1 bg-white/20 rounded-full overflow-hidden">
+            <div className="w-10 sm:w-14 h-1 bg-white/20 rounded-full overflow-hidden">
               <div
                 style={{ width: `${epProgressPct}%` }}
                 className={`h-full ${isEpWatched ? 'bg-emerald-400' : 'bg-[#E50914]'}`}
@@ -326,25 +289,6 @@ const NetflixEpisodeRow = memo(function NetflixEpisodeRow({
             </div>
           </div>
         )}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            toggleEpisodeWatched(media, ep.episode_number);
-          }}
-          aria-label={
-            isEpWatched
-              ? 'İzlendi işaretini kaldır'
-              : 'İzlendi olarak işaretle'
-          }
-          className={`w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center transition-colors cursor-pointer ${
-            isEpWatched
-              ? 'bg-white text-black'
-              : 'bg-white/5 text-white/30 hover:text-white hover:bg-white/15'
-          }`}
-        >
-          <Check className="w-3 h-3" />
-        </button>
       </div>
     </div>
   );
