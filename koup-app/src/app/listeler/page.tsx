@@ -390,23 +390,40 @@ export default function PublicListsPage() {
         </div>
       </div>
 
-      {/* LISTS GRID (2 COLUMNS MATCHING USER'S INSPIRATION SCREENSHOT) */}
+      {/* LISTS GRID (2 COLUMNS MATCHING LIVE CARD LAYOUT) */}
       {isLoading ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
-              className="rounded-3xl bg-[#0f0f13] border border-white/[0.08] p-6 flex items-center justify-between gap-5 animate-pulse min-h-[170px]"
+              className="rounded-3xl bg-[#0e0e14] border border-white/10 p-6 flex flex-col justify-between min-h-[270px] sm:min-h-[290px] animate-pulse relative overflow-hidden"
             >
-              <div className="space-y-3 flex-1">
-                <div className="w-24 h-4 rounded-full bg-white/10" />
-                <div className="w-48 h-6 rounded-lg bg-white/15" />
-                <div className="w-32 h-3 rounded-full bg-white/5" />
+              {/* Top Bar Skeleton: Creator Info & Badges */}
+              <div className="flex items-center justify-between gap-3">
+                <div className="h-8 w-28 rounded-full bg-white/[0.06] border border-white/10" />
+                <div className="flex items-center gap-2">
+                  <div className="h-7 w-20 rounded-full bg-white/[0.06] border border-white/10" />
+                  <div className="h-7 w-12 rounded-full bg-white/[0.06] border border-white/10" />
+                </div>
               </div>
-              <div className="flex gap-2 shrink-0">
-                <div className="w-16 h-24 sm:w-20 sm:h-28 rounded-xl bg-white/10" />
-                <div className="w-16 h-24 sm:w-20 sm:h-28 rounded-xl bg-white/10" />
-                <div className="w-16 h-24 sm:w-20 sm:h-28 rounded-xl bg-white/10" />
+
+              {/* Bottom Content Skeleton: Cover Poster + Title/Description + Footer */}
+              <div className="mt-6 pt-4 flex flex-col justify-end">
+                <div className="flex items-end gap-4">
+                  {/* Poster Thumbnail */}
+                  <div className="w-16 h-24 sm:w-20 sm:h-28 rounded-2xl bg-white/[0.08] border border-white/15 shrink-0" />
+                  {/* Title & Description */}
+                  <div className="flex-1 space-y-2 pb-1">
+                    <div className="h-6 w-3/4 max-w-xs rounded-lg bg-white/15" />
+                    <div className="h-3.5 w-1/2 max-w-[220px] rounded bg-white/[0.05]" />
+                  </div>
+                </div>
+
+                {/* Bottom Footer Line */}
+                <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
+                  <div className="h-3 w-20 rounded bg-white/[0.05]" />
+                  <div className="h-3 w-16 rounded bg-sky-400/20" />
+                </div>
               </div>
             </div>
           ))}

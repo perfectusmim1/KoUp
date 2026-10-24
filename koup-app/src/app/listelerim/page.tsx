@@ -440,13 +440,37 @@ export default function MyListsPage() {
         </div>
       </div>
 
-      {/* Lists Grid */}
+      {/* Lists Grid Skeleton */}
       {isLoading ? (
-        <div className="min-h-[40vh] flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-10 h-10 border-2 border-sky-400 border-t-transparent rounded-full animate-spin shadow-[0_0_15px_rgba(56,189,248,0.4)]" />
-            <p className="text-xs text-white/50 font-mono tracking-wider">Listeleriniz yükleniyor...</p>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className="rounded-3xl bg-[#0e0e14] border border-white/10 p-6 flex flex-col justify-between min-h-[270px] sm:min-h-[290px] animate-pulse relative overflow-hidden"
+            >
+              {/* Top Bar Skeleton */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="h-7 w-28 rounded-full bg-white/[0.06] border border-white/10" />
+                <div className="h-7 w-20 rounded-full bg-white/[0.06] border border-white/10" />
+              </div>
+
+              {/* Bottom Content Skeleton */}
+              <div className="mt-6 pt-4 flex flex-col justify-end">
+                <div className="flex items-end gap-4">
+                  <div className="w-16 h-24 sm:w-20 sm:h-28 rounded-2xl bg-white/[0.08] border border-white/15 shrink-0" />
+                  <div className="flex-1 space-y-2 pb-1">
+                    <div className="h-6 w-3/4 max-w-xs rounded-lg bg-white/15" />
+                    <div className="h-3.5 w-1/2 max-w-[200px] rounded bg-white/[0.05]" />
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
+                  <div className="h-3 w-20 rounded bg-white/[0.05]" />
+                  <div className="h-3 w-16 rounded bg-sky-400/20" />
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       ) : filteredLists.length === 0 ? (
         <div className="rounded-3xl bg-[#0f0f11] p-16 text-center border border-white/10 space-y-4">
