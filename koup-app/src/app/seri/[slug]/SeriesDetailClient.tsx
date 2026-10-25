@@ -2426,16 +2426,20 @@ export default function SeriesDetailClient({
         )}
 
         {/* FRANCHISE WATCH ORDER & CHRONOLOGY */}
-        {initialFranchise && (
+        {franchise && franchise.items && franchise.items.length >= 2 && (
           <FranchiseWatchOrder
-            franchise={initialFranchise}
+            franchise={franchise}
             currentMediaId={media.id}
             progressMap={progressMap}
           />
         )}
 
         {/* 5. RELATED RECOMMENDATIONS */}
-        {relatedMedia.length > 0 && (
+        {(() => {
+          const franchiseIdSet = new Set(franchise?.items?.map((i) => i.id) || []);
+          const filteredRelated = relatedMedia.filter((item) => !franchiseIdSet.has(item.id));
+          if (filteredRelated.length === 0) return null;
+          return (
           <section className="space-y-4 [contain:layout_paint_style]">
             <div className="flex items-end justify-between">
               <div>
@@ -2487,12 +2491,13 @@ export default function SeriesDetailClient({
               ref={relatedScrollRef}
               className="koup-accordion-rail flex items-center gap-4 overflow-x-auto overflow-y-hidden w-full h-[266px] sm:h-[296px] md:h-[324px] no-scrollbar py-2 [-webkit-overflow-scrolling:touch]"
             >
-              {relatedMedia.slice(0, 8).map((item) => (
+              {filteredRelated.slice(0, 8).map((item) => (
                 <AccordionMediaCard key={item.id} item={item} />
               ))}
             </div>
           </section>
-        )}
+          );
+        })()}
 
         {/* 6. GENERAL SERIES DISCUSSION & COMMENTS */}
         <RichCommentSection
