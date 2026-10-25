@@ -102,7 +102,7 @@ def fetch_html(url: str, referer: str = None, timeout: int = 15) -> str:
     # Always prefer curl_cffi with chrome impersonation when available to bypass Cloudflare and bot checks
     if HAS_CURL_CFFI:
         try:
-            s = cfr.Session(impersonate="chrome120")
+            s = cfr.Session(impersonate="chrome")
             r = s.get(url, headers=h, timeout=timeout)
             if r.status_code == 200:
                 return _decode_response_content(r.content, r.text, url)
@@ -1443,7 +1443,7 @@ def sync_bldrama_target(conn, cur, drama, target_url=None):
         ep_links.sort(key=lambda x: (x[0], x[1], x[2]))
         log("BLDrama", f"{len(ep_links)} adet bölüm bağlantısı tespit edildi.")
 
-        bldrama_session = cfr.Session(impersonate="chrome120") if HAS_CURL_CFFI else requests.Session()
+        bldrama_session = cfr.Session(impersonate="chrome") if HAS_CURL_CFFI else requests.Session()
 
         for s_num, start_ep, end_ep, ep_url in ep_links:
             target_ep_ids = []
@@ -1814,7 +1814,7 @@ def sync_asyaanimeleri_target(conn, cur, drama, target_url=None):
         SELECT e.id, e.season_number, e.episode_number, e.episode_url
         FROM episodes e
         WHERE e.drama_id = ?
-          AND e.episode_url LIKE '%asyaanimeleri.top%'
+          AND (e.episode_url LIKE '%asyaanimeleri.top%' OR e.episode_url LIKE '%asyaanimeleri.com%')
           AND NOT EXISTS (SELECT 1 FROM episode_sources s WHERE s.episode_id = e.id)
         ORDER BY e.season_number, e.episode_number
     """, (did,))
@@ -1850,7 +1850,7 @@ def sync_asyaanimeleri_target(conn, cur, drama, target_url=None):
 
     # Phase 2: Crawl the series page on asyaanimeleri.top
     series_url = target_url
-    if not series_url and 'asyaanimeleri.top/series/' in (d.get('source_url') or ''):
+    if not series_url and ('asyaanimeleri.top/series/' in (d.get('source_url') or '') or 'asyaanimeleri.com/series/' in (d.get('source_url') or '')):
         series_url = d['source_url']
 
     if series_url and '/series/' not in series_url:
@@ -1888,7 +1888,7 @@ def sync_asyaanimeleri_target(conn, cur, drama, target_url=None):
     for a in soup.find_all('a', href=True):
         h = a['href'].strip()
         txt = a.get_text(strip=True)
-        if 'asyaanimeleri.top/' in h and '/series/' not in h and ('bolum' in h or 'izle' in h or 'movie' in h or 'full' in h):
+        if ('asyaanimeleri.top/' in h or 'asyaanimeleri.com/' in h) and '/series/' not in h and ('bolum' in h or 'izle' in h or 'movie' in h or 'full' in h):
             if h not in seen_b:
                 seen_b.add(h)
                 s_num, start_ep, end_ep = parse_episode_range(h, txt)

@@ -1080,9 +1080,8 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
                     "episode_type": ep.get("episode_type") or "normal",
                     "status": new_status,
                     "video_sources": ep.get("sources") or [],
+                    "published_at": ep_pub_at,
                 }
-                if ep_pub_at:
-                    candidate["published_at"] = ep_pub_at
 
                 # If duplicate season/episode exists in SQLite, keep the one with sources
                 if key not in sb_episodes_map or (len(candidate["video_sources"]) > len(sb_episodes_map[key]["video_sources"])):
