@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" width="100%" height="100%">
+  <defs>
+    <linearGradient id="aBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#07080D"/>
+      <stop offset="50%" stop-color="#0B0F1A"/>
+      <stop offset="100%" stop-color="#06070B"/>
+    </linearGradient>
+    <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="50%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#10B981"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="320" rx="22" fill="url(#aBg)"/>
+  <rect x="1" y="1" width="1198" height="318" rx="21" fill="none" stroke="#FFFFFF" stroke-opacity="0.09" stroke-width="1.5"/>
+
+  <!-- Title -->
+  <text x="600" y="42" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="900" fill="#FFFFFF" text-anchor="middle" letter-spacing="0.5">⚡ ÜÇ KATMANLI TAM SENKRONİZASYON &amp; EDGE STREAM MİMARİSİ</text>
+  <text x="600" y="64" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#9CA3AF" text-anchor="middle">Sıfır Veritabanı Darboğazı • Milisaniyelik Bölüm Yüklemesi • 24s Self-Healing Watchdog</text>
+
+  <!-- Connecting Pipeline Lines -->
+  <line x1="290" y1="185" x2="910" y2="185" stroke="url(#lineGrad)" stroke-width="3" stroke-dasharray="6,6"/>
+
+  <!-- Node 1: Multi-Site Scrapers & Local SQLite -->
+  <g transform="translate(44, 96)">
+    <rect width="256" height="184" rx="16" fill="#0E121D" stroke="#38BDF8" stroke-opacity="0.45" stroke-width="1.5"/>
+    <rect x="20" y="20" width="44" height="44" rx="12" fill="#38BDF8" fill-opacity="0.15"/>
+    <text x="42" y="48" font-family="system-ui, -apple-system, sans-serif" font-size="20" text-anchor="middle">🤖</text>
+    <text x="76" y="38" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">1. Çapraz Tarama &amp; DB</text>
+    <text x="76" y="56" font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#38BDF8">9 Kaynak + SQLite WAL</text>
+    <text x="20" y="92" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" fill="#9CA3AF">• DiziKorea, AsyaWatch, DiziFon</text>
+    <text x="20" y="112" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" fill="#9CA3AF">• AnimeciX, Dizilla, DiziBox, DDizi</text>
+    <text x="20" y="132" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" fill="#9CA3AF">• HDFilmcehennemi &amp; AsyaMag</text>
+    <rect x="20" y="146" width="216" height="24" rx="6" fill="#080B11"/>
+    <text x="128" y="162" font-family="monospace" font-size="10.5" fill="#38BDF8" text-anchor="middle">webdrama_archive.db</text>
+  </g>
+
+  <!-- Node 2: Cloudflare R2 Edge Bundles -->
+  <g transform="translate(344, 96)">
+    <rect width="256" height="184" rx="16" fill="#0E121D" stroke="#F59E0B" stroke-opacity="0.5" stroke-width="1.5"/>
+    <rect x="20" y="20" width="44" height="44" rx="12" fill="#F59E0B" fill-opacity="0.15"/>
+    <text x="42" y="48" font-family="system-ui, -apple-system, sans-serif" font-size="20" text-anchor="middle">☁️</text>
+    <text x="76" y="38" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">2. Cloudflare R2 Edge</text>
+    <text x="76" y="56" font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#FBBF24">Object Storage &amp; CDN</text>
+    <text x="20" y="92" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" fill="#9CA3AF">• Tekil JSON Paketleri (sources/{id})</text>
+    <text x="20" y="112" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" fill="#9CA3AF">• DB Yedekleme (db/webdrama...)</text>
+    <text x="20" y="132" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" fill="#9CA3AF">• Sıfır Egress Ücreti &amp; Edge Cache</text>
+    <rect x="20" y="146" width="216" height="24" rx="6" fill="#080B11"/>
+    <text x="128" y="162" font-family="monospace" font-size="10.5" fill="#FBBF24" text-anchor="middle">r2_bundles/sources/*.json</text>
+  </g>
+
+  <!-- Node 3: Supabase PostgreSQL & Auth -->
+  <g transform="translate(644, 96)">
+    <rect width="256" height="184" rx="16" fill="#0E121D" stroke="#10B981" stroke-opacity="0.5" stroke-width="1.5"/>
+    <rect x="20" y="20" width="44" height="44" rx="12" fill="#10B981" fill-opacity="0.15"/>
+    <text x="42" y="48" font-family="system-ui, -apple-system, sans-serif" font-size="20" text-anchor="middle">🗄️</text>
+    <text x="76" y="38" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">3. Supabase Cloud</text>
+    <text x="76" y="56" font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#34D399">PostgreSQL • RLS • Realtime</text>
+    <text x="20" y="92" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" fill="#9CA3AF">• Media, Episodes &amp; Cast Tabloları</text>
+    <text x="20" y="112" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" fill="#9CA3AF">• Franchise İzleme Sırası Grafiği</text>
+    <text x="20" y="132" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" fill="#9CA3AF">• Takip Listesi &amp; Anlık Bildirimler</text>
+    <rect x="20" y="146" width="216" height="24" rx="6" fill="#080B11"/>
+    <text x="128" y="162" font-family="monospace" font-size="10.5" fill="#34D399" text-anchor="middle">Row Level Security (RLS)</text>
+  </g>
+
+  <!-- Node 4: Next.js 15 Client & Mobile Experience -->
+  <g transform="translate(944, 96)">
+    <rect width="212" height="184" rx="16" fill="#0E121D" stroke="#A855F7" stroke-opacity="0.5" stroke-width="1.5"/>
+    <rect x="20" y="20" width="44" height="44" rx="12" fill="#A855F7" fill-opacity="0.15"/>
+    <text x="42" y="48" font-family="system-ui, -apple-system, sans-serif" font-size="20" text-anchor="middle">🎬</text>
+    <text x="76" y="38" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">4. Next.js 15 UI</text>
+    <text x="76" y="56" font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#C084FC">React 19 • SSR / ISR</text>
+    <text x="20" y="92" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" fill="#9CA3AF">• Lumina OLED Arayüz</text>
+    <text x="20" y="112" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" fill="#9CA3AF">• Çift Katmanlı Player</text>
+    <text x="20" y="132" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" fill="#9CA3AF">• %100 Mobil Uyum</text>
+    <rect x="20" y="146" width="172" height="24" rx="6" fill="#080B11"/>
+    <text x="106" y="162" font-family="monospace" font-size="10.5" fill="#C084FC" text-anchor="middle">LCP &lt; 2.5s • 60 FPS</text>
+  </g>
+</svg>

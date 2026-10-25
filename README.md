@@ -1,167 +1,183 @@
 <div align="center">
 
-# 🎬 KoUp — Next-Gen Cinematic Streaming & Asian Entertainment Platform
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./koup-app/public/logo-dark.png" />
+  <source media="(prefers-color-scheme: light)" srcset="./koup-app/public/logo.png" />
+  <img alt="KoUp Logo" src="./koup-app/public/logo-dark.png" width="125" />
+</picture>
+
+# KoUp — Next-Gen Cinematic Streaming & Archive Ecosystem
+
+**Apple TV+ (tvOS / macOS Sequoia) zarafeti, Netflix akıcılığı ve MUBI estetiğiyle tasarlanmış yeni nesil yayın, kronolojik arşiv ve Asya eğlence platformu.**
+
+[![Next.js](https://img.shields.io/badge/Next.js_15.5-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/React_19-149ECA?style=for-the-badge&logo=react&logoColor=white)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript_5.8-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_v4-06B6D4?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
+[![Framer Motion](https://img.shields.io/badge/Motion_v12-FF0055?style=for-the-badge&logo=framer&logoColor=white)](https://motion.dev/)
+[![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
+[![Cloudflare R2](https://img.shields.io/badge/Cloudflare_R2-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://cloudflare.com/)
 
 <p align="center">
-  <strong>Apple TV+ (tvOS / macOS Sequoia) zarafeti, Netflix akıcılığı ve MUBI estetiğiyle tasarlanmış hibrit yayın, arşiv ve magazin ekosistemi.</strong>
+  <img src="./koup-app/public/flags/kr.svg" width="22" alt="KR" /> &nbsp;
+  <img src="./koup-app/public/flags/jp.svg" width="22" alt="JP" /> &nbsp;
+  <img src="./koup-app/public/flags/cn.svg" width="22" alt="CN" /> &nbsp;
+  <img src="./koup-app/public/flags/th.svg" width="22" alt="TH" /> &nbsp;
+  <img src="./koup-app/public/flags/tw.svg" width="22" alt="TW" /> &nbsp;
+  <img src="./koup-app/public/flags/hk.svg" width="22" alt="HK" /> &nbsp;
+  <img src="./koup-app/public/flags/ph.svg" width="22" alt="PH" /> &nbsp;
+  <img src="./koup-app/public/flags/tr.svg" width="22" alt="TR" /> &nbsp;
+  <img src="./koup-app/public/flags/us.svg" width="22" alt="US" /> &nbsp;
+  <img src="./koup-app/public/flags/gb.svg" width="22" alt="GB" />
 </p>
 
-[![Next.js](https://img.shields.io/badge/Next.js-15.5.28-black?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
-[![React](https://img.shields.io/badge/React-19.0.0-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.8.2-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4.0-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
-[![Framer Motion](https://img.shields.io/badge/Framer_Motion-v12-FF0055?style=for-the-badge&logo=framer&logoColor=white)](https://motion.dev/)
-[![Supabase](https://img.shields.io/badge/Supabase-Database_%26_Auth-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
-[![Cloudflare R2](https://img.shields.io/badge/Cloudflare_R2-Object_Storage-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://cloudflare.com/)
-[![Vercel](https://img.shields.io/badge/Vercel-Deployed-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://koup-app.vercel.app)
+[**🌟 Canlı Demo (Vercel)**](https://koup-app.vercel.app) &nbsp;•&nbsp; [**✨ Vitrin & Özellikler**](#-görsel-vitrin--öne-çıkan-özellikler) &nbsp;•&nbsp; [**🎬 Çift Katmanlı Player**](#-çift-katmanlı-koup-cinema-player--franchise-evreni) &nbsp;•&nbsp; [**⚡ Mimari & Senkronizasyon**](#-üç-katmanlı-bulut--arşiv-mimarisi) &nbsp;•&nbsp; [**🚀 Kurulum**](#-hızlı-kurulum--çalıştırma)
 
-<br/>
+<br />
 
-[🌟 Canlı Demo (Vercel)](https://koup-app.vercel.app) • [📖 Özellikler](#-öne-çıkan-özellikler) • [🏛 Mimari](#-sistem-mimarisi) • [🤖 Scraper & Otomasyon](#-canlı-tarama--otomasyon-merkezi) • [🚀 Kurulum](#-kurulum--çalıştırma)
+<img src="./koup-app/public/readme/hero-banner.svg" alt="KoUp Lumina UI Hero Showcase" width="100%" />
 
 </div>
 
 ---
 
-## 💎 Genel Bakış
+## ✨ Görsel Vitrin & Öne Çıkan Özellikler
 
-**KoUp**, K-Drama, C-Drama, Anime, Global Dizi/Film arşivini ve canlı Asya magazin akışını tek bir kusursuz arayüzde toplayan açık kaynaklı bir streaming platformudur. 
-
-Geleneksel hantal dizi sitelerinin aksine; **karanlık OLED (`#08080A`)** paleti, yay fiziğine dayalı mikromotion animasyonları, reklam engelleyiciye gerek bırakmayan **çift katmanlı özel video oynatıcısı** ve **Cloudflare R2 + Edge JSON paketleme** mimarisi ile ultra hızlı bir deneyim sunar.
-
----
-
-## ✨ Öne Çıkan Özellikler
-
-### 🍿 1. Lumina Projection UI & Akordiyon Kartlar
-* **Hover Akordiyon Genişlemesi:** Dizi kartlarının üzerine gelindiğinde `2:3` dikey poster formatından `16:9` sahne önizlemesine doğru akıcı yay fiziği (`framer-motion`) ile genişler.
-* **OLED Sinematik Atmosfer:** `#08080A` taban arka plan, neon cyan ve mor ışıma katmanları, arka plan dinamik backdrop projeksiyonu.
-* **100% Mobil & Dokunmatik Uyum:** Akıllı swipe çekmeceleri, bottom navigation bar ve parmak dostu dokunma hedefleri.
-
-### ⚡ 2. Çift Katmanlı KoUp Cinema Player (`NetflixPlayer.tsx`)
-* **Katman 1 — Native HLS & MP4 Motoru:**
-  * `DiziYou HLS`, `HDFilm HLS` ve `Tau-Video` (`1080p`, `720p`, `480p`) doğrudan akışlarında yerel medya oynatımı.
-  * **İntroyu Atla (+85s)**, **15sn Sonraki Bölüm Sayacı**, `-10s / +10s` atlama, ses/parlaklık kontrolleri ve playback hızı.
-* **Katman 2 — Evrensel Üst Cam Kontrol Barı (Universal Top Glass Bar):**
-  * `Vidmoly`, `OK.ru`, `Filemoon`, `Sibnet`, `VK` gibi harici iframe oynatıcılarının üzerine şeffaf bir cam HUD katmanı giydirilir.
-  * Oynatıcıdan çıkmadan **Alternatif Kaynak / Fansub Değiştirici**, **Sezon & Bölüm Çekmecesi**, **Apple TV+ InSight (Kadro & Karakterler)** ve **Tam Ekran Sinema Modu**.
-
-### 🤖 3. Çoklu Kaynak Çapraz Otomasyonu (Multi-Site Automation)
-* **8 Aktif Kaynak Entegrasyonu:** DiziKorea, DiziFon, AsyaWatch, Dizilla, DiziBox, DDizi, AnimeciX ve HDFilmcehennemi.
-* **Dinamik Slug Çözücü:** Sitelerdeki isim farklarını (`-2026-kore`, `-izle`, `-dq`, `1-sezon`) otomatik tespit eden bulanık arama motoru.
-* **Canlı Çapraz Tarama:** Yeni bir dizi veya bölüm yayınlandığında tüm bağlı kaynaklar paralel olarak taranır ve eksik bölümler anında tamamlanır.
-* **24 Saatlik Watchdog:** Canlı HTTP stream kontrolü ile ölü linkleri otomatik tespit eder ve sağlıklı alternatiflerle iyileştirir (Self-Healing).
-
-### 🌐 4. Cloudflare R2 Dağıtık Akış Mimarisi (Edge JSON Bundles)
-* Her yapımın tüm sezon, bölüm ve video kaynakları Cloudflare R2 üzerinde tekil bir JSON paketi olarak (`sources/{id}.json`) saklanır.
-* İstemci oynatma sayfasına girdiğinde veritabanına sorgu atmak yerine R2 CDN önbelleğinden milisaniyeler içinde veri çeker; veritabanı yükü sıfıra iner.
-
-### 🎭 5. Oyuncular & Karakter Ağı (`/oyuncular`)
-* **21.800+ Oyuncu & Anime Karakteri:** MDL ve AniList verileriyle zenginleştirilmiş liderlik tablosu.
-* **Co-Star Birlikte Rol Ağı:** Bir oyuncunun hangi dizilerde kimlerle birlikte oynadığını görselleştiren ilişki ağı.
-* **Seiyuu & Seslendirmen Profilleri:** Anime karakterleri ve onları seslendiren orijinal Japon sanatçılar.
-
-### 📰 6. Canlı AsyaMag Magazin & Dedikodu (`/magazin`)
-* `asyamag.com` WP REST API entegrasyonu ile en yeni K-Drama, C-Drama, BL/GL ve magazin haberleri dış siteye yönlendirmeden doğrudan uygulama içinde sunulur.
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>🌌 Lumina OLED Arayüz & Akordiyon Kartlar</h3>
+      <ul>
+        <li><b>Hover Akordiyon Genişlemesi:</b> Dikey <code>2:3</code> poster kartları, üzerine gelindiğinde yay fiziğiyle <code>16:9</code> sinematik sahne önizlemesine dönüşür.</li>
+        <li><b>Pointer Takipli Kayar Sekmeler:</b> Fare ve dokunma hareketini gerçek zamanlı takip eden akıcı <i>Draggable Sliding Pill</i> navigasyonu.</li>
+        <li><b>%100 Mobil Uyum:</b> Sıfır taşma, 44x44px parmak dostu dokunma hedefleri ve özel açılır menüler.</li>
+      </ul>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🗂 Kronolojik Franchise & İzleme Sırası</h3>
+      <ul>
+        <li><b>Otomatik Evren Haritası:</b> Sezonlar, devam halkaları, sinema filmleri, OVA/OAD özel bölümleri ve <i>Crossover</i> bağlantıları tek kronolojik listede sunulur.</li>
+        <li><b>Akıllı Öneri Filtresi:</b> Aynı serinin diğer sezonları "Benzer Yapımlar" listesini kirletmez; doğrudan izleme sırası modülünde gösterilir.</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>🎭 21.800+ Oyuncu, Seiyuu & Co-Star Ağı</h3>
+      <ul>
+        <li><b>Kapsamlı Kadro Veritabanı:</b> MyDramaList (MDL), AniList ve TMDB verileriyle senkronize aktör, karakter ve Japon seslendirmen (Seiyuu) profilleri.</li>
+        <li><b>Birlikte Rol (Co-Star) Grafiği:</b> Oyuncuların hangi projelerde kimlerle bir araya geldiğini gösteren etkileşimli ilişki ağı.</li>
+      </ul>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🔔 Anlık Bildirimler & Canlı AsyaMag</h3>
+      <ul>
+        <li><b>Gerçek Zamanlı Bölüm Bildirimi:</b> Yalnızca takip ettiğiniz yapımlara yeni bölüm eklendiğinde tetiklenen akıllı bildirim merkezi.</li>
+        <li><b>Uygulama İçi Magazin:</b> <code>asyamag.com</code> entegrasyonuyla dış siteye çıkmadan okunabilen K-Drama, C-Drama ve BL/GL haber akışı.</li>
+      </ul>
+    </td>
+  </tr>
+</table>
 
 ---
 
-## 🏛 Sistem Mimarisi
+## 🎬 Çift Katmanlı KoUp Cinema Player & Franchise Evreni
+
+<div align="center">
+  <img src="./koup-app/public/readme/player-showcase.svg" alt="KoUp Dual Layer Player & Franchise Watch Order" width="100%" />
+</div>
+
+<br />
+
+| Katman / Modül | Yetenekler & Deneyim |
+| :--- | :--- |
+| **Katman 1: Native HLS & MP4 Motoru** | `1080p / 720p / 480p` doğrudan akış, **İntroyu Atla (+85s)**, **15sn Sonraki Bölüm Sayacı**, `-10s / +10s` sarma, `1x` hız kontrolü ve klavye kısayolları. |
+| **Katman 2: Universal Top Glass HUD** | `Vidmoly`, `OK.ru`, `Tau-Video`, `Sibnet`, `Filemoon` dahil tüm oynatıcıların üstüne giydirilen şeffaf cam kontrol barı; oynatıcıdan çıkmadan kaynak/fansub ve bölüm değiştirme. |
+| **Apple TV+ InSight Kadrosu** | İzleme sırasında tek tıkla açılan şeffaf çekmecede o yapımdaki oyuncuları, karakterleri ve seslendirmenleri anında görüntüleme. |
+| **Franchise İzleme Sırası (`FranchiseWatchOrder`)** | İzlenen yapımın 1. Sezon, OVA, Film ve 2. Sezon halkaları arasında tek tıkla kesintisiz geçiş. |
+
+---
+
+## ⚡ Üç Katmanlı Bulut & Arşiv Mimarisi
+
+<div align="center">
+  <img src="./koup-app/public/readme/architecture-sync.svg" alt="KoUp 3-Tier Sync Architecture" width="100%" />
+</div>
+
+<br />
 
 ```mermaid
-flowchart TD
-    subgraph Client["📱 İstemci Katmanı (Next.js 15 + React 19)"]
-        UI["Lumina UI & Mobil Arayüz"]
-        Player["Çift Katmanlı NetflixPlayer"]
-        AdminUI["Admin Otomasyon & Canlı Terminal"]
+flowchart LR
+    subgraph Sources["📡 9 Canlı Kaynak"]
+        S1["DiziKorea • AsyaWatch • DiziFon"]
+        S2["AnimeciX • Dizilla • DiziBox"]
+        S3["DDizi • HDFilmcehennemi • AsyaMag"]
     end
 
-    subgraph Edge["⚡ CDN & Dağıtık Depolama"]
-        R2["Cloudflare R2 Object Storage<br/>(sources/{id}.json & DB Backups)"]
-        EdgeWorker["Cloudflare Edge API / Worker"]
+    subgraph Engine["🤖 Otonom Tarama & Watchdog"]
+        Scanner["live_scanner.py"]
+        Runner["series_automation_runner.py"]
+        LocalDB[("SQLite WAL\nwebdrama_archive.db")]
     end
 
-    subgraph Backend["🗄 Veritabanı & Kimlik Doğrulama"]
-        SupabaseDB[("Supabase PostgreSQL<br/>(Media, Episodes, Users)")]
-        SQLiteArchive[("Yerel SQLite Arşivi<br/>(webdrama_archive.db)")]
+    subgraph Cloud["☁️ Dağıtık Bulut Katmanı"]
+        R2["Cloudflare R2 CDN\nsources/{id}.json"]
+        Supa[("Supabase PostgreSQL\nMedia • Episodes • Cast")]
     end
 
-    subgraph Scrapers["🤖 Canlı Tarama & Çözümleme Motoru"]
-        LiveScanner["scrapers/live_scanner.py"]
-        AutoRunner["scripts/series_automation_runner.py"]
-        Watchdog["24h Health Watchdog"]
-        Sites["8+ Canlı Kaynak<br/>(DiziKorea, AsyaWatch, DiziFon, AnimeciX...)"]
+    subgraph App["🎬 Next.js 15 İstemci"]
+        UI["Lumina UI & Cinema Player"]
     end
 
-    UI -->|Doğrudan Akış Paketleri| R2
-    UI -->|Kullanıcı & Liste Durumu| SupabaseDB
-    Player -->|HLS / MP4 Stream| Sites
-    AdminUI -->|SSE Canlı Log Yayını| AutoRunner
-    AutoRunner --> LiveScanner
-    LiveScanner --> Sites
-    LiveScanner -->|Kaynakları Kaydet| SQLiteArchive
-    AutoRunner -->|Paketleri Dışa Aktar & Yükle| R2
-    AutoRunner -->|Eşitleme| SupabaseDB
-    Watchdog --> LiveScanner
+    Sources --> Scanner --> Runner --> LocalDB
+    LocalDB -->|"1. DB & Bundle Sync"| R2
+    LocalDB -->|"2. Tablo & Graph Sync"| Supa
+    R2 -->|"< 15ms Edge JSON"| UI
+    Supa -->|"SSR / ISR & Realtime"| UI
 ```
 
 ---
 
-## 📡 Desteklenen Kaynaklar & Botlar
+## 🤖 Desteklenen Kaynaklar & Çözümleme Motorları
 
-| Platform | Tür | Akış Sağlayıcıları | Çözümleme Yöntemi | Durum |
+| Kaynak | Kategori | Akış Sağlayıcıları | Çözümleme Teknolojisi | Durum |
 | :--- | :--- | :--- | :--- | :---: |
-| **DiziKorea** | K-Drama / Asya | PlayerDKorea, Vidmoly | BeautifulSoup + Doğrudan Regex | 🟢 Aktif |
-| **DiziFon** | Asya / Çin / Kore | OK.ru HD, Vidmoly, YouTube | Iframe Sniffing + URL Normalizer | 🟢 Aktif |
+| **DiziKorea** | K-Drama / Asya | PlayerDKorea, Vidmoly | DOM Parser + Stream Regex | 🟢 Aktif |
 | **AsyaWatch** | K-Drama / C-Drama | AsyaWatch 1080p HLS | Next.js Build-ID REST Bypass | 🟢 Aktif |
-| **Dizilla** | Yabancı Dizi / Trend | Dizilla 1080p HLS | Next.js Props & Direct Stream | 🟢 Aktif |
-| **DiziBox** | Global / Batı | DiziBox HLS, Vidmoly | HTML Dom Parser + Slug Resolver | 🟢 Aktif |
+| **DiziFon** | Kore / Çin / Tayland | OK.ru HD, Vidmoly, YouTube | Iframe Sniffer + URL Normalizer | 🟢 Aktif |
 | **AnimeciX** | Anime / Donghua | Tau-Video (1080p/720p/480p) | AES-128 Decryption + Fansub Sync | 🟢 Aktif |
+| **Dizilla** | Yabancı Dizi | Dizilla 1080p HLS | Next.js Props & Direct Stream | 🟢 Aktif |
+| **DiziBox** | Global Dizi | DiziBox HLS, Vidmoly | Dinamik Slug Çözücü + Parser | 🟢 Aktif |
 | **DDizi** | Yerli Dizi / Arşiv | DDizi Player HLS, YouTube | Playeroynat Stream Sniffer | 🟢 Aktif |
 | **HDFilmcehennemi** | Sinema & Film | Rapidrame, Doğrudan HLS | JSON Fetch API + Multi-Server | 🟢 Aktif |
-| **AsyaMag** | Haber / Magazin | WordPress Canlı REST API | `wp-json/wp/v2/posts` + Embed | 🟢 Aktif |
+| **AsyaMag** | Magazin & Haber | WordPress REST API | `wp-json/wp/v2/posts` + Embed | 🟢 Aktif |
 
 ---
 
 ## 📁 Proje Dizin Yapısı
 
-```bash
+```text
 KoUp/
-├── koup-app/                     # Next.js 15 Frontend & Fullstack API
-│   ├── src/
-│   │   ├── app/                  # App Router (Sayfalar & API Routes)
-│   │   │   ├── admin/            # Admin Kontrol Paneli & Seri Otomasyonu
-│   │   │   ├── seri/[slug]/      # Dizi & Bölüm Oynatma Sayfaları
-│   │   │   ├── oyuncular/        # Aktörler, Karakterler & Co-Star Ağı
-│   │   │   ├── magazin/          # Canlı AsyaMag Haberleri
-│   │   │   └── api/admin/        # Otomasyon, SSE Streaming ve Eşitleme Uçları
-│   │   ├── components/           # Yeniden Kullanılabilir Lumina Bileşenleri
-│   │   │   ├── NetflixPlayer.tsx # Çift Katmanlı Video Oynatıcı
-│   │   │   └── AdminSeriesAutomation.tsx # Çapraz Tarama Arayüzü
-│   │   └── lib/                  # Supabase istemcisi, Auth & Senkronizasyon
-│   ├── package.json
-│   └── pnpm-lock.yaml
-├── scrapers/                     # Python Canlı Tarama ve Tersine Mühendislik Motorları
-│   ├── live_scanner.py           # 8 sitenin canlı akış ve kaynak çıkarıcıları
-│   ├── multisite.py              # Eşitleme ve sıra yönetimi
-│   └── supabase_sync_helper.py   # R2 ve Supabase köprü fonksiyonları
-├── scripts/                      # Otomasyon ve Arşiv Bakım Scriptleri
-│   ├── series_automation_runner.py # Dizi bazlı çapraz arama & bundle üretici
-│   ├── cron_sync_pipeline.py     # 24s Watchdog ve Genel Otomasyon Pipeline
-│   ├── export_sources_bundles.py # R2 için JSON paket derleyici
-│   └── upload_to_r2.py           # Cloudflare R2 toplu yükleme aracı
-├── database.py                   # Yerel SQLite veritabanı yöneticisi
-└── README.md
+├── koup-app/                         # Next.js 15 (App Router) + React 19 Frontend & API
+│   ├── public/                       # Site logoları, ülke bayrakları, fontlar ve görseller
+│   └── src/
+│       ├── app/                      # Sayfalar (Keşfet, Seri, Oyuncular, Magazin, Admin) & API Uçları
+│       ├── components/               # NetflixPlayer, FranchiseWatchOrder, Lumina UI Bileşenleri
+│       ├── data/                     # SSR için ön-derlenmiş franchise_graph.json
+│       └── lib/                      # Supabase, R2 ve yardımcı servis katmanı
+├── scrapers/                         # Python çoklu kaynak tarama ve akış çözümleme motorları
+│   ├── live_scanner.py               # 9 kaynağın canlı bölüm ve video çıkarıcısı
+│   └── supabase_sync_helper.py       # SQLite ⇄ Cloudflare R2 ⇄ Supabase senkronizasyon köprüsü
+├── scripts/                          # Otomasyon, Watchdog, R2 paketleme ve veri iyileştirme araçları
+│   ├── series_automation_runner.py   # Dizi bazlı çapraz tarama ve anlık SSE yayın motoru
+│   ├── export_sources_bundles.py     # Cloudflare R2 için tekil JSON paket derleyici
+│   └── upload_to_r2.py               # R2 Object Storage yüksek hızlı yükleyici
+└── database.py                       # Yerel SQLite (WAL) arşiv veritabanı yöneticisi
 ```
 
 ---
 
-## 🚀 Kurulum & Çalıştırma
-
-### Gereksinimler
-* **Node.js** `>= 18.18.0` (Önerilen: Node 20+)
-* **pnpm** `>= 9.0.0` veya **npm**
-* **Python** `>= 3.10` (Scraper motorları için)
+## 🚀 Hızlı Kurulum & Çalıştırma
 
 ### 1. Depoyu Klonlayın
 ```bash
@@ -169,69 +185,58 @@ git clone https://github.com/perfectusmim1/KoUp.git
 cd KoUp
 ```
 
-### 2. Ortam Değişkenlerini Ayarlayın
-`koup-app/.env.local` dosyasını oluşturun ve gerekli kimlik bilgilerini ekleyin:
+### 2. Ortam Değişkenlerini Tanımlayın (`koup-app/.env.local`)
+> [!IMPORTANT]
+> **Sıfır Hardcoded Key Kuralı:** Özel anahtarlar, API keyler veya gizli token'lar **asla** kod içine yazılmaz. Tüm anahtarları yalnızca `.env.local` dosyasında tanımlayın:
 
 ```env
-# Supabase
+# Supabase (Database, Auth & Realtime)
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
-# Cloudflare R2 (Storage & CDN)
+# Cloudflare R2 (Edge Object Storage & CDN)
 R2_ACCOUNT_ID=your-account-id
 R2_ACCESS_KEY_ID=your-access-key-id
 R2_SECRET_ACCESS_KEY=your-secret-access-key
 R2_BUCKET_NAME=koup-sources
 R2_PUBLIC_URL=https://pub-your-id.r2.dev
 
-# TMDB & External APIs (Opsiyonel)
-TMDB_API_KEY=your-tmdb-key
+# Harici Metadata Servisleri (Opsiyonel)
+TMDB_API_KEY=your-tmdb-api-key
 ```
 
-### 3. Frontend Bağımlılıklarını Kurun ve Başlatın
+### 3. Web Uygulamasını Başlatın
 ```bash
 cd koup-app
 pnpm install
 pnpm dev
 ```
-Uygulamanız varsayılan olarak `http://localhost:3000` adresinde çalışacaktır.
 
-### 4. Canlı Scraper & Python Bağımlılıkları (Opsiyonel)
+### 4. Otonom Tarama & Senkronizasyon Komutları (Opsiyonel)
 ```bash
+# Python bağımlılıklarını yükleyin
 pip install -r requirements.txt
-# Belirli bir siteyi test etmek için:
-python scrapers/live_scanner.py --provider dizikorea --limit 30
-```
 
----
-
-## ⚙️ Otomasyon & Watchdog Çalıştırma
-
-* **Yönetim Panelinden Tek Tıkla:** `/admin` sayfasına girip **"Seri Otomasyonu"** sekmesinden istediğiniz diziyi bağlayabilir, anlık canlı log akışıyla çapraz taramayı başlatabilirsiniz.
-* **Komut Satırından:**
-```bash
-# Belirli bir dizi için tüm bağlı siteleri tara ve R2'ye yükle
+# Belirli bir yapımı tüm bağlı sitelerden çapraz tarayıp R2 + Supabase ile eşitleyin
 python scripts/series_automation_runner.py --id 46297
 
-# Tüm aktif diziler için haftalık yeni bölümleri tara
+# Tüm aktif seriler için yeni bölümleri tarayın
 python scripts/series_automation_runner.py --all-active
 ```
 
 ---
 
-## 🛡 Güvenlik & Defansif Mimari
+## 🛡️ Güvenlik, Performans & Kalite Standartları
 
-* **Açıklara Karşı Koruma:** SQL Injection korumalı parametreli sorgular, XSS filtreleme ve Supabase Row Level Security (RLS) politikaları.
-* **Akıllı Hız Sınırlaması (Rate Limiting):** Dış sitelere aşırı yük bindirmemek için istekler arasında rastgele gecikmeler ve oturum önbelleklemesi.
-* **Hata İzolasyonu (Graceful Degradation):** Herhangi bir kaynak çöktüğünde veya video silindiğinde oynatıcı kullanıcıyı kesintiye uğratmadan alternatif kaynağa otomatik geçiş yapar.
+- **Zero Hardcoded Secrets:** API anahtarları, `SUPABASE_SERVICE_ROLE_KEY` ve R2 secret anahtarları kesinlikle kaynak koda gömülmez ve istemci paketine (`client bundle`) sızdırılmaz.
+- **Full-Stack Koruma:** Parametreli sorgular (SQLi koruması), SSRF/XSS/IDOR engelleme, Supabase Row Level Security (RLS) ve hız sınırlama (Rate-Limiting).
+- **4 Kademeli Cihaz Performansı:** Masaüstü (1x CPU) yanı sıra Yüksek (2x), Orta (4x) ve Düşük (6x CPU yavaşlatma) mobil cihaz profillerinde **LCP < 2.5s**, **CLS < 0.1** ve **INP < 200ms** hedefleriyle doğrulanır.
 
 ---
 
-## 📄 Lisans
-
-Bu proje kişisel araştırma, eğitim ve eğlence amaçlarıyla geliştirilmiştir. Tüm telif hakları ilgili içerik sahiplerine aittir.
-
 <div align="center">
-  <sub>Designed with ❤️ for Cinema & Drama Lovers by <strong>KoUp Team</strong></sub>
+  <img src="./koup-app/public/logo-dark.png" width="48" alt="KoUp" />
+  <br />
+  <sub>Designed & Engineered with ❤️ for Cinema, K-Drama & Anime Lovers</sub>
 </div>

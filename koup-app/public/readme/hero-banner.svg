@@ -1,0 +1,207 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#050507"/>
+      <stop offset="50%" stop-color="#0A0A0F"/>
+      <stop offset="100%" stop-color="#060609"/>
+    </linearGradient>
+    <radialGradient id="cyanGlow" cx="22%" cy="18%" r="45%">
+      <stop offset="0%" stop-color="#06B6D4" stop-opacity="0.22"/>
+      <stop offset="55%" stop-color="#3B82F6" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="amberGlow" cx="82%" cy="28%" r="45%">
+      <stop offset="0%" stop-color="#F59E0B" stop-opacity="0.18"/>
+      <stop offset="55%" stop-color="#EC4899" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="heroCardGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#111827" stop-opacity="0.9"/>
+      <stop offset="50%" stop-color="#1E1B4B" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#090D16" stop-opacity="0.95"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="50%" stop-color="#818CF8"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+    <linearGradient id="card1" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#090A0F"/>
+    </linearGradient>
+    <filter id="softShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#000000" flood-opacity="0.75"/>
+    </filter>
+  </defs>
+
+  <!-- Outer Canvas -->
+  <rect width="1200" height="620" rx="24" fill="url(#bgGrad)"/>
+  <rect width="1200" height="620" rx="24" fill="url(#cyanGlow)"/>
+  <rect width="1200" height="620" rx="24" fill="url(#amberGlow)"/>
+  <rect x="1" y="1" width="1198" height="618" rx="23" fill="none" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="1.5"/>
+
+  <!-- Browser / macOS Sequoia Window Frame -->
+  <g filter="url(#softShadow)">
+    <rect x="36" y="28" width="1128" height="564" rx="18" fill="#08080C" fill-opacity="0.92" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="1"/>
+
+    <!-- Top Navigation Bar (Glassmorphism) -->
+    <rect x="36" y="28" width="1128" height="58" rx="18" fill="#0E0E14" fill-opacity="0.85"/>
+    <line x1="36" y1="86" x2="1164" y2="86" stroke="#FFFFFF" stroke-opacity="0.07" stroke-width="1"/>
+
+    <!-- Window Traffic Lights -->
+    <circle cx="64" cy="57" r="6" fill="#FF5F56"/>
+    <circle cx="84" cy="57" r="6" fill="#FFBD2E"/>
+    <circle cx="104" cy="57" r="6" fill="#27C93F"/>
+
+    <!-- Brand Logo Mark inside Navbar -->
+    <g transform="translate(134, 41)">
+      <rect width="34" height="32" rx="8" fill="#14141D" stroke="#FFFFFF" stroke-opacity="0.15"/>
+      <text x="17" y="21" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="900" fill="url(#accentGrad)" text-anchor="middle">KU</text>
+      <text x="46" y="21" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="800" fill="#FFFFFF" letter-spacing="0.5">KoUp</text>
+    </g>
+
+    <!-- Draggable Sliding Pill Navigation -->
+    <g transform="translate(275, 41)">
+      <rect width="460" height="32" rx="16" fill="#12121A" stroke="#FFFFFF" stroke-opacity="0.08"/>
+      <rect x="4" y="4" width="88" height="24" rx="12" fill="#FFFFFF" fill-opacity="0.12" stroke="#38BDF8" stroke-opacity="0.4"/>
+      <text x="48" y="20" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" font-weight="700" fill="#FFFFFF" text-anchor="middle">Keşfet</text>
+      <text x="135" y="20" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" font-weight="600" fill="#9CA3AF" text-anchor="middle">K-Drama</text>
+      <text x="215" y="20" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" font-weight="600" fill="#9CA3AF" text-anchor="middle">Anime</text>
+      <text x="295" y="20" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" font-weight="600" fill="#9CA3AF" text-anchor="middle">Oyuncular</text>
+      <text x="390" y="20" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" font-weight="600" fill="#9CA3AF" text-anchor="middle">AsyaMag</text>
+    </g>
+
+    <!-- Right Search & Status Pill -->
+    <g transform="translate(910, 41)">
+      <rect width="160" height="32" rx="16" fill="#12121A" stroke="#FFFFFF" stroke-opacity="0.08"/>
+      <text x="20" y="20" font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#6B7280">🔍 Dizi, anime, oyuncu...</text>
+      <circle cx="192" cy="16" r="15" fill="#181824" stroke="#38BDF8" stroke-opacity="0.4"/>
+      <circle cx="201" cy="7" r="4.5" fill="#10B981"/>
+      <text x="192" y="20" font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#E5E7EB" text-anchor="middle">🔔</text>
+    </g>
+
+    <!-- Main Hero Spotlight Banner -->
+    <g transform="translate(64, 108)">
+      <rect width="720" height="260" rx="16" fill="url(#heroCardGrad)" stroke="#FFFFFF" stroke-opacity="0.12"/>
+      <!-- Ambient Decorative Grid inside Hero -->
+      <circle cx="590" cy="130" r="110" fill="#38BDF8" fill-opacity="0.12"/>
+      <circle cx="640" cy="95" r="70" fill="#F59E0B" fill-opacity="0.12"/>
+
+      <!-- Badges -->
+      <rect x="28" y="26" width="110" height="24" rx="12" fill="#38BDF8" fill-opacity="0.15" stroke="#38BDF8" stroke-opacity="0.45"/>
+      <text x="83" y="42" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" font-weight="800" fill="#38BDF8" text-anchor="middle">★ LUMINA OLED UI</text>
+
+      <rect x="148" y="26" width="128" height="24" rx="12" fill="#10B981" fill-opacity="0.14" stroke="#10B981" stroke-opacity="0.4"/>
+      <text x="212" y="42" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" font-weight="700" fill="#34D399" text-anchor="middle">⚡ R2 EDGE STREAM</text>
+
+      <rect x="286" y="26" width="96" height="24" rx="12" fill="#F59E0B" fill-opacity="0.15" stroke="#F59E0B" stroke-opacity="0.4"/>
+      <text x="334" y="42" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" font-weight="700" fill="#FBBF24" text-anchor="middle">1080p HLS</text>
+
+      <!-- Hero Title & Subtitle -->
+      <text x="28" y="92" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="900" fill="#FFFFFF" letter-spacing="-0.5">Yeni Nesil Sinematik Yayın &amp; Arşiv</text>
+      <text x="28" y="122" font-family="system-ui, -apple-system, sans-serif" font-size="13.5" fill="#9CA3AF">Apple TV+ zarafeti, çift katmanlı engelsiz sinema oynatıcısı, kronolojik</text>
+      <text x="28" y="142" font-family="system-ui, -apple-system, sans-serif" font-size="13.5" fill="#9CA3AF">franchise izleme sırası ve 8 kaynaklı otonom çapraz tarama motoru.</text>
+
+      <!-- Action Buttons -->
+      <rect x="28" y="172" width="148" height="40" rx="12" fill="#FFFFFF"/>
+      <text x="102" y="197" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="800" fill="#08080A" text-anchor="middle">▶ Hemen İzle</text>
+
+      <rect x="188" y="172" width="164" height="40" rx="12" fill="#FFFFFF" fill-opacity="0.08" stroke="#FFFFFF" stroke-opacity="0.18"/>
+      <text x="270" y="197" font-family="system-ui, -apple-system, sans-serif" font-size="12.5" font-weight="700" fill="#FFFFFF" text-anchor="middle">🗂 İzleme Sırası (8)</text>
+
+      <!-- Right Visual Preview Card inside Hero -->
+      <rect x="490" y="34" width="202" height="192" rx="14" fill="#0B0F19" stroke="#FFFFFF" stroke-opacity="0.15"/>
+      <rect x="504" y="48" width="174" height="96" rx="8" fill="#161F33"/>
+      <circle cx="591" cy="96" r="20" fill="#38BDF8" fill-opacity="0.25" stroke="#38BDF8" stroke-width="1.5"/>
+      <polygon points="587,88 587,104 600,96" fill="#FFFFFF"/>
+      <text x="504" y="166" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="800" fill="#FFFFFF">Çift Katmanlı Player</text>
+      <text x="504" y="184" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" fill="#9CA3AF">InSight Kadro • Fansub Seçici</text>
+      <rect x="504" y="198" width="174" height="5" rx="2.5" fill="#1F2937"/>
+      <rect x="504" y="198" width="118" height="5" rx="2.5" fill="url(#accentGrad)"/>
+    </g>
+
+    <!-- Right Metrics & Live Architecture Panel -->
+    <g transform="translate(804, 108)">
+      <rect width="332" height="260" rx="16" fill="#0D0E15" stroke="#FFFFFF" stroke-opacity="0.1"/>
+      <text x="24" y="36" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="800" fill="#FFFFFF" letter-spacing="0.4">⚡ CANLI EKOSİSTEM METRİKLERİ</text>
+      <line x1="24" y1="50" x2="308" y2="50" stroke="#FFFFFF" stroke-opacity="0.07"/>
+
+      <!-- Metric 1 -->
+      <rect x="24" y="64" width="136" height="78" rx="12" fill="#131520" stroke="#38BDF8" stroke-opacity="0.25"/>
+      <text x="38" y="94" font-family="system-ui, -apple-system, sans-serif" font-size="22" font-weight="900" fill="#38BDF8">21,800+</text>
+      <text x="38" y="114" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" font-weight="600" fill="#9CA3AF">Oyuncu &amp; Seiyuu Ağı</text>
+      <text x="38" y="128" font-family="system-ui, -apple-system, sans-serif" font-size="9.5" fill="#6B7280">MDL • AniList • TMDB</text>
+
+      <!-- Metric 2 -->
+      <rect x="172" y="64" width="136" height="78" rx="12" fill="#131520" stroke="#10B981" stroke-opacity="0.25"/>
+      <text x="186" y="94" font-family="system-ui, -apple-system, sans-serif" font-size="22" font-weight="900" fill="#34D399">&lt; 15ms</text>
+      <text x="186" y="114" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" font-weight="600" fill="#9CA3AF">R2 Edge JSON Yanıtı</text>
+      <text x="186" y="128" font-family="system-ui, -apple-system, sans-serif" font-size="9.5" fill="#6B7280">Sıfır Veritabanı Yükü</text>
+
+      <!-- Metric 3 -->
+      <rect x="24" y="156" width="136" height="80" rx="12" fill="#131520" stroke="#F59E0B" stroke-opacity="0.25"/>
+      <text x="38" y="186" font-family="system-ui, -apple-system, sans-serif" font-size="22" font-weight="900" fill="#FBBF24">9 Bot</text>
+      <text x="38" y="206" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" font-weight="600" fill="#9CA3AF">Çapraz Kaynak Tarama</text>
+      <text x="38" y="220" font-family="system-ui, -apple-system, sans-serif" font-size="9.5" fill="#6B7280">24s Self-Healing Watchdog</text>
+
+      <!-- Metric 4 -->
+      <rect x="172" y="156" width="136" height="80" rx="12" fill="#131520" stroke="#A855F7" stroke-opacity="0.25"/>
+      <text x="186" y="186" font-family="system-ui, -apple-system, sans-serif" font-size="22" font-weight="900" fill="#C084FC">3-Katman</text>
+      <text x="186" y="206" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" font-weight="600" fill="#9CA3AF">Tam Senkronizasyon</text>
+      <text x="186" y="220" font-family="system-ui, -apple-system, sans-serif" font-size="9.5" fill="#6B7280">SQLite ⇄ R2 ⇄ Supabase</text>
+    </g>
+
+    <!-- Bottom Row: Accordion Poster Cards & Franchise Timeline Preview -->
+    <g transform="translate(64, 388)">
+      <text x="0" y="18" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">🔥 Trend Yapımlar &amp; Hover Akordiyon Önizleme</text>
+
+      <!-- Expanded 16:9 Accordion Card -->
+      <g transform="translate(0, 32)">
+        <rect width="340" height="144" rx="14" fill="#121826" stroke="#38BDF8" stroke-opacity="0.5" stroke-width="1.5"/>
+        <rect x="14" y="14" width="76" height="22" rx="6" fill="#38BDF8" fill-opacity="0.2"/>
+        <text x="52" y="29" font-family="system-ui, -apple-system, sans-serif" font-size="10" font-weight="800" fill="#38BDF8" text-anchor="middle">TOP #1</text>
+        <rect x="98" y="14" width="68" height="22" rx="6" fill="#FFFFFF" fill-opacity="0.08"/>
+        <text x="132" y="29" font-family="system-ui, -apple-system, sans-serif" font-size="10" font-weight="700" fill="#E5E7EB" text-anchor="middle">★ 9.4 MDL</text>
+        <text x="16" y="66" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="800" fill="#FFFFFF">16:9 Sinematik Genişleme</text>
+        <text x="16" y="88" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" fill="#9CA3AF">Kart üzerine gelindiğinde yay fiziğiyle açılan</text>
+        <text x="16" y="104" font-family="system-ui, -apple-system, sans-serif" font-size="11.5" fill="#9CA3AF">sahne önizlemesi, tür etiketleri ve hızlı oynat.</text>
+        <rect x="16" y="114" width="110" height="20" rx="6" fill="#FFFFFF" fill-opacity="0.1"/>
+        <text x="71" y="128" font-family="system-ui, -apple-system, sans-serif" font-size="10" font-weight="700" fill="#38BDF8" text-anchor="middle">Bölüm 16 • Final</text>
+      </g>
+
+      <!-- Poster Card 2 -->
+      <g transform="translate(358, 32)">
+        <rect width="170" height="144" rx="14" fill="url(#card1)" stroke="#FFFFFF" stroke-opacity="0.1"/>
+        <rect x="14" y="14" width="54" height="20" rx="6" fill="#F59E0B" fill-opacity="0.2"/>
+        <text x="41" y="28" font-family="system-ui, -apple-system, sans-serif" font-size="9.5" font-weight="800" fill="#FBBF24" text-anchor="middle">ANİME</text>
+        <text x="14" y="72" font-family="system-ui, -apple-system, sans-serif" font-size="13.5" font-weight="800" fill="#FFFFFF">Franchise Sırası</text>
+        <text x="14" y="92" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" fill="#9CA3AF">Sezon • Film • OVA</text>
+        <text x="14" y="108" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" fill="#9CA3AF">Otomatik Kronoloji</text>
+        <text x="14" y="130" font-family="system-ui, -apple-system, sans-serif" font-size="10" font-weight="700" fill="#34D399">● Senkronize</text>
+      </g>
+
+      <!-- Poster Card 3 -->
+      <g transform="translate(546, 32)">
+        <rect width="170" height="144" rx="14" fill="url(#card1)" stroke="#FFFFFF" stroke-opacity="0.1"/>
+        <rect x="14" y="14" width="64" height="20" rx="6" fill="#EC4899" fill-opacity="0.2"/>
+        <text x="46" y="28" font-family="system-ui, -apple-system, sans-serif" font-size="9.5" font-weight="800" fill="#F472B6" text-anchor="middle">KADRO</text>
+        <text x="14" y="72" font-family="system-ui, -apple-system, sans-serif" font-size="13.5" font-weight="800" fill="#FFFFFF">Co-Star Ağı</text>
+        <text x="14" y="92" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" fill="#9CA3AF">Oyuncu &amp; Seiyuu</text>
+        <text x="14" y="108" font-family="system-ui, -apple-system, sans-serif" font-size="10.5" fill="#9CA3AF">Ortak Yapım Grafiği</text>
+        <text x="14" y="130" font-family="system-ui, -apple-system, sans-serif" font-size="10" font-weight="700" fill="#38BDF8">● 21.8K Profil</text>
+      </g>
+
+      <!-- Card 4: Live Admin SSE Terminal -->
+      <g transform="translate(734, 32)">
+        <rect width="338" height="144" rx="14" fill="#070A0E" stroke="#10B981" stroke-opacity="0.35"/>
+        <circle cx="22" cy="22" r="4" fill="#10B981"/>
+        <text x="34" y="26" font-family="monospace" font-size="11" font-weight="700" fill="#34D399">LIVE AUTOMATION STREAM (SSE)</text>
+        <text x="18" y="52" font-family="monospace" font-size="10.5" fill="#9CA3AF">[✓] DiziKorea &amp; AsyaWatch taranıyor...</text>
+        <text x="18" y="72" font-family="monospace" font-size="10.5" fill="#38BDF8">[✓] 16 bölüm 1080p HLS doğrulandı</text>
+        <text x="18" y="92" font-family="monospace" font-size="10.5" fill="#FBBF24">[✓] R2 Bundle: sources/46297.json yüklendi</text>
+        <text x="18" y="112" font-family="monospace" font-size="10.5" fill="#34D399">[✓] Supabase &amp; Franchise Graph eşitlendi</text>
+        <text x="18" y="132" font-family="monospace" font-size="10" fill="#6B7280">Durum: 100% Senkronize • 0 Ölü Link</text>
+      </g>
+    </g>
+  </g>
+</svg>
