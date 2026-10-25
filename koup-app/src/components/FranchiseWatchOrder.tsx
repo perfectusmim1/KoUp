@@ -124,6 +124,7 @@ export default function FranchiseWatchOrder({
     const posterUrl = getProxiedImageUrl(item.cover_image, item.title, null, 'w342');
     const isMovie =
       item.content_type === 'film' ||
+      item.content_type === 'movie' ||
       item.format === 'MOVIE' ||
       item.role_label.toLowerCase().includes('film');
 

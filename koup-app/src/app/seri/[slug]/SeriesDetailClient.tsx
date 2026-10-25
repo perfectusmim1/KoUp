@@ -2651,11 +2651,11 @@ export default function SeriesDetailClient({
                   </label>
                   <div className="grid grid-cols-2 gap-2">
                     {[
-                      'Eksik Bölümler Var',
+                      ...(isFilm ? ['Video Oynatılamıyor / Kaynak Bozuk'] : ['Eksik Bölümler Var']),
                       'Eşleşme Yanlış',
                       'Oyuncu Bilgisi Eksik',
                       'Afiş Görseli Bozuk',
-                      'Takvim Günü Yanlış',
+                      ...(!isFilm ? ['Takvim Günü Yanlış'] : []),
                       'Diğer',
                     ].map((cat) => (
                       <button

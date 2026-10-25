@@ -5119,10 +5119,12 @@ export default function NetflixPlayer({
                               YouTube Resmi Yayını
                             </div>
                             <h2 className="text-xs sm:text-lg md:text-xl font-extrabold text-white tracking-tight leading-snug line-clamp-1">
-                              {media?.title} · {currentSeason}. Sezon {currentEpisode}. Bölüm
+                              {isMovie ? media?.title : `${media?.title} · ${currentSeason}. Sezon ${currentEpisode}. Bölüm`}
                             </h2>
                             <p className="text-[10px] sm:text-xs text-zinc-400 max-w-sm leading-tight line-clamp-2 px-1">
-                              Bu bölümün yayıncısı harici sitelerde gömülü oynatmayı kısıtladığı için doğrudan YouTube üzerinden izleyebilirsiniz.
+                              {isMovie
+                                ? 'Bu filmin yayıncısı harici sitelerde gömülü oynatmayı kısıtladığı için doğrudan YouTube üzerinden izleyebilirsiniz.'
+                                : 'Bu bölümün yayıncısı harici sitelerde gömülü oynatmayı kısıtladığı için doğrudan YouTube üzerinden izleyebilirsiniz.'}
                             </p>
                           </div>
 

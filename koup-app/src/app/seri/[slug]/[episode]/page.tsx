@@ -648,13 +648,6 @@ export default function EpisodeWatchPage({
     });
   }, [media?.id, currentSeason, activeEpNum]);
 
-  // Dynamic document title
-  useEffect(() => {
-    if (media?.title) {
-      document.title = `${cleanMediaTitle(media.title)} ${activeEpNum}. Bölüm İzle • KoUp Sinema`;
-    }
-  }, [media?.title, activeEpNum]);
-
   // Strict content_type checking: only true films/movies are films
   const isFilm = Boolean(
     media && (
@@ -664,6 +657,16 @@ export default function EpisodeWatchPage({
     )
   );
   const isMovie = isFilm;
+
+  // Dynamic document title
+  useEffect(() => {
+    if (media?.title) {
+      document.title = isFilm
+        ? `${cleanMediaTitle(media.title)} İzle • KoUp Sinema`
+        : `${cleanMediaTitle(media.title)} ${activeEpNum}. Bölüm İzle • KoUp Sinema`;
+    }
+  }, [media?.title, activeEpNum, isFilm]);
+
   const currentEpIndex = episodes.findIndex(
     (e) => (e.season_number || 1) === currentSeason && e.episode_number === activeEpNum
   );
@@ -679,7 +682,7 @@ export default function EpisodeWatchPage({
       id: activeEpNum,
       season_number: currentSeason,
       episode_number: activeEpNum,
-      episode_name: `${activeEpNum}. Bölüm`,
+      episode_name: isFilm ? 'Film' : `${activeEpNum}. Bölüm`,
       episode_type: 'normal',
       sources: [],
     };

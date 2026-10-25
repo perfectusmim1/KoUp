@@ -351,7 +351,7 @@ export function reconcileProgressMaps(
           watched_episodes: Array.isArray(row.watched_episodes) ? row.watched_episodes : [],
           last_season_num: row.last_season_num ?? 1,
           last_episode_num: row.last_episode_num ?? 1,
-          last_episode_title: row.last_episode_title ?? '1. Bölüm',
+          last_episode_title: row.last_episode_title ?? ((row.media?.content_type === 'film' || row.media?.content_type === 'movie') ? 'Film' : '1. Bölüm'),
           resume_position_sec: row.resume_position_sec ?? 0,
           resume_duration_sec: row.resume_duration_sec ?? 3600,
           episode_positions: row.episode_positions || {},

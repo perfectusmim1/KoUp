@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
       const alIds = entries.map((e) => e.anilist_id).slice(0, 300);
       const { data: matchedMedia } = await supabase
         .from('media')
-        .select('id, slug, title, cover_image, anilist_id, episode_count')
+        .select('id, slug, title, content_type, cover_image, anilist_id, episode_count')
         .in('anilist_id', alIds);
 
       if (authenticatedUserId) {
@@ -147,7 +147,9 @@ export async function POST(req: NextRequest) {
           ),
           last_season_num: 1,
           last_episode_num: item.progress || item.media.episode_count || 1,
-          last_episode_title: `${item.progress || item.media.episode_count || 1}. Bölüm`,
+          last_episode_title: (item.media.content_type === 'film' || item.media.content_type === 'movie')
+            ? 'Film'
+            : `${item.progress || item.media.episode_count || 1}. Bölüm`,
           resume_position_sec: 0,
           resume_duration_sec: 3600,
           updated_at: new Date().toISOString(),
@@ -206,7 +208,7 @@ export async function POST(req: NextRequest) {
         try {
           const { data: akaHits } = await supabase
             .from('media')
-            .select('id, slug, title, cover_image, mydramalist_url, episode_count')
+            .select('id, slug, title, content_type, cover_image, mydramalist_url, episode_count')
             .contains('aka_titles', [cleanedTitle])
             .limit(1);
           if (akaHits && akaHits.length > 0) {
@@ -219,7 +221,7 @@ export async function POST(req: NextRequest) {
           try {
             const { data: titleHits } = await supabase
               .from('media')
-              .select('id, slug, title, cover_image, mydramalist_url, episode_count')
+              .select('id, slug, title, content_type, cover_image, mydramalist_url, episode_count')
               .ilike('title', cleanedTitle)
               .limit(1);
             if (titleHits && titleHits.length > 0) {
@@ -279,7 +281,9 @@ export async function POST(req: NextRequest) {
           ),
           last_season_num: 1,
           last_episode_num: item.progress || item.media.episode_count || 16,
-          last_episode_title: `${item.progress || item.media.episode_count || 16}. Bölüm`,
+          last_episode_title: (item.media.content_type === 'film' || item.media.content_type === 'movie')
+            ? 'Film'
+            : `${item.progress || item.media.episode_count || 16}. Bölüm`,
           resume_position_sec: 0,
           resume_duration_sec: 3600,
           updated_at: new Date().toISOString(),
@@ -392,7 +396,7 @@ export async function POST(req: NextRequest) {
     if (mdlIds.length > 0) {
       const { data: dbMatches } = await supabase
         .from('media')
-        .select('id, slug, title, cover_image, mydramalist_url, episode_count, mdl_id')
+        .select('id, slug, title, content_type, cover_image, mydramalist_url, episode_count, mdl_id')
         .in('mdl_id', mdlIds);
 
       if (dbMatches && dbMatches.length > 0) {
@@ -417,7 +421,7 @@ export async function POST(req: NextRequest) {
 
       const { data: titleMatches } = await supabase
         .from('media')
-        .select('id, slug, title, cover_image, mydramalist_url, episode_count, mdl_id')
+        .select('id, slug, title, content_type, cover_image, mydramalist_url, episode_count, mdl_id')
         .or(`title.ilike.%${entry.title}%,aka_titles.cs.{"${entry.title}"}`)
         .limit(1);
 
@@ -463,7 +467,9 @@ export async function POST(req: NextRequest) {
         ),
         last_season_num: 1,
         last_episode_num: item.progress || item.media.episode_count || 16,
-        last_episode_title: `${item.progress || item.media.episode_count || 16}. Bölüm`,
+        last_episode_title: (item.media.content_type === 'film' || item.media.content_type === 'movie')
+          ? 'Film'
+          : `${item.progress || item.media.episode_count || 16}. Bölüm`,
         resume_position_sec: 0,
         resume_duration_sec: 3600,
         updated_at: new Date().toISOString(),

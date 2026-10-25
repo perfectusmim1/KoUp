@@ -263,12 +263,13 @@ function AccordionMediaCardComponent({
   const effectiveCover = hasRealCover ? item.cover_image : (upgradedPoster || item.cover_image);
   const effectiveBackdrop = upgradedBackdrop || item.backdrop_image;
 
-  const mediaType: 'tv' | 'movie' = item.content_type === 'film' ? 'movie' : 'tv';
-  const totalEps = item.content_type === 'film' ? 0 : Number(item.episode_count || 0);
-  const availEps = item.content_type === 'film' ? 0 : Number(item.episodes_available || 0);
+  const isFilm = item.content_type === 'film' || item.content_type === 'movie';
+  const mediaType: 'tv' | 'movie' = isFilm ? 'movie' : 'tv';
+  const totalEps = isFilm ? 0 : Number(item.episode_count || 0);
+  const availEps = isFilm ? 0 : Number(item.episodes_available || 0);
 
   const epLabel = (() => {
-    if (item.content_type === 'film') return null;
+    if (isFilm) return null;
     if (totalEps > 0 && availEps > 0 && totalEps > availEps) {
       return `${availEps} / ${totalEps} Bölüm`;
     }
@@ -991,7 +992,7 @@ function AccordionMediaCardComponent({
                 st.triggerSound?.('click');
                 st.toggleMediaFollow(item);
               }}
-              aria-label="Yeni Bölümleri Takip Et"
+              aria-label={isFilm ? 'Filmi Takip Et' : 'Yeni Bölümleri Takip Et'}
               className={`w-7 h-7 rounded-full bg-white/12 border border-white/15 hover:bg-white/25 flex items-center justify-center transition-colors cursor-pointer ${
                 isFollowed ? 'text-amber-300' : 'text-white/85 hover:text-white'
               }`}

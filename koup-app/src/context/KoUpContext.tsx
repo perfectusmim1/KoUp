@@ -1319,14 +1319,19 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
 
         // If this episode was just completed (or reached > 85%), advance the series-level pointer to the next episode
         if (isCompletedNow) {
-          const computedNext =
-            media.episode_count && media.episode_count > 0
-              ? Math.min(media.episode_count, maxWatched + 1)
-              : maxWatched + 1;
-          nextLastEp = computedNext;
-          nextLastEpTitle = `${computedNext}. Bölüm`;
-          if (computedNext !== episodeNum) {
-            nextResumePos = 0;
+          if (isFilm) {
+            nextLastEp = 1;
+            nextLastEpTitle = 'Film';
+          } else {
+            const computedNext =
+              media.episode_count && media.episode_count > 0
+                ? Math.min(media.episode_count, maxWatched + 1)
+                : maxWatched + 1;
+            nextLastEp = computedNext;
+            nextLastEpTitle = `${computedNext}. Bölüm`;
+            if (computedNext !== episodeNum) {
+              nextResumePos = 0;
+            }
           }
         }
 
@@ -1574,7 +1579,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           status: nextStatus,
           watched_episodes: watchedArr,
           last_episode_num: existing.last_episode_num || nextEpNum,
-          last_episode_title: existing.last_episode_title || `${nextEpNum}. Bölüm`,
+          last_episode_title: existing.last_episode_title || (isFilmMedia ? 'Film' : `${nextEpNum}. Bölüm`),
           resume_position_sec: targetResumePos,
           episode_positions: newEpPositions,
           updated_at: new Date().toISOString(),

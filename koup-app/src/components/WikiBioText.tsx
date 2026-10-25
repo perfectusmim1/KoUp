@@ -141,7 +141,7 @@ export default function WikiBioText({
         const { data } = await supabase
           .from('media')
           .select(
-            'id, slug, content_type, country_code, country_name, title, title_tr, title_en, native_title, aka_titles, overview, release_year, episode_count, cover_image, backdrop_image, categories, site_rating, rating, mdl_rating, imdb_rating'
+            'id, slug, content_type, country_code, country_name, title, title_tr, title_en, native_title, aka_titles, overview, release_year, episode_count, duration_minutes, cover_image, backdrop_image, categories, site_rating, rating, mdl_rating, imdb_rating'
           )
           .in('title', candidatesToFetch.slice(0, 5));
 
@@ -435,6 +435,7 @@ function WikiHoverCard({ state, onMouseEnter, onMouseLeave }: WikiHoverCardProps
     media.imdb_rating ||
     0;
 
+  const isFilm = media.content_type === 'film' || media.content_type === 'movie';
   const flag = getCountryFlag(media.country_code);
   const typeLabel = formatContentTypeTR(media.content_type, media.country_code);
   const overviewClean = cleanOverviewText(media.overview);
@@ -527,18 +528,30 @@ function WikiHoverCard({ state, onMouseEnter, onMouseLeave }: WikiHoverCardProps
                 </div>
               )}
 
-              {/* Episodes / Status */}
-              <div className="flex items-center gap-2 mt-1.5 text-[10px] font-mono text-white/60">
-                {media.episode_count ? (
-                  <span>{media.episode_count} Bölüm</span>
-                ) : null}
-                {media.status_broadcast ? (
-                  <>
-                    <span>•</span>
-                    <span className="text-sky-400">{media.status_broadcast}</span>
-                  </>
-                ) : null}
-              </div>
+              {/* Episodes / Duration / Status */}
+              {isFilm ? (
+                <div className="flex items-center gap-2 mt-1.5 text-[10px] font-mono text-white/60">
+                  {media.duration_minutes && media.duration_minutes > 0 ? (
+                    <span>{media.duration_minutes} Dk</span>
+                  ) : (
+                    <span>Film</span>
+                  )}
+                </div>
+              ) : (
+                (media.episode_count || media.status_broadcast) && (
+                  <div className="flex items-center gap-2 mt-1.5 text-[10px] font-mono text-white/60">
+                    {media.episode_count ? (
+                      <span>{media.episode_count} Bölüm</span>
+                    ) : null}
+                    {media.episode_count && media.status_broadcast ? (
+                      <span>•</span>
+                    ) : null}
+                    {media.status_broadcast ? (
+                      <span className="text-sky-400">{media.status_broadcast}</span>
+                    ) : null}
+                  </div>
+                )
+              )}
 
               {/* Category Pills */}
               {Array.isArray(media.categories) && media.categories.length > 0 && (
@@ -571,7 +584,7 @@ function WikiHoverCard({ state, onMouseEnter, onMouseLeave }: WikiHoverCardProps
             </span>
 
             <span className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-400 group-hover:text-sky-300 group-hover:translate-x-0.5 transition-all">
-              <span>Seri Sayfasına Git</span>
+              <span>{isFilm ? 'Film Sayfasına Git' : 'Seri Sayfasına Git'}</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </span>
           </div>

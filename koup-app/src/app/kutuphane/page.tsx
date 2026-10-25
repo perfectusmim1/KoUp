@@ -557,6 +557,7 @@ export default function KutuphanePage() {
             const currentStatus = prog?.status || 'watching';
             const watchedCount = prog?.watched_episodes?.length || 0;
             const totalEps = m.episode_count || 0;
+            const isFilm = m.content_type === 'film' || m.content_type === 'movie';
 
             return (
               <div
@@ -620,14 +621,21 @@ export default function KutuphanePage() {
                   </div>
 
                   {/* Watched Episode Indicator */}
-                  {totalEps > 0 && (
+                  {isFilm ? (
+                    <div className="flex items-center justify-between text-[10px] font-mono text-white/50 px-0.5">
+                      <span>Tür:</span>
+                      <span className="font-bold text-white/80">
+                        {currentStatus === 'completed' || watchedCount > 0 ? 'İzlendi' : 'Film'}
+                      </span>
+                    </div>
+                  ) : totalEps > 0 ? (
                     <div className="flex items-center justify-between text-[10px] font-mono text-white/50 px-0.5">
                       <span>İlerleme:</span>
                       <span className="font-bold text-white/80">
                         {watchedCount} / {totalEps} Bölüm
                       </span>
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </div>
             );

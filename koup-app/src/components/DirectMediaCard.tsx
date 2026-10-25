@@ -24,12 +24,13 @@ function DirectMediaCardComponent({
 }: DirectMediaCardProps) {
   const displayTitle = cleanMediaTitle(item.title);
   const countryCode = item.country_code || item.country;
-  const mediaType: 'tv' | 'movie' = item.content_type === 'film' ? 'movie' : 'tv';
-  const totalEps = item.content_type === 'film' ? 0 : Number(item.episode_count || 0);
-  const availEps = item.content_type === 'film' ? 0 : Number(item.episodes_available || 0);
+  const isFilm = item.content_type === 'film' || item.content_type === 'movie';
+  const mediaType: 'tv' | 'movie' = isFilm ? 'movie' : 'tv';
+  const totalEps = isFilm ? 0 : Number(item.episode_count || 0);
+  const availEps = isFilm ? 0 : Number(item.episodes_available || 0);
 
   const epLabel = (() => {
-    if (item.content_type === 'film') return null;
+    if (isFilm) return null;
     if (totalEps > 0 && availEps > 0 && totalEps > availEps) {
       return `${availEps} / ${totalEps} Bölüm`;
     }
@@ -170,7 +171,7 @@ function DirectMediaCardComponent({
 
       {/* Bottom Content Area */}
       <div className="absolute bottom-0 inset-x-0 p-2.5 sm:p-3.5 z-20 flex flex-col justify-end text-left pointer-events-none">
-        {(item.release_year || epLabel || item.status_broadcast) && (
+        {(item.release_year || epLabel || (!isFilm && item.status_broadcast)) && (
           <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-medium text-white/65 mb-0.5 font-mono">
             {item.release_year && <span>{item.release_year}</span>}
             {item.release_year && epLabel && <span className="text-white/40">•</span>}
@@ -179,7 +180,7 @@ function DirectMediaCardComponent({
                 {epLabel}
               </span>
             )}
-            {item.status_broadcast && (
+            {!isFilm && item.status_broadcast && (
               <>
                 {(item.release_year || epLabel) && <span className="text-white/40">•</span>}
                 <span className={formatBroadcastStatus(item.status_broadcast) === 'Devam Ediyor' ? 'text-emerald-400 font-semibold' : 'text-white/60'}>
