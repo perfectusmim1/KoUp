@@ -217,13 +217,17 @@ def build_graph(sync_cloud: bool = True):
             if not yr_int or yr_int != al_yr:
                 yr_int = al_yr
                 year_heals.append((str(al_yr), did))
-        elif ctype == "film" and tmdb_id and tmdb_id in tmdb_cols:
+        elif tmdb_id and tmdb_id in tmdb_cols:
             rdate = tmdb_cols[tmdb_id]["release_date"]
             if rdate and len(rdate) >= 4 and rdate[:4].isdigit():
                 tm_yr = int(rdate[:4])
-                if not yr_int:
+                if not yr_int or (yr_int == 1999 and tm_yr != 1999):
                     yr_int = tm_yr
                     year_heals.append((str(tm_yr), did))
+        elif ctype == "anime" and yr_int == 1999 and "asyaanimeleri" in (slug or "") and not al_id:
+            # 1999 is scraper placeholder on asyaanimeleri; default to 2022 so sequels don't sort before 2020s S1
+            yr_int = 2022
+            year_heals.append(("2022", did))
 
         mdl_slug = extract_mdl_slug(mdl_url)
 
@@ -291,6 +295,11 @@ def build_graph(sync_cloud: bool = True):
     # and have >= 2 PARENT edges pointing to different title roots
     dynamic_crossovers = set(CROSSOVER_ANILIST_IDS)
     for aid, info in al_cache.items():
+        for edge in info["edges"]:
+            tid = edge.get("id")
+            et = f"{edge.get('romaji') or ''} {edge.get('english') or ''}".lower()
+            if tid and re.search(r"\bvs\.?\b", et) and "conan vs" not in et:
+                dynamic_crossovers.add(tid)
         if info["format"] == "TV" and (info["episodes"] or 0) >= 10:
             continue
         parent_roots = set()
