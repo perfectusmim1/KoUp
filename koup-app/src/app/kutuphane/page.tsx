@@ -27,6 +27,7 @@ import { supabase, MediaItem, cleanMediaTitle } from '@/lib/supabase';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 import CustomSelect, { SelectOption } from '@/components/CustomSelect';
 import Pagination from '@/components/Pagination';
+import { usePillDragTracking } from '@/hooks/usePillDragTracking';
 
 const CARD_STATUS_OPTIONS: SelectOption[] = [
   {
@@ -99,6 +100,15 @@ export default function KutuphanePage() {
 
   const [activeStatus, setActiveStatus] = useState<LibraryStatus>('ALL');
   const [activeType, setActiveType] = useState<ContentTypeFilter>('ALL');
+
+  const { containerRef: typeTabsRef, dragProps: typeTabsDragProps } = usePillDragTracking<ContentTypeFilter>({
+    activeTab: activeType,
+    onTabChange: (newType) => {
+      setActiveType(newType);
+      setCurrentPage(1);
+    },
+    triggerSound,
+  });
   const [sortBy, setSortBy] = useState<SortOption>('default');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -381,7 +391,11 @@ export default function KutuphanePage() {
       <div className="rounded-3xl bg-[#0f0f11] p-4 sm:p-5 border border-white/[0.08] flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
         {/* Content Type Filter */}
         <div className="overflow-x-auto no-scrollbar pb-1 sm:pb-0 [-webkit-overflow-scrolling:touch] shrink-0 mx-auto sm:mx-0">
-          <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10">
+          <div
+            ref={typeTabsRef}
+            {...typeTabsDragProps}
+            className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-y cursor-grab active:cursor-grabbing"
+          >
             {[
               {
                 id: 'ALL' as const,
@@ -411,15 +425,14 @@ export default function KutuphanePage() {
                 activePillClass:
                   'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40',
               },
-            ].map((tp, idx, arr) => {
+            ].map((tp) => {
               const Icon = tp.icon;
               const active = activeType === tp.id;
-              const prevType = idx > 0 ? arr[idx - 1].id : null;
-              const nextType = idx < arr.length - 1 ? arr[idx + 1].id : null;
 
               return (
                 <button
                   key={tp.id}
+                  data-tab-id={tp.id}
                   type="button"
                   onClick={() => {
                     triggerSound('click');
@@ -435,24 +448,9 @@ export default function KutuphanePage() {
                   {active && (
                     <motion.span
                       layoutId="kutuphane-type-active-pill"
-                      drag="x"
-                      dragConstraints={{ left: -45, right: 45 }}
-                      dragElastic={0.2}
-                      dragSnapToOrigin
-                      onDragEnd={(_, info) => {
-                        if (info.offset.x > 25 && nextType) {
-                          triggerSound('click');
-                          setActiveType(nextType);
-                          setCurrentPage(1);
-                        } else if (info.offset.x < -25 && prevType) {
-                          triggerSound('click');
-                          setActiveType(prevType);
-                          setCurrentPage(1);
-                        }
-                      }}
                       initial={false}
-                      transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
-                      className={`absolute inset-0 rounded-xl ${tp.activePillClass} z-0 cursor-grab active:cursor-grabbing select-none`}
+                      transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                      className={`absolute inset-0 rounded-xl ${tp.activePillClass} z-0 select-none pointer-events-none`}
                     />
                   )}
                   <Icon className="w-3.5 h-3.5 relative z-10 pointer-events-none" />

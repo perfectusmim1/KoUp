@@ -29,6 +29,7 @@ import CustomSelect from '@/components/CustomSelect';
 import { cachedQuery, getCache, registerMediaItems } from '@/lib/cache';
 import { normalizeSearchQuery } from '@/lib/search';
 import { useDragScroll } from '@/hooks/useDragScroll';
+import { usePillDragTracking } from '@/hooks/usePillDragTracking';
 import { rankSearchResults } from '@/lib/searchRanking';
 
 const ITEMS_PER_PAGE = 36;
@@ -144,7 +145,6 @@ function DiscoverContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const triggerSound = useKoUpSelector((s) => s.triggerSound);
-  const typeRowRef = useDragScroll<HTMLDivElement>();
   const genreRowRef = useDragScroll<HTMLDivElement>();
 
   const initialType = searchParams.get('type') || 'ALL';
@@ -163,6 +163,15 @@ function DiscoverContent() {
 
   const [isMounted, setIsMounted] = useState(false);
   const [typeFilter, setTypeFilter] = useState(initialType);
+
+  const { containerRef: typeRowRef, dragProps: typeDragProps } = usePillDragTracking<string>({
+    activeTab: typeFilter,
+    onTabChange: (newType) => {
+      setTypeFilter(newType);
+      setCurrentPage(1);
+    },
+    triggerSound,
+  });
   const [countryFilter, setCountryFilter] = useState(initialCountry);
   const [selectedYears, setSelectedYears] = useState<string[]>(initialYears);
   const [selectedGenres, setSelectedGenres] = useState<string[]>(initialGenres);
@@ -542,21 +551,21 @@ function DiscoverContent() {
           </div>
         </div>
 
-        {/* Content Type Row with Fluid Spring Sliding Pills & Drag Gesture */}
+        {/* Content Type Row with Fluid Spring Sliding Pills & Real-Time Drag Tracking */}
         <div className="pt-2 border-t border-white/[0.06] overflow-x-auto no-scrollbar pb-1.5 [-webkit-overflow-scrolling:touch]">
           <div
             ref={typeRowRef}
-            className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none"
+            {...typeDragProps}
+            className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-y cursor-grab active:cursor-grabbing"
           >
-            {CONTENT_TYPES.map((ct, idx) => {
+            {CONTENT_TYPES.map((ct) => {
               const Icon = ct.icon;
               const active = typeFilter === ct.id;
-              const prevType = idx > 0 ? CONTENT_TYPES[idx - 1].id : null;
-              const nextType = idx < CONTENT_TYPES.length - 1 ? CONTENT_TYPES[idx + 1].id : null;
 
               return (
                 <button
                   key={ct.id}
+                  data-tab-id={ct.id}
                   type="button"
                   onClick={() => {
                     triggerSound('click');
@@ -570,29 +579,14 @@ function DiscoverContent() {
                   {active && (
                     <motion.span
                       layoutId="kesfet-type-active-pill"
-                      drag="x"
-                      dragConstraints={{ left: -45, right: 45 }}
-                      dragElastic={0.2}
-                      dragSnapToOrigin
-                      onDragEnd={(_, info) => {
-                        if (info.offset.x > 25 && nextType) {
-                          triggerSound('click');
-                          setTypeFilter(nextType);
-                          setCurrentPage(1);
-                        } else if (info.offset.x < -25 && prevType) {
-                          triggerSound('click');
-                          setTypeFilter(prevType);
-                          setCurrentPage(1);
-                        }
-                      }}
                       initial={false}
                       transition={{
                         type: 'spring',
-                        stiffness: 520,
+                        stiffness: 550,
                         damping: 35,
-                        mass: 0.5,
+                        mass: 0.4,
                       }}
-                      className={`absolute inset-0 rounded-xl ${ct.activePillClass} z-0 cursor-grab active:cursor-grabbing select-none`}
+                      className={`absolute inset-0 rounded-xl ${ct.activePillClass} z-0 select-none pointer-events-none`}
                     />
                   )}
                   <Icon className="w-3.5 h-3.5 relative z-10 pointer-events-none" />

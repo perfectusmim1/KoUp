@@ -32,6 +32,7 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useKoUp } from '@/context/KoUpContext';
 import { supabase } from '@/lib/supabase';
+import { usePillDragTracking } from '@/hooks/usePillDragTracking';
 
 interface PreviewMetadata {
   source_type: 'anilist' | 'tmdb' | 'mdl' | 'imdb';
@@ -129,6 +130,14 @@ export default function SeriesRequestPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>(
     'all'
   );
+
+  const { containerRef: statusTabsRef, dragProps: statusTabsDragProps } = usePillDragTracking<'all' | 'pending' | 'approved' | 'rejected'>({
+    activeTab: statusFilter,
+    onTabChange: (newFilter) => {
+      setStatusFilter(newFilter);
+    },
+    triggerSound,
+  });
   const [deletingId, setDeletingId] = useState<string | number | null>(null);
 
   const getAccessToken = useCallback(async (): Promise<string | null> => {
@@ -702,8 +711,12 @@ export default function SeriesRequestPage() {
               </button>
             </div>
 
-            {/* Filter Pills with Fluid Spring Sliding Active Pill */}
-            <div className="flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 overflow-x-auto no-scrollbar">
+            {/* Filter Pills with Fluid Spring Sliding Active Pill & Real-Time Drag Tracking */}
+            <div
+              ref={statusTabsRef}
+              {...statusTabsDragProps}
+              className="flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 overflow-x-auto no-scrollbar select-none touch-pan-y cursor-grab active:cursor-grabbing"
+            >
               {[
                 {
                   id: 'all' as const,
@@ -733,14 +746,13 @@ export default function SeriesRequestPage() {
                   activeGlow:
                     'bg-gradient-to-r from-rose-500 to-red-600 shadow-[0_0_18px_rgba(244,63,94,0.45)] border border-rose-400/40',
                 },
-              ].map((tab, idx, arr) => {
+              ].map((tab) => {
                 const active = statusFilter === tab.id;
-                const prevTab = idx > 0 ? arr[idx - 1] : null;
-                const nextTab = idx < arr.length - 1 ? arr[idx + 1] : null;
 
                 return (
                   <button
                     key={tab.id}
+                    data-tab-id={tab.id}
                     type="button"
                     onClick={() => {
                       triggerSound?.('click');
@@ -753,27 +765,14 @@ export default function SeriesRequestPage() {
                     {active && (
                       <motion.span
                         layoutId="seri-istek-filter-active-pill"
-                        drag="x"
-                        dragConstraints={{ left: -45, right: 45 }}
-                        dragElastic={0.2}
-                        dragSnapToOrigin
-                        onDragEnd={(_, info) => {
-                          if (info.offset.x > 25 && nextTab) {
-                            triggerSound?.('click');
-                            setStatusFilter(nextTab.id);
-                          } else if (info.offset.x < -25 && prevTab) {
-                            triggerSound?.('click');
-                            setStatusFilter(prevTab.id);
-                          }
-                        }}
                         initial={false}
                         transition={{
                           type: 'spring',
-                          stiffness: 520,
+                          stiffness: 550,
                           damping: 35,
-                          mass: 0.5,
+                          mass: 0.4,
                         }}
-                        className={`absolute inset-0 rounded-xl ${tab.activeGlow} z-0 cursor-grab active:cursor-grabbing select-none`}
+                        className={`absolute inset-0 rounded-xl ${tab.activeGlow} z-0 select-none pointer-events-none`}
                       />
                     )}
                     <span className="relative z-10 pointer-events-none">{tab.label}</span>

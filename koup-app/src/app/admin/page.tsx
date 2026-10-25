@@ -66,6 +66,7 @@ import AdminSeriesSync from '@/components/AdminSeriesSync';
 import AdminMaintenanceHub, { SystemHealthData, AdminJobRow } from '@/components/admin/AdminMaintenanceHub';
 import AdminSettingsAndAudit, { AuditLogRow } from '@/components/admin/AdminSettingsAndAudit';
 import AdminSeriesRequests from '@/components/admin/AdminSeriesRequests';
+import { usePillDragTracking } from '@/hooks/usePillDragTracking';
 
 type AdminTab =
   | 'overview'
@@ -500,6 +501,14 @@ export default function AdminDashboardPage() {
     }
   }, []);
 
+  const { containerRef: adminMainTabsRef, dragProps: adminMainTabsDragProps } = usePillDragTracking<AdminTab>({
+    activeTab,
+    onTabChange: (newTab) => {
+      setActiveTab(newTab);
+    },
+    triggerSound,
+  });
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const validTabs = new Set<string>([
@@ -591,6 +600,13 @@ export default function AdminDashboardPage() {
   const [scrapers, setScrapers] = useState<ScraperConfigRow[]>([]);
   const [reports, setReports] = useState<IssueReportRow[]>([]);
   const [reportsFilter, setReportsFilter] = useState<'open' | 'resolved' | 'ALL'>('open');
+  const { containerRef: reportsFilterRef, dragProps: reportsFilterDragProps } = usePillDragTracking<'open' | 'resolved' | 'ALL'>({
+    activeTab: reportsFilter,
+    onTabChange: (newFilter) => {
+      setReportsFilter(newFilter);
+    },
+    triggerSound,
+  });
   const [featuredMedia, setFeaturedMedia] = useState<MediaItem[]>([]);
   const [vitrinSearch, setVitrinSearch] = useState('');
   const [vitrinSearchResults, setVitrinSearchResults] = useState<MediaItem[]>([]);
@@ -622,6 +638,14 @@ export default function AdminDashboardPage() {
   const [userSearchInput, setUserSearchInput] = useState('');
   const [debouncedUserSearch, setDebouncedUserSearch] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState<string>('ALL');
+  const { containerRef: userRolesRef, dragProps: userRolesDragProps } = usePillDragTracking<string>({
+    activeTab: userRoleFilter,
+    onTabChange: (newRole) => {
+      setUserRoleFilter(newRole);
+      setUsersPage(1);
+    },
+    triggerSound,
+  });
   const [usersPage, setUsersPage] = useState(1);
   const [usersTotalCount, setUsersTotalCount] = useState(0);
   const [promoteEmailInput, setPromoteEmailInput] = useState('');
@@ -684,6 +708,14 @@ export default function AdminDashboardPage() {
   const [commentSearchInput, setCommentSearchInput] = useState('');
   const [debouncedCommentSearch, setDebouncedCommentSearch] = useState('');
   const [commentFilter, setCommentFilter] = useState<'ALL' | 'spoiler' | 'hidden'>('ALL');
+  const { containerRef: commentsFilterRef, dragProps: commentsFilterDragProps } = usePillDragTracking<'ALL' | 'spoiler' | 'hidden'>({
+    activeTab: commentFilter,
+    onTabChange: (newFilter) => {
+      setCommentFilter(newFilter);
+      setCommentsPage(1);
+    },
+    triggerSound,
+  });
   const [commentsPage, setCommentsPage] = useState(1);
   const [commentsTotalCount, setCommentsTotalCount] = useState(0);
   const [commentsLoading, setCommentsLoading] = useState(false);
@@ -2809,8 +2841,12 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
-      {/* 2. TAB NAVIGATION BAR with Fluid Spring Sliding Active Pill & Drag Gestures */}
-      <div className="sticky top-20 z-40 p-1.5 rounded-2xl glass-pill-dark border border-white/10 shadow-2xl flex items-center gap-1.5 overflow-x-auto no-scrollbar overscroll-x-contain touch-pan-x touch-pan-y select-none">
+      {/* 2. TAB NAVIGATION BAR with Fluid Spring Sliding Active Pill & Real-Time Drag Tracking */}
+      <div
+        ref={adminMainTabsRef}
+        {...adminMainTabsDragProps}
+        className="sticky top-20 z-40 p-1.5 rounded-2xl glass-pill-dark border border-white/10 shadow-2xl flex items-center gap-1.5 overflow-x-auto no-scrollbar overscroll-x-contain touch-pan-y select-none cursor-grab active:cursor-grabbing"
+      >
         {[
           { id: 'overview', label: 'Genel Bakış', icon: Layers, adminOnly: true, glow: 'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40' },
           { id: 'users', label: 'Kullanıcılar', icon: Users, badge: stats.totalUsers, glow: 'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40' },
@@ -2818,7 +2854,7 @@ export default function AdminDashboardPage() {
           { id: 'series_automation', label: 'Seri Otomasyonu', icon: Workflow, adminOnly: true, glow: 'bg-gradient-to-r from-purple-500 to-pink-600 shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/40' },
           { id: 'episodes', label: 'Bölümler & Kaynaklar', icon: Tv, adminOnly: true, glow: 'bg-gradient-to-r from-cyan-500 to-blue-600 shadow-[0_0_18px_rgba(6,182,212,0.45)] border border-cyan-400/40' },
           { id: 'requests', label: 'Seri İstekleri', icon: Sparkles, badge: pendingSeriesRequestsCount, glow: 'bg-gradient-to-r from-pink-500 to-rose-600 shadow-[0_0_18px_rgba(236,72,153,0.45)] border border-pink-400/40' },
-          { id: 'comments', label: 'Yorum Moderasyonu', icon: MessageSquare, badge: stats.totalComments, glow: 'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40' },
+          { id: 'comments', label: 'Yorum Moderasyonu', icon: MessageSquare, badge: stats.totalComments, glow: 'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(160,185,129,0.45)] border border-emerald-400/40' },
           { id: 'scrapers', label: 'Scraper Botları & Cron', icon: Radio, adminOnly: true, glow: 'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40' },
           { id: 'maintenance', label: 'Bakım & Sağlık', icon: Wrench, adminOnly: true, glow: 'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40' },
           { id: 'reports', label: 'Sorun Bildirimleri', icon: AlertTriangle, badge: stats.openReports, adminOnly: true, glow: 'bg-gradient-to-r from-rose-500 to-red-600 shadow-[0_0_18px_rgba(244,63,94,0.45)] border border-rose-400/40' },
@@ -2827,15 +2863,14 @@ export default function AdminDashboardPage() {
           { id: 'audit_log', label: 'Denetim Kaydı', icon: ScrollText, badge: auditLogs.length, adminOnly: true, glow: 'bg-gradient-to-r from-purple-500 to-indigo-600 shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/40' },
         ]
           .filter((tab) => !tab.adminOnly || isAdmin)
-          .map((tab, idx, arr) => {
+          .map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
-            const prevTab = idx > 0 ? arr[idx - 1] : null;
-            const nextTab = idx < arr.length - 1 ? arr[idx + 1] : null;
 
             return (
               <button
                 key={tab.id}
+                data-tab-id={tab.id}
                 type="button"
                 onClick={() => {
                   triggerSound?.('click');
@@ -2850,22 +2885,9 @@ export default function AdminDashboardPage() {
                 {active && (
                   <motion.span
                     layoutId="admin-main-tab-active-pill"
-                    drag="x"
-                    dragConstraints={{ left: -45, right: 45 }}
-                    dragElastic={0.2}
-                    dragSnapToOrigin
-                    onDragEnd={(_, info) => {
-                      if (info.offset.x > 25 && nextTab) {
-                        triggerSound?.('click');
-                        setActiveTab(nextTab.id as AdminTab);
-                      } else if (info.offset.x < -25 && prevTab) {
-                        triggerSound?.('click');
-                        setActiveTab(prevTab.id as AdminTab);
-                      }
-                    }}
                     initial={false}
-                    transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
-                    className={`absolute inset-0 rounded-xl ${tab.glow} z-0 cursor-grab active:cursor-grabbing select-none`}
+                    transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                    className={`absolute inset-0 rounded-xl ${tab.glow} z-0 select-none pointer-events-none`}
                   />
                 )}
                 <Icon className="w-3.5 h-3.5 relative z-10 pointer-events-none" />
@@ -3247,7 +3269,11 @@ export default function AdminDashboardPage() {
                 />
               </div>
 
-              <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 w-full sm:w-auto overflow-x-auto no-scrollbar select-none">
+              <div
+                ref={userRolesRef}
+                {...userRolesDragProps}
+                className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 w-full sm:w-auto overflow-x-auto no-scrollbar select-none touch-pan-y cursor-grab active:cursor-grabbing"
+              >
                 {[
                   { id: 'ALL', label: 'TÜMÜ', glow: 'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40' },
                   { id: 'admin', label: 'ADMIN', glow: 'bg-gradient-to-r from-rose-500 to-red-600 shadow-[0_0_18px_rgba(244,63,94,0.45)] border border-rose-400/40' },
@@ -3256,13 +3282,12 @@ export default function AdminDashboardPage() {
                   { id: 'editor', label: 'EDİTÖR', glow: 'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40' },
                   { id: 'user', label: 'ÜYE', glow: 'bg-gradient-to-r from-zinc-500 to-slate-600 shadow-[0_0_18px_rgba(148,163,184,0.45)] border border-slate-400/40' },
                   { id: 'banned', label: 'BAN', glow: 'bg-gradient-to-r from-red-600 to-rose-700 shadow-[0_0_18px_rgba(220,38,38,0.45)] border border-red-500/40' },
-                ].map((r, idx, arr) => {
+                ].map((r) => {
                   const active = userRoleFilter === r.id;
-                  const prevR = idx > 0 ? arr[idx - 1].id : null;
-                  const nextR = idx < arr.length - 1 ? arr[idx + 1].id : null;
                   return (
                     <button
                       key={r.id}
+                      data-tab-id={r.id}
                       type="button"
                       onClick={() => {
                         triggerSound?.('click');
@@ -3276,24 +3301,9 @@ export default function AdminDashboardPage() {
                       {active && (
                         <motion.span
                           layoutId="admin-user-roles-active-pill"
-                          drag="x"
-                          dragConstraints={{ left: -45, right: 45 }}
-                          dragElastic={0.2}
-                          dragSnapToOrigin
-                          onDragEnd={(_, info) => {
-                            if (info.offset.x > 25 && nextR) {
-                              triggerSound?.('click');
-                              setUserRoleFilter(nextR);
-                              setUsersPage(1);
-                            } else if (info.offset.x < -25 && prevR) {
-                              triggerSound?.('click');
-                              setUserRoleFilter(prevR);
-                              setUsersPage(1);
-                            }
-                          }}
                           initial={false}
-                          transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
-                          className={`absolute inset-0 rounded-xl ${r.glow} z-0 cursor-grab active:cursor-grabbing select-none`}
+                          transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                          className={`absolute inset-0 rounded-xl ${r.glow} z-0 select-none pointer-events-none`}
                         />
                       )}
                       <span className="relative z-10 pointer-events-none">{r.label}</span>
@@ -4205,19 +4215,22 @@ export default function AdminDashboardPage() {
                 
               </div>
 
-              {/* Filter Pills with Fluid Spring Sliding Active Pill & Drag Gestures */}
-              <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 overflow-x-auto no-scrollbar select-none">
+              {/* Filter Pills with Fluid Spring Sliding Active Pill & Real-Time Drag Tracking */}
+              <div
+                ref={commentsFilterRef}
+                {...commentsFilterDragProps}
+                className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 overflow-x-auto no-scrollbar select-none touch-pan-y cursor-grab active:cursor-grabbing"
+              >
                 {[
                   { id: 'ALL', label: 'TÜMÜ', glow: 'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40' },
                   { id: 'spoiler', label: 'SPOILER', glow: 'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40' },
                   { id: 'hidden', label: 'GİZLENENLER', glow: 'bg-gradient-to-r from-rose-500 to-red-600 shadow-[0_0_18px_rgba(244,63,94,0.45)] border border-rose-400/40' },
-                ].map((f, idx, arr) => {
+                ].map((f) => {
                   const active = commentFilter === f.id;
-                  const prevF = idx > 0 ? arr[idx - 1].id : null;
-                  const nextF = idx < arr.length - 1 ? arr[idx + 1].id : null;
                   return (
                     <button
                       key={f.id}
+                      data-tab-id={f.id}
                       type="button"
                       onClick={() => {
                         triggerSound?.('click');
@@ -4231,24 +4244,9 @@ export default function AdminDashboardPage() {
                       {active && (
                         <motion.span
                           layoutId="admin-comments-filter-active-pill"
-                          drag="x"
-                          dragConstraints={{ left: -45, right: 45 }}
-                          dragElastic={0.2}
-                          dragSnapToOrigin
-                          onDragEnd={(_, info) => {
-                            if (info.offset.x > 25 && nextF) {
-                              triggerSound?.('click');
-                              setCommentFilter(nextF as any);
-                              setCommentsPage(1);
-                            } else if (info.offset.x < -25 && prevF) {
-                              triggerSound?.('click');
-                              setCommentFilter(prevF as any);
-                              setCommentsPage(1);
-                            }
-                          }}
                           initial={false}
-                          transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
-                          className={`absolute inset-0 rounded-xl ${f.glow} z-0 cursor-grab active:cursor-grabbing select-none`}
+                          transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                          className={`absolute inset-0 rounded-xl ${f.glow} z-0 select-none pointer-events-none`}
                         />
                       )}
                       <span className="relative z-10 pointer-events-none">{f.label}</span>
@@ -4980,18 +4978,21 @@ export default function AdminDashboardPage() {
               </h3>
               
             </div>
-            <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none">
+            <div
+              ref={reportsFilterRef}
+              {...reportsFilterDragProps}
+              className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-y cursor-grab active:cursor-grabbing overflow-x-auto no-scrollbar"
+            >
               {[
                 { id: 'open', label: `AÇIK (${reports.filter((r) => r.status !== 'resolved').length})`, glow: 'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40' },
                 { id: 'resolved', label: `ÇÖZÜLENLER (${reports.filter((r) => r.status === 'resolved').length})`, glow: 'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40' },
                 { id: 'ALL', label: 'TÜMÜ', glow: 'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40' },
-              ].map((rf, idx, arr) => {
+              ].map((rf) => {
                 const active = reportsFilter === rf.id;
-                const prevR = idx > 0 ? arr[idx - 1].id : null;
-                const nextR = idx < arr.length - 1 ? arr[idx + 1].id : null;
                 return (
                   <button
                     key={rf.id}
+                    data-tab-id={rf.id}
                     type="button"
                     onClick={() => {
                       triggerSound?.('click');
@@ -5004,22 +5005,9 @@ export default function AdminDashboardPage() {
                     {active && (
                       <motion.span
                         layoutId="admin-reports-filter-active-pill"
-                        drag="x"
-                        dragConstraints={{ left: -45, right: 45 }}
-                        dragElastic={0.2}
-                        dragSnapToOrigin
-                        onDragEnd={(_, info) => {
-                          if (info.offset.x > 25 && nextR) {
-                            triggerSound?.('click');
-                            setReportsFilter(nextR as any);
-                          } else if (info.offset.x < -25 && prevR) {
-                            triggerSound?.('click');
-                            setReportsFilter(prevR as any);
-                          }
-                        }}
                         initial={false}
-                        transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
-                        className={`absolute inset-0 rounded-xl ${rf.glow} z-0 cursor-grab active:cursor-grabbing select-none`}
+                        transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                        className={`absolute inset-0 rounded-xl ${rf.glow} z-0 select-none pointer-events-none`}
                       />
                     )}
                     <span className="relative z-10 pointer-events-none">{rf.label}</span>

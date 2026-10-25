@@ -21,6 +21,7 @@ import {
 import { useKoUpSelector } from '@/context/KoUpContext';
 import CustomSelect from '@/components/CustomSelect';
 import Pagination from '@/components/Pagination';
+import { usePillDragTracking } from '@/hooks/usePillDragTracking';
 // KoUp Actors Pagination
 
 
@@ -68,6 +69,14 @@ export default function ActorsLeaderboardPage() {
 
   const [people, setPeople] = useState<PersonItem[]>([]);
   const [filterType, setFilterType] = useState<'all' | 'actor' | 'character' | 'seiyuu'>('all');
+  const { containerRef: personTabsRef, dragProps: personTabsDragProps } = usePillDragTracking<string>({
+    activeTab: filterType,
+    onTabChange: (newType) => {
+      setFilterType(newType as any);
+      setCurrentPage(1);
+    },
+    triggerSound,
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'favs' | 'dramas'>('favs');
   const [currentPage, setCurrentPage] = useState(1);
@@ -175,22 +184,25 @@ export default function ActorsLeaderboardPage() {
         </div>
       </div>
 
-      {/* CATEGORY TABS WITH FLUID SPRING PILL */}
+      {/* CATEGORY TABS WITH FLUID SPRING PILL & REAL-TIME DRAG TRACKING */}
       <div className="overflow-x-auto no-scrollbar pb-1.5 [-webkit-overflow-scrolling:touch]">
-        <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10">
-          {PERSON_TABS.map((tab, idx, arr) => {
+        <div
+          ref={personTabsRef}
+          {...personTabsDragProps}
+          className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-y cursor-grab active:cursor-grabbing"
+        >
+          {PERSON_TABS.map((tab) => {
             const Icon = tab.icon;
             const active = filterType === tab.id;
-            const prevTab = idx > 0 ? arr[idx - 1] : null;
-            const nextTab = idx < arr.length - 1 ? arr[idx + 1] : null;
 
             return (
               <button
                 key={tab.id}
+                data-tab-id={tab.id}
                 type="button"
                 onClick={() => {
                   triggerSound('click');
-                  setFilterType(tab.id);
+                  setFilterType(tab.id as any);
                   setCurrentPage(1);
                 }}
                 className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
@@ -200,24 +212,9 @@ export default function ActorsLeaderboardPage() {
                 {active && (
                   <motion.span
                     layoutId="oyuncular-tab-active-pill"
-                    drag="x"
-                    dragConstraints={{ left: -45, right: 45 }}
-                    dragElastic={0.2}
-                    dragSnapToOrigin
-                    onDragEnd={(_, info) => {
-                      if (info.offset.x > 25 && nextTab) {
-                        triggerSound('click');
-                        setFilterType(nextTab.id);
-                        setCurrentPage(1);
-                      } else if (info.offset.x < -25 && prevTab) {
-                        triggerSound('click');
-                        setFilterType(prevTab.id);
-                        setCurrentPage(1);
-                      }
-                    }}
                     initial={false}
-                    transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
-                    className={`absolute inset-0 rounded-xl ${tab.activePillClass} z-0 cursor-grab active:cursor-grabbing select-none`}
+                    transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                    className={`absolute inset-0 rounded-xl ${tab.activePillClass} z-0 select-none pointer-events-none`}
                   />
                 )}
                 <Icon className="w-3.5 h-3.5 relative z-10 pointer-events-none" />

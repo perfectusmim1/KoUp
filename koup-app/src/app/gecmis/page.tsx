@@ -20,6 +20,7 @@ import {
   cleanMediaTitle,
 } from '@/lib/supabase';
 import Pagination from '@/components/Pagination';
+import { usePillDragTracking } from '@/hooks/usePillDragTracking';
 
 type HistoryFilter = 'ALL' | 'in_progress' | 'completed';
 
@@ -31,6 +32,15 @@ export default function WatchHistoryPage() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<HistoryFilter>('ALL');
+
+  const { containerRef: historyTabsRef, dragProps: historyTabsDragProps } = usePillDragTracking<HistoryFilter>({
+    activeTab: filterType,
+    onTabChange: (newFilter) => {
+      setFilterType(newFilter);
+      setCurrentPage(1);
+    },
+    triggerSound,
+  });
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 24;
 
@@ -129,7 +139,11 @@ export default function WatchHistoryPage() {
       {/* Filter and Search Bar */}
       <div className="rounded-3xl bg-[#0f0f11] p-4 sm:p-5 border border-white/[0.08] flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
         <div className="overflow-x-auto no-scrollbar pb-1 sm:pb-0 [-webkit-overflow-scrolling:touch] shrink-0 mx-auto sm:mx-0">
-          <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10">
+          <div
+            ref={historyTabsRef}
+            {...historyTabsDragProps}
+            className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-y cursor-grab active:cursor-grabbing"
+          >
             {[
               {
                 id: 'ALL' as const,
@@ -153,15 +167,14 @@ export default function WatchHistoryPage() {
                 activePillClass:
                   'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40',
               },
-            ].map((flt, idx, arr) => {
+            ].map((flt) => {
               const Icon = flt.icon;
               const active = filterType === flt.id;
-              const prevFlt = idx > 0 ? arr[idx - 1].id : null;
-              const nextFlt = idx < arr.length - 1 ? arr[idx + 1].id : null;
 
               return (
                 <button
                   key={flt.id}
+                  data-tab-id={flt.id}
                   type="button"
                   onClick={() => {
                     triggerSound('click');
@@ -177,24 +190,9 @@ export default function WatchHistoryPage() {
                   {active && (
                     <motion.span
                       layoutId="gecmis-filter-active-pill"
-                      drag="x"
-                      dragConstraints={{ left: -45, right: 45 }}
-                      dragElastic={0.2}
-                      dragSnapToOrigin
-                      onDragEnd={(_, info) => {
-                        if (info.offset.x > 25 && nextFlt) {
-                          triggerSound('click');
-                          setFilterType(nextFlt);
-                          setCurrentPage(1);
-                        } else if (info.offset.x < -25 && prevFlt) {
-                          triggerSound('click');
-                          setFilterType(prevFlt);
-                          setCurrentPage(1);
-                        }
-                      }}
                       initial={false}
-                      transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
-                      className={`absolute inset-0 rounded-xl ${flt.activePillClass} z-0 cursor-grab active:cursor-grabbing select-none`}
+                      transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                      className={`absolute inset-0 rounded-xl ${flt.activePillClass} z-0 select-none pointer-events-none`}
                     />
                   )}
                   <Icon className="w-3.5 h-3.5 relative z-10 pointer-events-none" />

@@ -35,6 +35,7 @@ import {
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 import CustomSelect, { SelectOption } from '@/components/CustomSelect';
 import Pagination from '@/components/Pagination';
+import { usePillDragTracking } from '@/hooks/usePillDragTracking';
 
 type ActiveTab = 'media' | 'people';
 type MediaFilter = 'ALL' | 'dizi' | 'anime' | 'film';
@@ -86,6 +87,24 @@ export default function FollowedPage() {
   // Sub-filters
   const [mediaFilter, setMediaFilter] = useState<MediaFilter>('ALL');
   const [personFilter, setPersonFilter] = useState<PersonFilter>('ALL');
+
+  const { containerRef: mediaTabsRef, dragProps: mediaTabsDragProps } = usePillDragTracking<MediaFilter>({
+    activeTab: mediaFilter,
+    onTabChange: (newFilter) => {
+      setMediaFilter(newFilter);
+      setCurrentPage(1);
+    },
+    triggerSound,
+  });
+
+  const { containerRef: personTabsRef, dragProps: personTabsDragProps } = usePillDragTracking<PersonFilter>({
+    activeTab: personFilter,
+    onTabChange: (newFilter) => {
+      setPersonFilter(newFilter);
+      setCurrentPage(1);
+    },
+    triggerSound,
+  });
   const [sortBy, setSortBy] = useState<SortOption>('default');
 
   // Search Query
@@ -456,183 +475,157 @@ export default function FollowedPage() {
 
       {/* SUB-FILTER PILLS BAR */}
       <div className="overflow-x-auto no-scrollbar pb-1.5 [-webkit-overflow-scrolling:touch] mb-4 sm:mb-6">
-        <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10">
-          {activeTab === 'media' ? (
-            <>
-              {[
-                {
-                  id: 'ALL' as const,
-                  label: 'Tümü',
-                  count: mediaItems.length,
-                  activePillClass:
-                    'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40',
-                },
-                {
-                  id: 'dizi' as const,
-                  label: 'Diziler',
-                  activePillClass:
-                    'bg-gradient-to-r from-blue-500 to-indigo-600 shadow-[0_0_18px_rgba(99,102,241,0.45)] border border-indigo-400/40',
-                },
-                {
-                  id: 'anime' as const,
-                  label: 'Animeler',
-                  activePillClass:
-                    'bg-gradient-to-r from-purple-500 to-pink-600 shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/40',
-                },
-                {
-                  id: 'film' as const,
-                  label: 'Filmler',
-                  activePillClass:
-                    'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40',
-                },
-              ].map((flt, idx, arr) => {
-                const active = mediaFilter === flt.id;
-                const prevFlt = idx > 0 ? arr[idx - 1].id : null;
-                const nextFlt = idx < arr.length - 1 ? arr[idx + 1].id : null;
+        {activeTab === 'media' ? (
+          <div
+            ref={mediaTabsRef}
+            {...mediaTabsDragProps}
+            className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-y cursor-grab active:cursor-grabbing"
+          >
+            {[
+              {
+                id: 'ALL' as const,
+                label: 'Tümü',
+                count: mediaItems.length,
+                activePillClass:
+                  'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40',
+              },
+              {
+                id: 'dizi' as const,
+                label: 'Diziler',
+                activePillClass:
+                  'bg-gradient-to-r from-blue-500 to-indigo-600 shadow-[0_0_18px_rgba(99,102,241,0.45)] border border-indigo-400/40',
+              },
+              {
+                id: 'anime' as const,
+                label: 'Animeler',
+                activePillClass:
+                  'bg-gradient-to-r from-purple-500 to-pink-600 shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/40',
+              },
+              {
+                id: 'film' as const,
+                label: 'Filmler',
+                activePillClass:
+                  'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40',
+              },
+            ].map((flt) => {
+              const active = mediaFilter === flt.id;
 
-                return (
-                  <button
-                    key={flt.id}
-                    type="button"
-                    onClick={() => {
-                      triggerSound?.('click');
-                      setMediaFilter(flt.id);
-                      setCurrentPage(1);
-                    }}
-                    className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
-                      active
-                        ? 'text-white font-extrabold'
-                        : 'text-white/70 hover:text-white'
-                    }`}
-                  >
-                    {active && (
-                      <motion.span
-                        layoutId="takip-media-subfilter-pill"
-                        drag="x"
-                        dragConstraints={{ left: -45, right: 45 }}
-                        dragElastic={0.2}
-                        dragSnapToOrigin
-                        onDragEnd={(_, info) => {
-                          if (info.offset.x > 25 && nextFlt) {
-                            triggerSound?.('click');
-                            setMediaFilter(nextFlt);
-                            setCurrentPage(1);
-                          } else if (info.offset.x < -25 && prevFlt) {
-                            triggerSound?.('click');
-                            setMediaFilter(prevFlt);
-                            setCurrentPage(1);
-                          }
-                        }}
-                        initial={false}
-                        transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
-                        className={`absolute inset-0 rounded-xl ${flt.activePillClass} z-0 cursor-grab active:cursor-grabbing select-none`}
-                      />
-                    )}
-                    <span className="relative z-10 pointer-events-none">{flt.label}</span>
-                    {flt.count !== undefined && (
-                      <span
-                        className={`relative z-10 pointer-events-none text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                          active
-                            ? 'bg-white/25 text-white'
-                            : 'bg-white/10 text-white/75'
-                        }`}
-                      >
-                        {flt.count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </>
-          ) : (
-            <>
-              {[
-                {
-                  id: 'ALL' as const,
-                  label: 'Tümü',
-                  count: peopleItems.length,
-                  activePillClass:
-                    'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40',
-                },
-                {
-                  id: 'actor' as const,
-                  label: 'Oyuncular',
-                  activePillClass:
-                    'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40',
-                },
-                {
-                  id: 'character' as const,
-                  label: 'Karakterler',
-                  activePillClass:
-                    'bg-gradient-to-r from-purple-500 to-pink-600 shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/40',
-                },
-                {
-                  id: 'seiyuu' as const,
-                  label: 'Seslendirmenler',
-                  activePillClass:
-                    'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40',
-                },
-              ].map((flt, idx, arr) => {
-                const active = personFilter === flt.id;
-                const prevFlt = idx > 0 ? arr[idx - 1].id : null;
-                const nextFlt = idx < arr.length - 1 ? arr[idx + 1].id : null;
+              return (
+                <button
+                  key={flt.id}
+                  data-tab-id={flt.id}
+                  type="button"
+                  onClick={() => {
+                    triggerSound?.('click');
+                    setMediaFilter(flt.id);
+                    setCurrentPage(1);
+                  }}
+                  className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
+                    active
+                      ? 'text-white font-extrabold'
+                      : 'text-white/70 hover:text-white'
+                  }`}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="takip-media-subfilter-pill"
+                      initial={false}
+                      transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                      className={`absolute inset-0 rounded-xl ${flt.activePillClass} z-0 select-none pointer-events-none`}
+                    />
+                  )}
+                  <span className="relative z-10 pointer-events-none">{flt.label}</span>
+                  {flt.count !== undefined && (
+                    <span
+                      className={`relative z-10 pointer-events-none text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                        active
+                          ? 'bg-white/25 text-white'
+                          : 'bg-white/10 text-white/75'
+                      }`}
+                    >
+                      {flt.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div
+            ref={personTabsRef}
+            {...personTabsDragProps}
+            className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-y cursor-grab active:cursor-grabbing"
+          >
+            {[
+              {
+                id: 'ALL' as const,
+                label: 'Tümü',
+                count: peopleItems.length,
+                activePillClass:
+                  'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40',
+              },
+              {
+                id: 'actor' as const,
+                label: 'Oyuncular',
+                activePillClass:
+                  'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40',
+              },
+              {
+                id: 'character' as const,
+                label: 'Karakterler',
+                activePillClass:
+                  'bg-gradient-to-r from-purple-500 to-pink-600 shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/40',
+              },
+              {
+                id: 'seiyuu' as const,
+                label: 'Seslendirmenler',
+                activePillClass:
+                  'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40',
+              },
+            ].map((flt) => {
+              const active = personFilter === flt.id;
 
-                return (
-                  <button
-                    key={flt.id}
-                    type="button"
-                    onClick={() => {
-                      triggerSound?.('click');
-                      setPersonFilter(flt.id);
-                      setCurrentPage(1);
-                    }}
-                    className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
-                      active
-                        ? 'text-white font-extrabold'
-                        : 'text-white/70 hover:text-white'
-                    }`}
-                  >
-                    {active && (
-                      <motion.span
-                        layoutId="takip-people-subfilter-pill"
-                        drag="x"
-                        dragConstraints={{ left: -45, right: 45 }}
-                        dragElastic={0.2}
-                        dragSnapToOrigin
-                        onDragEnd={(_, info) => {
-                          if (info.offset.x > 25 && nextFlt) {
-                            triggerSound?.('click');
-                            setPersonFilter(nextFlt);
-                            setCurrentPage(1);
-                          } else if (info.offset.x < -25 && prevFlt) {
-                            triggerSound?.('click');
-                            setPersonFilter(prevFlt);
-                            setCurrentPage(1);
-                          }
-                        }}
-                        initial={false}
-                        transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
-                        className={`absolute inset-0 rounded-xl ${flt.activePillClass} z-0 cursor-grab active:cursor-grabbing select-none`}
-                      />
-                    )}
-                    <span className="relative z-10 pointer-events-none">{flt.label}</span>
-                    {flt.count !== undefined && (
-                      <span
-                        className={`relative z-10 pointer-events-none text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                          active
-                            ? 'bg-white/25 text-white'
-                            : 'bg-white/10 text-white/75'
-                        }`}
-                      >
-                        {flt.count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </>
-          )}
-        </div>
+              return (
+                <button
+                  key={flt.id}
+                  data-tab-id={flt.id}
+                  type="button"
+                  onClick={() => {
+                    triggerSound?.('click');
+                    setPersonFilter(flt.id);
+                    setCurrentPage(1);
+                  }}
+                  className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
+                    active
+                      ? 'text-white font-extrabold'
+                      : 'text-white/70 hover:text-white'
+                  }`}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="takip-people-subfilter-pill"
+                      initial={false}
+                      transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                      className={`absolute inset-0 rounded-xl ${flt.activePillClass} z-0 select-none pointer-events-none`}
+                    />
+                  )}
+                  <span className="relative z-10 pointer-events-none">{flt.label}</span>
+                  {flt.count !== undefined && (
+                    <span
+                      className={`relative z-10 pointer-events-none text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                        active
+                          ? 'bg-white/25 text-white'
+                          : 'bg-white/10 text-white/75'
+                      }`}
+                    >
+                      {flt.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* CONTENT AREA: TAB 1 (MEDIA) OR TAB 2 (PEOPLE) */}

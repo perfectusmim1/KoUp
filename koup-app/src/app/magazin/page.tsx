@@ -17,6 +17,7 @@ import {
 } from '@/lib/supabase';
 import { cachedQuery, invalidateCache } from '@/lib/cache';
 import { useKoUp } from '@/context/KoUpContext';
+import { usePillDragTracking } from '@/hooks/usePillDragTracking';
 
 function getMagCategoryColor(cat: string): string {
   switch (cat) {
@@ -102,6 +103,22 @@ export default function MagazineHubPage() {
   const [allPosts, setAllPosts] = useState<MagazinePost[]>([]);
   const [activeCategory, setActiveCategory] = useState('Tümü');
   const [activeSource, setActiveSource] = useState<'Tümü' | 'KoreZin' | 'AsyaMag'>('Tümü');
+
+  const { containerRef: categoryTabsRef, dragProps: categoryTabsDragProps } = usePillDragTracking<string>({
+    activeTab: activeCategory,
+    onTabChange: (newCat) => {
+      setActiveCategory(newCat);
+    },
+    triggerSound,
+  });
+
+  const { containerRef: sourceTabsRef, dragProps: sourceTabsDragProps } = usePillDragTracking<'Tümü' | 'KoreZin' | 'AsyaMag'>({
+    activeTab: activeSource,
+    onTabChange: (newSrc) => {
+      setActiveSource(newSrc);
+    },
+    triggerSound,
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -256,16 +273,19 @@ export default function MagazineHubPage() {
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 select-none">
         {/* Category Pills */}
         <div className="overflow-x-auto no-scrollbar pb-1.5 [-webkit-overflow-scrolling:touch]">
-          <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10">
-            {MAGAZINE_CATEGORIES.map((cat, idx, arr) => {
+          <div
+            ref={categoryTabsRef}
+            {...categoryTabsDragProps}
+            className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-y cursor-grab active:cursor-grabbing"
+          >
+            {MAGAZINE_CATEGORIES.map((cat) => {
               const active = activeCategory === cat;
               const style = getMagCategoryActivePill(cat);
-              const prevCat = idx > 0 ? arr[idx - 1] : null;
-              const nextCat = idx < arr.length - 1 ? arr[idx + 1] : null;
 
               return (
                 <button
                   key={cat}
+                  data-tab-id={cat}
                   type="button"
                   onClick={() => {
                     triggerSound?.('click');
@@ -278,22 +298,9 @@ export default function MagazineHubPage() {
                   {active && (
                     <motion.span
                       layoutId="magazin-category-active-pill"
-                      drag="x"
-                      dragConstraints={{ left: -45, right: 45 }}
-                      dragElastic={0.2}
-                      dragSnapToOrigin
-                      onDragEnd={(_, info) => {
-                        if (info.offset.x > 25 && nextCat) {
-                          triggerSound?.('click');
-                          setActiveCategory(nextCat);
-                        } else if (info.offset.x < -25 && prevCat) {
-                          triggerSound?.('click');
-                          setActiveCategory(prevCat);
-                        }
-                      }}
                       initial={false}
-                      transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
-                      className={`absolute inset-0 rounded-xl ${style.pill} z-0 cursor-grab active:cursor-grabbing select-none`}
+                      transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                      className={`absolute inset-0 rounded-xl ${style.pill} z-0 select-none pointer-events-none`}
                     />
                   )}
                   {cat === 'Dedikodu' && <Flame className="w-3.5 h-3.5 text-rose-300 relative z-10 pointer-events-none" />}
@@ -305,15 +312,18 @@ export default function MagazineHubPage() {
         </div>
 
         {/* Source Segmented Switch */}
-        <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 self-start lg:self-auto shrink-0 overflow-x-auto no-scrollbar">
-          {(['Tümü', 'KoreZin', 'AsyaMag'] as const).map((source, idx, arr) => {
+        <div
+          ref={sourceTabsRef}
+          {...sourceTabsDragProps}
+          className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 self-start lg:self-auto shrink-0 overflow-x-auto no-scrollbar select-none touch-pan-y cursor-grab active:cursor-grabbing"
+        >
+          {(['Tümü', 'KoreZin', 'AsyaMag'] as const).map((source) => {
             const active = activeSource === source;
-            const prevSrc = idx > 0 ? arr[idx - 1] : null;
-            const nextSrc = idx < arr.length - 1 ? arr[idx + 1] : null;
 
             return (
               <button
                 key={source}
+                data-tab-id={source}
                 type="button"
                 onClick={() => {
                   triggerSound?.('click');
@@ -326,22 +336,9 @@ export default function MagazineHubPage() {
                 {active && (
                   <motion.span
                     layoutId="magazin-source-active-pill"
-                    drag="x"
-                    dragConstraints={{ left: -45, right: 45 }}
-                    dragElastic={0.2}
-                    dragSnapToOrigin
-                    onDragEnd={(_, info) => {
-                      if (info.offset.x > 25 && nextSrc) {
-                        triggerSound?.('click');
-                        setActiveSource(nextSrc);
-                      } else if (info.offset.x < -25 && prevSrc) {
-                        triggerSound?.('click');
-                        setActiveSource(prevSrc);
-                      }
-                    }}
                     initial={false}
-                    transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
-                    className={`absolute inset-0 rounded-xl z-0 cursor-grab active:cursor-grabbing select-none ${
+                    transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                    className={`absolute inset-0 rounded-xl z-0 select-none pointer-events-none ${
                       source === 'KoreZin'
                         ? 'bg-gradient-to-r from-rose-500 to-pink-600 shadow-[0_0_15px_rgba(244,63,94,0.45)] border border-rose-400/40'
                         : source === 'AsyaMag'

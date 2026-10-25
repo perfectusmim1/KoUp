@@ -20,6 +20,7 @@ import {
 import { useKoUpSelector, ToastNotification } from '@/context/KoUpContext';
 import { dedupeAndSortNotifications } from '@/lib/notifications';
 import { getProxiedImageUrl } from '@/lib/supabase';
+import { usePillDragTracking } from '@/hooks/usePillDragTracking';
 
 type CategoryFilter = 'all' | 'episode' | 'actor' | 'reply' | 'system';
 
@@ -156,6 +157,14 @@ export default function NotificationsPage() {
 
   const [selectedFilter, setSelectedFilter] = useState<CategoryFilter>('all');
   const [unreadOnly, setUnreadOnly] = useState<boolean>(false);
+
+  const { containerRef: notifTabsRef, dragProps: notifTabsDragProps } = usePillDragTracking<CategoryFilter>({
+    activeTab: selectedFilter,
+    onTabChange: (newFilter) => {
+      setSelectedFilter(newFilter);
+    },
+    triggerSound,
+  });
 
   // Fully deduplicated & deterministically sorted notifications list (prioritizing DB record over temporary optimistic ID)
   const uniqueNotifications = useMemo(() => {
@@ -352,7 +361,11 @@ export default function NotificationsPage() {
         <div className="py-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
           {/* Category Tabs */}
           <div className="overflow-x-auto no-scrollbar pb-1.5 [-webkit-overflow-scrolling:touch]">
-            <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10">
+            <div
+              ref={notifTabsRef}
+              {...notifTabsDragProps}
+              className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-y cursor-grab active:cursor-grabbing"
+            >
               {[
                 {
                   id: 'all' as const,
@@ -393,16 +406,15 @@ export default function NotificationsPage() {
                   activePillClass:
                     'bg-gradient-to-r from-purple-500 to-pink-600 shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/40',
                 },
-              ].map((tab, idx, arr) => {
+              ].map((tab) => {
                 const Icon = tab.icon;
                 const active = selectedFilter === tab.id;
                 const count = counts[tab.countKey];
-                const prevTab = idx > 0 ? arr[idx - 1] : null;
-                const nextTab = idx < arr.length - 1 ? arr[idx + 1] : null;
 
                 return (
                   <button
                     key={tab.id}
+                    data-tab-id={tab.id}
                     type="button"
                     onClick={() => {
                       triggerSound?.('click');
@@ -415,22 +427,9 @@ export default function NotificationsPage() {
                     {active && (
                       <motion.span
                         layoutId="notifications-category-pill"
-                        drag="x"
-                        dragConstraints={{ left: -45, right: 45 }}
-                        dragElastic={0.2}
-                        dragSnapToOrigin
-                        onDragEnd={(_, info) => {
-                          if (info.offset.x > 25 && nextTab) {
-                            triggerSound?.('click');
-                            setSelectedFilter(nextTab.id);
-                          } else if (info.offset.x < -25 && prevTab) {
-                            triggerSound?.('click');
-                            setSelectedFilter(prevTab.id);
-                          }
-                        }}
                         initial={false}
-                        transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
-                        className={`absolute inset-0 rounded-xl ${tab.activePillClass} z-0 cursor-grab active:cursor-grabbing select-none`}
+                        transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                        className={`absolute inset-0 rounded-xl ${tab.activePillClass} z-0 select-none pointer-events-none`}
                       />
                     )}
                     {Icon && <Icon className="relative z-10 w-3.5 h-3.5 pointer-events-none" />}
