@@ -40,32 +40,40 @@ function NotificationThumbnail({ notification, meta }: NotificationThumbnailProp
   const IconComp = meta.Icon;
   const link = notification.linkUrl || (notification as any).link_url;
 
+  const isActor =
+    notification.type === 'actor' ||
+    (notification as any).type === 'actor_update' ||
+    Boolean(link && link.startsWith('/oyuncu/')) ||
+    Boolean(notification.personId);
+
+  const rawTitle = notification.title || '';
+  const cleanTitle = rawTitle.includes('•') ? rawTitle.split('•')[0].trim() : rawTitle.trim();
+
   // Determine thumbnail source:
   let rawImg: string | null = notification.imageUrl || (notification as any).image_url || null;
 
   if (!rawImg) {
-    if (notification.type === 'episode' || (link && link.startsWith('/seri/'))) {
-      const title = notification.title.includes('•')
-        ? notification.title.split('•')[0].trim()
-        : notification.title.trim();
-      if (title) {
-        rawImg = getProxiedImageUrl(null, title, null, 'w185', 'media');
+    if (isActor) {
+      if (cleanTitle) {
+        rawImg = getProxiedImageUrl(null, cleanTitle, null, 'w185', 'person', null, null, null, null, notification.personId);
       }
-    } else if (notification.type === 'actor' || (link && link.startsWith('/oyuncu/'))) {
-      const name = notification.title.includes('•')
-        ? notification.title.split('•')[0].trim()
-        : notification.title.trim();
-      if (name) {
-        rawImg = getProxiedImageUrl(null, name, null, 'w185', 'person');
+    } else {
+      if (cleanTitle) {
+        rawImg = getProxiedImageUrl(null, cleanTitle, null, 'w185', 'media', null, null, null, null, notification.mediaId);
       }
     }
   } else {
     rawImg = getProxiedImageUrl(
       rawImg,
-      notification.title,
+      cleanTitle,
       null,
       'w185',
-      notification.type === 'actor' ? 'person' : 'media'
+      isActor ? 'person' : 'media',
+      null,
+      null,
+      null,
+      null,
+      isActor ? notification.personId : notification.mediaId
     );
   }
 

@@ -264,9 +264,14 @@ function EpisodeRailComponent({
       mediaCover,
       mediaTitle,
       'w300',
-      'banner'
+      'banner',
+      null,
+      null,
+      null,
+      null,
+      mediaId
     );
-  }, [mediaBackdrop, mediaCover, mediaTitle]);
+  }, [mediaBackdrop, mediaCover, mediaTitle, mediaId]);
 
   // Filter episodes for current season (memoized)
   const currentSeasonEpisodes = useMemo(

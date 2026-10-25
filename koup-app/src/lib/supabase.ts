@@ -454,6 +454,17 @@ const SCRAPER_BLOCK_HOSTS = [
   'asyaking',
   'diziyou',
   'dizilla',
+  'mydramalist',
+  'i.mydramalist.com',
+  'sinefy',
+  'filmmodu',
+  'sezonlukdizi',
+  'diziwatch',
+  'dizigom',
+  'dizipal',
+  'inattv',
+  'animecix',
+  'tranimeci',
 ];
 
 export function getProxiedImageUrl(
@@ -469,7 +480,19 @@ export function getProxiedImageUrl(
   mediaId?: number | string | null
 ): string {
   const isFallbackUrl = isLikelyUrl(fallbackOrTitle);
-  const resolvedTitle = titleHint || (!isFallbackUrl ? fallbackOrTitle : null);
+  const rawTitle = titleHint || (!isFallbackUrl ? fallbackOrTitle : null);
+  const resolvedTitle = rawTitle
+    ? rawTitle
+        .replace(/•.*$/, '')
+        .replace(/\s*[-–—]\s*(?:\d+\.\s*bölüm|yeni bölüm|fragman|sezon).*$/i, '')
+        .replace(/\b\d+\.\s*bölüm\b.*$/i, '')
+        .replace(/\b\d+\.\s*sezon\b.*$/i, '')
+        .replace(/\s*kadrosuna katıldı.*$/i, '')
+        .replace(/\s*yeni yapım.*$/i, '')
+        .replace(/\s*[\(\[].*?[\)\]]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+    : null;
   const typeQuery = type ? `&type=${type}` : '';
   const mtQuery = mediaType ? `&mediaType=${mediaType}` : '';
   const yrQuery = year ? `&year=${encodeURIComponent(String(year))}` : '';
@@ -489,8 +512,8 @@ export function getProxiedImageUrl(
     return type === 'person' ? '/logo-dark.png' : '/logo-dark.png';
   }
 
-  // Fast-track: Turkish scraper hosts block direct server fetching (Cloudflare/DDoS-Guard).
-  // Immediately bypass to TMDB resolver to avoid 4.5s fetch timeout stall.
+  // Fast-track: Turkish scraper hosts & MyDramaList block direct server fetching (Cloudflare/DDoS-Guard 403).
+  // Immediately bypass to TMDB/Supabase resolver to avoid 4.5s fetch timeout stall.
   const lowerUrl = url ? url.toLowerCase() : '';
   const isScraperUrl = Boolean(lowerUrl && SCRAPER_BLOCK_HOSTS.some((h) => lowerUrl.includes(h)));
   if (isScraperUrl) {
@@ -500,6 +523,7 @@ export function getProxiedImageUrl(
     if (resolvedTitle && resolvedTitle.trim()) {
       return `/api/image-proxy?title=${encodeURIComponent(resolvedTitle.trim())}${typeQuery}${mtQuery}${yrQuery}${ntQuery}${mIdQuery}&size=${tmdbSize}&fallback=${encodeURIComponent(url)}`;
     }
+    return `/api/image-proxy?url=${encodeURIComponent(url)}${typeQuery}${mtQuery}${yrQuery}${ntQuery}${mIdQuery}&size=${tmdbSize}`;
   }
 
   if (url.startsWith('/') || url.startsWith('data:')) return url;

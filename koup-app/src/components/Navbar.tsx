@@ -87,46 +87,50 @@ function NavbarNotificationThumbnail({
   const [imageError, setImageError] = useState(false);
   const link = notification.linkUrl || notification.link_url;
 
+  const isActor =
+    notification.type === 'actor' ||
+    (notification as any).type === 'actor_update' ||
+    Boolean(link && link.startsWith('/oyuncu/')) ||
+    Boolean(notification.personId);
+
+  const rawTitle = notification.title || '';
+  let cleanTitle = rawTitle.includes('•') ? rawTitle.split('•')[0].trim() : rawTitle.trim();
+
   let rawImg: string | null = notification.imageUrl || notification.image_url || null;
 
   if (!rawImg) {
-    if (notification.type === 'episode' || (link && link.startsWith('/seri/'))) {
-      let seriesTitle = '';
-      if (notification.title?.includes('•')) {
-        seriesTitle = notification.title.split('•')[0].trim();
-      } else if (notification.body?.includes(' - ')) {
-        seriesTitle = notification.body.split(' - ')[0].trim();
-      } else if (notification.body?.includes('-')) {
-        seriesTitle = notification.body.split('-')[0].trim();
-      } else if (notification.title && !notification.title.toLowerCase().includes('yeni bölüm')) {
-        seriesTitle = notification.title.trim();
+    if (isActor) {
+      if (cleanTitle) {
+        rawImg = getProxiedImageUrl(null, cleanTitle, null, 'w185', 'person', null, null, null, null, notification.personId);
       }
-
-      if (!seriesTitle && link && link.startsWith('/seri/')) {
+    } else {
+      if (!cleanTitle && notification.body?.includes(' - ')) {
+        cleanTitle = notification.body.split(' - ')[0].trim();
+      } else if (!cleanTitle && notification.body?.includes('-')) {
+        cleanTitle = notification.body.split('-')[0].trim();
+      }
+      if (!cleanTitle && link && link.startsWith('/seri/')) {
         const slugPart = link.replace('/seri/', '').split('/')[0].trim();
         if (slugPart) {
-          seriesTitle = slugPart.replace(/-/g, ' ');
+          cleanTitle = slugPart.replace(/-/g, ' ');
         }
       }
-
-      if (seriesTitle) {
-        rawImg = getProxiedImageUrl(null, seriesTitle, null, 'w185', 'media');
-      }
-    } else if (notification.type === 'actor' || (link && link.startsWith('/oyuncu/'))) {
-      const name = notification.title?.includes('•')
-        ? notification.title.split('•')[0].trim()
-        : (notification.title || '').trim();
-      if (name) {
-        rawImg = getProxiedImageUrl(null, name, null, 'w185', 'person');
+      if (cleanTitle) {
+        rawImg = getProxiedImageUrl(null, cleanTitle, null, 'w185', 'media', null, null, null, null, notification.mediaId);
       }
     }
   } else {
     rawImg = getProxiedImageUrl(
       rawImg,
-      notification.title,
+      cleanTitle,
       null,
       'w185',
-      notification.type === 'actor' ? 'person' : 'media'
+      isActor ? 'person' : 'media',
+      null,
+      null,
+      null,
+      null,
+      isActor ? notification.personId : notification.mediaId
     );
   }
 
@@ -670,7 +674,18 @@ export default function Navbar() {
                               className="w-full flex items-center gap-3 p-2 rounded-2xl hover:bg-white/[0.08] transition-colors text-left group cursor-pointer"
                             >
                               <img
-                                src={getProxiedImageUrl(m.cover_image, m.title)}
+                                src={getProxiedImageUrl(
+                                  m.cover_image,
+                                  m.title,
+                                  null,
+                                  'w185',
+                                  'poster',
+                                  m.tmdb_id,
+                                  m.content_type === 'film' ? 'movie' : 'tv',
+                                  m.release_year,
+                                  m.native_title,
+                                  m.id
+                                )}
                                 alt={m.title}
                                 width={40}
                                 height={56}
@@ -734,7 +749,7 @@ export default function Navbar() {
                               className="flex items-center gap-2.5 p-2 rounded-2xl hover:bg-white/[0.08] transition-colors text-left cursor-pointer"
                             >
                               <img
-                                src={getProxiedImageUrl(p.image_url, p.name, null, 'w185', 'person')}
+                                src={getProxiedImageUrl(p.image_url, p.name, null, 'w185', 'person', p.tmdb_id, null, null, null, p.id)}
                                 alt={p.name}
                                 width={36}
                                 height={36}
@@ -1603,7 +1618,18 @@ export default function Navbar() {
                                 className="w-full flex items-center gap-3 p-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] transition-colors text-left group cursor-pointer border border-white/[0.06]"
                               >
                                 <img
-                                  src={getProxiedImageUrl(m.cover_image, m.title)}
+                                  src={getProxiedImageUrl(
+                                    m.cover_image,
+                                    m.title,
+                                    null,
+                                    'w185',
+                                    'poster',
+                                    m.tmdb_id,
+                                    m.content_type === 'film' ? 'movie' : 'tv',
+                                    m.release_year,
+                                    m.native_title,
+                                    m.id
+                                  )}
                                   alt={m.title}
                                   width={44}
                                   height={62}
@@ -1655,7 +1681,7 @@ export default function Navbar() {
                                 className="flex items-center gap-2.5 p-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] transition-colors text-left cursor-pointer border border-white/[0.06]"
                               >
                                 <img
-                                  src={getProxiedImageUrl(p.image_url, p.name, null, 'w185', 'person')}
+                                  src={getProxiedImageUrl(p.image_url, p.name, null, 'w185', 'person', p.tmdb_id, null, null, null, p.id)}
                                   alt={p.name}
                                   width={36}
                                   height={36}

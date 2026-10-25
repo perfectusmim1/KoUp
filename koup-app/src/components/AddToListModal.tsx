@@ -263,7 +263,18 @@ export default function AddToListModal({
     }
   };
 
-  const posterSrc = getProxiedImageUrl(media.cover_image, media.title);
+  const posterSrc = getProxiedImageUrl(
+    media.cover_image,
+    media.title,
+    null,
+    'w500',
+    'poster',
+    media.tmdb_id,
+    media.content_type === 'film' ? 'movie' : 'tv',
+    media.release_year,
+    media.native_title,
+    media.id
+  );
 
   return createPortal(
     <AnimatePresence>

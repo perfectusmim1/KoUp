@@ -877,7 +877,7 @@ export default function PersonDetailPage({
               >
                 <div className="w-16 h-16 rounded-full overflow-hidden border border-white/15 group-hover:border-white/30 transition-colors mb-2 shadow-md shrink-0">
                   <img
-                    src={getProxiedImageUrl(peer.image_url, peer.name, null, 'w500', 'person')}
+                    src={getProxiedImageUrl(peer.image_url, peer.name, null, 'w500', 'person', peer.tmdb_id, null, null, null, peer.id)}
                     alt={peer.name}
                     loading="lazy"
                     decoding="async"

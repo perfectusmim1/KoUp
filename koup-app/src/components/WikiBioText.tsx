@@ -649,7 +649,7 @@ function CharacterHoverCardContent({ person }: { person: PersonItem }) {
       <div className="p-3.5 flex items-start gap-3">
         <div className="w-14 h-14 rounded-2xl overflow-hidden border border-white/20 shadow-lg shrink-0 bg-black/50 -mt-6 relative z-10">
           <img
-            src={getProxiedImageUrl(person.image_url, person.name, null, 'w500', 'person')}
+            src={getProxiedImageUrl(person.image_url, person.name, null, 'w500', 'person', person.tmdb_id, null, null, null, person.id)}
             alt={person.name}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />
@@ -717,7 +717,15 @@ function MediaHoverCardContent({ media }: { media: MediaItem }) {
           <img
             src={getProxiedImageUrl(
               media.backdrop_image || media.cover_image,
-              media.title
+              media.title,
+              null,
+              'w1280',
+              'banner',
+              media.tmdb_id,
+              media.content_type === 'film' ? 'movie' : 'tv',
+              media.release_year,
+              media.native_title,
+              media.id
             )}
             alt=""
             loading="lazy"
@@ -753,7 +761,18 @@ function MediaHoverCardContent({ media }: { media: MediaItem }) {
           <div className="w-16 h-24 rounded-xl overflow-hidden shrink-0 border border-white/20 shadow-2xl bg-black/50 -mt-7 relative z-10">
             {media.cover_image ? (
               <img
-                src={getProxiedImageUrl(media.cover_image, media.title)}
+                src={getProxiedImageUrl(
+                  media.cover_image,
+                  media.title,
+                  null,
+                  'w500',
+                  'poster',
+                  media.tmdb_id,
+                  media.content_type === 'film' ? 'movie' : 'tv',
+                  media.release_year,
+                  media.native_title,
+                  media.id
+                )}
                 alt={media.title}
                 loading="lazy"
                 decoding="async"

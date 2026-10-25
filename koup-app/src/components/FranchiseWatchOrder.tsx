@@ -121,7 +121,18 @@ export default function FranchiseWatchOrder({
   const renderCard = (item: FranchiseItem, idx: number, isGrid: boolean) => {
     const isCurrent = item.id === currentMediaId;
     const cleanTitle = cleanMediaTitle(item.title);
-    const posterUrl = getProxiedImageUrl(item.cover_image, item.title, null, 'w342');
+    const posterUrl = getProxiedImageUrl(
+      item.cover_image,
+      item.title,
+      null,
+      'w342',
+      'poster',
+      null,
+      item.content_type === 'film' ? 'movie' : 'tv',
+      item.release_year,
+      null,
+      item.id
+    );
     const isMovie =
       item.content_type === 'film' ||
       item.content_type === 'movie' ||

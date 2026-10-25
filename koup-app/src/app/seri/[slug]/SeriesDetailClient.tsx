@@ -176,7 +176,7 @@ export default function SeriesDetailClient({
           if (cancelled) return;
           const img = new Image();
           img.decoding = 'async';
-          img.src = getProxiedImageUrl(p.image_url, p.name, null, 'w500', 'person');
+          img.src = getProxiedImageUrl(p.image_url, p.name, null, 'w500', 'person', p.tmdb_id, null, null, null, p.id || c.person_id);
           if (typeof img.decode === 'function') {
             img.decode().catch(() => {});
           }
@@ -1948,7 +1948,7 @@ export default function SeriesDetailClient({
                   >
                     <div className="w-20 h-20 rounded-full overflow-hidden border border-white/15 group-hover:border-white/30 transition-colors mb-3 shadow-md">
                       <img
-                        src={getProxiedImageUrl(p.image_url, p.name, null, 'w500', 'person')}
+                        src={getProxiedImageUrl(p.image_url, p.name, null, 'w500', 'person', p.tmdb_id, null, null, null, p.id || c.person_id)}
                         alt={p.name}
                         loading="lazy"
                         decoding="async"
@@ -1992,7 +1992,7 @@ export default function SeriesDetailClient({
                         >
                           <div className="w-20 h-20 rounded-full overflow-hidden border border-white/15 group-hover:border-white/30 transition-colors mb-3 shadow-md">
                             <img
-                              src={getProxiedImageUrl(p.image_url, p.name, null, 'w500', 'person')}
+                              src={getProxiedImageUrl(p.image_url, p.name, null, 'w500', 'person', p.tmdb_id, null, null, null, p.id || c.person_id)}
                               alt={p.name}
                               decoding="async"
                               className="w-full h-full object-cover"

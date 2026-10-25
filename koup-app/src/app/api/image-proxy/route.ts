@@ -20,12 +20,37 @@ const SCRAPER_BLOCK_HOSTS = [
   'asyaking',
   'diziyou',
   'dizilla',
+  'mydramalist',
+  'i.mydramalist.com',
+  'sinefy',
+  'filmmodu',
+  'sezonlukdizi',
+  'diziwatch',
+  'dizigom',
+  'dizipal',
+  'inattv',
+  'animecix',
+  'tranimeci',
 ];
 
 function isScraperHost(urlStr?: string | null): boolean {
   if (!urlStr) return false;
   const low = urlStr.toLowerCase();
   return SCRAPER_BLOCK_HOSTS.some((h) => low.includes(h));
+}
+
+function cleanTitleForSearch(raw?: string | null): string {
+  if (!raw) return '';
+  return raw
+    .replace(/•.*$/, '') // Strip "• Yeni Proje!", "• Yeni Bölüm!"
+    .replace(/\s*[-–—]\s*(?:\d+\.\s*bölüm|yeni bölüm|fragman|sezon).*$/i, '')
+    .replace(/\b\d+\.\s*bölüm\b.*$/i, '')
+    .replace(/\b\d+\.\s*sezon\b.*$/i, '')
+    .replace(/\s*kadrosuna katıldı.*$/i, '')
+    .replace(/\s*yeni yapım.*$/i, '')
+    .replace(/\s*[\(\[].*?[\)\]]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function persistEnrichedCoverToSupabase(mediaId?: string | number | null, posterUrl?: string | null, tmdbId?: string | number | null) {
@@ -47,6 +72,28 @@ function persistEnrichedCoverToSupabase(mediaId?: string | number | null, poster
       .from('media')
       .update(payload)
       .eq('id', mId)
+  ).catch(() => {});
+}
+
+function persistEnrichedPersonToSupabase(personId?: string | number | null, photoUrl?: string | null, tmdbId?: string | number | null) {
+  if (!photoUrl || !photoUrl.startsWith('https://image.tmdb.org/')) return;
+  const pId = typeof personId === 'number' ? personId : personId ? parseInt(String(personId), 10) : null;
+  if (!pId || isNaN(pId) || pId <= 0) return;
+
+  const payload: Record<string, any> = {
+    image_url: photoUrl,
+    updated_at: new Date().toISOString(),
+  };
+  if (tmdbId) {
+    const tId = typeof tmdbId === 'number' ? tmdbId : parseInt(String(tmdbId), 10);
+    if (!isNaN(tId) && tId > 0) payload.tmdb_id = tId;
+  }
+
+  void Promise.resolve(
+    supabaseAdmin
+      .from('people')
+      .update(payload)
+      .eq('id', pId)
   ).catch(() => {});
 }
 
@@ -228,7 +275,7 @@ const titlePosterCache = new Map<string, string>();
 const personPosterCache = new Map<string, string>();
 
 async function fetchTmdbPersonForTitle(rawName: string): Promise<string | null> {
-  const cleanName = (rawName || '').replace(/\s+/g, ' ').trim();
+  const cleanName = cleanTitleForSearch(rawName);
   if (!cleanName || cleanName.length < 2) return null;
 
   const cacheKey = cleanName.toLowerCase();
@@ -745,17 +792,10 @@ export async function GET(req: NextRequest) {
     const urlsToTry: string[] = [];
 
     if (targetUrl) {
-      // Map old dead scraper actor URLs to official MyDramaList CDN
-      if (targetUrl.includes('cdn.webdrama.io/actor/')) {
-        const mdlUrl = targetUrl.replace(/https?:\/\/cdn\.webdrama\.io\/actor\//i, 'https://i.mydramalist.com/');
-        urlsToTry.push(mdlUrl);
-      }
-
-      // If it's already an official CDN URL, stream directly
-      if (targetUrl.includes('image.tmdb.org') || targetUrl.includes('s4.anilist.co') || targetUrl.includes('i.mydramalist.com')) {
+      // Dead scraper domain or scraper hosts should never be fetched directly (causes 403 or slow timeout)
+      if (targetUrl.includes('image.tmdb.org') || targetUrl.includes('s4.anilist.co')) {
         urlsToTry.push(targetUrl);
-      } else if (!isScraperHost(targetUrl)) {
-        // Scraper hosts block Node.js with Cloudflare/DDoS-Guard 403, immediately handled via TMDB fallback below
+      } else if (!isScraperHost(targetUrl) && !targetUrl.includes('cdn.webdrama.io')) {
         const uncroppedMaster = targetUrl
           .replace(/-\d{2,4}x\d{2,4}(?=\.(?:jpe?g|png|webp|avif)(?:\?.*)?$)/i, '')
           .replace(/[?&](?:resize|fit|w|h)=[^&]+/gi, '');
@@ -770,7 +810,8 @@ export async function GET(req: NextRequest) {
       fallbackUrl &&
       !urlsToTry.includes(fallbackUrl) &&
       (fallbackUrl.startsWith('http://') || fallbackUrl.startsWith('https://')) &&
-      !isScraperHost(fallbackUrl)
+      !isScraperHost(fallbackUrl) &&
+      !fallbackUrl.includes('cdn.webdrama.io')
     ) {
       urlsToTry.push(fallbackUrl);
     }
@@ -829,44 +870,73 @@ export async function GET(req: NextRequest) {
       } catch {}
     }
 
-    // 2. High-priority TMDB ID lookup if direct URL was missing or unreachable
-    if (tmdbIdParam) {
-      if (isPerson) {
-        const personPhoto = await fetchTmdbPersonById(tmdbIdParam);
-        if (personPhoto) {
-          const streamed = await fetchAndStreamImage(personPhoto, sizeParam);
-          if (streamed) return streamed;
-        }
-      } else {
-        const isBanner = typeParam === 'banner' || typeParam === 'backdrop';
-        const tmdbPoster = await fetchTmdbPosterById(tmdbIdParam, mediaTypeParam, titleParam, isBanner);
-        if (tmdbPoster) {
-          if (!isBanner) {
-            persistEnrichedCoverToSupabase(mediaIdParam, tmdbPoster, tmdbIdParam);
-          }
-          const streamed = await fetchAndStreamImage(tmdbPoster, sizeParam);
-          if (streamed) return streamed;
-        }
-      }
-    }
+    const cleanSearchTitle = cleanTitleForSearch(titleParam);
+    let resolvedTmdbId = tmdbIdParam;
 
-    // 3. Person / Actor branch
+    // 2. Person / Actor branch (with fast Supabase cache lookup)
     if (isPerson) {
-      if (tmdbIdParam) {
-        const personPhoto = await fetchTmdbPersonById(tmdbIdParam);
+      let personRecord: { id: number; tmdb_id?: number | null; image_url?: string | null } | null = null;
+      const targetPersonId = mediaIdParam ? parseInt(mediaIdParam, 10) : null;
+      if (targetPersonId && !isNaN(targetPersonId) && targetPersonId > 0) {
+        const { data } = await supabaseAdmin
+          .from('people')
+          .select('id, tmdb_id, image_url')
+          .eq('id', targetPersonId)
+          .maybeSingle();
+        if (data) personRecord = data;
+      }
+      if (!personRecord && cleanSearchTitle) {
+        const { data } = await supabaseAdmin
+          .from('people')
+          .select('id, tmdb_id, image_url')
+          .ilike('name', cleanSearchTitle)
+          .limit(1)
+          .maybeSingle();
+        if (data) personRecord = data;
+      }
+      if (!personRecord && targetUrl) {
+        const { data } = await supabaseAdmin
+          .from('people')
+          .select('id, tmdb_id, image_url')
+          .eq('image_url', targetUrl)
+          .limit(1)
+          .maybeSingle();
+        if (data) personRecord = data;
+      }
+
+      if (personRecord) {
+        if (personRecord.image_url && personRecord.image_url.startsWith('https://image.tmdb.org/')) {
+          const streamed = await fetchAndStreamImage(personRecord.image_url, sizeParam);
+          if (streamed) return streamed;
+        }
+        if (personRecord.tmdb_id) {
+          resolvedTmdbId = String(personRecord.tmdb_id);
+        }
+      }
+
+      if (resolvedTmdbId) {
+        const personPhoto = await fetchTmdbPersonById(resolvedTmdbId);
         if (personPhoto) {
+          if (personRecord?.id) {
+            persistEnrichedPersonToSupabase(personRecord.id, personPhoto, resolvedTmdbId);
+          }
           const streamed = await fetchAndStreamImage(personPhoto, sizeParam);
           if (streamed) return streamed;
         }
       }
-      if (titleParam) {
-        const personPhotoUrl = await fetchTmdbPersonForTitle(titleParam);
+
+      if (cleanSearchTitle) {
+        const personPhotoUrl = await fetchTmdbPersonForTitle(cleanSearchTitle);
         if (personPhotoUrl) {
+          if (personRecord?.id) {
+            persistEnrichedPersonToSupabase(personRecord.id, personPhotoUrl);
+          }
           const streamed = await fetchAndStreamImage(personPhotoUrl, sizeParam);
           if (streamed) return streamed;
         }
       }
-      return new NextResponse(buildPersonFallbackSvg(titleParam || 'Oyuncu'), {
+
+      return new NextResponse(buildPersonFallbackSvg(cleanSearchTitle || titleParam || 'Oyuncu'), {
         status: 200,
         headers: {
           'Content-Type': 'image/svg+xml',
@@ -876,10 +946,63 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // 3. Media / Title branch (with automatic Person fallback)
-    if (titleParam || targetUrl) {
+    // 3. Media / Title branch (with fast Supabase cache lookup)
+    if (!resolvedTmdbId) {
+      let mediaRecord: { id: number; tmdb_id?: number | null; poster_url?: string | null; cover_image?: string | null } | null = null;
+      const targetMediaId = mediaIdParam ? parseInt(mediaIdParam, 10) : null;
+      if (targetMediaId && !isNaN(targetMediaId) && targetMediaId > 0) {
+        const { data } = await supabaseAdmin
+          .from('media')
+          .select('id, tmdb_id, poster_url, cover_image')
+          .eq('id', targetMediaId)
+          .maybeSingle();
+        if (data) mediaRecord = data;
+      }
+      if (!mediaRecord && cleanSearchTitle) {
+        const { data } = await supabaseAdmin
+          .from('media')
+          .select('id, tmdb_id, poster_url, cover_image')
+          .ilike('title', cleanSearchTitle)
+          .limit(1)
+          .maybeSingle();
+        if (data) mediaRecord = data;
+      }
+      if (!mediaRecord && targetUrl) {
+        const { data } = await supabaseAdmin
+          .from('media')
+          .select('id, tmdb_id, poster_url, cover_image')
+          .eq('cover_image', targetUrl)
+          .limit(1)
+          .maybeSingle();
+        if (data) mediaRecord = data;
+      }
+
+      if (mediaRecord) {
+        if (mediaRecord.poster_url && mediaRecord.poster_url.startsWith('https://image.tmdb.org/')) {
+          const streamed = await fetchAndStreamImage(mediaRecord.poster_url, sizeParam);
+          if (streamed) return streamed;
+        }
+        if (mediaRecord.tmdb_id) {
+          resolvedTmdbId = String(mediaRecord.tmdb_id);
+        }
+      }
+    }
+
+    if (resolvedTmdbId) {
+      const isBanner = typeParam === 'banner' || typeParam === 'backdrop';
+      const tmdbPoster = await fetchTmdbPosterById(resolvedTmdbId, mediaTypeParam, cleanSearchTitle || titleParam, isBanner);
+      if (tmdbPoster) {
+        if (!isBanner) {
+          persistEnrichedCoverToSupabase(mediaIdParam, tmdbPoster, resolvedTmdbId);
+        }
+        const streamed = await fetchAndStreamImage(tmdbPoster, sizeParam);
+        if (streamed) return streamed;
+      }
+    }
+
+    if (cleanSearchTitle || titleParam || targetUrl) {
       const posterUrl = await fetchTmdbPosterForTitle(
-        titleParam || '',
+        cleanSearchTitle || titleParam || '',
         targetUrl || fallbackUrl,
         mediaTypeParam,
         yearParam,
@@ -892,8 +1015,8 @@ export async function GET(req: NextRequest) {
       }
 
       // If title wasn't found as a movie/tv/anime, try person search (handles actors requested without type)
-      if (titleParam) {
-        const personPhotoUrl = await fetchTmdbPersonForTitle(titleParam);
+      if (cleanSearchTitle || titleParam) {
+        const personPhotoUrl = await fetchTmdbPersonForTitle(cleanSearchTitle || titleParam || '');
         if (personPhotoUrl) {
           const streamed = await fetchAndStreamImage(personPhotoUrl, sizeParam);
           if (streamed) return streamed;
