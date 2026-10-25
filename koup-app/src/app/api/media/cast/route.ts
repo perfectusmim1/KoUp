@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const mediaIdParam = searchParams.get('mediaId');
     const tmdbIdParam = searchParams.get('tmdbId');
+    const anilistIdParam = searchParams.get('anilistId');
     const typeParam = searchParams.get('type') || 'dizi';
     const titleParam = searchParams.get('title') || '';
     const force = searchParams.get('force') === 'true';
@@ -55,9 +56,98 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 2. Fetch from TMDb
+    let parsedCast: Array<{
+      name: string;
+      character: string;
+      order: number;
+      role_type: 'lead' | 'support';
+      profile_url: string | null;
+      tmdb_id?: number | null;
+    }> = [];
+
+    // 2A. For Anime: Fetch Characters and Voice Actors from AniList GraphQL
+    let anilistId = anilistIdParam ? Number(anilistIdParam) : null;
+    if ((!anilistId || Number.isNaN(anilistId)) && typeParam === 'anime') {
+      try {
+        const { data: mRow } = await supabaseAdmin
+          .from('media')
+          .select('anilist_id')
+          .eq('id', mediaId)
+          .maybeSingle();
+        if (mRow?.anilist_id) {
+          anilistId = Number(mRow.anilist_id);
+        }
+      } catch {}
+    }
+
+    if (typeParam === 'anime' && (anilistId || titleParam)) {
+      try {
+        const alQuery = `
+          query ($id: Int, $search: String) {
+            Media(id: $id, search: $search, type: ANIME) {
+              id
+              characters(sort: [ROLE, RELEVANCE, ID], perPage: 25) {
+                edges {
+                  role
+                  node {
+                    id
+                    name { full userPreferred }
+                    image { large medium }
+                  }
+                  voiceActors(language: JAPANESE, sort: [RELEVANCE, ID]) {
+                    id
+                    name { full userPreferred }
+                    image { large medium }
+                  }
+                }
+              }
+            }
+          }
+        `;
+        const alVars: Record<string, any> = {};
+        if (anilistId) alVars.id = anilistId;
+        else if (titleParam) alVars.search = titleParam;
+
+        const alRes = await fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ query: alQuery, variables: alVars }),
+          signal: AbortSignal.timeout(6000),
+        });
+
+        if (alRes.ok) {
+          const alData = await alRes.json();
+          const charEdges = alData?.data?.Media?.characters?.edges || [];
+          if (Array.isArray(charEdges) && charEdges.length > 0) {
+            parsedCast = charEdges.map((edge: any, idx: number) => {
+              const node = edge?.node || {};
+              const va = Array.isArray(edge?.voiceActors) && edge.voiceActors[0] ? edge.voiceActors[0] : null;
+              const charName = node?.name?.full || node?.name?.userPreferred || 'Bilinmeyen Karakter';
+              const vaName = va?.name?.full || va?.name?.userPreferred || '';
+              // Display name: If VA exists, show "Character (VA: Name)" or Character Name
+              const displayName = charName;
+              const actorProfile = node?.image?.large || node?.image?.medium || va?.image?.large || null;
+              const role: 'lead' | 'support' = edge.role === 'MAIN' ? 'lead' : 'support';
+
+              return {
+                name: displayName,
+                character: vaName ? `Seslendiren: ${vaName}` : charName,
+                order: idx + 1,
+                role_type: role,
+                profile_url: actorProfile,
+                tmdb_id: null,
+              };
+            });
+          }
+        }
+      } catch (alErr) {
+        console.error('AniList characters fetch error:', alErr);
+      }
+    }
+
+    // 2B. If not anime or AniList had no characters, Fetch from TMDb
     let tmdbId = tmdbIdParam ? Number(tmdbIdParam) : null;
-    if ((!tmdbId || Number.isNaN(tmdbId)) && titleParam) {
+    if (parsedCast.length === 0 && (!tmdbId || Number.isNaN(tmdbId)) && titleParam) {
       // Search TMDb
       try {
         const isMovie = typeParam === 'film';
@@ -75,15 +165,6 @@ export async function GET(req: NextRequest) {
         console.error('TMDb search error:', err);
       }
     }
-
-    let parsedCast: Array<{
-      name: string;
-      character: string;
-      order: number;
-      role_type: 'lead' | 'support';
-      profile_url: string | null;
-      tmdb_id?: number | null;
-    }> = [];
 
     if (tmdbId) {
       const isMovie = typeParam === 'film';
@@ -259,15 +340,23 @@ export async function GET(req: NextRequest) {
           people: existingPerson as PersonItem,
         };
 
-        await supabaseAdmin.from('media_cast').upsert({
-          media_id: mediaId,
-          person_id: personId,
-          role_type: actor.role_type,
-          character_name: actor.character,
-          billing_order: actor.order,
-        }, { onConflict: 'media_id,person_id' });
-
         finalCast.push(castEntry);
+      }
+    }
+
+    if (finalCast.length > 0) {
+      try {
+        await supabaseAdmin.from('media_cast').delete().eq('media_id', mediaId);
+        const rowsToInsert = finalCast.map((c) => ({
+          media_id: c.media_id,
+          person_id: c.person_id,
+          role_type: c.role_type,
+          character_name: c.character_name,
+          billing_order: c.billing_order,
+        }));
+        await supabaseAdmin.from('media_cast').insert(rowsToInsert);
+      } catch (insertErr) {
+        console.error('Error batch inserting media_cast:', insertErr);
       }
     }
 

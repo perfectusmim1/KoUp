@@ -341,6 +341,21 @@ export default function SeriesDetailClient({
         if (yt) setTrailerYoutubeId(yt);
       }
       setIsLoading(false);
+
+      // Background cast enrichment if initial cast is empty
+      if (!initialCast || initialCast.length === 0) {
+        fetch(
+          `/api/media/cast?mediaId=${activeMedia.id}&tmdbId=${activeMedia.tmdb_id || ''}&anilistId=${activeMedia.anilist_id || ''}&type=${activeMedia.content_type || ''}&title=${encodeURIComponent(activeMedia.title || '')}`
+        )
+          .then((res) => (res.ok ? res.json() : null))
+          .then((castJson) => {
+            if (castJson?.cast && Array.isArray(castJson.cast) && castJson.cast.length > 0) {
+              setCast(castJson.cast);
+            }
+          })
+          .catch(() => {});
+      }
+
       if (activeEpisodes.length > 0) {
         setEpisodes(activeEpisodes);
         setSelectedSeason(activeEpisodes[0].season_number || 1);
@@ -514,6 +529,17 @@ export default function SeriesDetailClient({
         }
         if (mediaWithCast.cast.length > 0) {
           setCast(mediaWithCast.cast);
+        } else if (item.id) {
+          fetch(
+            `/api/media/cast?mediaId=${item.id}&tmdbId=${item.tmdb_id || ''}&anilistId=${item.anilist_id || ''}&type=${item.content_type || ''}&title=${encodeURIComponent(item.title || '')}`
+          )
+            .then((res) => (res.ok ? res.json() : null))
+            .then((castJson) => {
+              if (castJson?.cast && Array.isArray(castJson.cast) && castJson.cast.length > 0) {
+                setCast(castJson.cast);
+              }
+            })
+            .catch(() => {});
         }
         setIsLoading(false);
 

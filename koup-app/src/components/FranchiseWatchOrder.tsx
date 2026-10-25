@@ -16,7 +16,7 @@ import {
   ChevronUp,
   ArrowRight,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
 import type { FranchiseData, FranchiseItem } from '@/lib/server/seriesData';
 import { cleanMediaTitle, getProxiedImageUrl } from '@/lib/supabase';
 import { useDragScroll } from '@/hooks/useDragScroll';
@@ -142,7 +142,7 @@ export default function FranchiseWatchOrder({
               : 'flex-col w-[184px] sm:w-[204px] shrink-0 rounded-2xl p-2.5'
           } transition-[transform,background-color,border-color,box-shadow] duration-200 select-none ${
             isCurrent
-              ? 'bg-sky-500/[0.11] border-2 border-sky-400/75 shadow-[0_0_28px_rgba(56,189,248,0.18)]'
+              ? 'bg-[#2997ff]/[0.09] border-2 border-[#2997ff]/70 shadow-[0_0_24px_rgba(41,151,255,0.18)]'
               : 'bg-[#121216]/90 hover:bg-[#18181f] border border-white/[0.08] hover:border-white/25 hover:-translate-y-0.5'
           }`}
         >
@@ -331,57 +331,77 @@ export default function FranchiseWatchOrder({
         {/* Category Filter Tabs + View Switcher */}
         <div className="flex flex-wrap items-center gap-2">
           {hasBothCategories && (
-            <div
-              role="tablist"
-              aria-label="İzleme Sırası Filtresi"
-              className="inline-flex items-center p-1 rounded-2xl bg-black/60 border border-white/[0.08]"
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === 'main'}
-                onClick={() => setActiveTab('main')}
-                className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  activeTab === 'main'
-                    ? 'bg-sky-400 text-black shadow-sm'
-                    : 'text-white/70 hover:text-white'
-                }`}
+            <LayoutGroup id="franchise-filter-tabs">
+              <div
+                role="tablist"
+                aria-label="İzleme Sırası Filtresi"
+                className="inline-flex w-max items-center gap-1 p-1 rounded-full glass-pill-dark border border-white/12 select-none"
               >
-                <Tv className="w-3.5 h-3.5" />
-                <span>Ana Sıra ({mainItems.length})</span>
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === 'side'}
-                onClick={() => setActiveTab('side')}
-                className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  activeTab === 'side'
-                    ? 'bg-amber-400 text-black shadow-sm'
-                    : 'text-white/70 hover:text-white'
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Filmler & Özel ({sideItems.length})</span>
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === 'all'}
-                onClick={() => setActiveTab('all')}
-                className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-                  activeTab === 'all'
-                    ? 'bg-white text-black shadow-sm'
-                    : 'text-white/70 hover:text-white'
-                }`}
-              >
-                <span>Tümü ({franchise.items.length})</span>
-              </button>
-            </div>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === 'main'}
+                  onClick={() => setActiveTab('main')}
+                  className={`relative px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 select-none ${
+                    activeTab === 'main' ? 'text-white' : 'text-white/60 hover:text-white'
+                  }`}
+                >
+                  {activeTab === 'main' && (
+                    <motion.span
+                      layoutId="franchise-active-tab-pill"
+                      initial={false}
+                      transition={{ type: 'spring', stiffness: 420, damping: 32, mass: 0.8 }}
+                      className="absolute inset-0 rounded-full bg-[#2997ff] shadow-[0_0_12px_rgba(41,151,255,0.35)]"
+                    />
+                  )}
+                  <Tv className="w-3.5 h-3.5 relative z-10" />
+                  <span className="relative z-10">Ana Sıra ({mainItems.length})</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === 'side'}
+                  onClick={() => setActiveTab('side')}
+                  className={`relative px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 select-none ${
+                    activeTab === 'side' ? 'text-white' : 'text-white/60 hover:text-white'
+                  }`}
+                >
+                  {activeTab === 'side' && (
+                    <motion.span
+                      layoutId="franchise-active-tab-pill"
+                      initial={false}
+                      transition={{ type: 'spring', stiffness: 420, damping: 32, mass: 0.8 }}
+                      className="absolute inset-0 rounded-full bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.35)]"
+                    />
+                  )}
+                  <Sparkles className="w-3.5 h-3.5 relative z-10" />
+                  <span className="relative z-10">Filmler & Özel ({sideItems.length})</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === 'all'}
+                  onClick={() => setActiveTab('all')}
+                  className={`relative px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors cursor-pointer select-none ${
+                    activeTab === 'all' ? 'text-white' : 'text-white/60 hover:text-white'
+                  }`}
+                >
+                  {activeTab === 'all' && (
+                    <motion.span
+                      layoutId="franchise-active-tab-pill"
+                      initial={false}
+                      transition={{ type: 'spring', stiffness: 420, damping: 32, mass: 0.8 }}
+                      className="absolute inset-0 rounded-full bg-white/20 border border-white/25 shadow-[0_0_10px_rgba(255,255,255,0.2)]"
+                    />
+                  )}
+                  <span className="relative z-10">Tümü ({franchise.items.length})</span>
+                </button>
+              </div>
+            </LayoutGroup>
           )}
 
-          {/* Scroll Arrows (only when in horizontal rail mode) */}
-          {!isGridExpanded && displayedItems.length > 3 && (
+          {/* Scroll Arrows for Horizontal Rail */}
+          {displayedItems.length > 3 && (
             <div className="hidden sm:flex items-center gap-1.5 ml-auto">
               <button
                 type="button"
@@ -389,7 +409,7 @@ export default function FranchiseWatchOrder({
                   railRef.current?.scrollBy({ left: -460, behavior: 'smooth' })
                 }
                 aria-label="Sola Kaydır"
-                className="w-9 h-9 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-colors cursor-pointer"
+                className="w-8 h-8 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-colors cursor-pointer"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
@@ -399,7 +419,7 @@ export default function FranchiseWatchOrder({
                   railRef.current?.scrollBy({ left: 460, behavior: 'smooth' })
                 }
                 aria-label="Sağa Kaydır"
-                className="w-9 h-9 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-colors cursor-pointer"
+                className="w-8 h-8 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-colors cursor-pointer"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -408,54 +428,50 @@ export default function FranchiseWatchOrder({
         </div>
       </div>
 
-      {/* Content Area: Horizontal Watch-Order Rail OR Expanded Multi-Column Grid */}
-      <AnimatePresence mode="wait" initial={false}>
-        {isGridExpanded ? (
-          <motion.div
-            key={`grid-${activeTab}`}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.18 }}
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1"
-          >
-            {displayedItems.map((item, idx) => renderCard(item, idx, true))}
-          </motion.div>
-        ) : (
-          <motion.div
-            key={`rail-${activeTab}`}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.18 }}
-            ref={railRef}
-            className="flex items-stretch gap-2 overflow-x-auto overflow-y-hidden no-scrollbar py-1.5 [-webkit-overflow-scrolling:touch]"
-          >
-            {displayedItems.map((item, idx) => renderCard(item, idx, false))}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Primary Chronological Watch-Order Rail (Always smooth and accessible) */}
+      <div
+        ref={railRef}
+        className="flex items-stretch gap-2 overflow-x-auto overflow-y-hidden no-scrollbar py-1.5 [-webkit-overflow-scrolling:touch]"
+      >
+        {displayedItems.map((item, idx) => renderCard(item, idx, false))}
+      </div>
 
-      {/* Expand / Collapse Full Watch Order Toggle when there are > 4 items */}
+      {/* Expandable Multi-Column Grid Drawer (120fps fluid CSS expansion without DOM destruction) */}
       {displayedItems.length > 4 && (
-        <div className="flex justify-center pt-1">
-          <button
-            type="button"
-            onClick={() => setIsGridExpanded((prev) => !prev)}
-            className="min-h-[40px] inline-flex items-center gap-2 px-5 py-2 rounded-full glass-pill hover:bg-white/15 text-xs font-semibold text-white/85 hover:text-white transition-colors cursor-pointer active:scale-95"
-          >
-            <span>
-              {isGridExpanded
-                ? 'Yatay Şerit Görünümüne Dön'
-                : `Tüm İzleme Sırasını Liste Olarak Aç (${displayedItems.length} Yapım)`}
-            </span>
-            {isGridExpanded ? (
-              <ChevronUp className="w-4 h-4 text-sky-400" />
-            ) : (
-              <ChevronDown className="w-4 h-4 text-sky-400" />
-            )}
-          </button>
-        </div>
+        <>
+          <div className={`koup-expandable-drawer ${isGridExpanded ? 'is-expanded' : ''}`}>
+            <div className="koup-expandable-inner">
+              <div className="pt-3.5 border-t border-white/[0.06]">
+                <div className="flex items-center justify-between mb-3 text-xs text-white/50">
+                  <span className="font-semibold uppercase tracking-wider text-[11px] text-[#2997ff]">Tüm Seri Kataloğu</span>
+                  <span>{displayedItems.length} Yapım Listeleniyor</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {displayedItems.map((item, idx) => renderCard(item, idx, true))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-center pt-1">
+            <button
+              type="button"
+              onClick={() => setIsGridExpanded((prev) => !prev)}
+              className="min-h-[38px] inline-flex items-center gap-2 px-5 py-2 rounded-full glass-pill hover:bg-white/15 text-xs font-semibold text-white/90 border border-white/15 hover:border-white/30 transition-all cursor-pointer active:scale-95 shadow-sm"
+            >
+              <span>
+                {isGridExpanded
+                  ? 'Genişletilmiş Listeyi Kapat'
+                  : `Tüm İzleme Sırasını Liste Olarak Aç (${displayedItems.length} Yapım)`}
+              </span>
+              <ChevronDown
+                className={`w-4 h-4 transition-transform duration-200 ${
+                  isGridExpanded ? 'rotate-180 text-[#2997ff]' : 'text-white/60'
+                }`}
+              />
+            </button>
+          </div>
+        </>
       )}
     </section>
   );

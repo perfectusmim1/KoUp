@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import { notFound, permanentRedirect } from 'next/navigation';
 import { getSeriesDataServer } from '@/lib/server/seriesData';
 import SeriesDetailClient from './SeriesDetailClient';
 import { cleanMediaTitle, cleanOverviewText, getProxiedImageUrl } from '@/lib/supabase';
@@ -96,13 +96,25 @@ export default async function SeriesDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const data = await getSeriesDataServer(slug);
+  const decodedSlug = decodeURIComponent(slug || '').trim();
+  const data = await getSeriesDataServer(decodedSlug);
 
   if (!data.media) {
     notFound();
   }
 
   const { media, episodes, cast, franchise } = data;
+
+  // Canonical clean URL redirect: if visited with competitor suffix or numeric ID, 301-redirect to pristine slug
+  if (
+    media.slug &&
+    media.slug !== decodedSlug &&
+    (decodedSlug.includes('animecix') ||
+      decodedSlug.includes('asyaanimeleri') ||
+      !Number.isNaN(Number(decodedSlug)))
+  ) {
+    permanentRedirect(`/seri/${media.slug}`);
+  }
   const cleanTitle = cleanMediaTitle(media.title);
   const cleanOverview = cleanOverviewText(media.overview);
   const posterUrl = getProxiedImageUrl(media.cover_image, media.title, null, 'w500');

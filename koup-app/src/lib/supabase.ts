@@ -414,6 +414,9 @@ export function cleanScrapedSlug(rawSlug?: string | null): string {
   if (!rawSlug) return '';
   let s = decodeURIComponent(rawSlug).trim().toLowerCase();
   s = s
+    .replace(/-animecix-\d+/gi, '')
+    .replace(/-animecix\b/gi, '')
+    .replace(/-asyaanimeleri\b/gi, '')
     .replace(/(?:-(?:hd-film-izle|filmi-izle|film-izle|dizi-izle|izle|full-hd|full|hdfc|hdf|hf|\d+))+$/gi, '')
     .replace(/^(?:hd-film-|hd-|film-|\d+-)+/gi, '')
     .replace(/-{2,}/g, '-')
