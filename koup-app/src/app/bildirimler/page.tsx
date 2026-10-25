@@ -299,18 +299,16 @@ export default function NotificationsPage() {
         {/* Page Header */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-white/10">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full glass-pill border border-white/15 text-[11px] font-semibold text-white/80 mb-3">
-              <Bell className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
-              <span>Bildirim Merkezi</span>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-white">
+                Bildirimler
+              </h1>
               {unreadCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white font-mono text-[10px] font-bold">
+                <span className="px-2.5 py-1 rounded-full bg-rose-500/20 border border-rose-500/30 text-rose-300 font-mono text-xs font-bold">
                   {unreadCount} yeni
                 </span>
               )}
             </div>
-            <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-white">
-              Bildirimler
-            </h1>
           </div>
 
           {/* Action Toolbar */}
