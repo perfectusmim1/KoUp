@@ -442,7 +442,7 @@ export async function GET(req: NextRequest) {
             try {
               origin = new URL(iframeUrl).origin;
             } catch {}
-            const proxiedMaster = `https://koup-edge-worker.caganhuseyinerdil.workers.dev/pichive-proxy?url=${encodeURIComponent(masterStreamUrl)}`;
+            const proxiedMaster = `/api/stream-proxy?url=${encodeURIComponent(masterStreamUrl)}&ref=${encodeURIComponent(iframeUrl)}`;
             const subtitles = (edgeData.subtitles || []).map((s: any) => {
               const rawFile = String(s.file || '');
               const fullSubUrl = rawFile.startsWith('http')
@@ -453,7 +453,7 @@ export async function GET(req: NextRequest) {
               return {
                 label: s.label || 'Türkçe',
                 lang: s.lang || 'tr',
-                url: `https://koup-edge-worker.caganhuseyinerdil.workers.dev/pichive-proxy?url=${encodeURIComponent(fullSubUrl)}`,
+                url: `/api/stream-proxy?url=${encodeURIComponent(fullSubUrl)}&ref=${encodeURIComponent(iframeUrl)}`,
                 default: !!s.default,
               };
             });
@@ -467,7 +467,7 @@ export async function GET(req: NextRequest) {
                 posterImage: edgeData.poster || null,
                 subtitles,
                 qualities: [{ label: '1080p (Orijinal)', url: proxiedMaster }],
-                fallbackIframe: iframeUrl,
+                fallbackIframe: iframeUrl.includes('pichive') || iframeUrl.includes('dplayer') ? null : iframeUrl,
               },
               { headers: CACHE_HEADERS }
             );
@@ -527,7 +527,7 @@ export async function GET(req: NextRequest) {
         const masterStreamUrl = playlistItem?.sources?.[0]?.file;
 
         if (masterStreamUrl) {
-          const proxiedMaster = `/api/stream-proxy?url=${encodeURIComponent(masterStreamUrl)}&ref=${encodeURIComponent(origin + '/')}`;
+          const proxiedMaster = `/api/stream-proxy?url=${encodeURIComponent(masterStreamUrl)}&ref=${encodeURIComponent(iframeUrl)}`;
           
           let subtitles: Array<{ label: string; lang: string; url: string; default?: boolean }> = [];
           const subMatch = iframeHtml.match(/\[\s*\{\s*["']file["']\s*:\s*["'][^"']+\.vtt[^"']*["'][\s\S]*?\]/);
@@ -546,7 +546,7 @@ export async function GET(req: NextRequest) {
                   return {
                     label: s.label || 'Türkçe',
                     lang: s.lang || 'tr',
-                    url: `/api/stream-proxy?url=${encodeURIComponent(fullSubUrl)}&ref=${encodeURIComponent(origin + '/')}`,
+                    url: `/api/stream-proxy?url=${encodeURIComponent(fullSubUrl)}&ref=${encodeURIComponent(iframeUrl)}`,
                     default: !!s.default,
                   };
                 });
@@ -564,7 +564,7 @@ export async function GET(req: NextRequest) {
               qualities: [
                 { label: '1080p (Orijinal)', url: proxiedMaster },
               ],
-              fallbackIframe: iframeUrl,
+              fallbackIframe: iframeUrl.includes('pichive') || iframeUrl.includes('dplayer') ? null : iframeUrl,
             },
             { headers: CACHE_HEADERS }
           );
@@ -800,7 +800,7 @@ export async function GET(req: NextRequest) {
           streamUrl: proxiedUrl,
           qualities: [{ label: '1080p', url: proxiedUrl }],
           subtitles: subtitles.length > 0 ? subtitles : undefined,
-          fallbackIframe: url,
+          fallbackIframe: undefined,
         };
         setCachedStream(url, payload);
         return NextResponse.json(payload, { headers: CACHE_HEADERS });
@@ -984,7 +984,7 @@ export async function GET(req: NextRequest) {
                 streamUrl: proxiedMaster,
                 qualities: [{ label: '1080p', url: proxiedMaster }],
                 subtitles,
-                fallbackIframe: url,
+                fallbackIframe: undefined,
               },
               { headers: CACHE_HEADERS }
             );
@@ -1802,7 +1802,8 @@ export async function GET(req: NextRequest) {
                 const cleanKey = String(v.key || 'HD').replace(/p$/i, '') + 'p';
                 return {
                   label: cleanKey,
-                  url: `/api/stream-proxy?url=${encodeURIComponent(fullMp4Url)}&ref=${encodeURIComponent('https://my.mail.ru/')}`,
+                  url: fullMp4Url,
+                  directUrl: fullMp4Url,
                 };
               });
               const result = {
@@ -2315,16 +2316,37 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 5. If the host is known to forbid framing (e.g. hdfilmcehennemi frame-ancestors 'self'), mark as dead rather than returning a blocked iframe
+  // 5. If the host is known to forbid framing (e.g. X-Frame-Options SAMEORIGIN / DENY or direct media files), mark as dead rather than returning a blocked iframe
+  const lowUrlCheck = url.toLowerCase();
   if (
-    url.includes('hdfilmcehennemi') ||
-    url.includes('/rplayer/') ||
-    url.includes('rapidrame')
+    lowUrlCheck.includes('hdfilmcehennemi') ||
+    lowUrlCheck.includes('/rplayer/') ||
+    lowUrlCheck.includes('rapidrame') ||
+    lowUrlCheck.includes('pichive') ||
+    lowUrlCheck.includes('dplayer') ||
+    lowUrlCheck.includes('hotlinger') ||
+    lowUrlCheck.includes('asyawatch') ||
+    lowUrlCheck.includes('dizilla') ||
+    lowUrlCheck.includes('azelvid') ||
+    lowUrlCheck.includes('playerdkorea') ||
+    lowUrlCheck.includes('ddizi.tel') ||
+    lowUrlCheck.includes('storage.diziyou.one') ||
+    lowUrlCheck.includes('dystream') ||
+    lowUrlCheck.includes('vmpx.online') ||
+    lowUrlCheck.includes('acek-cdn') ||
+    lowUrlCheck.includes('owphbf24') ||
+    lowUrlCheck.includes('sprintcdn') ||
+    lowUrlCheck.includes('fastsupplyhub') ||
+    lowUrlCheck.includes('smartcheckout') ||
+    lowUrlCheck.includes('videopixelvanto') ||
+    lowUrlCheck.includes('.m3u8') ||
+    lowUrlCheck.includes('.mp4') ||
+    lowUrlCheck.includes('.ts')
   ) {
     return NextResponse.json(
       {
         isDead: true,
-        error: 'Kaynak doğrudan oynatılamıyor veya yayıncı tarafından engellendi.',
+        error: 'Kaynak doğrudan çözülemedi ve yayıncı harici iframe bağlantısını reddediyor.',
       },
       { status: 410, headers: CACHE_HEADERS }
     );

@@ -341,7 +341,7 @@ def scan_dizikorea(conn, cur, idx, limit=30, target=None):
             anchors_to_scan = ep_anchors if target else ep_anchors[:5]
             for ep_txt, ep_url in anchors_to_scan:
                 season_num, ep_num = parse_season_and_episode(ep_url, ep_txt)
-                clean_name = clean_episode_title(ep_txt or f"{season_num}. Sezon {ep_num}. Bölüm", season_num, ep_num)
+                clean_name = clean_episode_title(ep_txt or f"{season_num}. Sezon {ep_num}. Bölüm", season_num, ep_num, drama_title=drama_title)
                 ep_id, _ = match_or_create_episode(cur, did, season_num, ep_num, clean_name, ep_url)
                 ep_html = fetch_url(ep_url, headers=headers)
                 is_ph = page_is_placeholder(ep_html)
@@ -358,7 +358,8 @@ def scan_dizikorea(conn, cur, idx, limit=30, target=None):
 
                 for prov, sname, direct_u in sources_found:
                     added = add_source(cur, ep_id, sname, direct_u, prov, "dizikorea")
-                    touched_dramas.add(did)
+                    if added:
+                        touched_dramas.add(did)
                     item_obj = {
                         'id': f"dizikorea-{did}-{season_num}-{ep_num}-{prov}",
                         'title': drama_title,
@@ -381,7 +382,6 @@ def scan_dizikorea(conn, cur, idx, limit=30, target=None):
                 safe_commit(conn)
 
                 if not sources_found:
-                    touched_dramas.add(did)
                     item_obj = {
                         'id': f"dizikorea-{did}-{season_num}-{ep_num}",
                         'title': drama_title,
@@ -465,7 +465,7 @@ def scan_ddizi(conn, cur, idx, limit=30, target=None):
                 source_url=ep_url, log_fn=log
             )
 
-            clean_name = clean_episode_title(txt or f"{season_num}. Sezon {ep_num}. Bölüm", season_num, ep_num)
+            clean_name = clean_episode_title(txt or f"{season_num}. Sezon {ep_num}. Bölüm", season_num, ep_num, drama_title=clean_title)
             ep_id, _ = match_or_create_episode(cur, did, season_num, ep_num, clean_name, ep_url)
             ep_html = fetch_url(ep_url, headers=headers)
             is_ph = page_is_placeholder(ep_html)
@@ -515,6 +515,17 @@ def scan_ddizi(conn, cur, idx, limit=30, target=None):
                     source_obj = ("Orijinal", hls_u, "ddizi")
                     cur.execute("DELETE FROM episode_sources WHERE episode_id = ? AND provider = 'youtube'", (ep_id,))
                 else:
+                    mp4_b64 = re.search(r'file:\s*["\']([^"\']*/player/mp4/[a-zA-Z0-9=+/]+(?:\.mp4)?)["\']', p_html)
+                    if mp4_b64:
+                        try:
+                            b64_part = mp4_b64.group(1).split('/player/mp4/')[-1].replace('.mp4', '').strip()
+                            decoded = base64.b64decode(b64_part).decode('utf-8', errors='ignore')
+                            if decoded.startswith('http'):
+                                source_obj = ("Orijinal", decoded, "ddizi")
+                                cur.execute("DELETE FROM episode_sources WHERE episode_id = ? AND provider = 'youtube'", (ep_id,))
+                        except Exception:
+                            pass
+                if not source_obj:
                     yt_thumb = re.search(r'https?://(?:i\d*\.)?ytimg\.com/vi/([a-zA-Z0-9_\-]+)/', p_html)
                     if yt_thumb and not is_fragman:
                         yt_id = yt_thumb.group(1)
@@ -543,8 +554,25 @@ def scan_ddizi(conn, cur, idx, limit=30, target=None):
             added = False
             if source_obj:
                 sname, surl, sprov = source_obj
-                added = add_source(cur, ep_id, sname, surl, sprov, "ddizi")
-                touched_dramas.add(did)
+                # If provider is ddizi and direct_url contains tokenized m3u8, check if ddizi source already exists
+                cur.execute("SELECT id, direct_url FROM episode_sources WHERE episode_id = ? AND provider = 'ddizi'", (ep_id,))
+                existing_ddizi = cur.fetchone()
+                if existing_ddizi and sprov == 'ddizi':
+                    # Refresh tokenized URL without treating as new addition
+                    if existing_ddizi[1] != surl:
+                        cur.execute("UPDATE episode_sources SET direct_url = ? WHERE id = ?", (surl, existing_ddizi[0]))
+                        safe_commit(conn)
+                    added = False
+                else:
+                    added = add_source(cur, ep_id, sname, surl, sprov, "ddizi")
+
+                if added:
+                    touched_dramas.add(did)
+                    safe_commit(conn)
+                    log("AKINCI", f'"{clean_title}" -> {season_num}. Sezon {ep_num}. Bölüm ({sname}) eklendi.')
+                else:
+                    log("DOĞRULANDI", f'"{clean_title}" -> {season_num}. Sezon {ep_num}. Bölüm ({sname}) güncel.')
+
                 item_obj = {
                     'id': f"ddizi-{did}-{season_num}-{ep_num}",
                     'title': clean_title,
@@ -555,18 +583,12 @@ def scan_ddizi(conn, cur, idx, limit=30, target=None):
                     'status': 'Canlı Çözüldü' if added else 'Doğrulandı',
                     'sourceName': sname,
                 }
-                if added:
-                    safe_commit(conn)
-                    log("AKINCI", f'"{clean_title}" -> {season_num}. Sezon {ep_num}. Bölüm ({sname}) eklendi.')
-                else:
-                    log("DOĞRULANDI", f'"{clean_title}" -> {season_num}. Sezon {ep_num}. Bölüm ({sname}) güncel.')
                 emit_live_item(item_obj)
                 synced_items.append(item_obj)
 
             is_pending = reconcile_episode(cur, ep_id, is_placeholder=is_ph)
             safe_commit(conn)
             if not source_obj:
-                touched_dramas.add(did)
                 item_obj = {
                     'id': f"ddizi-{did}-{season_num}-{ep_num}",
                     'title': clean_title,

@@ -847,11 +847,12 @@ export function cleanEpisodeName(
   seasonNum?: number,
   episodeNum?: number
 ): string {
-  if (!rawName) return episodeNum ? `${episodeNum}. Bölüm` : '';
+  const fallback = episodeNum ? `Bölüm ${episodeNum}` : '';
+  if (!rawName) return fallback;
   let s = sanitizeMojibake(String(rawName)).trim();
 
-  // Strip play symbols, bullets, arrows and button residue (e.g. '▶', '►', '▸', '▶️', '▷', '⏯', '⏵', '•', '·')
-  s = s.replace(/[\u25b6\u25ba\u25b8\u25c0\u25c4\u25bc\u25b2\u25b7\u25bd\u25c1\u25c5\u27a4\u25e6\u2022\u00b7\ufe0f]+/g, ' ').trim();
+  // Strip play symbols, bullets, arrows, dividers and button residue (e.g. '▶', '►', '▸', '▶️', '▷', '⏯', '⏵', '•', '·')
+  s = s.replace(/[\u25b6\u25ba\u25b8\u25c0\u25c4\u25bc\u25b2\u25b7\u25bd\u25c1\u25c5\u27a4\u25e6\u2022\u00b7\ufe0f|~–—]+/g, ' ').trim();
 
   // Strip scraper noise e.g. "izle", "full hd", "tek parça", "türkçe altyazılı"
   s = s.replace(
@@ -870,14 +871,16 @@ export function cleanEpisodeName(
   // Strip quotes and edge symbols
   s = s.replace(/^["'“”«»`]+|["'“”«»`]+$/g, '').trim();
 
-  // Strip redundant leading season/episode prefix, e.g. "1. Sezon 2. Bölüm", "1.Sezon 2.Bölüm", "2. Bölüm", "S1:B2"
-  s = s.replace(/^(?:\d+\s*\.?\s*Sezon\s*)?(?:\d+\s*\.?\s*Bölüm\s*)/i, '').trim();
-  s = s.replace(/^(?:Season\s*\d+\s*)?(?:Episode\s*\d+\s*)/i, '').trim();
-  s = s.replace(/^S\d+[:\s]*B\d+\s*[-:•]?\s*/i, '').trim();
-  s = s.replace(/^Bölüm\s*\d+\s*[-:•]?\s*/i, '').trim();
-
-  // Strip leading & trailing punctuation
-  s = s.replace(/^[-:•|~–—\s.,;!?_/\\]+/, '').trim();
+  // Loop to repeatedly strip leading season/episode/part tokens (e.g. "1. Bölüm 1. Sezon 1.Bolum")
+  let prev = '';
+  while (s !== prev) {
+    prev = s;
+    s = s.replace(/^(?:\d+\s*\.?\s*(?:sezon|season)\s*)?(?:\d+\s*\.?\s*(?:b[öo]l[üu]m|blm|episode|ep|part|k[ıi]s[ıi]m)\s*[-:•/]?\s*)/i, '').trim();
+    s = s.replace(/^(?:season\s*\d+\s*)?(?:episode\s*\d+\s*[-:•/]?\s*)/i, '').trim();
+    s = s.replace(/^s\d+[:\s]*b\d+\s*[-:•/]?\s*/i, '').trim();
+    s = s.replace(/^(?:b[öo]l[üu]m|blm|episode|part)\s*\d*\s*[-:•/]?\s*/i, '').trim();
+    s = s.replace(/^[-:•|~–—\s.,;!?_/\\]+/, '').trim();
+  }
 
   // Handle collapsed parentheses like "(Tremor)" or "(Part 1)"
   const parenMatch = s.match(/^\(([^)]+)\)$/);
@@ -889,22 +892,27 @@ export function cleanEpisodeName(
   s = s.replace(/[-:•|~–—\s.,;!?_/\\]+$/, '').trim();
   s = s.replace(/^["'“”«»`]+|["'“”«»`]+$/g, '').trim();
 
-  // If the extracted subtitle is empty, generic, repeats the episode number, or has no alphanumeric characters
+  // Check if string is completely generic (contains ONLY season/episode keywords and numbers)
+  const isOnlyGenericKeywords = !s.replace(/\b(?:\d+|sezon|season|b[öo]l[üu]m|blm|episode|ep|part|k[ıi]s[ıi]m|s\d+|b\d+|e\d+)\b/gi, '').replace(/[-:•|~–—\s.,;!?_/\\]+/g, '').trim();
+
   if (
     !s ||
+    isOnlyGenericKeywords ||
     !/[a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF]/.test(s) ||
-    /^(?:bölüm|episode|part)\s*\d*$/i.test(s) ||
+    /^(?:b[öo]l[üu]m|bolum|blm|episode|part|k[ıi]s[ıi]m)\s*\d*$/i.test(s) ||
     s === `${episodeNum}` ||
-    s === `${episodeNum}. Bölüm`
+    s === `${episodeNum}. Bölüm` ||
+    s === `${episodeNum}. Bolum` ||
+    s === `Bölüm ${episodeNum}`
   ) {
-    return episodeNum ? `${episodeNum}. Bölüm` : '';
+    return fallback;
   }
 
   return s;
 }
 
 /**
- * Formats a clean episode display title (e.g. "S1:B2 • Tremor" or "2. Bölüm • Tremor" or "2. Bölüm")
+ * Formats a clean episode display title (e.g. "S1:B2 • Tremor", "2. Bölüm • Tremor", or "Bölüm 2")
  */
 export function formatEpisodeTitle(
   rawName?: string | null,
@@ -915,25 +923,29 @@ export function formatEpisodeTitle(
   const subtitle = cleanEpisodeName(rawName, seasonNum, episodeNum);
   const isGeneric =
     !subtitle ||
+    subtitle === `Bölüm ${episodeNum}` ||
     subtitle === `${episodeNum}. Bölüm` ||
+    subtitle === `${episodeNum}. Bolum` ||
+    subtitle === `${seasonNum}. Sezon ${episodeNum}. Bölüm` ||
     !/[a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF]/.test(subtitle);
 
   if (options?.includeSeasonPrefix) {
     const prefix = `S${seasonNum}:B${episodeNum}`;
     if (isGeneric) {
-      return `${prefix} • ${episodeNum}. Bölüm`;
+      return `${prefix} • Bölüm ${episodeNum}`;
     }
     return `${prefix} • ${subtitle}`;
   }
 
   if (options?.includeEpisodeNum !== false) {
     if (isGeneric) {
-      return `${episodeNum}. Bölüm`;
+      return seasonNum > 1 ? `${seasonNum}. Sezon ${episodeNum}. Bölüm` : `Bölüm ${episodeNum}`;
     }
-    return `${episodeNum}. Bölüm • ${subtitle}`;
+    const epPrefix = seasonNum > 1 ? `${seasonNum}. Sezon ${episodeNum}. Bölüm` : `Bölüm ${episodeNum}`;
+    return `${epPrefix} • ${subtitle}`;
   }
 
-  return isGeneric ? `${episodeNum}. Bölüm` : subtitle;
+  return isGeneric ? `Bölüm ${episodeNum}` : subtitle;
 }
 
 /**

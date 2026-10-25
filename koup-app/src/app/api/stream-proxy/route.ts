@@ -100,7 +100,11 @@ export async function GET(req: NextRequest) {
     } else if (targetUrl.includes('diziyou')) {
       referer = 'https://diziyou.one/';
       origin = 'https://diziyou.one';
-    } else if (targetUrl.includes('dizibox') || targetUrl.includes('molystream')) {
+    } else if (
+      targetUrl.includes('dizibox') ||
+      targetUrl.includes('molystream') ||
+      (targetUrl.includes('/v/') && (targetUrl.includes('.xyz') || targetUrl.includes('dby')))
+    ) {
       referer = 'https://dbx.molystream.org/';
       origin = 'https://dbx.molystream.org';
     } else if (
@@ -143,9 +147,21 @@ export async function GET(req: NextRequest) {
     } else if (targetUrl.includes('uqload')) {
       referer = 'https://uqload.vc/';
       origin = 'https://uqload.vc';
-    } else if (targetUrl.includes('vidmoly') || targetUrl.includes('vmoly')) {
-      referer = 'https://vidmoly.biz/';
-      origin = 'https://vidmoly.biz';
+    } else if (
+      targetUrl.includes('vidmoly') ||
+      targetUrl.includes('vmoly') ||
+      targetUrl.includes('vmpx')
+    ) {
+      referer = 'https://vidmoly.org/';
+      origin = 'https://vidmoly.org';
+    } else if (
+      targetUrl.includes('filemoon') ||
+      targetUrl.includes('byse') ||
+      targetUrl.includes('owphbf24') ||
+      targetUrl.includes('sprintcdn')
+    ) {
+      referer = 'https://filemoon.sx/';
+      origin = 'https://filemoon.sx';
     } else if (targetUrl.includes('sendvid')) {
       referer = 'https://sendvid.com/';
       origin = 'https://sendvid.com';
@@ -186,6 +202,9 @@ export async function GET(req: NextRequest) {
     ) {
       if (customRef) {
         referer = customRef;
+        try {
+          origin = new URL(customRef).origin;
+        } catch {}
       } else if (targetUrl.includes('hotlinger')) {
         referer = 'https://sn.hotlinger.com/';
         origin = 'https://sn.hotlinger.com';
@@ -195,9 +214,12 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const clientUA = req.headers.get('user-agent');
     const upstreamHeaders: Record<string, string> = {
       'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+        clientUA && !clientUA.includes('node') && !clientUA.includes('curl')
+          ? clientUA
+          : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
       Referer: referer,
       Origin: origin,
       Accept: '*/*',
@@ -499,6 +521,41 @@ function rewritePlaylist(
 
     try {
       const absoluteUrl = new URL(trimmed, baseTargetUrl).toString();
+      const parsed = new URL(absoluteUrl);
+      const hostLower = parsed.hostname.toLowerCase();
+      const pathAndQuery = (parsed.pathname + parsed.search).toLowerCase();
+
+      // Sub-playlists must continue to be proxied so inner links are processed
+      const isSubPlaylist =
+        pathAndQuery.includes('.m3u8') ||
+        pathAndQuery.includes('master.txt') ||
+        pathAndQuery.includes('/m.php') ||
+        pathAndQuery.includes('/l.php') ||
+        pathAndQuery.includes('/ld.php');
+
+      if (isSubPlaylist) {
+        return `${proxyBase}${encodeURIComponent(absoluteUrl)}${refSuffix}`;
+      }
+
+      // Open-CORS CDNs: return direct segment URL so user streams at direct 500 Mbps without proxy choke!
+      const isOpenCorsCdn =
+        hostLower.includes('vmpx.online') ||
+        hostLower.includes('acek-cdn.com') ||
+        hostLower.includes('owphbf24.com') ||
+        hostLower.includes('sprintcdn') ||
+        hostLower.includes('dystream.com') ||
+        hostLower.includes('tau-video.xyz') ||
+        hostLower.includes('fastsupplyhub.shop') ||
+        hostLower.includes('smartcheckout.shop') ||
+        hostLower.includes('videopixelvanto.com') ||
+        hostLower.includes('dramiyos') ||
+        hostLower.includes('sibnet.ru');
+
+      if (isOpenCorsCdn) {
+        return absoluteUrl;
+      }
+
+      // For CDNs requiring hotlink proxying (Pichive, Ok.ru, Mail.ru)
       return `${proxyBase}${encodeURIComponent(absoluteUrl)}${refSuffix}`;
     } catch {
       return line;

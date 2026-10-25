@@ -29,22 +29,38 @@ function isAllowedPichiveTarget(parsedUrl) {
     host === 'pichive.online' ||
     host.endsWith('.pichive.online') ||
     host === 'asyawatch.com' ||
-    host.endsWith('.asyawatch.com')
+    host.endsWith('.asyawatch.com') ||
+    host.includes('slz8fn87k0') ||
+    host.includes('glogv5ppja') ||
+    host.includes('kk6k2tczh8') ||
+    host.includes('qakqjhcvip') ||
+    host.includes('fq6ay6al70') ||
+    host.includes('gew2tjg5up') ||
+    host.includes('pichive') ||
+    host.includes('dplayer') ||
+    host.includes('hotlinger')
   ) {
     return true;
   }
-  // Allow CDN segment/playlist nodes referenced by Pichive manifests
+  // Allow CDN segment/playlist nodes referenced by Pichive manifests (including disguised .jpg / .png chunks)
   if (
     pathAndQuery.includes('.m3u8') ||
     pathAndQuery.includes('.ts') ||
     pathAndQuery.includes('.m4s') ||
     pathAndQuery.includes('.vtt') ||
+    pathAndQuery.includes('.jpg') ||
+    pathAndQuery.includes('.png') ||
+    pathAndQuery.includes('.mp4') ||
     pathAndQuery.includes('/m.php') ||
     pathAndQuery.includes('/l.php') ||
     pathAndQuery.includes('/ld.php') ||
     pathAndQuery.includes('/hls/') ||
     pathAndQuery.includes('/seg') ||
-    pathAndQuery.includes('/chunk')
+    pathAndQuery.includes('/chunk') ||
+    pathAndQuery.includes('/f/') ||
+    pathAndQuery.includes('/o/a/') ||
+    pathAndQuery.includes('/m/a/') ||
+    pathAndQuery.includes('/dual/')
   ) {
     return true;
   }

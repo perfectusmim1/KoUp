@@ -132,7 +132,12 @@ export default function CustomSelect(props: CustomSelectProps) {
           multiOnChange(nextArr);
         }
         // Keep focus on search input or trigger without closing menu
-        if (searchInputRef.current) {
+        const isTouch = typeof window !== 'undefined' && (
+          window.matchMedia('(pointer: coarse)').matches ||
+          window.innerWidth < 768 ||
+          navigator.maxTouchPoints > 0
+        );
+        if (searchInputRef.current && !isTouch) {
           searchInputRef.current.focus();
         } else {
           triggerRef.current?.focus();
@@ -273,7 +278,15 @@ export default function CustomSelect(props: CustomSelectProps) {
       setSearchQuery('');
       setHighlightedIndex(-1);
       if (isSearchable) {
-        setTimeout(() => searchInputRef.current?.focus(), 60);
+        // Do not auto-focus search input on mobile/touch devices to prevent popping the virtual keyboard
+        const isTouch = typeof window !== 'undefined' && (
+          window.matchMedia('(pointer: coarse)').matches ||
+          window.innerWidth < 768 ||
+          navigator.maxTouchPoints > 0
+        );
+        if (!isTouch) {
+          setTimeout(() => searchInputRef.current?.focus(), 60);
+        }
       }
     } else {
       setSearchQuery('');

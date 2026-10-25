@@ -129,10 +129,14 @@ const NetflixEpisodeRow = memo(function NetflixEpisodeRow({
     ep.episode_number
   );
   const hasSubtitle =
-    epSubtitle && epSubtitle !== `${ep.episode_number}. Bölüm`;
+    Boolean(epSubtitle &&
+    epSubtitle !== `Bölüm ${ep.episode_number}` &&
+    epSubtitle !== `${ep.episode_number}. Bölüm` &&
+    epSubtitle !== `${ep.episode_number}. Bolum` &&
+    epSubtitle !== `${epSeason}. Sezon ${ep.episode_number}. Bölüm`);
   const epTitle = hasSubtitle
     ? epSubtitle
-    : `${ep.episode_number}. Bölüm`;
+    : (epSeason > 1 ? `${epSeason}. Sezon ${ep.episode_number}. Bölüm` : `Bölüm ${ep.episode_number}`);
 
   const epCacheKey = `${media.id}_s${epSeason}_e${ep.episode_number}`;
   const cachedEpImg = episodePreviewCache.get(epCacheKey);
@@ -216,7 +220,7 @@ const NetflixEpisodeRow = memo(function NetflixEpisodeRow({
             <div className="text-[10px] sm:text-xs font-semibold text-white/90 leading-tight line-clamp-1 sm:line-clamp-2">
               {isCurrent
                 ? 'Şu anda bu bölümdesiniz'
-                : `${epSeason}. Sezon ${ep.episode_number}. Bölüm${hasSubtitle ? ` • ${epSubtitle}` : ''}`}
+                : `${epSeason > 1 ? `${epSeason}. Sezon ` : ''}Bölüm ${ep.episode_number}${hasSubtitle ? ` • ${epSubtitle}` : ''}`}
             </div>
             <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
               <span className="inline-flex items-center gap-1 text-white/55">

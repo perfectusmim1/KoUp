@@ -99,12 +99,12 @@ def parse_season_number(text, default=1):
                     return val
     return default
 
-def clean_episode_title(name: str, season: int = 1, number: int = 1) -> str:
+def clean_episode_title(name: str, season: int = 1, number: int = 1, drama_title: str = None) -> str:
     """
     Standardizes polluted episode names:
     - Strips dates: '07 Eki', '15 Mart 2021', '1 Ocak', etc.
     - Strips scraper noise: 'izle', 'dizi izle', 'film izle', '1080p', 'full hd', 'tek parça', etc.
-    - Strips redundant '1. Sezon 2. Bölüm' or 'Bölüm 2' prefixes if followed by a real episode title.
+    - Strips redundant '1. Sezon 2. Bölüm' or 'Bölüm 2' prefixes and series title prefixes.
     - Returns clean title or standard 'Bölüm X' / 'S. Sezon E. Bölüm'.
     """
     if not name:
@@ -117,6 +117,11 @@ def clean_episode_title(name: str, season: int = 1, number: int = 1) -> str:
             s = s.encode('latin-1').decode('utf-8')
         except Exception:
             pass
+
+    # Strip drama title if present in episode string
+    if drama_title and len(drama_title.strip()) >= 2:
+        d_clean = drama_title.strip()
+        s = re.sub(re.escape(d_clean), ' ', s, flags=re.I).strip()
 
     # Strip play symbols, bullets, arrows and button residue (e.g. '▶', '►', '▸', '▶️', '▷', '⏯', '⏵', '•', '·')
     s = re.sub(r'[\u25b6\u25ba\u25b8\u25c0\u25c4\u25bc\u25b2\u25b7\u25bd\u25c1\u25c5\u27a4\u25e6\u2022\u00b7\ufe0f]+', ' ', s).strip()
@@ -132,26 +137,34 @@ def clean_episode_title(name: str, season: int = 1, number: int = 1) -> str:
     # Strip quotes
     s = s.strip("\"'“”«»` ")
 
-    # Strip redundant leading season/episode prefix, e.g. "1. Sezon 2. Bölüm", "S1:B2", "2. Bölüm"
-    sub_title = re.sub(r'^(?:\d+\s*\.?\s*Sezon\s*)?(?:\d+\s*\.?\s*B[öo]l[üu]m\s*[-:•]?\s*)', '', s, flags=re.I).strip()
-    sub_title = re.sub(r'^(?:Season\s*\d+\s*)?(?:Episode\s*\d+\s*[-:•]?\s*)', '', sub_title, flags=re.I).strip()
-    sub_title = re.sub(r'^S\d+[:\s]*B\d+\s*[-:•]?\s*', '', sub_title, flags=re.I).strip()
-    sub_title = re.sub(r'^[-:•|~–—\s.,;!?_/\\]+|[-:•|~–—\s.,;!?_/\\]+$', '', sub_title).strip()
+    # Loop to repeatedly strip leading season/episode/part tokens (e.g. "1. Bölüm • 1. Sezon 1.Bolum")
+    prev = ""
+    while s != prev:
+        prev = s
+        s = re.sub(r'^(?:\d+\s*\.?\s*(?:sezon|season)\s*)?(?:\d+\s*\.?\s*(?:b[öo]l[üu]m|blm|episode|ep|part|k[ıi]s[ıi]m)\s*[-:•/]?\s*)', '', s, flags=re.I).strip()
+        s = re.sub(r'^(?:season\s*\d+\s*)?(?:episode\s*\d+\s*[-:•/]?\s*)', '', s, flags=re.I).strip()
+        s = re.sub(r'^s\d+[:\s]*b\d+\s*[-:•/]?\s*', '', s, flags=re.I).strip()
+        s = re.sub(r'^(?:b[öo]l[üu]m|bolum|blm|episode|part)\s*\d*\s*[-:•/]?\s*', '', s, flags=re.I).strip()
+        s = re.sub(r'^[-:•|~–—\s.,;!?_/\\]+|[-:•|~–—\s.,;!?_/\\]+$', '', s).strip()
 
     # Handle parentheses like (Tremor)
-    m_paren = re.match(r'^\(([^)]+)\)$', sub_title)
+    m_paren = re.match(r'^\(([^)]+)\)$', s)
     if m_paren:
-        sub_title = m_paren.group(1).strip()
+        s = m_paren.group(1).strip()
 
     # Strip trailing punctuation again after paren unwrapping
-    sub_title = re.sub(r'^[-:•|~–—\s.,;!?_/\\]+|[-:•|~–—\s.,;!?_/\\]+$', '', sub_title).strip()
+    s = re.sub(r'^[-:•|~–—\s.,;!?_/\\]+|[-:•|~–—\s.,;!?_/\\]+$', '', s).strip()
+
+    # If what remains is empty or contains ONLY generic keywords/numbers
+    rem_words = re.sub(r'\b(?:\d+|sezon|season|b[öo]l[üu]m|bolum|blm|episode|ep|part|k[ıi]s[ıi]m|s\d+|b\d+|e\d+)\b', '', s, flags=re.I)
+    rem_words = re.sub(r'[-:•|~–—\s.,;!?_/\\]+', '', rem_words).strip()
+    if not rem_words or not s or s == str(number):
+        return f"Bölüm {number}" if season == 1 else f"{season}. Sezon {number}. Bölüm"
 
     # If there is a meaningful episode subtitle (with real alphanumeric words)
-    has_alpha = bool(re.search(r'[a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF]', sub_title))
-    if sub_title and has_alpha and not re.match(r'^(?:b[öo]l[üu]m|episode|part)\s*\d*$', sub_title, re.I) and sub_title != str(number):
-        if re.search(r'\b\d+\.?\s*b[öo]l[üu]m\b', sub_title, re.I):
-            return f"Bölüm {number}" if season == 1 else f"{season}. Sezon {number}. Bölüm"
-        return sub_title
+    has_alpha = bool(re.search(r'[a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF]', s))
+    if s and has_alpha and not re.match(r'^(?:b[öo]l[üu]m|bolum|episode|part)\s*\d*$', s, re.I):
+        return s
 
     return f"Bölüm {number}" if season == 1 else f"{season}. Sezon {number}. Bölüm"
 
@@ -398,7 +411,8 @@ def pop_recent_added_sources():
 def match_or_create_episode(cur, drama_id, season, number, name, url):
     season = max(1, int(season or 1))
     number = max(1, int(number or 1))
-    clean_name = clean_episode_title(name, season, number)
+    d_title, d_slug, d_cover = get_drama_meta(cur, drama_id)
+    clean_name = clean_episode_title(name, season, number, drama_title=d_title)
 
     def _op():
         cur.execute("SELECT id, episode_name FROM episodes WHERE drama_id=? AND season_number=? AND episode_number=?",
@@ -407,14 +421,17 @@ def match_or_create_episode(cur, drama_id, season, number, name, url):
         if r:
             old_name = r[1] or ""
             # Auto-heal existing messy episode names in archive
-            if any(bad in old_name.lower() for bad in ("izle", "eki", "kas", "oca", "şub", "mar", "nis", "may", "haz", "tem", "ağu", "eyl", "1080p", "full hd")):
+            if clean_name != old_name and (
+                any(bad in old_name.lower() for bad in ("izle", "eki", "kas", "oca", "şub", "mar", "nis", "may", "haz", "tem", "ağu", "eyl", "1080p", "full hd", "•", "bolum"))
+                or (d_title and d_title.lower() in old_name.lower())
+                or "sezon" in old_name.lower()
+            ):
                 cur.execute("UPDATE episodes SET episode_name=? WHERE id=?", (clean_name, r[0]))
             return r[0], False
         try:
             cur.execute("""INSERT INTO episodes (drama_id, season_number, episode_number, episode_name, episode_url, sources_scraped)
                 VALUES (?, ?, ?, ?, ?, 1)""", (drama_id, season, number, clean_name, url))
             new_ep_id = cur.lastrowid
-            d_title, d_slug, d_cover = get_drama_meta(cur, drama_id)
             _RECENT_ADDED_EPISODES.append({
                 "id": new_ep_id,
                 "drama_id": drama_id,
@@ -453,6 +470,20 @@ def add_source(cur, episode_id, source_name, direct_url, provider, site, fansub=
     """Ayni URL varsa site ekle; ayni provider farkli isimse numaralandir (VK, VK2)."""
     if not direct_url:
         return False
+
+    # Auto-unwrap base64 bridge URLs (e.g. DDizi /player/mp4/<base64>.mp4 -> raw media)
+    if '/player/mp4/' in direct_url:
+        try:
+            import base64
+            b64_part = direct_url.split('/player/mp4/')[-1].replace('.mp4', '').strip()
+            decoded = base64.b64decode(b64_part).decode('utf-8', errors='ignore')
+            if decoded.startswith('http'):
+                direct_url = decoded
+                provider = 'ddizi'
+                source_name = 'Orijinal'
+        except Exception:
+            pass
+
     fansub = clean_fansub_name(fansub)
     source_name = clean_source_name(source_name)
     u_low = direct_url.lower()
@@ -470,7 +501,7 @@ def add_source(cur, episode_id, source_name, direct_url, provider, site, fansub=
             'short.icu', 'short.ink', 'vudeo.', 'dood',
             'pixeldrain.com', 'pixeldrain', '4meplayer', 'uns.bio', 'p2pplay',
             'rpmplay', 'video.diziasya.com', 'asyaanim.upns.one', 'upns.one', 'upns.live',
-            'playerdkorea.xyz', 'playerdkorea'
+            'playerdkorea.xyz', 'playerdkorea', '_video_onu_yeni.php', 'azelvid.com'
         ))
         or u_low.endswith('/e/')
         or u_low.endswith('/embed/video/')

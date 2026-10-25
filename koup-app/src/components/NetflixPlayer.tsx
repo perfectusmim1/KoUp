@@ -333,6 +333,46 @@ function parseWebVTT(vttText: string): SubtitleCue[] {
    STREAM URL HELPERS
    ============================================================================ */
 
+function isUnframableUrl(rawUrl: string | null | undefined): boolean {
+  if (!rawUrl) return true;
+  const low = rawUrl.toLowerCase();
+  if (
+    low.includes('.m3u8') ||
+    low.includes('.mp4') ||
+    low.includes('.ts') ||
+    low.includes('.webm') ||
+    low.includes('.vtt')
+  ) {
+    return true;
+  }
+  if (
+    low.includes('pichive') ||
+    low.includes('dplayer') ||
+    low.includes('hotlinger') ||
+    low.includes('asyawatch') ||
+    low.includes('dizilla') ||
+    low.includes('azelvid') ||
+    low.includes('playerdkorea') ||
+    low.includes('ddizi.tel') ||
+    low.includes('storage.diziyou.one') ||
+    low.includes('dystream') ||
+    low.includes('vmpx.online') ||
+    low.includes('acek-cdn') ||
+    low.includes('owphbf24') ||
+    low.includes('sprintcdn') ||
+    low.includes('fastsupplyhub') ||
+    low.includes('smartcheckout') ||
+    low.includes('videopixelvanto') ||
+    low.includes('tau-video.xyz/api/') ||
+    low.includes('hdfilmcehennemi') ||
+    low.includes('rapidrame') ||
+    low.includes('/rplayer/')
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function formatStreamUrlWithTimestamp(rawUrl: string, startSec: number): string {
   if (!rawUrl || startSec <= 10) return rawUrl;
   const sec = Math.floor(startSec);
@@ -1531,7 +1571,7 @@ export default function NetflixPlayer({
               if (pData?.status === 'success' && pData.streamUrl) {
                 const masterUrl = pData.streamUrl;
                 const origin = 'https://four.pichive.online';
-                const proxiedMaster = `https://koup-edge-worker.caganhuseyinerdil.workers.dev/pichive-proxy?url=${encodeURIComponent(masterUrl)}`;
+                const proxiedMaster = `/api/stream-proxy?url=${encodeURIComponent(masterUrl)}&ref=${encodeURIComponent(activeSourceUrl)}`;
                 const subtitles = (pData.subtitles || []).map((s: any) => {
                   const rawFile = String(s.file || '');
                   const fullSubUrl = rawFile.startsWith('http')
@@ -1542,7 +1582,7 @@ export default function NetflixPlayer({
                   return {
                     label: s.label || 'Türkçe',
                     lang: s.lang || 'tr',
-                    url: `https://koup-edge-worker.caganhuseyinerdil.workers.dev/pichive-proxy?url=${encodeURIComponent(fullSubUrl)}`,
+                    url: `/api/stream-proxy?url=${encodeURIComponent(fullSubUrl)}&ref=${encodeURIComponent(activeSourceUrl)}`,
                     default: !!s.default,
                   };
                 });
@@ -1557,7 +1597,7 @@ export default function NetflixPlayer({
                   qualities: [
                     { label: '1080p (Orijinal)', url: proxiedMaster },
                   ],
-                  fallbackIframe: activeSourceUrl,
+                  fallbackIframe: null,
                 };
               }
             }
@@ -1655,8 +1695,33 @@ export default function NetflixPlayer({
             );
           }
         } else {
+          const finalIframe = data.iframeUrl || normalizedFallback;
+          if (isUnframableUrl(finalIframe)) {
+            const deadKey = activeSource?.id ? String(activeSource.id) : (activeSourceUrl || '');
+            if (deadKey) {
+              setDeadSourceKeys((prev) => new Set(prev).add(deadKey));
+            }
+            const nextWorkingIdx = filteredSources.findIndex(
+              (s, idx) =>
+                idx !== selectedSourceIdx &&
+                !deadSourceKeys.has(s.id ? String(s.id) : (s.direct_url || '')) &&
+                s.direct_url !== activeSourceUrl
+            );
+            if (nextWorkingIdx !== -1) {
+              pushNotification(
+                'Çerçevelenemeyen Kaynak Atlandı',
+                `${activeSource?.source_name || 'Kaynak'} doğrudan oynatılamıyor ve yerleştirilemiyor, çalışan başka bir kaynağa geçiliyor.`,
+                'info'
+              );
+              setSelectedSourceIdx(nextWorkingIdx);
+              return;
+            }
+            setResolvedMode('error');
+            return;
+          }
+
           setResolvedMode('iframe');
-          setStreamUrl(data.iframeUrl || normalizedFallback);
+          setStreamUrl(finalIframe);
           setQualities([]);
           setSubtitles([]);
           setSelectedSubtitle('off');
@@ -1666,6 +1731,25 @@ export default function NetflixPlayer({
         }
       } catch {
         if (!cancelled && activeSourceUrl) {
+          const deadKey = activeSource?.id ? String(activeSource.id) : (activeSourceUrl || '');
+          if (deadKey) {
+            setDeadSourceKeys((prev) => new Set(prev).add(deadKey));
+          }
+          const nextWorkingIdx = filteredSources.findIndex(
+            (s, idx) =>
+              idx !== selectedSourceIdx &&
+              !deadSourceKeys.has(s.id ? String(s.id) : (s.direct_url || '')) &&
+              s.direct_url !== activeSourceUrl
+          );
+          if (nextWorkingIdx !== -1) {
+            pushNotification(
+              'Otomatik Yedek Kaynağa Geçildi',
+              `${activeSource?.source_name || 'Kaynak'} yanıt vermiyor, sıradaki kaynağa geçiliyor.`,
+              'info'
+            );
+            setSelectedSourceIdx(nextWorkingIdx);
+            return;
+          }
           setResolvedMode('error');
         }
       } finally {
@@ -1705,10 +1789,22 @@ export default function NetflixPlayer({
             const hls = new Hls({
               enableWorker: true,
               lowLatencyMode: false,
-              maxBufferLength: 15,
-              maxMaxBufferLength: 30,
-              maxBufferSize: 30 * 1000 * 1000,
-              capLevelToPlayerSize: true,
+              // Turbo Preloading & Broadband Buffer Tuning (optimized for fast broadband & instant seeking)
+              maxBufferLength: 90,
+              maxMaxBufferLength: 300,
+              maxBufferSize: 250 * 1024 * 1024,
+              backBufferLength: 90,
+              maxBufferHole: 0.5,
+              highBufferWatchdogPeriod: 2,
+              nudgeMaxRetry: 5,
+              abrEwmaDefaultEstimate: 5000000,
+              capLevelToPlayerSize: false,
+              fragLoadingMaxRetry: 4,
+              fragLoadingRetryDelay: 500,
+              fragLoadingMaxRetryTimeout: 10000,
+              levelLoadingMaxRetry: 4,
+              levelLoadingRetryDelay: 500,
+              levelLoadingMaxRetryTimeout: 10000,
               startPosition: resumeSec > 3 ? resumeSec : -1,
             });
             hls.subtitleDisplay = false;
@@ -1903,16 +1999,16 @@ export default function NetflixPlayer({
                     hls.recoverMediaError();
                     break;
                   default:
-                    if (fallbackIframeUrl) {
-                      setStreamUrl(fallbackIframeUrl);
-                      setResolvedMode('iframe');
-                    } else if (selectedSourceIdx + 1 < filteredSources.length) {
+                    if (selectedSourceIdx + 1 < filteredSources.length) {
                       pushNotification(
                         'Otomatik Yedek Kaynağa Geçildi',
                         `${activeSource?.source_name} yanıt vermedi, sıradaki kaynağa geçiliyor.`,
                         'info'
                       );
                       setSelectedSourceIdx(selectedSourceIdx + 1);
+                    } else if (fallbackIframeUrl) {
+                      setStreamUrl(fallbackIframeUrl);
+                      setResolvedMode('iframe');
                     } else {
                       setResolvedMode('iframe');
                     }
@@ -5065,6 +5161,45 @@ export default function NetflixPlayer({
                           >
                             Gömülü oynatıcıyı yine de açmayı dene
                           </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (isUnframableUrl(streamUrl)) {
+                    return (
+                      <div className="relative w-full h-full flex flex-col items-center justify-center bg-zinc-950/95 text-center p-6 select-none z-10">
+                        <div className="w-14 h-14 rounded-full bg-red-600/15 border border-red-500/30 flex items-center justify-center mb-3">
+                          <AlertTriangle className="w-7 h-7 text-red-500" />
+                        </div>
+                        <h2 className="text-lg font-bold text-white mb-2">Bu Kaynak Gömülü Oynatılamıyor</h2>
+                        <p className="text-xs text-zinc-400 max-w-sm mb-5 leading-relaxed">
+                          Yayıncı bu içeriğin harici sitelere doğrudan yerleştirilmesini engellemiştir. Lütfen alternatif bir kaynak seçiniz.
+                        </p>
+                        <div className="flex items-center gap-2.5">
+                          {filteredSources.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextIdx = (selectedSourceIdx + 1) % filteredSources.length;
+                                setSelectedSourceIdx(nextIdx);
+                              }}
+                              className="px-4 py-2 rounded-full bg-[#E50914] hover:bg-[#b80710] text-white font-semibold text-xs transition-colors cursor-pointer"
+                            >
+                              Sıradaki Kaynağa Geç
+                            </button>
+                          )}
+                          {activeSourceUrl && (
+                            <a
+                              href={activeSourceUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors flex items-center gap-1.5"
+                            >
+                              <span>Yeni Sekmede Aç</span>
+                              <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />
+                            </a>
+                          )}
                         </div>
                       </div>
                     );

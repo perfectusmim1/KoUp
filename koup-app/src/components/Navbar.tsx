@@ -246,7 +246,7 @@ export default function Navbar() {
           try {
             const mRes = await supabase.rpc('search_catalog', {
               p_query: raw,
-              p_limit: 8,
+              p_limit: 24,
             });
             if (mRes.data && Array.isArray(mRes.data) && mRes.data.length > 0) {
               mediaData = mRes.data as MediaItem[];
@@ -258,12 +258,22 @@ export default function Navbar() {
           // 2. Fallback: if search_catalog returned 0 results or had an error, search media directly
           if (mediaData.length === 0) {
             try {
-              const { data: directMedia } = await supabase
+              let queryBuilder = supabase
                 .from('media')
-                .select('id, slug, title, native_title, content_type, country_code, release_year, cover_image, backdrop_image, mdl_rating, anilist_rating, imdb_rating, categories')
-                .or(`title.ilike.%${raw}%,slug.ilike.%${normalized || raw}%,search_text.ilike.%${normalized || raw}%`)
+                .select('id, slug, title, native_title, content_type, country_code, release_year, cover_image, backdrop_image, mdl_rating, anilist_rating, imdb_rating, categories, episode_count, views_total');
+
+              const tokens = raw.trim().split(/\s+/).filter(Boolean);
+              if (tokens.length > 1) {
+                for (const t of tokens) {
+                  queryBuilder = queryBuilder.or(`title.ilike.%${t}%,slug.ilike.%${t}%,search_text.ilike.%${t}%`);
+                }
+              } else {
+                queryBuilder = queryBuilder.or(`title.ilike.%${raw}%,slug.ilike.%${normalized || raw}%,search_text.ilike.%${normalized || raw}%`);
+              }
+
+              const { data: directMedia } = await queryBuilder
                 .order('views_total', { ascending: false, nullsFirst: false })
-                .limit(8);
+                .limit(24);
 
               if (directMedia && directMedia.length > 0) {
                 mediaData = directMedia as MediaItem[];
@@ -293,7 +303,7 @@ export default function Navbar() {
         });
 
         if (!active) return;
-        const mediaItems = rankSearchResults((mList as MediaItem[]) || [], raw);
+        const mediaItems = rankSearchResults((mList as MediaItem[]) || [], raw).slice(0, 8);
         registerMediaItems(mediaItems);
         setMediaResults(mediaItems);
         setPersonResults((pList as PersonItem[]) || []);

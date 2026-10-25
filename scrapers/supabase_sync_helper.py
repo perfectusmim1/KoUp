@@ -627,7 +627,7 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
             if is_pending:
                 srcs = []
             if srcs or is_pending:
-                clean_name = clean_episode_title(ep_name, s_num or 1, e_num)
+                clean_name = clean_episode_title(ep_name, s_num or 1, e_num, drama_title=d_row[1])
                 ep_obj = {
                     "id": ep_id,
                     "season_number": s_num or 1,
@@ -658,21 +658,20 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
             # 1. Immediately upload bundle to Cloudflare R2 bucket so Cloud and Edge CDN are 100% updated
             upload_to_r2(bundle_path, f"sources/{drama_id}.json")
 
-            # 2. Update Supabase media counts and latest publish timestamps
             now_iso = datetime.now(timezone.utc).isoformat()
             max_ep = max((ep.get("episode_number") or 1 for ep in ep_out), default=1)
-            sb_request(
-                "PATCH",
-                f"/rest/v1/media?id=eq.{drama_id}",
-                body={
-                    "episode_count": len(ep_out),
-                    "episodes_available": len([e for e in ep_out if not e.get("pending")]),
-                    "last_published_episode": max_ep,
-                    "last_published_at": now_iso,
-                    "updated_at": now_iso,
-                },
-                prefer="return=minimal",
+
+            # 2. Fetch existing episodes from Supabase to preserve real published_at timestamps
+            existing_ep_rows = sb_request(
+                "GET",
+                f"/rest/v1/episodes?media_id=eq.{drama_id}&select=id,season_number,episode_number,status,published_at",
             )
+            existing_map = {}
+            if isinstance(existing_ep_rows, list):
+                for r in existing_ep_rows:
+                    existing_map[(r.get("season_number") or 1, r.get("episode_number"))] = r
+
+            has_newly_published = False
 
             # 3. Upsert episodes into Supabase public.episodes table with their sources
             sb_episodes_map = {}
@@ -681,19 +680,55 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
                 e_num = ep.get("episode_number")
                 key = (s_num, e_num)
                 is_pend = bool(ep.get("pending"))
+                new_status = "pending_source" if is_pend else "published"
+
+                existing_ep = existing_map.get(key)
+                ep_pub_at = None
+                if existing_ep:
+                    # If previously pending and now published, mark as newly published
+                    if existing_ep.get("status") in ("pending_source", "placeholder") and new_status == "published":
+                        ep_pub_at = now_iso
+                        has_newly_published = True
+                    else:
+                        # PRESERVE existing published_at! Never re-bump an already published episode to now()!
+                        ep_pub_at = existing_ep.get("published_at")
+                else:
+                    if new_status == "published":
+                        ep_pub_at = now_iso
+                        has_newly_published = True
+
                 candidate = {
                     "media_id": drama_id,
                     "season_number": s_num,
                     "episode_number": e_num,
                     "episode_name": ep.get("episode_name") or f"Bölüm {e_num}",
                     "episode_type": ep.get("episode_type") or "normal",
-                    "status": "pending_source" if is_pend else "published",
-                    "published_at": now_iso,
+                    "status": new_status,
                     "video_sources": ep.get("sources") or [],
                 }
+                if ep_pub_at:
+                    candidate["published_at"] = ep_pub_at
+
                 # If duplicate season/episode exists in SQLite, keep the one with sources
                 if key not in sb_episodes_map or (len(candidate["video_sources"]) > len(sb_episodes_map[key]["video_sources"])):
                     sb_episodes_map[key] = candidate
+
+            # 4. Update Supabase media counts and timestamps (only update last_published_at if a new episode was published)
+            media_patch = {
+                "episode_count": len(ep_out),
+                "episodes_available": len([e for e in ep_out if not e.get("pending")]),
+                "updated_at": now_iso,
+            }
+            if has_newly_published:
+                media_patch["last_published_episode"] = max_ep
+                media_patch["last_published_at"] = now_iso
+
+            sb_request(
+                "PATCH",
+                f"/rest/v1/media?id=eq.{drama_id}",
+                body=media_patch,
+                prefer="return=minimal",
+            )
 
             sb_episodes = list(sb_episodes_map.values())
             if sb_episodes:

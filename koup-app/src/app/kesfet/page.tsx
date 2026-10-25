@@ -295,7 +295,12 @@ function DiscoverContent() {
             }
             query = applyYearFilter(query, selectedYears);
 
-            if (normalized.length >= 2 || raw.length >= 2) {
+            const searchTokens = raw.trim().split(/\s+/).filter(Boolean);
+            if (searchTokens.length > 1) {
+              for (const t of searchTokens) {
+                query = query.or(`title.ilike.%${t}%,slug.ilike.%${t}%,search_text.ilike.%${t}%`);
+              }
+            } else if (normalized.length >= 2 || raw.length >= 2) {
               query = query.or(`title.ilike.%${raw}%,slug.ilike.%${normalized || raw}%,search_text.ilike.%${normalized || raw}%`);
             }
 
@@ -346,7 +351,7 @@ function DiscoverContent() {
                   p_country: countryFilter,
                   p_genre: selectedGenres.length === 1 ? selectedGenres[0] : 'Tümü',
                 });
-                if (rpcCount.data !== null && rpcCount.data !== undefined && Number(rpcCount.data) > 0) {
+                if (rpcCount.data !== null && rpcCount.data !== undefined) {
                   return Number(rpcCount.data);
                 }
               } catch (cntErr) {
@@ -360,7 +365,12 @@ function DiscoverContent() {
               if (countryFilter !== 'ALL') cQuery = cQuery.eq('country_code', countryFilter);
               if (selectedGenres.length > 0) cQuery = cQuery.contains('categories', selectedGenres);
               cQuery = applyYearFilter(cQuery, selectedYears);
-              if (normalized.length >= 2 || raw.length >= 2) {
+              const searchTokens = raw.trim().split(/\s+/).filter(Boolean);
+              if (searchTokens.length > 1) {
+                for (const t of searchTokens) {
+                  cQuery = cQuery.or(`title.ilike.%${t}%,slug.ilike.%${t}%,search_text.ilike.%${t}%`);
+                }
+              } else if (normalized.length >= 2 || raw.length >= 2) {
                 cQuery = cQuery.or(`title.ilike.%${raw}%,slug.ilike.%${normalized || raw}%,search_text.ilike.%${normalized || raw}%`);
               }
               const { count, error } = await cQuery;

@@ -47,6 +47,36 @@ export function getSearchRelevanceScore(item: MediaItem, query: string): number 
     score += 40_000;
   }
 
+  // 7. Multi-token / Flexible Word Match (e.g. "Dragon Super" or "Super Ball" matching "Dragon Ball Super")
+  const tokens = rawQ.split(/\s+/).filter((t) => t.length > 0);
+  const normalizedTokens = tokens.map((t) => t.replace(/[^a-z0-9ğüşıöç]/gi, '')).filter((t) => t.length > 0);
+  if (tokens.length > 1) {
+    const allTokensInTitle = tokens.every((tok, idx) => titleLower.includes(tok) || (normalizedTokens[idx] && titleNormalized.includes(normalizedTokens[idx])));
+    if (allTokensInTitle) {
+      // Check if tokens appear in order
+      try {
+        const inOrderRegex = new RegExp(tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*'), 'i');
+        if (inOrderRegex.test(titleLower)) {
+          score += 250_000;
+        } else {
+          score += 180_000;
+        }
+      } catch {
+        score += 180_000;
+      }
+    } else {
+      const matchCount = tokens.filter((tok, idx) => titleLower.includes(tok) || (normalizedTokens[idx] && titleNormalized.includes(normalizedTokens[idx]))).length;
+      if (matchCount > 0) {
+        score += Math.round((matchCount / tokens.length) * 60_000);
+      }
+    }
+
+    const searchTextLower = String((item as any).search_text || '').toLowerCase();
+    if (searchTextLower && tokens.every((tok) => searchTextLower.includes(tok))) {
+      score += 50_000;
+    }
+  }
+
   // Length penalty: Shorter titles that match are much more likely to be the main/parent series
   // e.g. "One Piece" (9 chars) vs "One Piece: Araburu Henkaku no Log: Anyaku Suru Kakumeigun!" (61 chars)
   const titleLength = title.length;
@@ -57,11 +87,11 @@ export function getSearchRelevanceScore(item: MediaItem, query: string): number 
   // Main series have 10-1000+ episodes.
   const eps = item.episode_count || 0;
   if (eps >= 50) {
-    score += 25_000;
+    score += 80_000;
   } else if (eps >= 12) {
-    score += 15_000;
+    score += 50_000;
   } else if (eps > 1) {
-    score += 5_000;
+    score += 15_000;
   }
 
   // Views & Popularity boost
