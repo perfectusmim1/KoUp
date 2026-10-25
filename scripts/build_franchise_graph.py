@@ -58,15 +58,17 @@ def extract_order_markers(title: str, slug: str):
     t = f"{title or ''} {slug or ''}".lower()
     t = re.sub(r"\b(19\d\d|20\d\d)\b", "", t)
     t = re.sub(r"animecix-\d+", "", t)
+    # Remove character name "lupin iii" before Roman numeral season detection, while keeping "part ii/iii/iv"
+    t_no_lupin = re.sub(r"\blupin\s+iii\b", "lupin", t)
 
     season_num = 1
-    for m in re.finditer(r"(?:season|sezon)\s*0*(\d+)|0*(\d+)\.?\s*sezon|0*(\d+)(?:st|nd|rd|th)\s*season|\bs0*(\d+)\b", t):
+    for m in re.finditer(r"(?:season|sezon)\s*0*(\d+)|0*(\d+)\.?\s*sezon|0*(\d+)(?:st|nd|rd|th)\s*season|\bs0*(\d+)\b", t_no_lupin):
         val = int(next(g for g in m.groups() if g is not None))
         if 1 <= val <= 30:
             season_num = max(season_num, val)
 
     roman_map = {"ii": 2, "iii": 3, "iv": 4, "v": 5, "vi": 6}
-    for m in re.finditer(r"\b(ii|iii|iv|v|vi)\b", t):
+    for m in re.finditer(r"\b(ii|iii|iv|v|vi)\b", t_no_lupin):
         season_num = max(season_num, roman_map[m.group(1)])
 
     clean_t = re.sub(r"[\(\[].*?[\)\]]", "", (title or "").lower()).strip()
@@ -84,8 +86,8 @@ def extract_order_markers(title: str, slug: str):
     for m in re.finditer(r"\b(?:movie|film)\s*0*(\d+)\b", t):
         movie_num = int(m.group(1))
 
-    is_recap = bool(re.search(r"\b(recap|summary|ozet|soshuhen|henshuu)\b", t))
-    is_special = bool(re.search(r"\b(specials?|ova|oav|picture\s*drama|prologue|epilogue|episode\s*0|intermission|mini|chibi|sd)\b", t))
+    is_recap = bool(re.search(r"\b(recap|recaps|summary|ozet|soshuhen|henshuu|memories|barto\s*no\s*himitsu)\b", t))
+    is_special = bool(re.search(r"\b(specials?|ova|oav|picture\s*drama|prologue|epilogue|episode\s*0|intermission|mini|chibi|sd|nikki|kanwa|relight|toshi\s*wasure|manner\s*movie|straw\s*hat\s*theater|omake)\b", t))
     is_movie_kw = bool(re.search(r"\b(movie|film|gekijouban)\b", t)) or movie_num > 0
 
     return season_num, part_num, movie_num, is_special, is_recap, is_movie_kw
@@ -118,11 +120,20 @@ CROSSOVER_ANILIST_IDS = {
     104454, 111428, 139518,  # Isekai Quartet 1, 2, Movie
     10012, 129870,           # Carnival Phantasm / Fate/Grand Carnival
     132638, 146350,          # Kaginado 1 & 2
-    6115, 19511,             # Lupin III vs Detective Conan (Special & Movie)
+    6115, 18429, 19511,      # Lupin III vs Detective Conan (Special & Movie)
+    154167,                  # Lupin III vs. Cat's Eye
     176287,                  # Hanma Baki vs. Kengan Ashura
     177778,                  # Ninja Batman tai Yakuza League
     17909,                   # Dream 9 Toriko & One Piece & Dragon Ball Z
+    106492, 107256,          # Kyutai Panic Adventure! / Returns!
     21195,                   # Cyborg 009 VS Devilman
+    808, 1118,               # Tsubasa Chronicle / xxxHOLiC shared movie bridge
+}
+
+# Known multi-drama anthology crossovers on MyDramaList
+CROSSOVER_MDL_SLUGS = {
+    "29500-our-skyy",
+    "743929-our-skyy-2",
 }
 
 
@@ -200,12 +211,10 @@ def build_graph(sync_cloud: bool = True):
             al_id, tmdb_id, imdb_id, mdl_url, country
         ) = r
 
-        # Check if release_year is bogus ('1999' on asyaanimeleri or missing) and can be healed from official cache
         yr_int = int(str(ryear)[:4]) if ryear and str(ryear)[:4].isdigit() else None
         if al_id and al_id in al_cache and al_cache[al_id]["year"]:
             al_yr = al_cache[al_id]["year"]
-            # If year is missing or scraper placeholder 1999 (when AniList says != 1999)
-            if (not yr_int or (yr_int == 1999 and al_yr != 1999 and "asyaanimeleri" in (slug or ""))):
+            if not yr_int or yr_int != al_yr:
                 yr_int = al_yr
                 year_heals.append((str(al_yr), did))
         elif ctype == "film" and tmdb_id and tmdb_id in tmdb_cols:
@@ -218,6 +227,11 @@ def build_graph(sync_cloud: bool = True):
 
         mdl_slug = extract_mdl_slug(mdl_url)
 
+        try:
+            ep_int = int(eps_avail or ep_cnt or 1)
+        except Exception:
+            ep_int = 1
+
         d_obj = {
             "id": did,
             "slug": slug,
@@ -225,7 +239,7 @@ def build_graph(sync_cloud: bool = True):
             "native_title": nat,
             "content_type": ctype,
             "release_year": yr_int or 2020,
-            "episode_count": eps_avail or ep_cnt or 1,
+            "episode_count": ep_int,
             "sources_count": srcs_cnt or 0,
             "cover_image": cover or "/logo-dark.png",
             "anilist_id": al_id,
@@ -251,7 +265,7 @@ def build_graph(sync_cloud: bool = True):
             title_country_to_dramas[(nt, "ANY")].append(did)
 
     if year_heals:
-        print(f"[Yıl Onarımı] {len(year_heals)} yapımın eksik/1999 yayın yılı resmi veriden güncelleniyor...", flush=True)
+        print(f"[Yıl Onarımı] {len(year_heals)} yapımın yayın yılı resmi veriden güncelleniyor...", flush=True)
         cur.executemany("UPDATE dramas SET release_year = ? WHERE id = ?", year_heals)
         conn.commit()
         if sync_cloud:
@@ -263,79 +277,67 @@ def build_graph(sync_cloud: bool = True):
 
     # 3. Build Franchise Union-Find on Drama IDs
     uf = UnionFind()
-    # Track directed PREQUEL -> SEQUEL edges between drama_ids for watch-order topological sorting
-    prequel_to_sequel = defaultdict(set)
-    # Track explicit relation types on drama_ids (e.g. SPIN_OFF, SIDE_STORY, ALTERNATIVE, SUMMARY)
     drama_rel_hints = defaultdict(set)
-    # Track crossover leaves: crossover_drama_id -> set of target_drama_ids it attaches to
+    # crossover_drama_id -> set of target_drama_ids it attaches to as a leaf
     crossover_attachments = defaultdict(set)
 
     # --- LAYER A: ANILIST OFFICIAL RELATIONS GRAPH ---
-    # First build core spine on AniList IDs using PREQUEL / SEQUEL / SUMMARY / COMPILATION / CONTAINS
-    al_core_uf = UnionFind()
     ALLOWED_AL_RELS = {
         "PREQUEL", "SEQUEL", "PARENT", "SIDE_STORY",
         "SPIN_OFF", "ALTERNATIVE", "SUMMARY", "COMPILATION", "CONTAINS"
     }
 
-    for aid, info in al_cache.items():
-        if aid in CROSSOVER_ANILIST_IDS:
-            continue
-        w1 = first_sig_word(info["romaji"] or info["english"])
-        for edge in info["edges"]:
-            rel = edge.get("relationType")
-            tid = edge.get("id")
-            if not tid or tid in CROSSOVER_ANILIST_IDS or rel not in ALLOWED_AL_RELS:
-                continue
-            if rel in ("PREQUEL", "SEQUEL", "SUMMARY", "COMPILATION", "CONTAINS"):
-                al_core_uf.union(aid, tid)
-            else:
-                # PARENT / SIDE_STORY / SPIN_OFF / ALTERNATIVE:
-                # If they share first significant word, union into core immediately
-                t_rom = edge.get("romaji") or edge.get("english") or ""
-                w2 = first_sig_word(t_rom)
-                if w1 and w2 and w1 == w2:
-                    al_core_uf.union(aid, tid)
-
-    # Now check remaining PARENT / SIDE_STORY / SPIN_OFF / ALTERNATIVE edges:
-    # For each secondary component, check how many distinct core root titles it connects to.
-    sec_to_core_roots = defaultdict(set)
-    sec_edges = []
-    for aid, info in al_cache.items():
-        for edge in info["edges"]:
-            rel = edge.get("relationType")
-            tid = edge.get("id")
-            if not tid or rel not in ALLOWED_AL_RELS:
-                continue
-            r_a = al_core_uf.find(aid)
-            r_t = al_core_uf.find(tid)
-            if r_a != r_t:
-                sec_edges.append((aid, tid, rel))
-                # If aid is a spin-off/side-story/crossover pointing to PARENT tid:
-                if rel in ("PARENT", "ALTERNATIVE", "SPIN_OFF", "SIDE_STORY", "CHARACTER", "OTHER"):
-                    sec_to_core_roots[r_a].add(r_t)
-
-    # Identify dynamic crossover nodes (any node/chain in CROSSOVER_ANILIST_IDS or connecting >2 unrelated big franchises)
+    # Identify dynamic crossover nodes: ONLY nodes that are not long-running core TV series
+    # and have >= 2 PARENT edges pointing to different title roots
     dynamic_crossovers = set(CROSSOVER_ANILIST_IDS)
     for aid, info in al_cache.items():
+        if info["format"] == "TV" and (info["episodes"] or 0) >= 10:
+            continue
         parent_roots = set()
+        w_self = first_sig_word(info["romaji"] or info["english"])
         for edge in info["edges"]:
-            if edge.get("relationType") in ("PARENT", "CHARACTER", "SPIN_OFF", "ALTERNATIVE"):
+            if edge.get("relationType") == "PARENT":
                 tid = edge.get("id")
                 if tid and tid in al_cache:
                     w_parent = first_sig_word(al_cache[tid]["romaji"] or al_cache[tid]["english"])
-                    w_self = first_sig_word(info["romaji"] or info["english"])
                     if w_parent and w_parent != w_self:
                         parent_roots.add(w_parent)
-        # If a single anime connects to >= 2 DIFFERENT parent title roots that don't match its own title (e.g. Lupin vs Conan, Baki vs Kengan, Isekai Quartet)
         if len(parent_roots) >= 2:
             dynamic_crossovers.add(aid)
+
+    # Identify core TV/ONA spine nodes (nodes with format TV/ONA that have PREQUEL or SEQUEL edges to another TV/ONA)
+    core_tv_aids = set()
+    for aid, info in al_cache.items():
+        if info["format"] in ("TV", "ONA"):
+            for edge in info["edges"]:
+                if edge.get("relationType") in ("PREQUEL", "SEQUEL"):
+                    tid = edge.get("id")
+                    t_fmt = (al_cache[tid]["format"] if tid in al_cache else edge.get("format"))
+                    if t_fmt in ("TV", "ONA"):
+                        core_tv_aids.add(aid)
+                        break
 
     # Union all non-crossover ALLOWED_AL_RELS on al_uf
     al_uf = UnionFind()
     for aid, info in al_cache.items():
         if aid in dynamic_crossovers:
             continue
+        src_fmt = (info["format"] or "").upper()
+        src_yr = info["year"] or 2020
+        src_dids = al_to_dramas.get(aid, [])
+
+        # Check if `aid` itself has a PARENT edge to a TV series and is not in core_tv_aids
+        has_parent_tv = any(
+            e.get("relationType") == "PARENT" and (
+                (e.get("id") in al_cache and al_cache[e.get("id")]["format"] in ("TV", "ONA"))
+                or e.get("format") in ("TV", "ONA")
+            )
+            for e in info["edges"]
+        )
+        if has_parent_tv and aid not in core_tv_aids:
+            for s_d in src_dids:
+                drama_rel_hints[s_d].add("SIDE_STORY")
+
         for edge in info["edges"]:
             rel = edge.get("relationType")
             tid = edge.get("id")
@@ -343,39 +345,46 @@ def build_graph(sync_cloud: bool = True):
                 continue
             al_uf.union(aid, tid)
 
-            # Record directed PREQUEL/SEQUEL and relation hints on archive dramas
-            src_dids = al_to_dramas.get(aid, [])
             dst_dids = al_to_dramas.get(tid, [])
-            if rel == "SEQUEL":
-                for s_d in src_dids:
-                    for d_d in dst_dids:
-                        if s_d != d_d:
-                            prequel_to_sequel[s_d].add(d_d)
-                            drama_rel_hints[d_d].add("SEQUEL")
-            elif rel == "PREQUEL":
-                for s_d in src_dids:
-                    for d_d in dst_dids:
-                        if s_d != d_d:
-                            prequel_to_sequel[d_d].add(s_d)
-                            drama_rel_hints[s_d].add("SEQUEL")
-            elif rel in ("SIDE_STORY", "SPIN_OFF", "ALTERNATIVE", "SUMMARY", "COMPILATION"):
-                for d_d in dst_dids:
-                    drama_rel_hints[d_d].add(rel)
+            dst_info = al_cache.get(tid)
+            dst_fmt = (dst_info["format"] if dst_info and dst_info["format"] else edge.get("format") or "").upper()
+            dst_yr = (dst_info["year"] if dst_info and dst_info["year"] else edge.get("year") or 2020)
 
-    # Group archive dramas that share an AniList component (or share the same anilist_id)
+            if rel in ("SUMMARY", "COMPILATION"):
+                if tid not in core_tv_aids:
+                    for d_d in dst_dids:
+                        drama_rel_hints[d_d].add("SUMMARY")
+            elif rel in ("SIDE_STORY", "SPIN_OFF"):
+                # Only mark target as SIDE_STORY/SPIN_OFF if target is not a core TV spine series
+                if tid not in core_tv_aids:
+                    for d_d in dst_dids:
+                        drama_rel_hints[d_d].add(rel)
+            elif rel == "ALTERNATIVE":
+                # ALTERNATIVE is symmetric on AniList.
+                # Only mark target as ALTERNATIVE if:
+                # 1) source is TV and target is NOT TV (e.g. Movie/OVA/ONA alternative), OR
+                # 2) both are TV and target started strictly LATER than source (e.g. Remake like DB Kai 2009 > DBZ 1989, HxH 2011 > HxH 1999)
+                if src_fmt == "TV" and dst_fmt != "TV":
+                    for d_d in dst_dids:
+                        drama_rel_hints[d_d].add("ALTERNATIVE")
+                elif src_fmt == "TV" and dst_fmt == "TV" and dst_yr > src_yr:
+                    for d_d in dst_dids:
+                        drama_rel_hints[d_d].add("ALTERNATIVE")
+
+    # Group archive dramas that share an AniList component
     al_comp_to_dramas = defaultdict(list)
     for aid, dids in al_to_dramas.items():
         if aid in dynamic_crossovers:
-            # Attach crossover drama(s) as leaf to each connected parent franchise in archive
             info = al_cache.get(aid)
             if info:
                 for edge in info["edges"]:
-                    tid = edge.get("id")
-                    if tid and tid in al_to_dramas:
-                        for c_did in dids:
-                            for p_did in al_to_dramas[tid]:
-                                crossover_attachments[c_did].add(p_did)
-                                drama_rel_hints[c_did].add("SPIN_OFF")
+                    if edge.get("relationType") in ("PARENT", "PREQUEL", "SEQUEL", "SIDE_STORY", "SPIN_OFF", "CHARACTER"):
+                        tid = edge.get("id")
+                        if tid and tid not in dynamic_crossovers and tid in al_to_dramas:
+                            for c_did in dids:
+                                for p_did in al_to_dramas[tid]:
+                                    crossover_attachments[c_did].add(p_did)
+                                    drama_rel_hints[c_did].add("SPIN_OFF")
             continue
         comp_root = al_uf.find(aid)
         al_comp_to_dramas[comp_root].extend(dids)
@@ -420,35 +429,40 @@ def build_graph(sync_cloud: bool = True):
             if not dst_dids and target_title and len(target_title) >= 5:
                 dst_dids = list(title_country_to_dramas.get((target_title, "ANY"), []))
 
+            if src_slug in CROSSOVER_MDL_SLUGS or target_slug in CROSSOVER_MDL_SLUGS:
+                if src_slug in CROSSOVER_MDL_SLUGS:
+                    for c_d in src_dids:
+                        for p_d in dst_dids:
+                            if c_d != p_d:
+                                crossover_attachments[c_d].add(p_d)
+                else:
+                    for c_d in dst_dids:
+                        for p_d in src_dids:
+                            if c_d != p_d:
+                                crossover_attachments[c_d].add(p_d)
+                continue
+
             for s_d in src_dids:
                 for d_d in dst_dids:
                     if s_d != d_d:
                         uf.union(s_d, d_d)
-                        if "sequel" in rel_txt:
-                            prequel_to_sequel[s_d].add(d_d)
-                            drama_rel_hints[d_d].add("SEQUEL")
-                        elif "prequel" in rel_txt:
-                            prequel_to_sequel[d_d].add(s_d)
-                            drama_rel_hints[s_d].add("SEQUEL")
-                        elif "spinoff" in rel_txt or "spin-off" in rel_txt or "side story" in rel_txt:
+                        if "spinoff" in rel_txt or "spin-off" in rel_txt or "side story" in rel_txt:
                             drama_rel_hints[d_d].add("SPIN_OFF")
                         elif "remake" in rel_txt or "adaptation" in rel_txt:
-                            drama_rel_hints[d_d].add("ALTERNATIVE")
+                            if dramas[d_d]["release_year"] > dramas[s_d]["release_year"]:
+                                drama_rel_hints[d_d].add("ALTERNATIVE")
                         elif "special" in rel_txt or "compilation" in rel_txt:
                             drama_rel_hints[d_d].add("SUMMARY")
 
     # --- LAYER D: SHARED TMDB_ID / IMDB_ID (Multi-Season TV Shows) & STRICT SEASON/PREFIX LINKER ---
     for (ctype, tid), dids in tmdb_to_dramas.items():
         if ctype != "ANY" and len(dids) > 1:
-            # Verify they share at least 1 word or native title to prevent any residual wrong tmdb_id collision
             w0 = first_sig_word(dramas[dids[0]]["title"])
             for d in dids[1:]:
                 wd = first_sig_word(dramas[d]["title"])
                 if w0 and wd and (w0 == wd or dramas[dids[0]]["imdb_id"] == dramas[d]["imdb_id"]):
                     uf.union(dids[0], d)
 
-    # Strict Base-Title Season/Sequel/Prefix Linker
-    # Matches "<Base Title> 2. Sezon / Season 2 / Part 2 / II / Specials / Movie / : <Subtitle>" to "<Base Title>"
     GENERIC_BASE_TITLES = {
         "love", "hero", "heroes", "monster", "monsters", "secret", "secrets",
         "revenge", "destiny", "youth", "shadow", "shadows", "angel", "angels",
@@ -464,7 +478,6 @@ def build_graph(sync_cloud: bool = True):
 
     for did, d in dramas.items():
         raw_t = d["title"] or ""
-        # Check explicit Season / Part / Specials / Movie suffix
         base_t = re.sub(
             r"\s*(?:[:\-–]\s*)?(?:\b(?:season|sezon)\s*\d+|\b\d+\.?\s*sezon|\b\d+(?:st|nd|rd|th)\s*season|\bpart\s*\d+|\b\d+\.?\s*kisim|\bspecials?\b|\bova\b|\bona\b|\brecap\b|\bmovie\b.*|\bfilm\b.*|\b(?:ii|iii|iv|v)\b|\b[2-9]\b)\s*$",
             "",
@@ -473,7 +486,6 @@ def build_graph(sync_cloud: bool = True):
         ).strip()
         norm_base = norm_title(base_t)
         if norm_base and norm_base != norm_title(raw_t) and len(norm_base) >= 5:
-            # Find matching base drama in same country & content_type
             cands = title_country_to_dramas.get((norm_base, d["country"]), [])
             if not cands and d["content_type"] == "anime":
                 cands = title_country_to_dramas.get((norm_base, "ANY"), [])
@@ -481,7 +493,6 @@ def build_graph(sync_cloud: bool = True):
                 if cid != did and dramas[cid]["content_type"] == d["content_type"]:
                     uf.union(did, cid)
 
-        # Also for long multi-word anime titles with colon e.g. "Dragon Ball: Nihon Ijin Taisho..."
         if d["content_type"] == "anime" and ":" in raw_t:
             prefix = raw_t.split(":", 1)[0].strip()
             norm_pref = norm_title(prefix)
@@ -494,10 +505,12 @@ def build_graph(sync_cloud: bool = True):
     # 4. Collect Connected Components with >= 2 Archive Items
     comp_members = defaultdict(set)
     for did in dramas:
+        if did in crossover_attachments:
+            continue
         root = uf.find(did)
         comp_members[root].add(did)
 
-    # Also add crossover attachments (e.g. Isekai Quartet, Baki vs Kengan, Lupin vs Conan) into each target component
+    # Add crossover attachments as leaves to each target component
     for cross_did, target_dids in crossover_attachments.items():
         for td in target_dids:
             t_root = uf.find(td)
@@ -517,17 +530,42 @@ def build_graph(sync_cloud: bool = True):
         items_main = []
         items_side = []
 
-        # Determine if an anime movie is a canon sequel (has both incoming PREQUEL and/or outgoing SEQUEL to a TV series)
-        canon_movies = set()
-        for mid in member_ids:
-            m_obj = dramas[mid]
-            al_id = m_obj["anilist_id"]
-            al_info = al_cache.get(al_id) if al_id else None
-            if al_info and al_info["format"] == "MOVIE":
-                # Check if any edge is PREQUEL or SEQUEL (not SIDE_STORY / ALTERNATIVE)
-                has_seq_preq = any(e.get("relationType") in ("PREQUEL", "SEQUEL") for e in al_info["edges"])
-                if has_seq_preq:
-                    canon_movies.add(mid)
+        # Does this franchise have at least one multi-episode TV/ONA series?
+        has_multi_ep_series = any(
+            dramas[mid]["episode_count"] > 1 or (
+                dramas[mid]["anilist_id"] in al_cache and al_cache[dramas[mid]["anilist_id"]]["format"] == "TV"
+            )
+            for mid in member_ids
+            if mid not in crossover_attachments
+        )
+
+        # Determine canon anime movies:
+        # Must NOT have a PARENT / SUMMARY / COMPILATION / ALTERNATIVE edge to a TV/ONA series,
+        # and MUST connect via PREQUEL/SEQUEL to a TV/ONA series (directly or via a 2-step movie sequel chain like DBS Broly -> Super Hero).
+        canon_movie_aids = set()
+        for Pass in range(2):
+            for mid in member_ids:
+                al_id = dramas[mid]["anilist_id"]
+                al_info = al_cache.get(al_id) if al_id else None
+                if not al_info or al_info["format"] != "MOVIE":
+                    continue
+                edges = al_info["edges"]
+                has_non_canon_link = any(
+                    e.get("relationType") in ("PARENT", "SUMMARY", "COMPILATION", "ALTERNATIVE", "SIDE_STORY", "SPIN_OFF")
+                    for e in edges
+                )
+                if has_non_canon_link:
+                    continue
+                connects_to_tv_or_canon = any(
+                    e.get("relationType") in ("PREQUEL", "SEQUEL") and (
+                        (e.get("id") in al_cache and al_cache[e.get("id")]["format"] in ("TV", "ONA"))
+                        or e.get("format") in ("TV", "ONA")
+                        or e.get("id") in canon_movie_aids
+                    )
+                    for e in edges
+                )
+                if connects_to_tv_or_canon:
+                    canon_movie_aids.add(al_id)
 
         for mid in member_ids:
             m = dramas[mid]
@@ -540,14 +578,12 @@ def build_graph(sync_cloud: bool = True):
             al_year = al_info["year"] if al_info and al_info["year"] else m["release_year"]
             al_month = al_info["month"] if al_info and al_info["month"] else 6
 
-            # For TMDB movies, get exact year/month if available
             if m["content_type"] == "film" and m["tmdb_id"] and m["tmdb_id"] in tmdb_cols:
                 rdate = tmdb_cols[m["tmdb_id"]]["release_date"]
                 if len(rdate) >= 7 and rdate[:4].isdigit() and rdate[5:7].isdigit():
                     al_year = int(rdate[:4])
                     al_month = int(rdate[5:7])
 
-            # Decide category ('main' vs 'side') and Turkish role_label
             category = "main"
             role_label = "Ana Seri"
 
@@ -558,25 +594,32 @@ def build_graph(sync_cloud: bool = True):
                 if is_recap or "SUMMARY" in hints or "COMPILATION" in hints:
                     category = "side"
                     role_label = "Özet (Recap)"
-                elif fmt == "SPECIAL" or is_spec:
+                elif fmt in ("SPECIAL", "MUSIC", "TV_SHORT") or is_spec:
                     category = "side"
                     role_label = "Özel Bölüm"
                 elif fmt == "OVA":
                     category = "side"
                     role_label = "OVA"
                 elif fmt == "MOVIE" or is_mov_kw:
-                    if mid in canon_movies and "SIDE_STORY" not in hints and "ALTERNATIVE" not in hints:
+                    if al_id and al_id in canon_movie_aids and "SIDE_STORY" not in hints and "ALTERNATIVE" not in hints:
                         category = "main"
                         role_label = "Ana Hikaye Filmi"
                     else:
                         category = "side"
                         role_label = f"{m_num}. Film" if m_num > 0 else "Film"
+                elif has_multi_ep_series and m["episode_count"] == 1 and (not al_info or (al_info["episodes"] or 1) == 1) and fmt != "TV":
+                    category = "side"
+                    role_label = "Özel Bölüm"
                 elif "SPIN_OFF" in hints or "SIDE_STORY" in hints:
                     category = "side"
                     role_label = "Yan Hikaye (Spin-off)"
                 elif "ALTERNATIVE" in hints:
-                    category = "main"
-                    role_label = "Alternatif / Yeniden Yapım"
+                    if fmt == "ONA":
+                        category = "side"
+                        role_label = "Yan Seri (ONA)"
+                    else:
+                        category = "main"
+                        role_label = "Alternatif / Yeniden Yapım"
                 else:
                     category = "main"
                     role_label = f"{s_num}. Sezon" if s_num > 1 else "Ana Seri"
@@ -584,7 +627,6 @@ def build_graph(sync_cloud: bool = True):
                 category = "main"
                 role_label = "Film"
             else:
-                # dizi / program
                 if is_spec or "SUMMARY" in hints:
                     category = "side"
                     role_label = "Özel Bölüm"
@@ -627,7 +669,6 @@ def build_graph(sync_cloud: bool = True):
             else:
                 items_side.append(entry)
 
-        # If all items ended up in 'side' (e.g. a 2-OVA or 2-Movie franchise), promote them to 'main'
         if not items_main and items_side:
             for it in items_side:
                 it["category"] = "main"
@@ -637,7 +678,6 @@ def build_graph(sync_cloud: bool = True):
         items_main.sort(key=lambda x: x["_sort_key"])
         items_side.sort(key=lambda x: x["_sort_key"])
 
-        # Number sequential main items nicely if they are generic 'Ana Seri' / 'Ana Dizi' / 'Film'
         for idx, it in enumerate(items_main, 1):
             it["watch_order"] = idx
             if it["content_type"] == "film" and len(items_main) > 1:
@@ -654,7 +694,6 @@ def build_graph(sync_cloud: bool = True):
 
         all_ordered = items_main + items_side
         franchise_title = items_main[0]["title"] if items_main else all_ordered[0]["title"]
-        # Use TMDB collection name if available for film franchises
         if all_ordered[0]["content_type"] == "film":
             first_tid = dramas[all_ordered[0]["id"]]["tmdb_id"]
             if first_tid and first_tid in tmdb_cols and tmdb_cols[first_tid]["collection_name"]:
@@ -667,10 +706,7 @@ def build_graph(sync_cloud: bool = True):
         }
 
         for it in all_ordered:
-            if it["id"] not in crossover_attachments:
-                media_to_franchise[str(it["id"])] = franchise_key
-            else:
-                # Crossover can belong to multiple franchises; store list or primary
+            if it["id"] not in crossover_attachments or str(it["id"]) not in media_to_franchise:
                 media_to_franchise[str(it["id"])] = franchise_key
             sqlite_rows.append((
                 it["id"],
