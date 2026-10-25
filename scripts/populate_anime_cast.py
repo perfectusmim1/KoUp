@@ -52,6 +52,16 @@ def slugify(text: str) -> str:
     return s or "actor"
 
 
+def clean_slug(slug: str) -> str:
+    if not slug:
+        return ""
+    s = slug.lower().strip()
+    if s.startswith("char-"):
+        s = s[5:]
+    s = re.sub(r"-\d+$", "", s).strip("-")
+    return s
+
+
 def norm_name(text: str) -> str:
     if not text:
         return ""
@@ -96,10 +106,12 @@ def preload_supabase_state():
         flush=True,
     )
 
-    people_rows = fetch_all_pages("/rest/v1/people?select=id,slug,name,tmdb_id&order=id.asc", 1000)
+    people_rows = fetch_all_pages("/rest/v1/people?select=id,slug,name,tmdb_id,anilist_id,person_type&order=id.asc", 1000)
     people_by_slug = {}
+    people_by_clean_slug = {}
     people_by_norm = {}
     people_by_tmdb = {}
+    people_by_anilist = {}
     for p in people_rows:
         pid = p.get("id")
         if not pid:
@@ -107,17 +119,23 @@ def preload_supabase_state():
         slug = p.get("slug")
         name = p.get("name")
         tid = p.get("tmdb_id")
+        aid = p.get("anilist_id")
         if slug:
             people_by_slug[slug] = pid
+            cs = clean_slug(slug)
+            if cs and cs not in people_by_clean_slug:
+                people_by_clean_slug[cs] = pid
         if name:
             nn = norm_name(name)
             if nn and nn not in people_by_norm:
                 people_by_norm[nn] = pid
         if tid:
             people_by_tmdb[int(tid)] = pid
+        if aid:
+            people_by_anilist[int(aid)] = pid
 
     print(f"   -> Önbelleğe alınan mevcut kişi/karakter sayısı: {len(people_by_slug)}", flush=True)
-    return media_with_cast, people_by_slug, people_by_norm, people_by_tmdb
+    return media_with_cast, people_by_slug, people_by_clean_slug, people_by_norm, people_by_tmdb, people_by_anilist
 
 
 ANILIST_PAGE_QUERY = """
@@ -186,27 +204,35 @@ def fetch_anilist_page_by_ids(aid_list):
 def ensure_people_and_insert_cast(
     planned_by_media,
     people_by_slug,
+    people_by_clean_slug,
     people_by_norm,
     people_by_tmdb,
+    people_by_anilist,
 ):
     new_people_map = {}
     for mid, items in planned_by_media.items():
         for item in items:
             pslug = item["slug"]
+            cslug = clean_slug(pslug)
             nn = norm_name(item["name"])
             tid = item.get("tmdb_id")
+            aid = item.get("anilist_id")
             pid = (
-                (people_by_tmdb.get(int(tid)) if tid else None)
+                (people_by_anilist.get(int(aid)) if aid else None)
+                or (people_by_tmdb.get(int(tid)) if tid else None)
                 or people_by_slug.get(pslug)
+                or people_by_clean_slug.get(cslug)
                 or people_by_norm.get(nn)
             )
-            if not pid and pslug not in new_people_map:
-                new_people_map[pslug] = {
+            target_slug = cslug or pslug
+            if not pid and target_slug not in new_people_map:
+                new_people_map[target_slug] = {
                     "name": item["name"],
-                    "slug": pslug,
+                    "slug": target_slug,
                     "image_url": item["img_url"],
                     "tmdb_id": int(tid) if tid else None,
-                    "person_type": "actor",
+                    "anilist_id": int(aid) if aid else None,
+                    "person_type": item.get("person_type") or "actor",
                 }
 
     if new_people_map:
@@ -227,23 +253,34 @@ def ensure_people_and_insert_cast(
                 res = fut.result()
                 if isinstance(res, list):
                     for np in res:
-                        if np.get("slug"):
-                            people_by_slug[np["slug"]] = np["id"]
-                        if np.get("name"):
-                            people_by_norm[norm_name(np["name"])] = np["id"]
-                        if np.get("tmdb_id"):
-                            people_by_tmdb[int(np["tmdb_id"])] = np["id"]
+                        npid = np.get("id")
+                        nslug = np.get("slug")
+                        if nslug and npid:
+                            people_by_slug[nslug] = npid
+                            cs = clean_slug(nslug)
+                            if cs:
+                                people_by_clean_slug[cs] = npid
+                        if np.get("name") and npid:
+                            people_by_norm[norm_name(np["name"])] = npid
+                        if np.get("tmdb_id") and npid:
+                            people_by_tmdb[int(np["tmdb_id"])] = npid
+                        if np.get("anilist_id") and npid:
+                            people_by_anilist[int(np["anilist_id"])] = npid
 
     cast_rows_to_insert = []
     for mid, items in planned_by_media.items():
         seen_pids = set()
         for item in items:
             pslug = item["slug"]
+            cslug = clean_slug(pslug)
             nn = norm_name(item["name"])
             tid = item.get("tmdb_id")
+            aid = item.get("anilist_id")
             pid = (
-                (people_by_tmdb.get(int(tid)) if tid else None)
+                (people_by_anilist.get(int(aid)) if aid else None)
+                or (people_by_tmdb.get(int(tid)) if tid else None)
                 or people_by_slug.get(pslug)
+                or people_by_clean_slug.get(cslug)
                 or people_by_norm.get(nn)
             )
             if not pid or pid in seen_pids:
@@ -325,7 +362,14 @@ def fetch_tmdb_cast_single(item):
 
 
 def main():
-    media_with_cast, people_by_slug, people_by_norm, people_by_tmdb = preload_supabase_state()
+    (
+        media_with_cast,
+        people_by_slug,
+        people_by_clean_slug,
+        people_by_norm,
+        people_by_tmdb,
+        people_by_anilist,
+    ) = preload_supabase_state()
 
     print("2. Supabase `media` tablosundaki tüm yapımlar çekiliyor...", flush=True)
     sb_media = fetch_all_pages(
@@ -408,12 +452,15 @@ def main():
                 )
                 va_img = (va.get("image") or {}).get("large") or (va.get("image") or {}).get("medium")
                 va_slug = slugify(va_name) if va_name else None
+                char_aid = node.get("id")
 
                 planned.append({
                     "name": char_name,
                     "slug": slugify(char_name),
                     "img_url": img_url,
                     "tmdb_id": None,
+                    "anilist_id": int(char_aid) if char_aid else None,
+                    "person_type": "character",
                     "character_name": f"Seslendiren: {va_name}" if va_name else char_name,
                     "role_type": role_type,
                     "billing_order": c_idx,
@@ -427,7 +474,12 @@ def main():
 
         if planned_by_media:
             added = ensure_people_and_insert_cast(
-                planned_by_media, people_by_slug, people_by_norm, people_by_tmdb
+                planned_by_media,
+                people_by_slug,
+                people_by_clean_slug,
+                people_by_norm,
+                people_by_tmdb,
+                people_by_anilist,
             )
             total_anime_cast += added
             total_anime_populated += len(planned_by_media)
@@ -458,7 +510,12 @@ def main():
 
             if planned_by_media:
                 added = ensure_people_and_insert_cast(
-                    planned_by_media, people_by_slug, people_by_norm, people_by_tmdb
+                    planned_by_media,
+                    people_by_slug,
+                    people_by_clean_slug,
+                    people_by_norm,
+                    people_by_tmdb,
+                    people_by_anilist,
                 )
                 total_tmdb_cast += added
                 total_tmdb_populated += len(planned_by_media)

@@ -58,8 +58,11 @@ def main():
             if p.get('slug'):
                 people_by_slug[p['slug']] = pid
                 base_s = re.sub(r'-\d+$', '', p['slug'].lower())
+                clean_s = re.sub(r'^char-', '', base_s)
                 if base_s not in people_by_base_slug:
                     people_by_base_slug[base_s] = pid
+                if clean_s not in people_by_base_slug:
+                    people_by_base_slug[clean_s] = pid
             if p.get('name'):
                 norm_n = re.sub(r'[^a-zA-Z0-9]', '', p['name'].lower())
                 if norm_n and norm_n not in people_by_norm_name:

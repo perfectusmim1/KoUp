@@ -269,11 +269,15 @@ export default function PersonDetailPage({
     async function loadPerson() {
       setIsLoading(true);
       const decoded = decodeURIComponent(slug);
-      const cleanSlug = decoded.replace(/-\d+$/, '').trim().toLowerCase();
+      const cleanSlug = decoded
+        .replace(/^char-/, '')
+        .replace(/-\d+$/, '')
+        .trim()
+        .toLowerCase();
 
       try {
         const bundle = await cachedQuery<PersonBundle>(
-          `person_v7_${cleanSlug}`,
+          `person_v8_${cleanSlug}`,
           60_000, // 1 minute TTL for instant hydration + fresh actor sync
           async () => {
             let { data: pData } = await supabase
@@ -289,6 +293,17 @@ export default function PersonDetailPage({
                 .eq('slug', cleanSlug)
                 .maybeSingle();
               pData = byClean.data;
+            }
+
+            if (!pData && cleanSlug) {
+              const byPrefix = await supabase
+                .from('people')
+                .select('*')
+                .or(`slug.ilike.char-${cleanSlug}-%,slug.ilike.${cleanSlug}-%`)
+                .order('drama_count', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              pData = byPrefix.data;
             }
 
             if (!pData && !Number.isNaN(Number(decoded))) {
@@ -316,6 +331,11 @@ export default function PersonDetailPage({
 
             if (!pData) {
               return { person: null, credits: [], coStars: [] };
+            }
+
+            // Canonicalize browser URL if accessed with legacy char- or numbered slug
+            if (typeof window !== 'undefined' && pData.slug && pData.slug !== decoded) {
+              window.history.replaceState(null, '', `/oyuncu/${encodeURIComponent(pData.slug)}`);
             }
 
             let item = pData as PersonItem;

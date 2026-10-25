@@ -605,28 +605,50 @@ def auto_sync_drama_cast(drama_id: int, title: str, content_type: str = "dizi", 
 
     people_payload = []
     seen_slugs = set()
+    slug_to_id = {}
+
     for p in planned:
-        if p["slug"] not in seen_slugs:
-            seen_slugs.add(p["slug"])
+        pslug = p["slug"]
+        if pslug in seen_slugs:
+            continue
+        seen_slugs.add(pslug)
+
+        # 1. Deduplication check by TMDb ID
+        existing_pid = None
+        if p.get("tmdb_id"):
+            ex_tmdb = sb_request("GET", f"/rest/v1/people?tmdb_id=eq.{p['tmdb_id']}&select=id,slug&limit=1")
+            if isinstance(ex_tmdb, list) and ex_tmdb:
+                existing_pid = ex_tmdb[0]["id"]
+                slug_to_id[pslug] = existing_pid
+
+        # 2. Deduplication check by clean slug / char- prefix
+        if not existing_pid:
+            cslug = re.sub(r'-\d+$', '', pslug)
+            ex_slug = sb_request("GET", f"/rest/v1/people?or=(slug.eq.{pslug},slug.eq.{cslug},slug.ilike.char-{cslug}-%)&select=id,slug&limit=1")
+            if isinstance(ex_slug, list) and ex_slug:
+                existing_pid = ex_slug[0]["id"]
+                slug_to_id[pslug] = existing_pid
+
+        if not existing_pid:
             people_payload.append({
                 "name": p["name"],
-                "slug": p["slug"],
+                "slug": pslug,
                 "image_url": p["image_url"],
                 "tmdb_id": p["tmdb_id"],
                 "person_type": "actor",
             })
 
-    p_res = sb_request(
-        "POST",
-        "/rest/v1/people?on_conflict=slug",
-        body=people_payload,
-        prefer="resolution=merge-duplicates,return=representation",
-    )
-    slug_to_id = {}
-    if isinstance(p_res, list):
-        for r in p_res:
-            if r.get("slug") and r.get("id"):
-                slug_to_id[r["slug"]] = r["id"]
+    if people_payload:
+        p_res = sb_request(
+            "POST",
+            "/rest/v1/people?on_conflict=slug",
+            body=people_payload,
+            prefer="resolution=merge-duplicates,return=representation",
+        )
+        if isinstance(p_res, list):
+            for r in p_res:
+                if r.get("slug") and r.get("id"):
+                    slug_to_id[r["slug"]] = r["id"]
 
     cast_rows = []
     seen_pids = set()
