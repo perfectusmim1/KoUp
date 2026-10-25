@@ -419,7 +419,7 @@ export default function AdminSeriesSync({
         disabled={isSyncing}
         size="sm"
         variant="glass"
-        triggerClassName="px-3.5 py-1.5 text-xs rounded-full gap-2 hover:border-sky-400/40 hover:shadow-[0_0_15px_rgba(56,189,248,0.2)] transition-all font-bold cursor-pointer"
+        triggerClassName="px-3.5 py-1.5 text-xs rounded-full gap-2 hover:border-white/30 transition-all font-bold cursor-pointer"
         menuClassName="min-w-[280px] max-w-[340px]"
         searchPlaceholder="Sağlayıcı veya site ara..."
         direction="auto"
@@ -428,7 +428,7 @@ export default function AdminSeriesSync({
       {/* Pending Episodes Badge for Admins */}
       {effectivePendingCount > 0 && (
         <span
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0 shadow-[0_0_12px_rgba(245,158,11,0.2)]"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0"
           title={`${effectivePendingCount} bölüm henüz oynatılabilir video kaynağına sahip değil ("pending_source")`}
         >
           <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />

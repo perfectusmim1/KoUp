@@ -402,7 +402,7 @@ export default function AdminMaintenanceHub({
       </div>
 
       {/* 2. FULL STORAGE SYNC CHAIN (GEMINI.MD RULE 11 QUICK BAR) */}
-      <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-sky-500/10 via-indigo-500/10 to-purple-500/10 border border-sky-500/25 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+      <div className="p-4 sm:p-5 rounded-3xl bg-[#0e0e12] border border-white/10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-sky-400" />
@@ -410,10 +410,7 @@ export default function AdminMaintenanceHub({
               Tam Depolama Eşitleme Zinciri (SQLite ⇄ R2 JSON Paketleri ⇄ R2 DB ⇄ Supabase)
             </h3>
           </div>
-          <p className="text-xs text-white/60 max-w-3xl leading-relaxed">
-            Yerel arşiv veritabanında yapılan toplu işlemlerden sonra R2 kaynak paketlerini (<code className="text-sky-300">sources/&#123;id&#125;.json</code>),
-            R2 ana veritabanı yedeğini (<code className="text-sky-300">db/webdrama_archive.db</code>) ve Supabase tablolarını tek tıkla eşitleyin.
-          </p>
+          
         </div>
 
         <div className="flex flex-wrap items-center gap-2 shrink-0 w-full lg:w-auto">
@@ -467,9 +464,7 @@ export default function AdminMaintenanceHub({
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-white">Eksik Bölüm Onarıcı (Auto-Heal Archive Gaps)</h4>
-                  <p className="text-[11px] text-white/45">
-                    Arşivde bölüm atlaması olan dizileri tespit eder ve en uygun sağlayıcıdan eksikleri tamamlar.
-                  </p>
+                  
                 </div>
               </div>
             </div>
@@ -554,9 +549,7 @@ export default function AdminMaintenanceHub({
               </div>
               <div>
                 <h4 className="text-sm font-bold text-white">Bekleyen Kaynak Çözücü (Recheck Pending)</h4>
-                <p className="text-[11px] text-white/45">
-                  Durumu <code className="text-amber-300">pending_source</code> olan bölümleri tüm alternatif sitelerde çapraz tarar.
-                </p>
+                
               </div>
             </div>
 
@@ -650,9 +643,7 @@ export default function AdminMaintenanceHub({
               </div>
               <div>
                 <h4 className="text-sm font-bold text-white">Mükerrer Yapım Birleştirici (Merge Duplicates)</h4>
-                <p className="text-[11px] text-white/45">
-                  TMDB, IMDb, AniList ID ve normalize başlık eşleşmesiyle aynı dizinin kopyalarını tek ana yapımda birleştirir.
-                </p>
+                
               </div>
             </div>
 
@@ -721,9 +712,7 @@ export default function AdminMaintenanceHub({
               </div>
               <div>
                 <h4 className="text-sm font-bold text-white">Ölü Kaynak Temizleyici (Purge Dead Sources)</h4>
-                <p className="text-[11px] text-white/45">
-                  Silinmiş Vidmoly, Uqload, MP4Upload ve VK videolarını asenkron olarak test eder ve ölü linkleri temizler.
-                </p>
+                
               </div>
             </div>
 
@@ -788,9 +777,7 @@ export default function AdminMaintenanceHub({
               </div>
               <div>
                 <h4 className="text-sm font-bold text-white">Katalog Sağlık Denetçisi (Audit Engine)</h4>
-                <p className="text-[11px] text-white/45">
-                  Kategori bazlı bölüm boşluklarını, sıfır kaynaklı dizileri ve canlı stream erişilebilirliğini raporlar.
-                </p>
+                
               </div>
             </div>
 
@@ -850,9 +837,7 @@ export default function AdminMaintenanceHub({
               </div>
               <div>
                 <h4 className="text-sm font-bold text-white">Meta Veri Tamamlayıcı & AnimeciX Derin Tarama</h4>
-                <p className="text-[11px] text-white/45">
-                  Özeti eksik yapımları TMDB/AniList üzerinden tamamlar veya AnimeciX kataloğunu eşitler.
-                </p>
+                
               </div>
             </div>
 

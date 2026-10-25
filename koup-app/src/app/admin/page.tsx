@@ -2725,11 +2725,7 @@ export default function AdminDashboardPage() {
           <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
             {isAdmin ? 'Sistem Yönetim Paneli' : 'Moderatör Denetim Paneli'}
           </h1>
-          <p className="text-xs sm:text-sm text-white/65 max-w-3xl leading-relaxed">
-            {isAdmin
-              ? 'Kullanıcıları, 17.500+ yapımlık arşivi, bölümleri ve video akış linklerini, yorum moderasyonunu, otomatik scraper cron botlarını ve acil durum sorun bildirimlerini tek merkezden yönetin.'
-              : 'Kullanıcı topluluk hesaplarını, yorum moderasyonunu ve şikayetleri güvenle denetleyin.'}
-          </p>
+          
         </div>
 
         {/* Live Counters */}
@@ -2927,9 +2923,7 @@ export default function AdminDashboardPage() {
                 </span>
                 <AlertTriangle className="w-4 h-4 text-amber-300" />
               </div>
-              <p className="text-xs text-white/60 leading-relaxed">
-                Kullanıcılardan gelen kırık video, kayık altyazı veya yanlış bölüm bildirimleri burada toplanır.
-              </p>
+              
               <div className="p-4 rounded-2xl bg-black/40 border border-white/10 flex items-center justify-between">
                 <span className="text-xs text-white/70">Bekleyen Bildirim:</span>
                 <span className="text-sm font-bold font-mono text-amber-300">
@@ -2951,9 +2945,7 @@ export default function AdminDashboardPage() {
                 </span>
                 <Radio className="w-4 h-4 text-sky-400" />
               </div>
-              <p className="text-xs text-white/60 leading-relaxed">
-                DiziKorea, DiziBox, DDizi, AnimeciX ve HDFilmcehennemi canlı botları devrede.
-              </p>
+              
               <div className="p-4 rounded-2xl bg-black/40 border border-white/10 flex items-center justify-between">
                 <span className="text-xs text-white/70">Aktif Scraperlar:</span>
                 <span className="text-sm font-bold font-mono text-emerald-400">
@@ -2980,9 +2972,7 @@ export default function AdminDashboardPage() {
                 <h3 className="text-lg sm:text-xl font-bold text-white mt-1">
                   Ana Sayfa Hero Slider Vitrini ({featuredMedia.length} Yapım)
                 </h3>
-                <p className="text-xs text-white/60 mt-0.5">
-                  Ana sayfanın en üstünde yer alan 4&apos;lü slider ve &quot;Sıradaki Vitrin Seçkisi&quot; rayında buradaki yapımlar listelenir.
-                </p>
+                
               </div>
               <button
                 onClick={() => setActiveTab('series')}
@@ -3170,9 +3160,7 @@ export default function AdminDashboardPage() {
                   <Users className="w-5 h-5 text-amber-300" />
                   <span>Kullanıcı & Üye Yönetimi ({usersTotalCount.toLocaleString('tr-TR')})</span>
                 </h2>
-                <p className="text-xs text-white/55 mt-0.5">
-                  Kullanıcı rollerini güncelleyin (Moderatör, Çevirmen, Üye), hesapları denetleyin veya askıya alın.
-                </p>
+                
               </div>
             </div>
 
@@ -3289,7 +3277,7 @@ export default function AdminDashboardPage() {
 
                               {/* Ban / Warning / Normal Status Pill */}
                               {u.is_banned && u.ban_type === 'hard' ? (
-                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-red-600/25 text-red-300 border border-red-500/40 flex items-center gap-1 shadow-[0_0_12px_rgba(239,68,68,0.2)]">
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-red-600/25 text-red-300 border border-red-500/40 flex items-center gap-1">
                                   <ShieldAlert className="w-3 h-3" />
                                   <span>HARD BAN</span>
                                 </span>
@@ -3439,9 +3427,7 @@ export default function AdminDashboardPage() {
                   <Film className="w-5 h-5 text-emerald-400" />
                   <span>Seri & Medya Kataloğu ({seriesTotalCount.toLocaleString('tr-TR')})</span>
                 </h2>
-                <p className="text-xs text-white/55 mt-0.5">
-                  17.500+ Dizi, Anime, Asya Filmi ve TV Programı üst verilerini düzenleyin, vitrin sıralamasını belirleyin veya yeni yapım ekleyin.
-                </p>
+                
               </div>
 
               <button
@@ -3664,9 +3650,7 @@ export default function AdminDashboardPage() {
                   <Tv className="w-5 h-5 text-sky-400" />
                   <span>Bölüm & Video Akış Kaynak Yönetimi</span>
                 </h2>
-                <p className="text-xs text-white/55 mt-0.5">
-                  Bir dizi veya anime seçerek bölümlerini görüntüleyin, yeni bölüm ekleyin veya Vidmoly / DiziYou / Ok.ru akış linklerini yönetin.
-                </p>
+                
               </div>
 
               {selectedMediaForEp && (
@@ -3757,7 +3741,7 @@ export default function AdminDashboardPage() {
                           onClick={() => {
                             setSelectedMediaForEp(m);
                           }}
-                          className="p-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 hover:border-sky-400/50 text-left flex items-center gap-3 transition-all cursor-pointer group hover:shadow-[0_4px_20px_rgba(41,151,255,0.15)]"
+                          className="p-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 hover:border-sky-400/50 text-left flex items-center gap-3 transition-all cursor-pointer group"
                         >
                           <div className="w-12 h-16 rounded-xl overflow-hidden bg-black/60 border border-white/10 shrink-0 relative">
                             {m.cover_image ? (
@@ -3802,7 +3786,7 @@ export default function AdminDashboardPage() {
               </div>
             ) : (
               /* Selected Media Header */
-              <div className="p-4 rounded-2xl bg-white/[0.04] border border-sky-400/30 flex items-center justify-between gap-4 shadow-[0_0_24px_rgba(41,151,255,0.08)]">
+              <div className="p-4 rounded-2xl bg-white/[0.04] border border-sky-400/30 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3.5 min-w-0">
                   <div className="w-14 h-20 rounded-xl overflow-hidden bg-black/60 border border-white/15 shrink-0 shadow-md">
                     {selectedMediaForEp.cover_image ? (
@@ -4113,9 +4097,7 @@ export default function AdminDashboardPage() {
                   <MessageSquare className="w-5 h-5 text-sky-400" />
                   <span>Topluluk & Yorum Moderasyonu ({commentsTotalCount.toLocaleString('tr-TR')})</span>
                 </h2>
-                <p className="text-xs text-white/55 mt-0.5">
-                  Kullanıcı yorumlarını denetleyin, izleme listesi (watchlist) kelimelerini yakalayın, toplu gizleyin veya yazarları uyarın.
-                </p>
+                
               </div>
 
               {/* Filter Pills */}
@@ -4494,11 +4476,7 @@ export default function AdminDashboardPage() {
 
               {/* Hero Header with Brand Identity */}
               <div className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/15 relative overflow-hidden">
-                <div
-                  className={`absolute -top-24 -right-24 w-80 h-80 rounded-full blur-3xl opacity-20 pointer-events-none bg-gradient-to-br ${
-                    currentBrand?.bgGradient || 'from-sky-500 to-blue-700'
-                  }`}
-                />
+                
 
                 <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
                   <div className="flex items-start sm:items-center gap-4">
@@ -4518,9 +4496,7 @@ export default function AdminDashboardPage() {
                         )}
                       </div>
 
-                      <p className="text-xs text-white/60 max-w-2xl leading-relaxed">
-                        {currentBot.notes || currentBrand?.protocol || 'Otomatik kaynak senkronizasyon botu.'}
-                      </p>
+                      
 
                       {currentBrand?.domain && (
                         <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -4581,9 +4557,7 @@ export default function AdminDashboardPage() {
                       <h3 className="text-sm font-bold text-white tracking-wide">
                         Tek Dizi Ara & Doğrudan Senkronize Et
                       </h3>
-                      <p className="text-[11px] text-white/50">
-                        {currentBot.name} üzerinden belirli bir diziyi aratıp yalnızca onun bölümlerini ve video akışlarını sisteme çekin.
-                      </p>
+                      
                     </div>
                   </div>
 
@@ -4616,7 +4590,7 @@ export default function AdminDashboardPage() {
                       }
                     }}
                     disabled={!singleSeriesQuery.trim() || isSelectedRunning}
-                    className="w-full sm:w-auto px-6 py-3 rounded-full bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs tracking-wide transition-all glow-sky disabled:opacity-40 disabled:pointer-events-none cursor-pointer flex items-center justify-center gap-2 shrink-0 active:scale-95"
+                    className="w-full sm:w-auto px-6 py-3 rounded-full bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs tracking-wide transition-all disabled:opacity-40 disabled:pointer-events-none cursor-pointer flex items-center justify-center gap-2 shrink-0 active:scale-95"
                   >
                     <Sparkles className="w-4 h-4 text-white" />
                     <span>{isSelectedRunning ? 'Senkronize Ediliyor...' : 'Diziyi Çek & Senkron Et'}</span>
@@ -4714,7 +4688,7 @@ export default function AdminDashboardPage() {
                   {liveTerminalLogs.length === 0 ? (
                     <div className="py-12 text-center text-white/40 space-y-2">
                       <Activity className="w-6 h-6 mx-auto opacity-30 animate-pulse" />
-                      <p>Terminal dinlemede. Canlı log akışı için yukarıdaki &quot;Şimdi Tara&quot; butonuna basınız.</p>
+                      <p>Terminal dinlemede.</p>
                     </div>
                   ) : (
                     liveTerminalLogs.map((line, idx) => {
@@ -4780,7 +4754,7 @@ export default function AdminDashboardPage() {
                 ) : currentRecentItems.length === 0 ? (
                   <div className="py-16 text-center text-xs text-white/40 space-y-2">
                     <p>Bu bot için henüz listelenmiş ekleme kaydı bulunamadı.</p>
-                    <p className="text-[11px] text-white/30">Canlı veri çekmek için &quot;Şimdi Tara&quot; butonunu kullanabilirsiniz.</p>
+                    
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -4871,9 +4845,7 @@ export default function AdminDashboardPage() {
                 <AlertTriangle className="w-5 h-5 text-amber-300" />
                 <span>Bölüm & Seri Sorun Bildirimleri ({reports.length})</span>
               </h3>
-              <p className="text-xs text-white/55 mt-0.5">
-                Bildirilen yapımı doğrudan Bölümler & Kaynaklar sekmesinde açarak kırık linki test edebilir veya yenileyebilirsiniz.
-              </p>
+              
             </div>
             <div className="flex items-center gap-2">
               {[
@@ -4972,9 +4944,7 @@ export default function AdminDashboardPage() {
               <Send className="w-5 h-5 text-white/75" />
               <span>Hedefli & Toplu Sistem Bildirimi Gönder</span>
             </h3>
-            <p className="text-xs text-white/55 mt-1">
-              Sunucu taraflı PostgreSQL RPC ile tüm üyelere veya belirli bir dizinin takipçilerine anında bildirim dağıtır.
-            </p>
+            
           </div>
 
           <form onSubmit={handleSendBroadcast} className="space-y-4">

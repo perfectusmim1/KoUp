@@ -360,9 +360,7 @@ export default function AdminSettingsAndAudit({
             </div>
             <div>
               <h3 className="text-base font-bold text-white">Ana Sayfa &ldquo;Başyapıtlar&rdquo; Rotasyon Yöneticisi</h3>
-              <p className="text-xs text-white/50">
-                Ana sayfadaki 6 Başyapıt kartının otomatik rotasyon sıklığını belirleyin veya istediğiniz dizileri sabitleyin.
-              </p>
+              
             </div>
           </div>
 
@@ -526,7 +524,7 @@ export default function AdminSettingsAndAudit({
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-white">Site Geneli Duyuru Bandı</h4>
-                  <p className="text-[11px] text-white/45">Özel bakım veya etkinlik duyurularını üst bantta gösterin.</p>
+                  
                 </div>
               </div>
 
@@ -602,9 +600,7 @@ export default function AdminSettingsAndAudit({
               </div>
               <div>
                 <h4 className="text-sm font-bold text-white">Yorum Moderasyon İzleme Kelimeleri</h4>
-                <p className="text-[11px] text-white/45">
-                  Bu kelimeleri içeren yorumlar Yorum Moderasyonu sekmesinde otomatik olarak kırmızı uyarı ile vurgulanır.
-                </p>
+                
               </div>
             </div>
 

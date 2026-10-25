@@ -280,10 +280,7 @@ export default function AdminSeriesRequests({
             <h2 className="text-xl font-black text-white">
               Kullanıcı Seri İstekleri (AniList / TMDB / MDL / IMDb)
             </h2>
-            <p className="text-xs text-white/55">
-              Onayladığınız seri istekleri kullanıcının sayfasında anında &ldquo;Onaylandı&rdquo; olarak
-              güncellenir ve kullanıcıya doğrudan bildirim gönderilir.
-            </p>
+            
           </div>
 
           <button
@@ -332,28 +329,28 @@ export default function AdminSeriesRequests({
                 label: 'Tümü',
                 count: counts.all,
                 activeGlow:
-                  'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40',
+                  'bg-white/15 border border-white/20 text-white',
               },
               {
                 id: 'pending' as const,
                 label: 'Bekliyor',
                 count: counts.pending,
                 activeGlow:
-                  'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40',
+                  'bg-amber-500/20 border border-amber-500/30 text-amber-200',
               },
               {
                 id: 'approved' as const,
                 label: 'Onaylandı',
                 count: counts.approved,
                 activeGlow:
-                  'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40',
+                  'bg-emerald-500/20 border border-emerald-500/30 text-emerald-200',
               },
               {
                 id: 'rejected' as const,
                 label: 'Reddedildi',
                 count: counts.rejected,
                 activeGlow:
-                  'bg-gradient-to-r from-rose-500 to-red-600 shadow-[0_0_18px_rgba(244,63,94,0.45)] border border-rose-400/40',
+                  'bg-rose-500/20 border border-rose-500/30 text-rose-200',
               },
             ].map((tab) => {
               const active = statusFilter === tab.id;
