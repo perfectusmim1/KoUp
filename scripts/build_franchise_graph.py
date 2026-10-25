@@ -781,6 +781,33 @@ def build_graph(sync_cloud: bool = True):
             print(f"  [{it['category'].upper()}] #{it['watch_order']:02d} ({it['release_year']}) [{it['role_label']}] {it['title']} (slug={it['slug']})", flush=True)
 
     if sync_cloud:
+        print("\n[Supabase] franchise_items tablosu (4700+ kayıt) senkronize ediliyor...", flush=True)
+        sb_payload = [
+            {
+                "media_id": r[0],
+                "franchise_id": r[1],
+                "franchise_title": r[2],
+                "category": r[3],
+                "role_label": r[4],
+                "watch_order": r[5],
+                "format": r[6],
+                "release_year": r[7],
+            }
+            for r in sqlite_rows
+        ]
+        for i in range(0, len(sb_payload), 500):
+            chunk = sb_payload[i : i + 500]
+            try:
+                sb_request(
+                    "POST",
+                    "/rest/v1/franchise_items?on_conflict=media_id,franchise_id",
+                    body=chunk,
+                    prefer="resolution=merge-duplicates,return=minimal",
+                )
+            except Exception as e:
+                print(f"  [Supabase Warning] chunk {i}: {e}", flush=True)
+        print("[Supabase] franchise_items senkronizasyonu tamamlandı!", flush=True)
+
         print("\n[Cloudflare R2] franchise_graph.json ve webdrama_archive.db yükleniyor...", flush=True)
         upload_to_r2(r2_json_path, "bundles/franchise_graph.json")
         cur.execute("PRAGMA wal_checkpoint(TRUNCATE);")
