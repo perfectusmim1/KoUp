@@ -528,6 +528,18 @@ export async function POST(req: NextRequest) {
     if (videoSources !== undefined) {
       upsertPayload.video_sources = videoSources;
     }
+    if (ep.intro_start_sec !== undefined) {
+      upsertPayload.intro_start_sec = ep.intro_start_sec != null ? Number(ep.intro_start_sec) : null;
+    }
+    if (ep.intro_end_sec !== undefined) {
+      upsertPayload.intro_end_sec = ep.intro_end_sec != null ? Number(ep.intro_end_sec) : null;
+    }
+    if (ep.outro_start_sec !== undefined) {
+      upsertPayload.outro_start_sec = ep.outro_start_sec != null ? Number(ep.outro_start_sec) : null;
+    }
+    if (ep.outro_end_sec !== undefined) {
+      upsertPayload.outro_end_sec = ep.outro_end_sec != null ? Number(ep.outro_end_sec) : null;
+    }
 
     const { data: savedEp, error } = await supabase
       .from('episodes')

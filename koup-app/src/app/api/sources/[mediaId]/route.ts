@@ -424,6 +424,8 @@ export async function GET(
       views_count?: number;
       intro_start_sec?: number | null;
       intro_end_sec?: number | null;
+      outro_start_sec?: number | null;
+      outro_end_sec?: number | null;
       sources: Array<{
         source_name: string;
         embed_id: string;
@@ -669,11 +671,11 @@ export async function GET(
     const { data: liveEps } = await supabase
       .from('episodes')
       .select(
-        'season_number, episode_number, episode_name, status, scheduled_release_at, translation_note, react_fire, react_cry, react_shock, react_angry, views_count, intro_start_sec, intro_end_sec'
+        'season_number, episode_number, episode_name, status, scheduled_release_at, translation_note, react_fire, react_cry, react_shock, react_angry, views_count, intro_start_sec, intro_end_sec, outro_start_sec, outro_end_sec'
       )
       .eq('media_id', idNum)
       .or(
-        'views_count.gt.0,react_fire.gt.0,react_cry.gt.0,react_shock.gt.0,react_angry.gt.0,status.eq.scheduled,status.eq.pending_source,intro_start_sec.not.is.null'
+        'views_count.gt.0,react_fire.gt.0,react_cry.gt.0,react_shock.gt.0,react_angry.gt.0,status.eq.scheduled,status.eq.pending_source,intro_start_sec.not.is.null,outro_start_sec.not.is.null'
       )
       .order('season_number', { ascending: true })
       .order('episode_number', { ascending: true })
@@ -684,17 +686,22 @@ export async function GET(
         episodes.map((e) => [`${e.season_number}_${e.episode_number}`, e])
       );
       const introTemplates = new Map<number, { start: number; end: number }>();
+      const outroTemplates = new Map<number, { start: number; end?: number | null }>();
 
       for (const le of liveEps) {
-        if (
-          Number(le.episode_number) === 0 &&
-          le.intro_start_sec != null &&
-          le.intro_end_sec != null
-        ) {
-          introTemplates.set(Number(le.season_number || 0), {
-            start: Number(le.intro_start_sec),
-            end: Number(le.intro_end_sec),
-          });
+        if (Number(le.episode_number) === 0) {
+          if (le.intro_start_sec != null && le.intro_end_sec != null) {
+            introTemplates.set(Number(le.season_number || 0), {
+              start: Number(le.intro_start_sec),
+              end: Number(le.intro_end_sec),
+            });
+          }
+          if (le.outro_start_sec != null) {
+            outroTemplates.set(Number(le.season_number || 0), {
+              start: Number(le.outro_start_sec),
+              end: le.outro_end_sec != null ? Number(le.outro_end_sec) : null,
+            });
+          }
           continue;
         }
         const key = `${le.season_number}_${le.episode_number}`;
@@ -707,6 +714,8 @@ export async function GET(
           existing.views_count = Number(le.views_count || 0);
           if (le.intro_start_sec != null) existing.intro_start_sec = le.intro_start_sec;
           if (le.intro_end_sec != null) existing.intro_end_sec = le.intro_end_sec;
+          if (le.outro_start_sec != null) existing.outro_start_sec = le.outro_start_sec;
+          if (le.outro_end_sec != null) existing.outro_end_sec = le.outro_end_sec;
           if (le.status === 'pending_source') {
             if (!existing.sources || existing.sources.length === 0) {
               existing.status = 'pending_source';
@@ -741,20 +750,32 @@ export async function GET(
             views_count: Number(le.views_count || 0),
             intro_start_sec: le.intro_start_sec || null,
             intro_end_sec: le.intro_end_sec || null,
+            outro_start_sec: le.outro_start_sec || null,
+            outro_end_sec: le.outro_end_sec || null,
             sources: [],
           });
         }
       }
 
-      // Inherit default intro templates on episodes that don't have explicit intro times yet
-      if (introTemplates.size > 0) {
-        const globalTemplate = introTemplates.get(0);
+      // Inherit default intro and outro templates on episodes that don't have explicit times yet
+      if (introTemplates.size > 0 || outroTemplates.size > 0) {
+        const globalIntroTemplate = introTemplates.get(0);
+        const globalOutroTemplate = outroTemplates.get(0);
         for (const ep of episodes) {
           if (ep.intro_start_sec == null || ep.intro_end_sec == null) {
-            const seasonTemplate = introTemplates.get(ep.season_number || 1) || globalTemplate;
+            const seasonTemplate = introTemplates.get(ep.season_number || 1) || globalIntroTemplate;
             if (seasonTemplate) {
               ep.intro_start_sec = seasonTemplate.start;
               ep.intro_end_sec = seasonTemplate.end;
+            }
+          }
+          if (ep.outro_start_sec == null) {
+            const seasonOutroTemplate = outroTemplates.get(ep.season_number || 1) || globalOutroTemplate;
+            if (seasonOutroTemplate) {
+              ep.outro_start_sec = seasonOutroTemplate.start;
+              if (seasonOutroTemplate.end != null) {
+                ep.outro_end_sec = seasonOutroTemplate.end;
+              }
             }
           }
         }

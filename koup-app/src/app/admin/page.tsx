@@ -171,6 +171,8 @@ interface AdminEpisodeItem {
   translation_note?: string | null;
   intro_start_sec?: number | null;
   intro_end_sec?: number | null;
+  outro_start_sec?: number | null;
+  outro_end_sec?: number | null;
   video_sources?: any[];
 }
 
@@ -699,6 +701,8 @@ export default function AdminDashboardPage() {
   const [bulkIntroTargetSeason, setBulkIntroTargetSeason] = useState<string>('all');
   const [bulkIntroStart, setBulkIntroStart] = useState<string>('');
   const [bulkIntroEnd, setBulkIntroEnd] = useState<string>('');
+  const [bulkOutroStart, setBulkOutroStart] = useState<string>('');
+  const [bulkOutroEnd, setBulkOutroEnd] = useState<string>('');
   const [bulkIntroClear, setBulkIntroClear] = useState<boolean>(false);
   const [bulkIntroApplyFuture, setBulkIntroApplyFuture] = useState<boolean>(true);
   const [bulkIntroSaving, setBulkIntroSaving] = useState<boolean>(false);
@@ -2101,6 +2105,14 @@ export default function AdminDashboardPage() {
           editingEp.intro_end_sec != null && !Number.isNaN(Number(editingEp.intro_end_sec))
             ? Number(editingEp.intro_end_sec)
             : null,
+        outro_start_sec:
+          editingEp.outro_start_sec != null && !Number.isNaN(Number(editingEp.outro_start_sec))
+            ? Number(editingEp.outro_start_sec)
+            : null,
+        outro_end_sec:
+          editingEp.outro_end_sec != null && !Number.isNaN(Number(editingEp.outro_end_sec))
+            ? Number(editingEp.outro_end_sec)
+            : null,
         video_sources: editingEp.video_sources || [],
       };
 
@@ -2217,17 +2229,40 @@ export default function AdminDashboardPage() {
 
       const startSec = bulkIntroClear ? null : parseTimeInput(bulkIntroStart);
       const endSec = bulkIntroClear ? null : parseTimeInput(bulkIntroEnd);
+      const outroStartSec = bulkIntroClear ? null : parseTimeInput(bulkOutroStart);
+      const outroEndSec = bulkIntroClear ? null : parseTimeInput(bulkOutroEnd);
 
       if (!bulkIntroClear) {
-        if (startSec == null || endSec == null) {
-          pushNotification('Eksik Bilgi', 'Lütfen geçerli bir başlangıç ve bitiş süresi girin (örn: 90 sn veya 01:30).', 'info');
+        const hasIntro = startSec != null || endSec != null;
+        const hasOutro = outroStartSec != null || outroEndSec != null;
+        if (!hasIntro && !hasOutro) {
+          pushNotification('Eksik Bilgi', 'Lütfen en az bir İntro veya Outro süresi girin (örn: 90 sn veya 01:30).', 'info');
           setBulkIntroSaving(false);
           return;
         }
-        if (endSec <= startSec) {
-          pushNotification('Geçersiz Süre', 'İntro bitiş süresi başlangıç süresinden büyük olmalıdır.', 'info');
-          setBulkIntroSaving(false);
-          return;
+        if (hasIntro) {
+          if (startSec == null || endSec == null) {
+            pushNotification('Eksik İntro', 'İntro için hem başlangıç hem de bitiş süresi girilmelidir.', 'info');
+            setBulkIntroSaving(false);
+            return;
+          }
+          if (endSec <= startSec) {
+            pushNotification('Geçersiz İntro', 'İntro bitiş süresi başlangıç süresinden büyük olmalıdır.', 'info');
+            setBulkIntroSaving(false);
+            return;
+          }
+        }
+        if (hasOutro) {
+          if (outroStartSec == null) {
+            pushNotification('Eksik Outro', 'Outro için en az başlangıç süresi girilmelidir.', 'info');
+            setBulkIntroSaving(false);
+            return;
+          }
+          if (outroEndSec != null && outroEndSec <= outroStartSec) {
+            pushNotification('Geçersiz Outro', 'Outro bitiş süresi başlangıç süresinden büyük olmalıdır.', 'info');
+            setBulkIntroSaving(false);
+            return;
+          }
         }
       }
 
@@ -2250,6 +2285,8 @@ export default function AdminDashboardPage() {
         status: ep.status || 'published',
         intro_start_sec: startSec,
         intro_end_sec: endSec,
+        outro_start_sec: outroStartSec,
+        outro_end_sec: outroEndSec,
         video_sources: ep.video_sources || [],
       }));
 
@@ -2281,6 +2318,8 @@ export default function AdminDashboardPage() {
             status: 'template',
             intro_start_sec: startSec,
             intro_end_sec: endSec,
+            outro_start_sec: outroStartSec,
+            outro_end_sec: outroEndSec,
             video_sources: [],
           },
           { onConflict: 'media_id,season_number,episode_number' }
@@ -2297,7 +2336,13 @@ export default function AdminDashboardPage() {
       setEpisodesList((prev) =>
         prev.map((ep) => {
           if (bulkIntroTargetSeason === 'all' || ep.season_number === Number(bulkIntroTargetSeason)) {
-            return { ...ep, intro_start_sec: startSec, intro_end_sec: endSec };
+            return {
+              ...ep,
+              intro_start_sec: startSec,
+              intro_end_sec: endSec,
+              outro_start_sec: outroStartSec,
+              outro_end_sec: outroEndSec,
+            };
           }
           return ep;
         })
@@ -2310,7 +2355,7 @@ export default function AdminDashboardPage() {
 
       setBulkIntroModalOpen(false);
       pushNotification(
-        'Toplu İntro Kaydedildi',
+        'Toplu İntro & Outro Kaydedildi',
         `${targetEps.length} bölüme intro atlama ayarı uygulandı${!bulkIntroClear && bulkIntroApplyFuture ? ' (Gelecek bölümler dahil)' : ''} (${bulkIntroTargetSeason === 'all' ? 'Tüm Seri' : `${bulkIntroTargetSeason}. Sezon`}).`,
         'success'
       );
@@ -4076,6 +4121,11 @@ export default function AdminDashboardPage() {
                                 <span>⏩ İntro: {Math.floor(ep.intro_start_sec / 60)}:{String(ep.intro_start_sec % 60).padStart(2, '0')} - {Math.floor(ep.intro_end_sec / 60)}:{String(ep.intro_end_sec % 60).padStart(2, '0')}</span>
                               </span>
                             )}
+                            {ep.outro_start_sec != null && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-400/15 text-cyan-300 border border-cyan-400/30 flex items-center gap-1">
+                                <span>⏭️ Outro: {Math.floor(ep.outro_start_sec / 60)}:{String(ep.outro_start_sec % 60).padStart(2, '0')}{ep.outro_end_sec != null ? ` - ${Math.floor(ep.outro_end_sec / 60)}:${String(ep.outro_end_sec % 60).padStart(2, '0')}` : '+'}</span>
+                              </span>
+                            )}
                           </div>
 
                           <div className="flex items-center gap-2">
@@ -5523,7 +5573,7 @@ export default function AdminDashboardPage() {
                     <Sparkles className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-white">Toplu İntro Süresi Ayarla</h3>
+                    <h3 className="text-sm font-bold text-white">Toplu İntro & Outro Süresi Ayarla</h3>
                     <p className="text-[11px] text-white/50 truncate max-w-[260px]">{selectedMediaForEp.title}</p>
                   </div>
                 </div>
@@ -5571,8 +5621,8 @@ export default function AdminDashboardPage() {
                 {/* Option to clear */}
                 <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between gap-3">
                   <div className="space-y-0.5">
-                    <div className="text-xs font-semibold text-white">İntroları Kaldır / Temizle</div>
-                    <div className="text-[10px] text-white/45">Seçilen kapsamdaki bölümlerin intro atlama sürelerini sıfırlar.</div>
+                    <div className="text-xs font-semibold text-white">İntro ve Outroları Kaldır / Temizle</div>
+                    <div className="text-[10px] text-white/45">Seçilen kapsamdaki bölümlerin intro ve outro atlama sürelerini sıfırlar.</div>
                   </div>
                   <input
                     type="checkbox"
@@ -5588,7 +5638,7 @@ export default function AdminDashboardPage() {
                     <div className="space-y-0.5">
                       <div className="text-xs font-semibold text-amber-300">Gelecek Bölümlerde de Otomatik Geçerli Olsun</div>
                       <div className="text-[10px] text-white/55">
-                        Güncel serilerde yeni bölüm eklendiğinde bu intro başlangıç ve bitiş süresi otomatik uygulanır.
+                        Güncel serilerde yeni bölüm eklendiğinde bu intro ve outro başlangıç/bitiş süreleri otomatik uygulanır.
                       </div>
                     </div>
                     <input
@@ -5602,50 +5652,104 @@ export default function AdminDashboardPage() {
 
                 {/* Inputs if not clearing */}
                 {!bulkIntroClear && (
-                  <div className="space-y-3 p-3.5 rounded-2xl bg-black/40 border border-white/10">
-                    <div className="grid grid-cols-2 gap-3">
-                      <KoupInput
-                        label="İntro Başlangıç"
-                        required={!bulkIntroClear}
-                        placeholder="Örn: 90 veya 01:30"
-                        value={bulkIntroStart}
-                        onChange={(e) => setBulkIntroStart(e.target.value)}
-                      />
-                      <KoupInput
-                        label="İntro Bitiş / Atla"
-                        required={!bulkIntroClear}
-                        placeholder="Örn: 180 veya 03:00"
-                        value={bulkIntroEnd}
-                        onChange={(e) => setBulkIntroEnd(e.target.value)}
-                      />
+                  <div className="space-y-4">
+                    {/* Intro Section */}
+                    <div className="space-y-2.5 p-3.5 rounded-2xl bg-black/40 border border-white/10">
+                      <div className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
+                        <span>⏩ İntro Atlama Süresi</span>
+                        <span className="text-[10px] text-white/40 font-normal">(İsteğe Bağlı)</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <KoupInput
+                          label="İntro Başlangıç"
+                          placeholder="Örn: 90 veya 01:30"
+                          value={bulkIntroStart}
+                          onChange={(e) => setBulkIntroStart(e.target.value)}
+                        />
+                        <KoupInput
+                          label="İntro Bitiş / Atla"
+                          placeholder="Örn: 180 veya 03:00"
+                          value={bulkIntroEnd}
+                          onChange={(e) => setBulkIntroEnd(e.target.value)}
+                        />
+                      </div>
+
+                      {/* Intro Preview Badge */}
+                      {(() => {
+                        const parseT = (val: string) => {
+                          const t = val.trim();
+                          if (!t) return null;
+                          if (t.includes(':')) {
+                            const p = t.split(':');
+                            return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0);
+                          }
+                          const n = Number(t);
+                          return Number.isNaN(n) ? null : n;
+                        };
+                        const s = parseT(bulkIntroStart);
+                        const en = parseT(bulkIntroEnd);
+                        if (s != null && en != null && en > s) {
+                          return (
+                            <div className="flex items-center gap-2 pt-1 text-[11px] font-mono text-emerald-400">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>
+                                {en - s} sn intro atlar ({Math.floor(s / 60)}:{String(s % 60).padStart(2, '0')} → {Math.floor(en / 60)}:{String(en % 60).padStart(2, '0')})
+                              </span>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
 
-                    {/* Preview Badge */}
-                    {(() => {
-                      const parseT = (val: string) => {
-                        const t = val.trim();
-                        if (!t) return null;
-                        if (t.includes(':')) {
-                          const p = t.split(':');
-                          return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0);
+                    {/* Outro Section */}
+                    <div className="space-y-2.5 p-3.5 rounded-2xl bg-black/40 border border-cyan-400/20">
+                      <div className="text-[11px] font-bold text-cyan-300 flex items-center gap-1.5">
+                        <span>⏭️ Outro (Kapanış & Sonraki Bölüm)</span>
+                        <span className="text-[10px] text-white/40 font-normal">(İsteğe Bağlı)</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <KoupInput
+                          label="Outro Başlangıç"
+                          placeholder="Örn: 1335 veya 22:15"
+                          value={bulkOutroStart}
+                          onChange={(e) => setBulkOutroStart(e.target.value)}
+                        />
+                        <KoupInput
+                          label="Outro Bitiş (İsteğe Bağlı)"
+                          placeholder="Örn: 1425 veya 23:45"
+                          value={bulkOutroEnd}
+                          onChange={(e) => setBulkOutroEnd(e.target.value)}
+                        />
+                      </div>
+
+                      {/* Outro Preview Badge */}
+                      {(() => {
+                        const parseT = (val: string) => {
+                          const t = val.trim();
+                          if (!t) return null;
+                          if (t.includes(':')) {
+                            const p = t.split(':');
+                            return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0);
+                          }
+                          const n = Number(t);
+                          return Number.isNaN(n) ? null : n;
+                        };
+                        const os = parseT(bulkOutroStart);
+                        const oen = parseT(bulkOutroEnd);
+                        if (os != null) {
+                          return (
+                            <div className="flex items-center gap-2 pt-1 text-[11px] font-mono text-cyan-400">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>
+                                Outro gelince Sonraki Bölüm butonu çıkar ({Math.floor(os / 60)}:{String(os % 60).padStart(2, '0')}{oen != null ? ` → ${Math.floor(oen / 60)}:${String(oen % 60).padStart(2, '0')}` : ' sonrasına kadar'})
+                              </span>
+                            </div>
+                          );
                         }
-                        const n = Number(t);
-                        return Number.isNaN(n) ? null : n;
-                      };
-                      const s = parseT(bulkIntroStart);
-                      const en = parseT(bulkIntroEnd);
-                      if (s != null && en != null && en > s) {
-                        return (
-                          <div className="flex items-center gap-2 pt-1 text-[11px] font-mono text-emerald-400">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>
-                              {en - s} saniye atlar ({Math.floor(s / 60)}:{String(s % 60).padStart(2, '0')} → {Math.floor(en / 60)}:{String(en % 60).padStart(2, '0')})
-                            </span>
-                          </div>
-                        );
-                      }
-                      return null;
-                    })()}
+                        return null;
+                      })()}
+                    </div>
                   </div>
                 )}
 
@@ -5847,6 +5951,80 @@ export default function AdminDashboardPage() {
                           if (!Number.isNaN(n)) sec = n;
                         }
                         setEditingEp((prev) => ({ ...prev, intro_end_sec: sec }));
+                      }}
+                    />
+                  </div>
+
+                  {/* Outro Atlama Zamanı */}
+                  <div className="flex items-center justify-between pt-2 border-t border-white/5">
+                    <span className="text-[11px] font-bold text-cyan-300 flex items-center gap-1.5">
+                      <span>⏭️ Outro (Kapanış & Sonraki Bölüm)</span>
+                      <span className="text-[10px] text-white/40 font-normal">(İsteğe Bağlı)</span>
+                    </span>
+                    {editingEp?.outro_start_sec != null && (
+                      <span className="text-[10px] font-mono text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20">
+                        {Math.floor(editingEp.outro_start_sec / 60)}:{String(editingEp.outro_start_sec % 60).padStart(2, '0')}
+                        {editingEp.outro_end_sec != null ? ` - ${Math.floor(editingEp.outro_end_sec / 60)}:${String(editingEp.outro_end_sec % 60).padStart(2, '0')}` : ' sonrası'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <KoupInput
+                      label="Outro Başlangıç"
+                      placeholder="Örn: 1335 veya 22:15"
+                      value={
+                        editingEp?.outro_start_sec != null
+                          ? `${Math.floor(editingEp.outro_start_sec / 60)}:${String(
+                              editingEp.outro_start_sec % 60
+                            ).padStart(2, '0')}`
+                          : ''
+                      }
+                      onChange={(e) => {
+                        const raw = e.target.value.trim();
+                        if (!raw) {
+                          setEditingEp((prev) => ({ ...prev, outro_start_sec: null }));
+                          return;
+                        }
+                        let sec: number | null = null;
+                        if (raw.includes(':')) {
+                          const p = raw.split(':').map(Number);
+                          if (p.length === 2 && !Number.isNaN(p[0]) && !Number.isNaN(p[1])) {
+                            sec = p[0] * 60 + p[1];
+                          }
+                        } else {
+                          const n = Number(raw);
+                          if (!Number.isNaN(n)) sec = n;
+                        }
+                        setEditingEp((prev) => ({ ...prev, outro_start_sec: sec }));
+                      }}
+                    />
+                    <KoupInput
+                      label="Outro Bitiş (İsteğe Bağlı)"
+                      placeholder="Örn: 1425 veya 23:45"
+                      value={
+                        editingEp?.outro_end_sec != null
+                          ? `${Math.floor(editingEp.outro_end_sec / 60)}:${String(
+                              editingEp.outro_end_sec % 60
+                            ).padStart(2, '0')}`
+                          : ''
+                      }
+                      onChange={(e) => {
+                        const raw = e.target.value.trim();
+                        if (!raw) {
+                          setEditingEp((prev) => ({ ...prev, outro_end_sec: null }));
+                          return;
+                        }
+                        let sec: number | null = null;
+                        if (raw.includes(':')) {
+                          const p = raw.split(':').map(Number);
+                          if (p.length === 2 && !Number.isNaN(p[0]) && !Number.isNaN(p[1])) {
+                            sec = p[0] * 60 + p[1];
+                          }
+                        } else {
+                          const n = Number(raw);
+                          if (!Number.isNaN(n)) sec = n;
+                        }
+                        setEditingEp((prev) => ({ ...prev, outro_end_sec: sec }));
                       }}
                     />
                   </div>

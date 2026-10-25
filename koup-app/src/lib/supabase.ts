@@ -158,6 +158,8 @@ export interface EpisodeData {
   views_count?: number;
   intro_start_sec?: number | null;
   intro_end_sec?: number | null;
+  outro_start_sec?: number | null;
+  outro_end_sec?: number | null;
   sources: EpisodeSource[];
 }
 

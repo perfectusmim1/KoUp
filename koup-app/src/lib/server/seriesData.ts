@@ -205,18 +205,22 @@ export async function getSeriesDataServer(rawSlug: string): Promise<ServerSeries
       // Fallback: Supabase episodes table
       const { data: epRows } = await client
         .from('episodes')
-        .select('id, season_number, episode_number, episode_name, episode_type, status, published_at')
+        .select('id, season_number, episode_number, episode_name, episode_type, status, published_at, intro_start_sec, intro_end_sec, outro_start_sec, outro_end_sec')
         .eq('media_id', mediaId)
         .order('season_number', { ascending: true })
         .order('episode_number', { ascending: true });
 
       if (epRows && epRows.length > 0) {
-        return epRows.map((r) => ({
+        return epRows.map((r: any) => ({
           id: r.id,
           season_number: r.season_number || 1,
           episode_number: r.episode_number || 1,
           episode_name: r.episode_name || `${r.episode_number}. Bölüm`,
           episode_type: r.episode_type || 'bolum',
+          intro_start_sec: r.intro_start_sec ?? null,
+          intro_end_sec: r.intro_end_sec ?? null,
+          outro_start_sec: r.outro_start_sec ?? null,
+          outro_end_sec: r.outro_end_sec ?? null,
           sources: [],
         })) as EpisodeData[];
       }

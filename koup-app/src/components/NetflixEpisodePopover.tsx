@@ -233,9 +233,10 @@ const NetflixEpisodeRow = memo(function NetflixEpisodeRow({
                 </span>
               )}
             </div>
-            {ep.intro_start_sec != null && (
-              <div className="flex flex-wrap items-center gap-1.5 text-[9px] sm:text-[10px] font-mono text-amber-400 font-semibold">
-                <span>• İntro Atlama</span>
+            {(ep.intro_start_sec != null || (ep as any).outro_start_sec != null) && (
+              <div className="flex flex-wrap items-center gap-1.5 text-[9px] sm:text-[10px] font-mono font-semibold">
+                {ep.intro_start_sec != null && <span className="text-amber-400">• İntro Atlama</span>}
+                {(ep as any).outro_start_sec != null && <span className="text-cyan-400">• Outro Atlama</span>}
               </div>
             )}
           </div>

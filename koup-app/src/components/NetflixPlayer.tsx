@@ -33,6 +33,7 @@ import {
   ChevronsRight,
   ExternalLink,
   Cast as CastIcon,
+  FastForward,
 } from 'lucide-react';
 import {
   MediaItem,
@@ -602,6 +603,8 @@ export default function NetflixPlayer({
       setInternalCinemaLights((v) => !v);
     }
   }, [onToggleCinemaLights]);
+
+  const isMovie = media.content_type === 'film' || media.content_type === 'movie';
 
   // Stream resolution state
   const [resolvedMode, setResolvedMode] = useState<
@@ -2278,7 +2281,7 @@ export default function NetflixPlayer({
           const floorTime = Math.floor(incomingTime);
           trackedTimeRef.current = floorTime;
           hasRealTelemetryRef.current = true;
-          if (isTrailerMode && floorTime !== currentTimeRef.current) {
+          if (floorTime !== currentTimeRef.current) {
             currentTimeRef.current = floorTime;
             setCurrentTime(incomingTime);
           }
@@ -2286,7 +2289,7 @@ export default function NetflixPlayer({
         if (typeof incomingDur === 'number' && !Number.isNaN(incomingDur) && incomingDur > 0) {
           const floorDur = Math.floor(incomingDur);
           trackedDurationRef.current = floorDur;
-          if (isTrailerMode && floorDur !== durationRef.current) {
+          if (floorDur !== durationRef.current) {
             durationRef.current = floorDur;
             setDuration(incomingDur);
             setIsBuffering(false);
@@ -2340,6 +2343,19 @@ export default function NetflixPlayer({
       }
     }, 4000);
 
+    const progressTicker = setInterval(() => {
+      if (typeof document !== 'undefined' && !document.hidden && isPlaying) {
+        if (!hasRealTelemetryRef.current) {
+          setCurrentTime((prev) => {
+            const next = prev + 1;
+            currentTimeRef.current = Math.floor(next);
+            trackedTimeRef.current = Math.floor(next);
+            return next;
+          });
+        }
+      }
+    }, 1000);
+
     const handleVisibilityChange = () => {
       if (document.hidden) {
         flushCurrentProgress('exit', false);
@@ -2355,6 +2371,7 @@ export default function NetflixPlayer({
 
     return () => {
       clearInterval(syncInterval);
+      clearInterval(progressTicker);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('beforeunload', handleBeforeUnload);
       window.removeEventListener('pagehide', handlePageHide);
@@ -2616,7 +2633,7 @@ export default function NetflixPlayer({
     [seekBy]
   );
 
-  // Accurate database-driven intro skip handler (no fake hardcoded timers)
+  // Accurate database-driven intro & outro skip handler (no fake hardcoded timers)
   const hasIntro =
     currentEpObj?.intro_start_sec != null &&
     currentEpObj?.intro_end_sec != null &&
@@ -2626,6 +2643,15 @@ export default function NetflixPlayer({
     hasIntro &&
     currentTime >= currentEpObj.intro_start_sec! &&
     currentTime < currentEpObj.intro_end_sec!;
+
+  const hasOutro =
+    currentEpObj?.outro_start_sec != null &&
+    currentEpObj.outro_start_sec > 0;
+
+  const isInsideOutro =
+    hasOutro &&
+    currentTime >= currentEpObj.outro_start_sec! &&
+    (currentEpObj.outro_end_sec == null || currentTime <= currentEpObj.outro_end_sec);
 
   const handleSkipIntro = useCallback(() => {
     if (currentEpObj?.intro_end_sec) {
@@ -2643,6 +2669,13 @@ export default function NetflixPlayer({
       revealControls();
     }
   }, [currentEpObj?.intro_end_sec, sendSeekToIframe, triggerHudToast, revealControls]);
+
+  const handleSkipOutro = useCallback(() => {
+    if (!isMovie && nextEp) {
+      triggerHudToast('Sonraki Bölüme Geçiliyor...');
+      handleNextEpisode();
+    }
+  }, [isMovie, nextEp, triggerHudToast, handleNextEpisode]);
 
   const adjustVolume = useCallback(
     (delta: number) => {
@@ -2763,6 +2796,11 @@ export default function NetflixPlayer({
         handleSkipIntro();
         return;
       }
+      if ((key === 'n' || key === 's') && isInsideOutro && !isMovie && nextEp && !isTrailerMode) {
+        e.preventDefault();
+        handleSkipOutro();
+        return;
+      }
 
       if (isTrailerMode || (resolvedMode !== 'iframe' && videoRef.current)) {
         if (key === ' ' || e.code === 'Space' || key === 'k') {
@@ -2811,6 +2849,8 @@ export default function NetflixPlayer({
     resolvedMode,
     isInsideIntro,
     handleSkipIntro,
+    isInsideOutro,
+    handleSkipOutro,
     toggleFullscreen,
     toggleCinemaLights,
     handleNextEpisode,
@@ -3015,7 +3055,6 @@ export default function NetflixPlayer({
   const safeDuration = duration > 0 ? duration : isTrailerMode ? 180 : 0;
   const remainingSec = duration > 0 ? Math.max(0, duration - effectiveTime) : 0;
 
-  const isMovie = media.content_type === 'film' || media.content_type === 'movie';
   const cleanTitle = cleanMediaTitle(media.title);
   const episodeDisplayTitle = isTrailerMode
     ? `${cleanTitle} • Resmi Tanıtım Fragmanı`
@@ -3390,6 +3429,14 @@ export default function NetflixPlayer({
                 onSeeked={() => {
                   setIsBuffering(false);
                   setIsResumeReady(true);
+                  const v = videoRef.current;
+                  if (v && !Number.isNaN(v.currentTime)) {
+                    const actualTime = v.currentTime;
+                    const floorSec = Math.floor(actualTime);
+                    currentTimeRef.current = floorSec;
+                    setCurrentTime(actualTime);
+                    trackedTimeRef.current = floorSec;
+                  }
                 }}
                 onPause={() => {
                   setIsPlaying(false);
@@ -4026,8 +4073,8 @@ export default function NetflixPlayer({
                     showOverlay ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
                   }`}
                 >
-                  {/* Floating Skip Intro & Auto-Next Buttons right above scrubber */}
-                  {(isInsideIntro || (!isMovie && nextCountdown !== null && nextEp)) && (
+                  {/* Floating Skip Intro & Outro & Auto-Next Buttons right above scrubber */}
+                  {(isInsideIntro || isInsideOutro || (!isMovie && nextCountdown !== null && nextEp)) && (
                     <div className="flex items-center justify-end gap-2.5">
                       {isInsideIntro && (
                         <button
@@ -4035,12 +4082,25 @@ export default function NetflixPlayer({
                           onClick={handleSkipIntro}
                           className="px-3 sm:px-4 py-1 sm:py-1.5 rounded bg-white hover:bg-white/90 text-black font-bold text-xs sm:text-sm tracking-wide shadow-2xl transition-transform active:scale-95 cursor-pointer flex items-center gap-1.5"
                         >
+                          <FastForward className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-500 fill-amber-500" />
                           <span>İntroyu Atla</span>
                           <span className="text-[10px] text-black/60 hidden sm:inline">(S)</span>
                         </button>
                       )}
 
-                      {!isMovie && nextCountdown !== null && nextEp && (
+                      {isInsideOutro && !isMovie && nextEp && (
+                        <button
+                          type="button"
+                          onClick={handleSkipOutro}
+                          className="px-3 sm:px-4 py-1 sm:py-1.5 rounded bg-cyan-400 hover:bg-cyan-300 text-black font-bold text-xs sm:text-sm tracking-wide shadow-2xl transition-transform active:scale-95 cursor-pointer flex items-center gap-1.5"
+                        >
+                          <NetflixNextEpIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                          <span>Sonraki Bölüme Geç</span>
+                          <span className="text-[10px] text-black/60 hidden sm:inline">(N)</span>
+                        </button>
+                      )}
+
+                      {!isMovie && !isInsideOutro && nextCountdown !== null && nextEp && (
                         <button
                           type="button"
                           onClick={handleNextEpisode}
@@ -4115,6 +4175,14 @@ export default function NetflixPlayer({
                             '--intro-end':
                               hasIntro && safeDuration > 0
                                 ? `${Math.max(0, Math.min(100, (currentEpObj.intro_end_sec! / safeDuration) * 100))}%`
+                                : '0%',
+                            '--outro-start':
+                              hasOutro && safeDuration > 0
+                                ? `${Math.max(0, Math.min(100, (currentEpObj.outro_start_sec! / safeDuration) * 100))}%`
+                                : '0%',
+                            '--outro-end':
+                              hasOutro && safeDuration > 0
+                                ? `${Math.max(0, Math.min(100, ((currentEpObj.outro_end_sec || safeDuration) / safeDuration) * 100))}%`
                                 : '0%',
                           } as React.CSSProperties
                         }

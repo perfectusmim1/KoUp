@@ -853,6 +853,15 @@ input[type="range"].netflix-volume-slider::-webkit-slider-runnable-track {
     linear-gradient(
       var(--slider-direction),
       transparent 0%,
+      transparent var(--outro-start, 0%),
+      rgba(34, 211, 238, 0.92) var(--outro-start, 0%),
+      rgba(34, 211, 238, 0.92) var(--outro-end, 0%),
+      transparent var(--outro-end, 0%),
+      transparent 100%
+    ),
+    linear-gradient(
+      var(--slider-direction),
+      transparent 0%,
       transparent var(--intro-start, 0%),
       rgba(251, 191, 36, 0.92) var(--intro-start, 0%),
       rgba(251, 191, 36, 0.92) var(--intro-end, 0%),
@@ -906,6 +915,15 @@ input[type="range"].netflix-volume-slider::-moz-range-track {
   border: 0;
   border-radius: var(--slider-track-radius);
   background:
+    linear-gradient(
+      var(--slider-direction),
+      transparent 0%,
+      transparent var(--outro-start, 0%),
+      rgba(34, 211, 238, 0.92) var(--outro-start, 0%),
+      rgba(34, 211, 238, 0.92) var(--outro-end, 0%),
+      transparent var(--outro-end, 0%),
+      transparent 100%
+    ),
     linear-gradient(
       var(--slider-direction),
       transparent 0%,
