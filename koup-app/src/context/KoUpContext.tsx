@@ -455,7 +455,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           .select('*')
           .eq('user_id', activeUserId)
           .order('created_at', { ascending: false })
-          .limit(40)
+          .limit(500)
           .then(({ data: dbNotifs }) => {
             if (dbNotifs && dbNotifs.length > 0) {
               const formatted: ToastNotification[] = dbNotifs
@@ -562,7 +562,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
 
                 // Deterministically sort so consecutive episode notifications are ordered highest-to-lowest
                 // and order never shifts randomly across F5 refreshes
-                const merged = result.sort(compareNotifications).slice(0, 50);
+                const merged = result.sort(compareNotifications).slice(0, 500);
                 try {
                   localStorage.setItem('koup_notifs_v1', JSON.stringify(merged));
                 } catch {}
@@ -789,7 +789,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
                 }
                 return ['episode', 'actor', 'reply', 'system'].includes(n.type);
               });
-              const sortedCleaned = cleaned.sort(compareNotifications).slice(0, 50);
+              const sortedCleaned = cleaned.sort(compareNotifications).slice(0, 500);
               setNotifications(sortedCleaned);
               try {
                 localStorage.setItem('koup_notifs_v1', JSON.stringify(sortedCleaned));
@@ -987,7 +987,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
               next = [item, ...prev];
             }
 
-            const sortedNext = next.sort(compareNotifications).slice(0, 50);
+            const sortedNext = next.sort(compareNotifications).slice(0, 500);
             try {
               localStorage.setItem('koup_notifs_v1', JSON.stringify(sortedNext));
             } catch {}
@@ -1106,7 +1106,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       }
       recentNotifsRef.current.set(key, now);
 
-      if (recentNotifsRef.current.size > 40) {
+      if (recentNotifsRef.current.size > 200) {
         for (const [k, time] of recentNotifsRef.current.entries()) {
           if (now - time > 10000) recentNotifsRef.current.delete(k);
         }
@@ -1132,7 +1132,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           return prev;
         }
         const filtered = prev.filter((n) => n.id !== item.id);
-        const sortedNext = [item, ...filtered].sort(compareNotifications).slice(0, 50);
+        const sortedNext = [item, ...filtered].sort(compareNotifications).slice(0, 500);
         try {
           localStorage.setItem('koup_notifs_v1', JSON.stringify(sortedNext));
         } catch {}
