@@ -456,7 +456,372 @@ def match_or_create_enriched_drama(
             f'"{clean_t}" ({c_name}, {c_year}) TMDB/AniList eşleşmesiyle arşive eklendi (ID: #{did})',
         )
 
+    # Automatically populate cast/characters (top 10) and link into Seri Evreni (franchise graph)
+    try:
+        auto_sync_drama_cast(did, clean_t, content_type, tmdb_id=c_tmdb, anilist_id=c_ani_id)
+    except Exception as e:
+        print(f"[AUTO_CAST_SYNC_WARN] #{did}: {e}", flush=True)
+
+    try:
+        auto_sync_drama_franchise(
+            conn, cur, did, clean_t, final_slug, content_type, c_year, c_cover,
+            tmdb_id=c_tmdb, anilist_id=c_ani_id,
+        )
+    except Exception as e:
+        print(f"[AUTO_FRANCHISE_SYNC_WARN] #{did}: {e}", flush=True)
+
     return did, clean_t, final_slug, c_cover
+
+
+def _slugify_person(text: str) -> str:
+    if not text:
+        return "actor"
+    s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return s or "actor"
+
+
+def auto_sync_drama_cast(drama_id: int, title: str, content_type: str = "dizi", tmdb_id=None, anilist_id=None):
+    """
+    Automatically fetches top 10 characters/actors from AniList (for anime) or TMDb (for dizi/film)
+    and populates Supabase `people` and `media_cast` if the media has no cast yet.
+    """
+    existing = sb_request("GET", f"/rest/v1/media_cast?media_id=eq.{drama_id}&select=person_id&limit=1")
+    if isinstance(existing, list) and len(existing) > 0:
+        return 0
+
+    planned = []
+    if content_type == "anime" and (anilist_id or title):
+        q = """
+        query ($id: Int, $search: String) {
+          Media(id: $id, search: $search, type: ANIME) {
+            id
+            characters(sort: [ROLE, RELEVANCE, ID], perPage: 10) {
+              edges {
+                role
+                node {
+                  id
+                  name { full userPreferred }
+                  image { large medium }
+                }
+                voiceActors(language: JAPANESE, sort: [RELEVANCE, ID]) {
+                  id
+                  name { full userPreferred }
+                  image { large medium }
+                }
+              }
+            }
+          }
+        }
+        """
+        vars_dict = {"id": int(anilist_id)} if (anilist_id and int(anilist_id) > 0) else {"search": title}
+        try:
+            req = urllib.request.Request(
+                "https://graphql.anilist.co",
+                data=json.dumps({"query": q, "variables": vars_dict}).encode("utf-8"),
+                headers={"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "KoUp/1.0"},
+            )
+            with urllib.request.urlopen(req, context=ctx, timeout=8) as resp:
+                if resp.status == 200:
+                    payload = json.loads(resp.read().decode("utf-8"))
+                    edges = (((payload.get("data") or {}).get("Media") or {}).get("characters") or {}).get("edges") or []
+                    for idx, edge in enumerate(edges[:10], 1):
+                        node = edge.get("node") or {}
+                        vas = edge.get("voiceActors") or []
+                        va = vas[0] if vas else {}
+                        char_name = (node.get("name") or {}).get("full") or (node.get("name") or {}).get("userPreferred") or ""
+                        if not char_name:
+                            continue
+                        va_name = (va.get("name") or {}).get("full") or (va.get("name") or {}).get("userPreferred") or ""
+                        role_type = "lead" if edge.get("role") == "MAIN" else "support"
+                        img_url = (
+                            (node.get("image") or {}).get("large")
+                            or (node.get("image") or {}).get("medium")
+                            or (va.get("image") or {}).get("large")
+                        )
+                        va_img = (va.get("image") or {}).get("large") or (va.get("image") or {}).get("medium")
+                        planned.append({
+                            "name": char_name,
+                            "slug": _slugify_person(char_name),
+                            "image_url": img_url,
+                            "tmdb_id": None,
+                            "character_name": f"Seslendiren: {va_name}" if va_name else char_name,
+                            "role_type": role_type,
+                            "billing_order": idx,
+                            "voice_actor_name": va_name or None,
+                            "voice_actor_image": va_img,
+                            "voice_actor_slug": _slugify_person(va_name) if va_name else None,
+                        })
+        except Exception:
+            pass
+
+    if not planned and tmdb_id:
+        from scrapers.translator import TMDB_API_KEY
+        if TMDB_API_KEY:
+            is_movie = content_type == "film"
+            urls = (
+                [f"https://api.themoviedb.org/3/movie/{tmdb_id}/credits?api_key={TMDB_API_KEY}"]
+                if is_movie
+                else [
+                    f"https://api.themoviedb.org/3/tv/{tmdb_id}/credits?api_key={TMDB_API_KEY}",
+                    f"https://api.themoviedb.org/3/tv/{tmdb_id}/aggregate_credits?api_key={TMDB_API_KEY}",
+                ]
+            )
+            for u in urls:
+                try:
+                    req = urllib.request.Request(u, headers={"User-Agent": "KoUp/1.0"})
+                    with urllib.request.urlopen(req, context=ctx, timeout=8) as resp:
+                        if resp.status == 200:
+                            data = json.loads(resp.read().decode("utf-8"))
+                            raw_cast = data.get("cast") or []
+                            if raw_cast:
+                                raw_cast.sort(key=lambda x: x.get("order", 999))
+                                for idx, c in enumerate(raw_cast[:10], 1):
+                                    name = c.get("name") or c.get("original_name") or ""
+                                    if not name:
+                                        continue
+                                    char = c.get("character") or ""
+                                    if not char and isinstance(c.get("roles"), list) and c["roles"]:
+                                        char = c["roles"][0].get("character") or ""
+                                    prof = c.get("profile_path")
+                                    img = f"https://image.tmdb.org/t/p/w500{prof}" if prof else None
+                                    planned.append({
+                                        "name": name,
+                                        "slug": _slugify_person(name),
+                                        "image_url": img,
+                                        "tmdb_id": c.get("id"),
+                                        "character_name": char,
+                                        "role_type": "lead" if idx <= 4 else "support",
+                                        "billing_order": idx,
+                                        "voice_actor_name": None,
+                                        "voice_actor_image": None,
+                                        "voice_actor_slug": None,
+                                    })
+                                break
+                except Exception:
+                    continue
+
+    if not planned:
+        return 0
+
+    people_payload = []
+    seen_slugs = set()
+    for p in planned:
+        if p["slug"] not in seen_slugs:
+            seen_slugs.add(p["slug"])
+            people_payload.append({
+                "name": p["name"],
+                "slug": p["slug"],
+                "image_url": p["image_url"],
+                "tmdb_id": p["tmdb_id"],
+                "person_type": "actor",
+            })
+
+    p_res = sb_request(
+        "POST",
+        "/rest/v1/people?on_conflict=slug",
+        body=people_payload,
+        prefer="resolution=merge-duplicates,return=representation",
+    )
+    slug_to_id = {}
+    if isinstance(p_res, list):
+        for r in p_res:
+            if r.get("slug") and r.get("id"):
+                slug_to_id[r["slug"]] = r["id"]
+
+    cast_rows = []
+    seen_pids = set()
+    for p in planned:
+        pid = slug_to_id.get(p["slug"])
+        if not pid:
+            g = sb_request("GET", f"/rest/v1/people?slug=eq.{p['slug']}&select=id&limit=1")
+            if isinstance(g, list) and g:
+                pid = g[0]["id"]
+        if pid and pid not in seen_pids:
+            seen_pids.add(pid)
+            cast_rows.append({
+                "media_id": drama_id,
+                "person_id": pid,
+                "character_name": p["character_name"],
+                "role_type": p["role_type"],
+                "billing_order": p["billing_order"],
+                "voice_actor_name": p["voice_actor_name"],
+                "voice_actor_image": p["voice_actor_image"],
+                "voice_actor_slug": p["voice_actor_slug"],
+            })
+
+    if cast_rows:
+        sb_request("POST", "/rest/v1/media_cast", body=cast_rows, prefer="return=minimal")
+    return len(cast_rows)
+
+
+def auto_sync_drama_franchise(
+    conn, cur, drama_id: int, title: str, slug: str, content_type: str,
+    release_year: int, cover_image: str, tmdb_id=None, anilist_id=None
+):
+    """
+    Automatically checks if a newly added or updated drama connects to any existing series/movies
+    in the archive (via AniList relations or base title prefix) and updates both Supabase
+    `franchise_items` and `franchise_graph.json` (local + Cloudflare R2).
+    """
+    related_drama_ids = set()
+
+    # 1. Check AniList relations if anilist_id is available
+    if anilist_id and int(anilist_id) > 0:
+        q = """
+        query ($id: Int) {
+          Media(id: $id, type: ANIME) {
+            relations {
+              edges {
+                relationType(version: 2)
+                node { id type }
+              }
+            }
+          }
+        }
+        """
+        try:
+            req = urllib.request.Request(
+                "https://graphql.anilist.co",
+                data=json.dumps({"query": q, "variables": {"id": int(anilist_id)}}).encode("utf-8"),
+                headers={"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "KoUp/1.0"},
+            )
+            with urllib.request.urlopen(req, context=ctx, timeout=8) as resp:
+                if resp.status == 200:
+                    payload = json.loads(resp.read().decode("utf-8"))
+                    edges = (((payload.get("data") or {}).get("Media") or {}).get("relations") or {}).get("edges") or []
+                    rel_aids = [
+                        int(e["node"]["id"])
+                        for e in edges
+                        if e.get("node") and e["node"].get("type") == "ANIME" and e["node"].get("id")
+                    ]
+                    if rel_aids:
+                        placeholders = ",".join("?" for _ in rel_aids)
+                        cur.execute(f"SELECT id FROM dramas WHERE anilist_id IN ({placeholders})", rel_aids)
+                        for r in cur.fetchall():
+                            if r[0] != drama_id:
+                                related_drama_ids.add(int(r[0]))
+        except Exception:
+            pass
+
+    # 2. Check normalized base title match (e.g. "2. Sezon", "Season 2", "Part 2", "Movie")
+    base_t = re.sub(
+        r"\s*(?:\d+\.\s*sezon|season\s*\d+|part\s*\d+|cour\s*\d+|movie.*|film.*|ova.*|special.*|\bii\b|\biii\b|\biv\b).*$",
+        "",
+        title or "",
+        flags=re.I,
+    ).strip(" -–—:")
+    if len(base_t) >= 4:
+        cur.execute(
+            "SELECT id, title FROM dramas WHERE id != ? AND content_type = ? AND title LIKE ?",
+            (drama_id, content_type, f"{base_t}%"),
+        )
+        for r_id, r_title in cur.fetchall():
+            r_base = re.sub(
+                r"\s*(?:\d+\.\s*sezon|season\s*\d+|part\s*\d+|cour\s*\d+|movie.*|film.*|ova.*|special.*|\bii\b|\biii\b|\biv\b).*$",
+                "",
+                r_title or "",
+                flags=re.I,
+            ).strip(" -–—:")
+            if norm_title(r_base) == norm_title(base_t):
+                related_drama_ids.add(int(r_id))
+
+    if not related_drama_ids:
+        return False
+
+    # Load existing franchise_graph.json
+    graph_path = os.path.join(_ROOT, "koup-app", "src", "data", "franchise_graph.json")
+    if not os.path.exists(graph_path):
+        return False
+
+    with open(graph_path, "r", encoding="utf-8") as f:
+        graph_data = json.load(f)
+
+    m2f = graph_data.get("media_to_franchise") or {}
+    franchises = graph_data.get("franchises") or {}
+
+    target_fid = None
+    for rid in related_drama_ids:
+        if str(rid) in m2f:
+            target_fid = m2f[str(rid)]
+            break
+
+    all_member_ids = {drama_id} | related_drama_ids
+    if target_fid and target_fid in franchises:
+        for existing_item in franchises[target_fid].get("items", []):
+            all_member_ids.add(int(existing_item["id"]))
+    else:
+        target_fid = f"fr_{min(all_member_ids)}"
+
+    placeholders = ",".join("?" for _ in all_member_ids)
+    cur.execute(
+        f"SELECT id, slug, title, release_year, content_type, episode_count, cover_image FROM dramas WHERE id IN ({placeholders})",
+        list(all_member_ids),
+    )
+    rows = cur.fetchall()
+    if len(rows) < 2:
+        return False
+
+    items_list = []
+    for r in rows:
+        rid, rslug, rtitle, ryear, rctype, repcount, rcover = r
+        is_mov = rctype == "film" or bool(re.search(r"\b(movie|film|ova|special|ona)\b", rtitle or "", re.I))
+        cat = "side" if is_mov else "main"
+        items_list.append({
+            "id": int(rid),
+            "slug": clean_scraped_slug(rslug) or rslug,
+            "title": rtitle,
+            "release_year": int(ryear or 0),
+            "content_type": rctype or "dizi",
+            "episode_count": int(repcount or 0),
+            "cover_image": rcover or "/logo-dark.png",
+            "category": cat,
+            "role_label": "Film / Özel" if cat == "side" else "Ana Seri",
+            "format": "MOVIE" if is_mov else "TV",
+            "watch_order": 1,
+        })
+
+    items_list.sort(key=lambda x: (0 if x["category"] == "main" else 1, x["release_year"] or 9999, x["id"]))
+    for idx_order, it in enumerate(items_list, 1):
+        it["watch_order"] = idx_order
+
+    fr_title = items_list[0]["title"]
+    franchises[target_fid] = {
+        "franchise_id": target_fid,
+        "title": fr_title,
+        "items": items_list,
+    }
+    for it in items_list:
+        m2f[str(it["id"])] = target_fid
+
+    with open(graph_path, "w", encoding="utf-8") as f:
+        json.dump(graph_data, f, ensure_ascii=False, separators=(",", ":"))
+
+    r2_graph_path = os.path.join(_ROOT, "r2_bundles", "franchise_graph.json")
+    if os.path.exists(os.path.dirname(r2_graph_path)):
+        with open(r2_graph_path, "w", encoding="utf-8") as f:
+            json.dump(graph_data, f, ensure_ascii=False, separators=(",", ":"))
+        upload_to_r2(r2_graph_path, "bundles/franchise_graph.json")
+
+    sb_rows = [
+        {
+            "media_id": it["id"],
+            "franchise_id": target_fid,
+            "franchise_title": fr_title,
+            "category": it["category"],
+            "role_label": it["role_label"],
+            "format": it["format"],
+            "watch_order": it["watch_order"],
+            "release_year": it["release_year"],
+        }
+        for it in items_list
+    ]
+    sb_request(
+        "POST",
+        "/rest/v1/franchise_items?on_conflict=media_id",
+        body=sb_rows,
+        prefer="resolution=merge-duplicates,return=minimal",
+    )
+    return True
 
 
 def ensure_media_synced(conn, cur, drama_id: int):
@@ -515,6 +880,16 @@ def ensure_media_synced(conn, cur, drama_id: int):
         if isinstance(res, dict) and res.get("_error"):
             print(f"[ENSURE_MEDIA_SYNC_ERROR] Drama #{drama_id}: {res}", flush=True)
             return False
+        try:
+            auto_sync_drama_cast(
+                d["id"],
+                d["title"],
+                d.get("content_type") or "dizi",
+                tmdb_id=d.get("tmdb_id"),
+                anilist_id=d.get("anilist_id"),
+            )
+        except Exception:
+            pass
         return True
     except Exception as e:
         print(f"[ENSURE_MEDIA_SYNC_EXCEPTION] Drama #{drama_id}: {e}", flush=True)

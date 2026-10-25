@@ -86,7 +86,7 @@ export async function GET(req: NextRequest) {
           query ($id: Int, $search: String) {
             Media(id: $id, search: $search, type: ANIME) {
               id
-              characters(sort: [ROLE, RELEVANCE, ID], perPage: 25) {
+              characters(sort: [ROLE, RELEVANCE, ID], perPage: 10) {
                 edges {
                   role
                   node {
@@ -186,7 +186,7 @@ export async function GET(req: NextRequest) {
           // Sort by TMDb billing order ascending
           rawList.sort((a: any, b: any) => (a.order ?? 999) - (b.order ?? 999));
 
-          parsedCast = rawList.slice(0, 30).map((c: any, idx: number) => {
+          parsedCast = rawList.slice(0, 10).map((c: any, idx: number) => {
             const role = (c.order ?? idx) < 4 ? ('lead' as const) : ('support' as const);
             let charName = c.character || '';
             if (!charName && Array.isArray(c.roles) && c.roles[0]) {

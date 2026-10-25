@@ -746,6 +746,13 @@ def main():
             except Exception as e:
                 record_log(f"[Deduplication] Hata: {e}")
 
+            try:
+                from scripts.build_franchise_graph import main as rebuild_franchise_graph
+                record_log(f"[Seri Evreni] {len(all_dramas)} yeni yapım için Seri Evreni & İzleme Sırası grafiği güncelleniyor...")
+                rebuild_franchise_graph()
+            except Exception as e:
+                record_log(f"[Seri Evreni] Güncelleme uyarısı: {e}")
+
             # Yeni eklenen devam eden serileri otomatik seri otomasyonuna bağla
             try:
                 from scripts.series_automation_runner import add_and_bind_series

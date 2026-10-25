@@ -61,6 +61,8 @@ def clean_scraped_slug(raw_slug: str) -> str:
 
     # Patterns to strip from the tail iteratively
     strip_patterns = [
+        r"-(?:animecix|asyaanimeleri|dizibox|dizikorea|dizifon|asyawatch|dizilla|ddizi|hdfilmcehennemi)-\d+$",
+        r"-(?:animecix|asyaanimeleri|dizibox|dizikorea|dizifon|asyawatch|dizilla|ddizi|hdfilmcehennemi)$",
         r"-(?:hd-film-izle|filmi-izle|film-izle|dizi-izle)$",
         r"-(?:hdfc|hdf|hf)-\d+$",
         r"-hdf-\d+$",

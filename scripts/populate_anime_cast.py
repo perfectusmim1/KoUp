@@ -125,7 +125,7 @@ query ($ids: [Int]) {
   Page(perPage: 50) {
     media(id_in: $ids, type: ANIME) {
       id
-      characters(sort: [ROLE, RELEVANCE, ID], perPage: 16) {
+      characters(sort: [ROLE, RELEVANCE, ID], perPage: 10) {
         edges {
           role
           node {
@@ -296,7 +296,7 @@ def fetch_tmdb_cast_single(item):
                     if raw_cast:
                         raw_cast.sort(key=lambda x: x.get("order", 999))
                         planned = []
-                        for idx, c in enumerate(raw_cast[:16], 1):
+                        for idx, c in enumerate(raw_cast[:10], 1):
                             name = c.get("name") or c.get("original_name") or ""
                             if not name:
                                 continue
