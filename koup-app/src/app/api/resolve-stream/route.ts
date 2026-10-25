@@ -1600,7 +1600,10 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 4c. OK.RU (ok.ru/videoembed/... or odnoklassniki) -> Direct Native MP4 / HLS
+  // 4c. OK.RU (ok.ru/videoembed/... or odnoklassniki) -> Direct Official Iframe
+  // OKCDN binds media chunks to client IP (srcIp=...). Proxying via Vercel Lambdas causes IP mismatch (HTTP 400),
+  // self-healing loops, OK.ru rate limits and long video freezes. Direct iframe connects the client's own IP
+  // directly to OK.ru high-speed CDN without proxy latency or bandwidth bottlenecks.
   const lowerProv = (provider || '').toLowerCase();
   const isOkRu =
     lowerProv.includes('ok.ru') ||
@@ -1621,113 +1624,50 @@ export async function GET(req: NextRequest) {
         ? `https:${url}`
         : url;
 
-      const resp = await fetch(targetEmbedUrl, {
+      // Quick check if video still exists on OK.ru
+      const checkResp = await fetch(targetEmbedUrl, {
+        method: 'HEAD',
         headers: {
           'User-Agent': commonUA,
           Referer: 'https://ok.ru/',
-          Accept: 'text/html,application/xhtml+xml',
         },
-        signal: AbortSignal.timeout(6000),
+        signal: AbortSignal.timeout(4500),
       });
 
-      if (resp.ok) {
-        const html = await resp.text();
-        const dataOptsMatch =
-          html.match(/data-options="([^"]+)"/i) ||
-          html.match(/data-options=(["'])(.*?)\1/s);
-        const rawOpts = dataOptsMatch ? (dataOptsMatch[2] || dataOptsMatch[1]) : null;
-
-        if (rawOpts) {
-          const decodedOpts = rawOpts
-            .replace(/&quot;/g, '"')
-            .replace(/&amp;/g, '&')
-            .replace(/&#39;/g, "'")
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>');
-
-          let optsJson: any = null;
-          try {
-            optsJson = JSON.parse(decodedOpts);
-          } catch {}
-
-          const metaRaw = optsJson?.flashvars?.metadata;
-          let meta: any = null;
-          if (typeof metaRaw === 'string') {
-            try {
-              meta = JSON.parse(metaRaw);
-            } catch {}
-          } else if (typeof metaRaw === 'object' && metaRaw !== null) {
-            meta = metaRaw;
-          }
-
-          if (meta) {
-            const poster = meta?.movie?.poster || null;
-
-            // Direct MP4 videos with multiple resolutions (Ultra 4K, Quad 2K, Full HD 1080p, HD 720p, SD 480p)
-            if (Array.isArray(meta?.videos) && meta.videos.length > 0) {
-              const rank: Record<string, number> = {
-                ultra: 6,
-                quad: 5,
-                full: 4,
-                hd: 3,
-                sd: 2,
-                low: 1,
-                lowest: 0,
-                mobile: 0,
-              };
-              const labelMap: Record<string, string> = {
-                ultra: '2160p (4K)',
-                quad: '1440p (2K)',
-                full: '1080p (Full HD)',
-                hd: '720p (HD)',
-                sd: '480p (SD)',
-                low: '360p',
-                lowest: '240p',
-                mobile: '144p',
-              };
-
-              const validVideos = meta.videos
-                .filter((v: any) => v?.url && !v.disallowed)
-                .sort((a: any, b: any) => (rank[b.name] ?? 0) - (rank[a.name] ?? 0));
-
-              if (validVideos.length > 0) {
-                const qualities = validVideos.map((v: any) => ({
-                  label: labelMap[v.name] || (v.name ? String(v.name).toUpperCase() : 'HD'),
-                  url: `/api/stream-proxy?url=${encodeURIComponent(v.url)}&ref=${encodeURIComponent('https://ok.ru/')}&embed=${encodeURIComponent(targetEmbedUrl)}&q=${encodeURIComponent(v.name || 'hd')}`,
-                }));
-
-                const result = {
-                  mode: 'native_mp4',
-                  streamUrl: qualities[0].url,
-                  qualities,
-                  posterImage: poster,
-                  fallbackIframe: targetEmbedUrl,
-                };
-                setCachedStream(url, result, 8 * 60 * 1000);
-                return NextResponse.json(result, { headers: CACHE_HEADERS });
-              }
-            }
-
-            // Fallback: HLS stream
-            const hlsUrl = meta?.ondemandHls || meta?.hlsManifestUrl;
-            if (hlsUrl && typeof hlsUrl === 'string') {
-              const proxiedHls = `/api/stream-proxy?url=${encodeURIComponent(hlsUrl)}&ref=${encodeURIComponent('https://ok.ru/')}&embed=${encodeURIComponent(targetEmbedUrl)}`;
-              const result = {
-                mode: 'native_hls',
-                streamUrl: proxiedHls,
-                qualities: [{ label: '1080p', url: proxiedHls }],
-                posterImage: poster,
-                fallbackIframe: targetEmbedUrl,
-              };
-              setCachedStream(url, result, 8 * 60 * 1000);
-              return NextResponse.json(result, { headers: CACHE_HEADERS });
-            }
-          }
-        }
+      if (checkResp.status === 404 || checkResp.status === 410) {
+        return NextResponse.json(
+          { error: 'OK.ru videosu silinmiş veya bulunamadı (404)', isDead: true },
+          { status: 410 }
+        );
       }
+
+      const result = {
+        mode: 'iframe',
+        streamUrl: targetEmbedUrl,
+        iframeUrl: targetEmbedUrl,
+        qualities: [{ label: '1080p', url: targetEmbedUrl }],
+        fallbackIframe: targetEmbedUrl,
+      };
+      setCachedStream(url, result, 60 * 60 * 1000);
+      return NextResponse.json(result, { headers: CACHE_HEADERS });
     } catch (okErr) {
       console.warn('OK.ru resolution error:', okErr);
-      // fall through to iframe fallback
+      // Fallback: return direct iframe URL
+      const okIdMatch =
+        url.match(/(?:videoembed|video)\/(\d+)/i) ||
+        url.match(/\/(\d+)(?:\?|$)/);
+      const okId = okIdMatch ? okIdMatch[1] : null;
+      const fallbackUrl = okId ? `https://www.ok.ru/videoembed/${okId}` : url;
+      return NextResponse.json(
+        {
+          mode: 'iframe',
+          streamUrl: fallbackUrl,
+          iframeUrl: fallbackUrl,
+          qualities: [{ label: '1080p', url: fallbackUrl }],
+          fallbackIframe: fallbackUrl,
+        },
+        { headers: CACHE_HEADERS }
+      );
     }
   }
 
