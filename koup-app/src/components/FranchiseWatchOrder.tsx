@@ -24,7 +24,7 @@ import { useDragScroll } from '@/hooks/useDragScroll';
 interface FranchiseWatchOrderProps {
   franchise: FranchiseData;
   currentMediaId: number;
-  progressMap?: Record<number, { status?: string; progress?: number }>;
+  progressMap?: Record<number, { status?: string | null; progress?: number }>;
 }
 
 type FilterTab = 'main' | 'side' | 'all';

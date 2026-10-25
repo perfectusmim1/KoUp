@@ -58,6 +58,8 @@ import CountryFlag from '@/components/CountryFlag';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
 import { useDragScroll } from '@/hooks/useDragScroll';
 import CustomSelect from '@/components/CustomSelect';
+import FranchiseWatchOrder from '@/components/FranchiseWatchOrder';
+import type { FranchiseData } from '@/lib/server/seriesData';
 import { extractYouTubeId, buildModalTrailerEmbedUrl } from '@/lib/youtubeTrailer';
 
 const RichCommentSection = dynamic(
@@ -83,6 +85,7 @@ export interface SeriesDetailClientProps {
   initialMedia?: MediaItem | null;
   initialEpisodes?: EpisodeData[];
   initialCast?: CastMember[];
+  initialFranchise?: FranchiseData | null;
 }
 
 export default function SeriesDetailClient({
@@ -90,6 +93,7 @@ export default function SeriesDetailClient({
   initialMedia,
   initialEpisodes,
   initialCast,
+  initialFranchise,
 }: SeriesDetailClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -120,7 +124,30 @@ export default function SeriesDetailClient({
   const [cast, setCast] = useState<CastMember[]>(
     initialCast && initialCast.length > 0 ? initialCast : []
   );
+  const [franchise, setFranchise] = useState<FranchiseData | null>(
+    initialFranchise || null
+  );
   const [relatedMedia, setRelatedMedia] = useState<MediaItem[]>([]);
+
+  useEffect(() => {
+    if (initialFranchise !== undefined) {
+      setFranchise(initialFranchise || null);
+      return;
+    }
+    if (!media?.id) return;
+    let active = true;
+    fetch(`/api/franchise/${media.id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (active && d?.franchise) {
+          setFranchise(d.franchise);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [media?.id, initialFranchise]);
   const [isLoading, setIsLoading] = useState(!initialMedia);
   const [isEpisodesLoading, setIsEpisodesLoading] = useState(
     !initialEpisodes || initialEpisodes.length === 0
@@ -2396,6 +2423,15 @@ export default function SeriesDetailClient({
             );
           })()}
         </section>
+        )}
+
+        {/* FRANCHISE WATCH ORDER & CHRONOLOGY */}
+        {initialFranchise && (
+          <FranchiseWatchOrder
+            franchise={initialFranchise}
+            currentMediaId={media.id}
+            progressMap={progressMap}
+          />
         )}
 
         {/* 5. RELATED RECOMMENDATIONS */}

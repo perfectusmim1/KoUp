@@ -102,7 +102,7 @@ export default async function SeriesDetailPage({
     notFound();
   }
 
-  const { media, episodes, cast } = data;
+  const { media, episodes, cast, franchise } = data;
   const cleanTitle = cleanMediaTitle(media.title);
   const cleanOverview = cleanOverviewText(media.overview);
   const posterUrl = getProxiedImageUrl(media.cover_image, media.title, null, 'w500');
@@ -152,6 +152,7 @@ export default async function SeriesDetailPage({
         initialMedia={media}
         initialEpisodes={episodes}
         initialCast={cast}
+        initialFranchise={franchise}
       />
     </>
   );
