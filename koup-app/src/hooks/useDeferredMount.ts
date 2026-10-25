@@ -131,17 +131,17 @@ const scheduler = new IdleQueueScheduler();
 export function isScrollRestorationActive(): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    if (window.scrollY > 15) return true;
+    if (window.scrollY > 20) return true;
     if (
       window.history?.state &&
       typeof window.history.state.__koup_scrollY === 'number' &&
-      window.history.state.__koup_scrollY > 15
+      window.history.state.__koup_scrollY > 20
     ) {
       return true;
     }
     const currentKey = window.location.pathname + (window.location.search || '');
     const raw = sessionStorage.getItem(`koup_scroll_${currentKey}`);
-    if (raw !== null && parseInt(raw, 10) > 15) {
+    if (raw !== null && parseInt(raw, 10) > 20) {
       return true;
     }
   } catch {

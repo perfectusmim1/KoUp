@@ -32,14 +32,18 @@ function ScrollRestorationInner() {
       const clickable = target?.closest?.('a, button, [role="button"], [data-clickable], .cursor-pointer');
       if (clickable) {
         const curY = Math.round(window.scrollY);
-        if (curY > 0) {
-          const key = window.location.pathname + window.location.search;
-          try {
+        const key = window.location.pathname + window.location.search;
+        try {
+          const st = window.history.state || {};
+          if (curY <= 20) {
+            sessionStorage.removeItem(`koup_scroll_${key}`);
+            delete st.__koup_scrollY;
+            window.history.replaceState(st, '');
+          } else {
             sessionStorage.setItem(`koup_scroll_${key}`, String(curY));
-            const st = window.history.state || {};
             window.history.replaceState({ ...st, __koup_scrollY: curY }, '');
-          } catch {}
-        }
+          }
+        } catch {}
       }
     };
     document.addEventListener('click', handleGlobalClick, { capture: true, passive: true });
@@ -50,13 +54,17 @@ function ScrollRestorationInner() {
       const stateObj = (args[0] && typeof args[0] === 'object' ? args[0] : {}) as any;
       const oldKey = window.location.pathname + window.location.search;
       const oldY = Math.round(window.scrollY);
-      if (oldY > 0) {
-        try {
+      try {
+        const st = window.history.state || {};
+        if (oldY <= 20) {
+          sessionStorage.removeItem(`koup_scroll_${oldKey}`);
+          delete st.__koup_scrollY;
+          window.history.replaceState(st, '');
+        } else {
           sessionStorage.setItem(`koup_scroll_${oldKey}`, String(oldY));
-          const st = window.history.state || {};
           window.history.replaceState({ ...st, __koup_scrollY: oldY }, '');
-        } catch {}
-      }
+        }
+      } catch {}
       if (!stateObj?.__koup_keepScroll) {
         isNavigatingRef.current = true;
       }
@@ -90,14 +98,18 @@ function ScrollRestorationInner() {
     const saveScrollNow = () => {
       if (isRestoringRef.current || isNavigatingRef.current) return;
       const y = Math.round(window.scrollY);
-      if (y > 0) {
-        lastScrollYRef.current = y;
-        try {
+      lastScrollYRef.current = y <= 20 ? 0 : y;
+      try {
+        const st = window.history.state || {};
+        if (y <= 20) {
+          sessionStorage.removeItem(storageKey);
+          delete st.__koup_scrollY;
+          window.history.replaceState(st, '');
+        } else {
           sessionStorage.setItem(storageKey, String(y));
-          const st = window.history.state || {};
           window.history.replaceState({ ...st, __koup_scrollY: y }, '');
-        } catch {}
-      }
+        }
+      } catch {}
     };
 
     let saveTimeout: NodeJS.Timeout | null = null;
@@ -105,15 +117,21 @@ function ScrollRestorationInner() {
     const handleScroll = () => {
       if (isRestoringRef.current || isNavigatingRef.current) return;
       const y = Math.round(window.scrollY);
-      if (y > 0) {
-        lastScrollYRef.current = y;
-        // Throttle storage & history writes so scrolling maintains 60-120 FPS without timer churn on every scroll tick
-        if (!saveTimeout) {
-          saveTimeout = setTimeout(() => {
-            saveTimeout = null;
-            saveScrollNow();
-          }, 250);
+      lastScrollYRef.current = y <= 20 ? 0 : y;
+      if (y <= 20) {
+        if (saveTimeout) {
+          clearTimeout(saveTimeout);
+          saveTimeout = null;
         }
+        saveScrollNow();
+        return;
+      }
+      // Throttle storage & history writes so scrolling maintains 60-120 FPS without timer churn on every scroll tick
+      if (!saveTimeout) {
+        saveTimeout = setTimeout(() => {
+          saveTimeout = null;
+          saveScrollNow();
+        }, 200);
       }
     };
 
@@ -190,7 +208,7 @@ function ScrollRestorationInner() {
       return;
     }
 
-    const shouldRestore = isPopState || (isFirstMount && savedY > 15);
+    const shouldRestore = isPopState || (isFirstMount && savedY > 20);
 
     if (!shouldRestore) {
       isNavigatingRef.current = true;
@@ -202,7 +220,7 @@ function ScrollRestorationInner() {
           const el = document.getElementById(targetId);
           if (el) el.scrollIntoView({ behavior: 'smooth' });
         }, 120);
-      } else if (isKeyChange) {
+      } else {
         window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
       }
 
@@ -213,7 +231,7 @@ function ScrollRestorationInner() {
       return () => clearTimeout(navTimeout);
     }
 
-    if (savedY <= 15) {
+    if (savedY <= 20) {
       window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
       lastScrollYRef.current = 0;
       isNavigatingRef.current = false;
@@ -281,7 +299,9 @@ function ScrollRestorationInner() {
           settledFrames = 0;
         }
       } else if (maxScroll > 0) {
-        window.scrollTo({ top: maxScroll, behavior: 'instant' });
+        if (performance.now() - startTime > 1000) {
+          window.scrollTo({ top: maxScroll, behavior: 'instant' });
+        }
         settledFrames = 0;
       }
 
