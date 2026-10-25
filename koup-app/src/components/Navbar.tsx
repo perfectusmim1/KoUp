@@ -91,11 +91,26 @@ function NavbarNotificationThumbnail({
 
   if (!rawImg) {
     if (notification.type === 'episode' || (link && link.startsWith('/seri/'))) {
-      const title = notification.title?.includes('•')
-        ? notification.title.split('•')[0].trim()
-        : (notification.title || '').trim();
-      if (title) {
-        rawImg = getProxiedImageUrl(null, title, null, 'w185', 'media');
+      let seriesTitle = '';
+      if (notification.title?.includes('•')) {
+        seriesTitle = notification.title.split('•')[0].trim();
+      } else if (notification.body?.includes(' - ')) {
+        seriesTitle = notification.body.split(' - ')[0].trim();
+      } else if (notification.body?.includes('-')) {
+        seriesTitle = notification.body.split('-')[0].trim();
+      } else if (notification.title && !notification.title.toLowerCase().includes('yeni bölüm')) {
+        seriesTitle = notification.title.trim();
+      }
+
+      if (!seriesTitle && link && link.startsWith('/seri/')) {
+        const slugPart = link.replace('/seri/', '').split('/')[0].trim();
+        if (slugPart) {
+          seriesTitle = slugPart.replace(/-/g, ' ');
+        }
+      }
+
+      if (seriesTitle) {
+        rawImg = getProxiedImageUrl(null, seriesTitle, null, 'w185', 'media');
       }
     } else if (notification.type === 'actor' || (link && link.startsWith('/oyuncu/'))) {
       const name = notification.title?.includes('•')

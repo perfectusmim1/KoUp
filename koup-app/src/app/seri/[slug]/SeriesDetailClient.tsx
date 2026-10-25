@@ -1105,17 +1105,8 @@ export default function SeriesDetailClient({
           filter: `media_id=eq.${media.id}`,
         },
         (payload: any) => {
-          const newEp = payload?.new;
+          // Silently refresh the local page episodes so newly ingested episodes appear immediately
           void handleAdminSyncComplete();
-          if (newEp) {
-            triggerSound('success');
-            pushNotification(
-              'Yeni Bölüm Eklendi! 🎉',
-              `${media.title} - ${newEp.episode_number}. Bölüm yayında.`,
-              'episode',
-              `/seri/${media.slug}/${newEp.episode_number}`
-            );
-          }
         }
       )
       .on(
@@ -1135,7 +1126,7 @@ export default function SeriesDetailClient({
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [media?.id, media?.title, media?.slug, handleAdminSyncComplete, pushNotification]);
+  }, [media?.id, handleAdminSyncComplete]);
 
   const backdropSrc = getProxiedImageUrl(
     media.backdrop_image || media.cover_image,

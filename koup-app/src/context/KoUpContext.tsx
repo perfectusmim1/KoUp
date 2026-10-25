@@ -533,8 +533,16 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
                   }
                 });
 
-                // 2. Process prev (from local cache / optimistic)
+                // 2. Process prev (only fresh optimistic items, never resurrect deleted DB notifications)
                 prev.forEach((n) => {
+                  if (!n || !n.id) return;
+                  const isOptimistic = n.id.startsWith('notif-');
+                  if (!isOptimistic) return;
+
+                  if (n.type === 'episode' && n.mediaId && !followedMediaIds.includes(n.mediaId)) {
+                    return;
+                  }
+
                   const t = (n.title || '').toLowerCase();
                   const b = (n.body || '').toLowerCase();
                   const isJunk =
@@ -542,7 +550,8 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
                     t.includes('yanıtınız gönderildi') ||
                     t.includes('yanıtın gönderildi') ||
                     b.includes('tartışmasına katkın kaydedildi') ||
-                    b.includes('yorumuna yanıtınız eklendi');
+                    b.includes('yorumuna yanıtınız eklendi') ||
+                    b.includes('teşkilat');
                   const contentKey = `${(n.title || '').trim()}::${(n.body || '').trim()}`;
                   if (!isJunk && !mapById.has(n.id) && !seenContent.has(contentKey)) {
                     mapById.set(n.id, n);
@@ -769,6 +778,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
                   t.includes('oturum kapatıldı') ||
                   b.includes('reply 1988') ||
                   b.includes('yoo in na') ||
+                  b.includes('teşkilat') ||
                   n.id === 'notif-comment-1' ||
                   n.id === 'notif-ep-1' ||
                   n.id === 'notif-actor-1' ||
@@ -1071,8 +1081,14 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       // 4. system: Official warning or message from admin/mod team.
       let finalType: 'episode' | 'actor' | 'reply' | 'system' = 'system';
       if (type === 'episode') {
+        if (extra?.mediaId && !followedMediaIds.includes(extra.mediaId)) {
+          return;
+        }
         finalType = 'episode';
       } else if (type === 'actor') {
+        if (extra?.personId && !followedPersonIds.includes(extra.personId)) {
+          return;
+        }
         finalType = 'actor';
       } else if (type === 'reply') {
         finalType = 'reply';
