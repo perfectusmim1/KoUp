@@ -187,21 +187,28 @@ def main():
     )
 
     step_count = 0
+    last_error_line = ""
     for line in iter(proc.stdout.readline, ''):
         line_clean = line.strip()
         if not line_clean:
             continue
         print(line_clean, flush=True)
 
+        is_error = any(kw in line_clean for kw in ("HATA", "Error", "Exception", "Traceback", "failed", "başarısız"))
+        if is_error:
+            last_error_line = line_clean
+
         step_count += 1
         # Stream important status lines to Supabase Realtime
         if job_id and (
             line_clean.startswith("[")
+            or is_error
             or "BÖLÜM" in line_clean
             or "KAYIT" in line_clean
             or "YENİ" in line_clean
             or "EŞLEŞME" in line_clean
             or "R2" in line_clean
+            or "ONARIM" in line_clean
             or step_count % 8 == 0
         ):
             progress_val = min(92, 45 + min(45, step_count * 2))
@@ -211,6 +218,8 @@ def main():
 
     if proc.returncode != 0:
         err_msg = f"Senkronizasyon alt işlemi hata ile sonlandı (kod: {proc.returncode})"
+        if last_error_line:
+            err_msg += f" -> {last_error_line}"
         log("HATA", err_msg)
         if job_id:
             now = datetime.now().strftime("%H:%M:%S")

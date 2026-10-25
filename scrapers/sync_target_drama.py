@@ -2141,6 +2141,58 @@ def main():
     cur.execute("SELECT * FROM dramas WHERE id = ?", (args.drama_id,))
     drama = cur.fetchone()
     if not drama:
+        log("ONARIM", f"Drama #{args.drama_id} SQLite yerel veritabanında bulunamadı. Supabase üzerinden kurtarılıyor...")
+        try:
+            from scrapers.supabase_sync_helper import sb_request
+            sb_res = sb_request("GET", f"/rest/v1/media?id=eq.{args.drama_id}&select=*")
+            if isinstance(sb_res, list) and sb_res:
+                sb_media = sb_res[0]
+                cur.execute(
+                    """
+                    INSERT INTO dramas (
+                        id, title, native_title, slug, content_type, country, country_name,
+                        release_year, status_broadcast, status_translation, cover_image, backdrop_image,
+                        overview, source_url, tmdb_id, imdb_id, anilist_id, anilist_url,
+                        episode_count, sources_count, episodes_available, alt_sites, tags, categories,
+                        created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                    """,
+                    (
+                        sb_media.get("id"),
+                        sb_media.get("title"),
+                        sb_media.get("native_title"),
+                        sb_media.get("slug"),
+                        sb_media.get("content_type", "dizi"),
+                        sb_media.get("country_code", "TR"),
+                        sb_media.get("country_name", "Türkiye"),
+                        sb_media.get("release_year"),
+                        sb_media.get("status_broadcast", "Devam Ediyor"),
+                        sb_media.get("status_translation", "Tamamlandı"),
+                        sb_media.get("cover_image"),
+                        sb_media.get("backdrop_image"),
+                        sb_media.get("overview"),
+                        sb_media.get("source_url"),
+                        sb_media.get("tmdb_id"),
+                        sb_media.get("imdb_id"),
+                        sb_media.get("anilist_id"),
+                        sb_media.get("anilist_url"),
+                        sb_media.get("episode_count", 0),
+                        sb_media.get("sources_count", 0),
+                        sb_media.get("episodes_available", 0),
+                        json.dumps(sb_media.get("alt_sites", [])) if sb_media.get("alt_sites") else None,
+                        json.dumps(sb_media.get("tags", [])) if sb_media.get("tags") else None,
+                        json.dumps(sb_media.get("categories", [])) if sb_media.get("categories") else None,
+                    ),
+                )
+                conn.commit()
+                log("ONARIM", f"Drama #{args.drama_id} ('{sb_media.get('title')}') Supabase üzerinden SQLite arşivine başarıyla kaydedildi.")
+                cur.execute("SELECT * FROM dramas WHERE id = ?", (args.drama_id,))
+                drama = cur.fetchone()
+        except Exception as e_sb:
+            log("UYARI", f"Supabase fallback kurtarma hatası: {e_sb}")
+
+    if not drama:
         print(f"HATA: Drama #{args.drama_id} veritabanında bulunamadı.")
         conn.close()
         sys.exit(1)

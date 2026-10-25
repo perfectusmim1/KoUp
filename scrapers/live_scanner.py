@@ -420,7 +420,14 @@ def scan_ddizi(conn, cur, idx, limit=30, target=None):
             cur.execute("SELECT * FROM dramas WHERE id = ?", (did,))
             dr = cur.fetchone()
             if dr:
-                eps_added, srcs_added = sync_ddizi_target(conn, cur, dict(dr), target_url=target if target.startswith('http') else None)
+                if isinstance(dr, sqlite3.Row):
+                    dr_dict = dict(dr)
+                elif isinstance(dr, dict):
+                    dr_dict = dr
+                else:
+                    cols = [d[0] for d in cur.description]
+                    dr_dict = dict(zip(cols, dr))
+                eps_added, srcs_added = sync_ddizi_target(conn, cur, dr_dict, target_url=target if target.startswith('http') else None)
                 sync_drama_bundle_and_counts(conn, cur, did)
                 safe_commit(conn)
                 return eps_added, []
@@ -497,7 +504,14 @@ def scan_ddizi(conn, cur, idx, limit=30, target=None):
                     cur.execute("SELECT * FROM dramas WHERE id = ?", (did,))
                     dr_full = cur.fetchone()
                     if dr_full:
-                        sync_ddizi_target(conn, cur, dict(dr_full))
+                        if isinstance(dr_full, sqlite3.Row):
+                            dr_dict = dict(dr_full)
+                        elif isinstance(dr_full, dict):
+                            dr_dict = dr_full
+                        else:
+                            cols = [d[0] for d in cur.description]
+                            dr_dict = dict(zip(cols, dr_full))
+                        sync_ddizi_target(conn, cur, dr_dict)
             except Exception as e_gap:
                 log("BOŞLUK UYARISI", f"Boşluk taraması uyarısı: {e_gap}")
 

@@ -201,14 +201,6 @@ export default function Navbar() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
-  const [osShortcut, setOsShortcut] = useState<'⌘K' | 'Ctrl K'>('Ctrl K');
-
-  useEffect(() => {
-    if (typeof navigator !== 'undefined') {
-      const isMac = /Mac|iPod|iPhone|iPad/i.test(navigator.userAgent || navigator.platform || '');
-      setOsShortcut(isMac ? '⌘K' : 'Ctrl K');
-    }
-  }, []);
 
   const [isScrolled, setIsScrolled] = useState(false);
 
@@ -600,7 +592,7 @@ export default function Navbar() {
               placeholder="İçerik veya oyuncu ara..."
               className="bg-transparent text-xs text-white placeholder-white/55 focus:outline-none w-full"
             />
-            {query ? (
+            {query && (
               <button
                 onClick={() => setQuery('')}
                 className="text-white/60 hover:text-white cursor-pointer"
@@ -608,13 +600,6 @@ export default function Navbar() {
               >
                 <X className="w-3.5 h-3.5" />
               </button>
-            ) : (
-              <kbd
-                suppressHydrationWarning
-                className="hidden xl:inline-block text-[10px] font-mono text-white/50 px-1.5 py-0.5 rounded-md bg-white/[0.06] border border-white/[0.08]"
-              >
-                {osShortcut}
-              </kbd>
             )}
           </div>
 
