@@ -29,28 +29,32 @@ const PERSON_TABS = [
     id: 'all',
     label: 'Tüm Yıldızlar & Karakterler',
     icon: Sparkles,
-    activePillClass: 'bg-white shadow-[0_0_18px_rgba(255,255,255,0.35)]',
-    activeTextClass: 'text-black font-extrabold',
+    activePillClass:
+      'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40',
+    activeTextClass: 'text-white font-extrabold',
   },
   {
     id: 'actor',
     label: 'Dizi & Sinema Oyuncuları',
     icon: Clapperboard,
-    activePillClass: 'bg-emerald-500 shadow-[0_0_18px_rgba(52,211,153,0.45)]',
+    activePillClass:
+      'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40',
     activeTextClass: 'text-white font-extrabold',
   },
   {
     id: 'character',
     label: 'Anime Karakterleri',
     icon: UserCheck,
-    activePillClass: 'bg-purple-500 shadow-[0_0_18px_rgba(168,85,247,0.45)]',
+    activePillClass:
+      'bg-gradient-to-r from-purple-500 to-pink-600 shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/40',
     activeTextClass: 'text-white font-extrabold',
   },
   {
     id: 'seiyuu',
     label: 'Seslendirmenler (Seiyuu)',
     icon: Mic,
-    activePillClass: 'bg-amber-500 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
+    activePillClass:
+      'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40',
     activeTextClass: 'text-white font-extrabold',
   },
 ] as const;
@@ -172,50 +176,61 @@ export default function ActorsLeaderboardPage() {
       </div>
 
       {/* CATEGORY TABS WITH FLUID SPRING PILL */}
-      <div className="flex flex-wrap items-center gap-2">
-        {PERSON_TABS.map((tab) => {
-          const Icon = tab.icon;
-          const active = filterType === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => {
-                triggerSound('click');
-                setFilterType(tab.id);
-                setCurrentPage(1);
-              }}
-              className={`relative flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition-colors duration-200 cursor-pointer ${
-                active ? tab.activeTextClass : 'glass-pill text-white/75 hover:text-white'
-              }`}
-            >
-              {active && (
-                <motion.span
-                  layoutId="oyuncular-tab-active-pill"
-                  initial={false}
-                  transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
-                  className={`absolute inset-0 rounded-full ${tab.activePillClass}`}
-                />
-              )}
-              <Icon className="w-3.5 h-3.5 relative z-10" />
-              <span className="relative z-10">{tab.label}</span>
-            </button>
-          );
-        })}
+      <div className="overflow-x-auto no-scrollbar pb-1.5 [-webkit-overflow-scrolling:touch]">
+        <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10">
+          {PERSON_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const active = filterType === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  triggerSound('click');
+                  setFilterType(tab.id);
+                  setCurrentPage(1);
+                }}
+                className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-colors duration-200 cursor-pointer select-none active:scale-95 ${
+                  active ? tab.activeTextClass : 'text-white/70 hover:text-white'
+                }`}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="oyuncular-tab-active-pill"
+                    initial={false}
+                    transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
+                    className={`absolute inset-0 rounded-xl ${tab.activePillClass} z-0`}
+                  />
+                )}
+                <Icon className="w-3.5 h-3.5 relative z-10" />
+                <span className="relative z-10">{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* LEADERBOARD GRID */}
       {isLoading ? (
-        <div className="py-20 text-center text-sm font-mono text-white/50 animate-pulse">
-          Oyuncu ve Karakter Sıralaması Yükleniyor...
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div
+              key={i}
+              className="rounded-3xl p-4 bg-[#0f0f11] border border-white/[0.06] animate-pulse flex flex-col justify-between"
+            >
+              <div className="aspect-square rounded-2xl bg-white/[0.04] mb-3" />
+              <div className="h-4 w-3/4 rounded-lg bg-white/[0.06] mb-2" />
+              <div className="h-3 w-1/2 rounded-lg bg-white/[0.04]" />
+            </div>
+          ))}
+        </div>
+      ) : people.length === 0 ? (
+        <div className="py-24 text-center rounded-3xl bg-[#0f0f11] border border-white/10">
+          <p className="text-base text-white/70">
+            Aramanıza uygun oyuncu veya karakter bulunamadı.
+          </p>
         </div>
       ) : (
-        <motion.div
-          key={`oyuncular-grid-${filterType}-${searchQuery}-${sortBy}-${currentPage}`}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4"
-        >
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
           {people.map((person, idx) => {
             const rank = (currentPage - 1) * PAGE_SIZE + idx + 1;
             const isFav = favPersonIds.includes(person.id);
@@ -223,16 +238,9 @@ export default function ActorsLeaderboardPage() {
             const displayFavs = person.favorites_count || 0;
 
             return (
-              <motion.div
+              <div
                 key={person.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  duration: 0.22,
-                  delay: Math.min(idx * 0.015, 0.18),
-                  ease: [0.16, 1, 0.3, 1],
-                }}
-                className="rounded-3xl p-4 flex flex-col justify-between group bg-[#0f0f11] border border-white/[0.08] hover:border-white/30 hover:shadow-[0_0_24px_-4px_rgba(41,151,255,0.25),0_10px_24px_rgba(0,0,0,0.7)] transition-colors duration-200"
+                className="rounded-3xl p-4 flex flex-col justify-between group bg-[#0f0f11] border border-white/[0.08] hover:border-white/30 hover:shadow-[0_0_24px_-4px_rgba(41,151,255,0.25),0_10px_24px_rgba(0,0,0,0.7)] transition-all duration-200"
               >
                 <div>
                   <div className="relative aspect-square rounded-2xl overflow-hidden mb-3 bg-black/50 border border-white/10 group-hover:border-white/30 transition-colors">
@@ -319,10 +327,10 @@ export default function ActorsLeaderboardPage() {
                     <Bell className={`w-3.5 h-3.5 ${isFol ? 'fill-slate-950' : ''}`} />
                   </button>
                 </div>
-              </motion.div>
+              </div>
             );
           })}
-        </motion.div>
+        </div>
       )}
 
       {/* PAGINATION DECK (Apple TV+ Cinema Glass Design) */}

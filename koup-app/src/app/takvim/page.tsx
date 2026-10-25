@@ -206,7 +206,7 @@ export default function CalendarPage() {
                       damping: 34,
                       mass: 0.6,
                     }}
-                    className="absolute inset-0 rounded-xl bg-sky-500 shadow-[0_0_20px_rgba(56,189,248,0.45)] z-0"
+                    className="absolute inset-0 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_20px_rgba(56,189,248,0.45)] border border-sky-400/40 z-0"
                   />
                 )}
                 <span className="w-full text-center relative z-10 text-xs font-mono font-bold">

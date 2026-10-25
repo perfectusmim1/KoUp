@@ -421,6 +421,17 @@ export default function AdminAutomationCenter({
     return localScrapers.filter((s) => s.is_enabled).length;
   }, [localScrapers]);
 
+  // Real aggregate stats across runs & scraper configs (solves the +0 issue)
+  const stats24h = useMemo(() => {
+    const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+    const recentRuns = runs.filter((r) => r.started_at && new Date(r.started_at).getTime() > oneDayAgo);
+    const eps24h = recentRuns.reduce((acc, r) => acc + (r.total_episodes_added || 0), 0);
+    const sources24h = recentRuns.reduce((acc, r) => acc + (r.total_sources_added || 0), 0);
+    const dramas24h = recentRuns.reduce((acc, r) => acc + (r.total_dramas_added || 0), 0);
+    const totalSynced = localScrapers.reduce((acc, s) => acc + (s.items_synced || 0), 0);
+    return { eps24h, sources24h, dramas24h, totalSynced };
+  }, [runs, localScrapers]);
+
   // Filtered lists for modals
   const filteredDramas = useMemo(() => {
     const list = selectedRun?.dramas_added_list || [];
@@ -487,80 +498,51 @@ export default function AdminAutomationCenter({
   };
 
   return (
-    <div className="space-y-6">
-      {/* ================= HERO AUTOMATION COMMAND CENTER BANNER ================= */}
-      <section className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/15 relative overflow-hidden space-y-6">
-        <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full blur-3xl opacity-15 pointer-events-none bg-gradient-to-br from-emerald-500 via-sky-600 to-indigo-700" />
-
-        {/* Top Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10">
-          <div className="space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-mono font-bold flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                12 Saatlik Cron Aktif
-              </span>
-              <span className="px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-xs font-mono text-white/60">
-                0 */12 * * * (00:00 & 12:00 UTC)
-              </span>
-              <span className="px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-xs font-mono text-sky-300">
-                Cloudflare R2 Arşiv Senkronize
-              </span>
+    <div className="space-y-5">
+      {/* ================= COMPACT HERO HEADER & CONTROLS ================= */}
+      <section className="rounded-2xl bg-[#0e0e12] p-4 sm:p-5 border border-white/10 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-emerald-400">
+              <Radio className="w-5 h-5" />
             </div>
-            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-              <Radio className="w-6 h-6 text-emerald-400" />
-              <span>Otomasyon & Scraper İstatistik Merkezi</span>
-            </h1>
-            <p className="text-xs sm:text-sm text-white/60 max-w-2xl leading-relaxed">
-              12 saatte bir çalışan çok kaynaklı tarayıcı botlarının performansını, yeni eklenen serileri, bölümleri ve oynatılabilir kaynakları buradan anlık izleyip yönetebilirsiniz.
-            </p>
-          </div>
-
-          {/* Quick Stats Badges */}
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <div className="px-3.5 py-2 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
-              <Clock className="w-4 h-4 text-white/40" />
-              <div className="text-left">
-                <span className="text-[10px] font-mono text-white/45 block">Son Otomasyon</span>
-                <span className="text-xs font-bold font-mono text-white">
-                  {selectedRun?.completed_at ? formatTimeAgo(selectedRun.completed_at) : 'Tamamlandı'}
-                </span>
-              </div>
-            </div>
-
-            <div className="px-3.5 py-2 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <div className="text-left">
-                <span className="text-[10px] font-mono text-white/45 block">Aktif Bot Sayısı</span>
-                <span className="text-xs font-bold font-mono text-emerald-400">
+            <div>
+              <h1 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                <span>Scraper & Otomasyon Merkezi</span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 text-[10px] font-mono font-bold">
                   {enabledBotsCount} / {localScrapers.length} Aktif
                 </span>
+              </h1>
+              <div className="text-[11px] font-mono text-white/40">
+                12s Cron (00:00 & 12:00 UTC) • Cloudflare R2 Sync
               </div>
             </div>
+          </div>
 
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => fetchAutomationData()}
               disabled={isLoadingRuns}
-              className="p-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white transition-all cursor-pointer disabled:opacity-50"
-              title="Verileri Yenile"
+              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-all cursor-pointer"
+              title="Yenile"
             >
-              <RefreshCw className={`w-4 h-4 ${isLoadingRuns ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingRuns ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </div>
 
-        {/* Action Controls & Trigger Bar */}
-        <div className="pt-4 border-t border-white/[0.08] flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 relative z-10">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full md:w-auto">
-            <div className="w-full sm:w-80">
+        {/* Action Controls */}
+        <div className="pt-3 border-t border-white/[0.06] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="w-full sm:w-72">
               <CustomSelect
                 value={automationTarget}
                 onChange={setAutomationTarget}
                 options={targetOptions}
-                placeholder="Çalıştırılacak Görevi Seçiniz"
+                placeholder="Görev Seç"
                 size="sm"
-                variant="glass"
+                variant="dark"
               />
             </div>
 
@@ -568,52 +550,40 @@ export default function AdminAutomationCenter({
               type="button"
               onClick={handleRunFullAutomation}
               disabled={isAutomationRunning}
-              className={`px-5 py-2.5 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all shadow-lg ${
-                isAutomationRunning
-                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                  : 'bg-emerald-500 hover:bg-emerald-400 text-black shadow-emerald-500/20'
-              }`}
+              className="px-4 py-2 rounded-xl font-bold text-xs bg-white text-black hover:bg-white/90 cursor-pointer transition-all shrink-0 flex items-center gap-1.5 disabled:opacity-50"
             >
               {isAutomationRunning ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Otomasyon Çalışıyor...</span>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Çalışıyor...</span>
                 </>
               ) : (
                 <>
-                  <Play className="w-4 h-4 fill-black" />
-                  <span>Otomasyonu Şimdi Çalıştır</span>
+                  <Play className="w-3.5 h-3.5 fill-black" />
+                  <span>Şimdi Çalıştır</span>
                 </>
               )}
             </button>
           </div>
 
-          <div className="flex items-center gap-2 self-end md:self-auto">
+          <div className="flex items-center gap-2">
             {liveLogs.length > 0 && (
               <button
                 type="button"
                 onClick={() => setShowLiveConsole(!showLiveConsole)}
-                className={`px-3 py-2 rounded-2xl text-xs font-mono font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${
-                  showLiveConsole
-                    ? 'bg-sky-500/20 text-sky-300 border-sky-400/40'
-                    : 'bg-white/5 text-white/70 border-white/10 hover:bg-white/10'
-                }`}
+                className="px-3 py-1.5 rounded-xl text-xs font-mono bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 flex items-center gap-1.5 cursor-pointer"
               >
-                <Terminal className="w-3.5 h-3.5" />
-                <span>{showLiveConsole ? 'Konsolu Gizle' : 'Canlı Konsol'}</span>
-                {liveLogs.length > 0 && (
-                  <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse ml-0.5" />
-                )}
+                <Terminal className="w-3.5 h-3.5 text-sky-400" />
+                <span>{showLiveConsole ? 'Konsolu Gizle' : 'Konsol'}</span>
               </button>
             )}
-
             <button
               type="button"
               onClick={() => setActiveModal('run_details')}
-              className="px-3.5 py-2 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 text-white/70 border border-white/10 flex items-center gap-1.5 cursor-pointer"
             >
               <Calendar className="w-3.5 h-3.5 text-amber-400" />
-              <span>Çalışma Raporu</span>
+              <span>Rapor</span>
             </button>
           </div>
         </div>
@@ -627,11 +597,11 @@ export default function AdminAutomationCenter({
               exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden"
             >
-              <div className="p-4 rounded-2xl bg-black/85 border border-white/15 font-mono text-[11px] space-y-1.5 shadow-2xl">
+              <div className="p-4 rounded-xl bg-black/90 border border-white/10 font-mono text-[11px] space-y-1.5">
                 <div className="flex items-center justify-between pb-2 border-b border-white/10 text-white/50">
                   <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="text-white font-bold">Canlı Otomasyon Çıktısı</span>
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-white font-bold">Canlı Log Çıktısı</span>
                   </div>
                   <button
                     type="button"
@@ -666,178 +636,108 @@ export default function AdminAutomationCenter({
         </AnimatePresence>
       </section>
 
-      {/* ================= 4 CLICKABLE STAT CARDS (USER REQUIREMENT) ================= */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* CARD 1: YENİ EKLENEN SERİLER (CLICKABLE) */}
-        <motion.button
+      {/* ================= 4 CLEAN STAT CARDS ================= */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* CARD 1: TOPLAM SENKRONİZE */}
+        <div className="p-4 rounded-2xl bg-[#0e0e12] border border-white/10 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-white/50">
+            <span className="text-[11px] font-mono uppercase tracking-wider">Toplam Senkronize</span>
+            <Layers className="w-4 h-4 text-white/40" />
+          </div>
+          <div className="mt-2">
+            <span className="text-2xl sm:text-3xl font-black font-mono text-white tracking-tight">
+              {stats24h.totalSynced.toLocaleString('tr-TR')}
+            </span>
+            <span className="text-[11px] font-mono text-white/40 block mt-0.5">
+              8 bot arşiv toplamı
+            </span>
+          </div>
+        </div>
+
+        {/* CARD 2: BÖLÜM ARTIŞI */}
+        <button
           type="button"
-          whileHover={{ y: -3, scale: 1.01 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => {
-            setSearchQuery('');
-            setTypeFilter('all');
-            setActiveModal('series');
-          }}
-          className="p-5 rounded-3xl apple-glass border border-purple-500/30 hover:border-purple-400/70 bg-gradient-to-br from-purple-500/10 via-white/[0.02] to-transparent text-left transition-all cursor-pointer group shadow-lg flex flex-col justify-between gap-4"
-        >
-          <div className="flex items-center justify-between">
-            <div className="p-3 rounded-2xl bg-purple-500/20 border border-purple-500/30 text-purple-300 group-hover:scale-110 transition-transform">
-              <Film className="w-5 h-5" />
-            </div>
-            <span className="px-2.5 py-1 rounded-full bg-purple-500/15 border border-purple-500/25 text-[10px] font-mono font-bold text-purple-300 flex items-center gap-1">
-              <span>Tıkla & Listele</span>
-              <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-            </span>
-          </div>
-
-          <div>
-            <span className="text-3xl font-black font-mono text-white tracking-tight block">
-              +{selectedRun?.total_dramas_added ?? (selectedRun?.dramas_added_list?.length || 0)}
-            </span>
-            <span className="text-xs font-bold text-purple-200 mt-0.5 block">
-              Yeni Eklenen Yapımlar
-            </span>
-            <p className="text-[11px] text-white/50 mt-1 leading-snug">
-              Otomasyonda keşfedilen yeni dizi, anime ve sinema yapımları.
-            </p>
-          </div>
-
-          <div className="pt-2 border-t border-white/[0.06] text-[10px] font-mono text-purple-300/80 flex items-center justify-between">
-            <span>{selectedRun?.dramas_added_list?.length || 0} Yapım Kayıtlı</span>
-            <span className="underline group-hover:text-purple-200">Kataloğu Aç</span>
-          </div>
-        </motion.button>
-
-        {/* CARD 2: YENİ EKLENEN BÖLÜMLER (CLICKABLE) */}
-        <motion.button
-          type="button"
-          whileHover={{ y: -3, scale: 1.01 }}
-          whileTap={{ scale: 0.98 }}
           onClick={() => {
             setSearchQuery('');
             setActiveModal('episodes');
           }}
-          className="p-5 rounded-3xl apple-glass border border-emerald-500/30 hover:border-emerald-400/70 bg-gradient-to-br from-emerald-500/10 via-white/[0.02] to-transparent text-left transition-all cursor-pointer group shadow-lg flex flex-col justify-between gap-4"
+          className="p-4 rounded-2xl bg-[#0e0e12] border border-white/10 hover:border-white/25 transition-all text-left flex flex-col justify-between cursor-pointer group"
         >
-          <div className="flex items-center justify-between">
-            <div className="p-3 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 group-hover:scale-110 transition-transform">
-              <Tv className="w-5 h-5" />
-            </div>
-            <span className="px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/25 text-[10px] font-mono font-bold text-emerald-300 flex items-center gap-1">
-              <span>Tıkla & Listele</span>
-              <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+          <div className="flex items-center justify-between text-white/50">
+            <span className="text-[11px] font-mono uppercase tracking-wider group-hover:text-white transition-colors">
+              Eklenen Bölümler
+            </span>
+            <Tv className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div className="mt-2">
+            <span className="text-2xl sm:text-3xl font-black font-mono text-emerald-400 tracking-tight">
+              +{stats24h.eps24h > 0 ? stats24h.eps24h : (selectedRun?.total_episodes_added || 0)}
+            </span>
+            <span className="text-[11px] font-mono text-white/40 block mt-0.5">
+              {stats24h.eps24h > 0 ? 'Son 24 saatte eklendi' : 'Son tarama döngüsü'} • Listele →
             </span>
           </div>
+        </button>
 
-          <div>
-            <span className="text-3xl font-black font-mono text-white tracking-tight block">
-              +{selectedRun?.total_episodes_added ?? (selectedRun?.episodes_added_list?.length || 0)}
-            </span>
-            <span className="text-xs font-bold text-emerald-200 mt-0.5 block">
-              Yeni Eklenen Bölümler
-            </span>
-            <p className="text-[11px] text-white/50 mt-1 leading-snug">
-              Son tarama döngüsünde sisteme işlenen yeni bölüm yayınları.
-            </p>
-          </div>
-
-          <div className="pt-2 border-t border-white/[0.06] text-[10px] font-mono text-emerald-300/80 flex items-center justify-between">
-            <span>{selectedRun?.episodes_added_list?.length || 0} Bölüm Kayıtlı</span>
-            <span className="underline group-hover:text-emerald-200">Bölümleri Aç</span>
-          </div>
-        </motion.button>
-
-        {/* CARD 3: EKLENEN CANLI KAYNAKLAR (CLICKABLE) */}
-        <motion.button
+        {/* CARD 3: KAYNAK ARTIŞI */}
+        <button
           type="button"
-          whileHover={{ y: -3, scale: 1.01 }}
-          whileTap={{ scale: 0.98 }}
           onClick={() => {
             setSearchQuery('');
             setProviderFilter('all');
             setActiveModal('sources');
           }}
-          className="p-5 rounded-3xl apple-glass border border-amber-500/30 hover:border-amber-400/70 bg-gradient-to-br from-amber-500/10 via-white/[0.02] to-transparent text-left transition-all cursor-pointer group shadow-lg flex flex-col justify-between gap-4"
+          className="p-4 rounded-2xl bg-[#0e0e12] border border-white/10 hover:border-white/25 transition-all text-left flex flex-col justify-between cursor-pointer group"
         >
-          <div className="flex items-center justify-between">
-            <div className="p-3 rounded-2xl bg-amber-500/20 border border-amber-500/30 text-amber-300 group-hover:scale-110 transition-transform">
-              <Layers className="w-5 h-5" />
-            </div>
-            <span className="px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/25 text-[10px] font-mono font-bold text-amber-300 flex items-center gap-1">
-              <span>Tıkla & Listele</span>
-              <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+          <div className="flex items-center justify-between text-white/50">
+            <span className="text-[11px] font-mono uppercase tracking-wider group-hover:text-white transition-colors">
+              Eklenen Kaynaklar
+            </span>
+            <Film className="w-4 h-4 text-sky-400" />
+          </div>
+          <div className="mt-2">
+            <span className="text-2xl sm:text-3xl font-black font-mono text-sky-400 tracking-tight">
+              +{stats24h.sources24h > 0 ? stats24h.sources24h : (selectedRun?.total_sources_added || 0)}
+            </span>
+            <span className="text-[11px] font-mono text-white/40 block mt-0.5">
+              {stats24h.sources24h > 0 ? 'Son 24 saatte eklendi' : 'Son tarama döngüsü'} • Listele →
             </span>
           </div>
+        </button>
 
-          <div>
-            <span className="text-3xl font-black font-mono text-white tracking-tight block">
-              +{selectedRun?.total_sources_added ?? (selectedRun?.sources_added_list?.length || 0)}
-            </span>
-            <span className="text-xs font-bold text-amber-200 mt-0.5 block">
-              Canlı Oynatma Kaynakları
-            </span>
-            <p className="text-[11px] text-white/50 mt-1 leading-snug">
-              MolyStream, Close HLS, Rapidrame, OK.ru, Tau-Video doğrudan akışları.
-            </p>
-          </div>
-
-          <div className="pt-2 border-t border-white/[0.06] text-[10px] font-mono text-amber-300/80 flex items-center justify-between">
-            <span>{selectedRun?.sources_added_list?.length || 0} Akış Doğrulandı</span>
-            <span className="underline group-hover:text-amber-200">Kaynakları Gör</span>
-          </div>
-        </motion.button>
-
-        {/* CARD 4: ÇALIŞMA SÜRESİ & DURUM */}
-        <motion.button
+        {/* CARD 4: DURUM & SÜRE */}
+        <button
           type="button"
-          whileHover={{ y: -3, scale: 1.01 }}
-          whileTap={{ scale: 0.98 }}
           onClick={() => setActiveModal('run_details')}
-          className="p-5 rounded-3xl apple-glass border border-sky-500/30 hover:border-sky-400/70 bg-gradient-to-br from-sky-500/10 via-white/[0.02] to-transparent text-left transition-all cursor-pointer group shadow-lg flex flex-col justify-between gap-4"
+          className="p-4 rounded-2xl bg-[#0e0e12] border border-white/10 hover:border-white/25 transition-all text-left flex flex-col justify-between cursor-pointer group"
         >
-          <div className="flex items-center justify-between">
-            <div className="p-3 rounded-2xl bg-sky-500/20 border border-sky-500/30 text-sky-300 group-hover:scale-110 transition-transform">
-              <Activity className="w-5 h-5" />
-            </div>
-            <span className="px-2.5 py-1 rounded-full bg-sky-500/15 border border-sky-500/25 text-[10px] font-mono font-bold text-sky-300 flex items-center gap-1">
-              <span>Raporu Gör</span>
-              <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+          <div className="flex items-center justify-between text-white/50">
+            <span className="text-[11px] font-mono uppercase tracking-wider group-hover:text-white transition-colors">
+              Son Çalışma Durumu
+            </span>
+            <Activity className="w-4 h-4 text-amber-400" />
+          </div>
+          <div className="mt-2">
+            <span className="text-2xl sm:text-3xl font-black font-mono text-white tracking-tight">
+              {selectedRun ? (selectedRun.status === 'completed' ? 'Başarılı' : selectedRun.status === 'running' ? 'Çalışıyor' : 'Hata') : 'Beklemede'}
+            </span>
+            <span className="text-[11px] font-mono text-white/40 block mt-0.5">
+              {selectedRun?.duration_seconds ? `${selectedRun.duration_seconds} sn • ` : ''}{selectedRun?.completed_at ? formatTimeAgo(selectedRun.completed_at) : '12s cron'} • Rapor →
             </span>
           </div>
-
-          <div>
-            <span className="text-3xl font-black font-mono text-white tracking-tight block">
-              {selectedRun?.duration_seconds ? `${selectedRun.duration_seconds} sn` : 'Tamam'}
-            </span>
-            <span className="text-xs font-bold text-sky-200 mt-0.5 block">
-              Çalışma Süresi & Durum
-            </span>
-            <p className="text-[11px] text-white/50 mt-1 leading-snug">
-              {selectedRun?.status === 'completed'
-                ? 'Başarıyla tamamlandı ve R2’ye yedeklendi.'
-                : selectedRun?.status === 'running'
-                ? 'İşlem arka planda devam ediyor...'
-                : 'Son çalışma sağlığı doğrulanıyor.'}
-            </p>
-          </div>
-
-          <div className="pt-2 border-t border-white/[0.06] text-[10px] font-mono text-sky-300/80 flex items-center justify-between">
-            <span>Tetikleyici: {selectedRun?.trigger_type || 'cron'}</span>
-            <span className="underline group-hover:text-sky-200">Detaylı Log</span>
-          </div>
-        </motion.button>
+        </button>
       </div>
 
-      {/* ================= RUN SELECTOR / HISTORY CAROUSEL ================= */}
+      {/* ================= RUN SELECTOR ================= */}
       {runs.length > 1 && (
-        <div className="p-4 rounded-3xl apple-glass border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="p-3.5 rounded-2xl bg-[#0e0e12] border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-emerald-400" />
-            <span className="text-xs font-bold text-white">İncelenen Otomasyon Çalışması:</span>
+            <Calendar className="w-4 h-4 text-white/50" />
+            <span className="text-xs font-medium text-white/70">Geçmiş Çalışmalar:</span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {runs.slice(0, 5).map((run, idx) => {
+          <div className="flex flex-wrap items-center gap-1.5">
+            {runs.slice(0, 6).map((run, idx) => {
               const isSelected = selectedRun?.id === run.id;
               const dateLabel = run.started_at
                 ? new Date(run.started_at).toLocaleDateString('tr-TR', {
@@ -846,20 +746,20 @@ export default function AdminAutomationCenter({
                     hour: '2-digit',
                     minute: '2-digit',
                   })
-                : `Çalışma #${run.id}`;
+                : `#${run.id}`;
 
               return (
                 <button
                   key={run.id}
                   type="button"
                   onClick={() => setSelectedRun(run)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-semibold transition-all cursor-pointer border ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-mono transition-all cursor-pointer border ${
                     isSelected
-                      ? 'bg-emerald-500 text-black border-emerald-400 shadow-md font-bold'
+                      ? 'bg-white text-black border-white font-bold'
                       : 'bg-white/5 text-white/70 border-white/10 hover:bg-white/10 hover:text-white'
                   }`}
                 >
-                  {idx === 0 ? `En Son (${dateLabel})` : dateLabel}
+                  {idx === 0 ? `Son (${dateLabel})` : dateLabel}
                 </button>
               );
             })}
@@ -867,158 +767,95 @@ export default function AdminAutomationCenter({
         </div>
       )}
 
-      {/* ================= BOT CONTROLS GRID (ENABLE/DISABLE IN 12H CRON) ================= */}
-      <section className="rounded-3xl apple-glass p-6 sm:p-8 border border-white/15 space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
-              <SlidersHorizontal className="w-5 h-5 text-emerald-400" />
-              <span>12 Saatlik Otomasyona Dahil Edilen Botlar</span>
-            </h2>
-            <p className="text-xs text-white/55 mt-0.5">
-              Aşağıdaki anahtarlar ile botların 12 saatlik otomatik cron döngüsünde çalışıp çalışmayacağını kontrol edebilirsiniz.
-            </p>
-          </div>
+      {/* ================= BOT CONTROLS GRID ================= */}
+      <section className="rounded-2xl bg-[#0e0e12] p-5 border border-white/10 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold text-white flex items-center gap-2">
+            <SlidersHorizontal className="w-4 h-4 text-emerald-400" />
+            <span>Scraper Botları ({localScrapers.length})</span>
+          </h2>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => handleToggleAllScrapers(true)}
-              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs cursor-pointer transition-all"
+              className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 text-[11px] font-medium cursor-pointer"
             >
               Tümünü Aç
             </button>
             <button
               type="button"
               onClick={() => handleToggleAllScrapers(false)}
-              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white/70 hover:text-white font-semibold text-xs cursor-pointer transition-all"
+              className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 text-[11px] font-medium cursor-pointer"
             >
               Tümünü Kapat
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {localScrapers.map((bot) => {
             const isRunning = runningScraperId === bot.id;
-            const brand = SCRAPER_BRANDS[bot.id];
 
             return (
               <div
                 key={bot.id}
-                className="p-5 rounded-3xl bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 hover:border-white/20 transition-all flex flex-col justify-between gap-5 group"
+                className="p-3.5 rounded-xl bg-white/[0.02] border border-white/10 hover:border-white/20 transition-all flex items-center justify-between gap-3"
               >
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`px-3 py-1.5 rounded-2xl bg-gradient-to-br ${
-                          brand?.bgGradient || 'from-sky-500/25 to-blue-900/40'
-                        } border ${brand?.borderGlow || 'border-white/20'} flex items-center gap-2 shrink-0`}
-                      >
-                        <div
-                          className={`w-2 h-2 rounded-full ${
-                            bot.is_enabled ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'
-                          }`}
-                        />
-                        <span
-                          className={`text-[11px] font-black tracking-wider uppercase font-mono ${
-                            brand?.textColor || 'text-white'
-                          }`}
-                        >
-                          {brand?.logoText || bot.name.slice(0, 8)}
-                        </span>
-                      </div>
-
-                      <div>
-                        <h3 className="text-sm font-bold text-white group-hover:text-sky-300 transition-colors">
-                          {bot.name}
-                        </h3>
-                        {brand?.category && (
-                          <span className="text-[10px] font-mono text-white/50 block">
-                            {brand.category}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Enable/Disable Toggle */}
-                    <button
-                      type="button"
-                      onClick={() => handleToggleScraperInCron(bot.id, bot.is_enabled)}
-                      className={`px-3 py-1.5 rounded-full text-[11px] font-mono font-bold transition-all cursor-pointer border ${
-                        bot.is_enabled
-                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40 hover:bg-emerald-500/30'
-                          : 'bg-rose-500/20 text-rose-300 border-rose-400/40 hover:bg-rose-500/30'
-                      }`}
-                    >
-                      {bot.is_enabled ? '12s Cron’da Aktif' : 'Devre Dışı (Atlanır)'}
-                    </button>
-                  </div>
-
-                  <p className="text-xs text-white/60 leading-relaxed">
-                    {bot.notes || brand?.protocol}
-                  </p>
-
-                  {brand?.domain && (
+                <div className="flex items-center gap-3 min-w-0">
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                      bot.is_enabled ? 'bg-emerald-400' : 'bg-rose-400/60'
+                    }`}
+                  />
+                  <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <a
-                        href={brand.domain}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-[11px] font-mono text-sky-400 hover:text-sky-300 transition-colors"
-                      >
-                        <Globe className="w-3 h-3" />
-                        <span>{brand.domain.replace('https://', '')}</span>
-                        <ExternalLink className="w-2.5 h-2.5 opacity-60" />
-                      </a>
+                      <span className="text-xs font-bold text-white truncate">{bot.name}</span>
+                      <span className="text-[10px] font-mono text-white/40">
+                        ({(bot.items_synced || 0).toLocaleString('tr-TR')})
+                      </span>
                     </div>
-                  )}
+                    <div className="text-[10px] font-mono text-white/40 truncate">
+                      Son: {bot.last_run_at ? formatTimeAgo(bot.last_run_at) : 'Beklemede'} • {bot.site_url?.replace('https://', '').replace('www.', '')}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="pt-3 border-t border-white/[0.06] flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-white/10 text-white/80">
-                      {(bot.items_synced || 0).toLocaleString('tr-TR')} Senkron
-                    </span>
-                    <span className="text-[11px] font-mono text-white/40">
-                      {bot.last_run_at ? formatTimeAgo(bot.last_run_at) : 'Beklemede'}
-                    </span>
-                  </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleScraperInCron(bot.id, bot.is_enabled)}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer border ${
+                      bot.is_enabled
+                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                    }`}
+                  >
+                    {bot.is_enabled ? 'Aktif' : 'Pasif'}
+                  </button>
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onOpenScraperDetail(bot.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs transition-all cursor-pointer"
-                    >
-                      <Terminal className="w-3.5 h-3.5 text-sky-400" />
-                      <span>Detay & Konsol</span>
-                    </button>
+                  <button
+                    type="button"
+                    onClick={() => onRunSingleScraper(bot.id)}
+                    disabled={isRunning || isAutomationRunning}
+                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-all cursor-pointer disabled:opacity-40"
+                    title="Şimdi Çalıştır"
+                  >
+                    {isRunning ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-300" />
+                    ) : (
+                      <Play className="w-3.5 h-3.5" />
+                    )}
+                  </button>
 
-                    <button
-                      type="button"
-                      onClick={() => onRunSingleScraper(bot.id)}
-                      disabled={isRunning || isAutomationRunning}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-semibold text-xs transition-all cursor-pointer shadow ${
-                        isRunning
-                          ? 'bg-amber-500/30 text-amber-300 border border-amber-500/40 animate-pulse'
-                          : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30'
-                      }`}
-                    >
-                      {isRunning ? (
-                        <>
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>Çalışıyor...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Play className="w-3.5 h-3.5 fill-emerald-300" />
-                          <span>Tek Başına Çalıştır</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onOpenScraperDetail(bot.id)}
+                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-all cursor-pointer"
+                    title="Detay & Log"
+                  >
+                    <Terminal className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             );

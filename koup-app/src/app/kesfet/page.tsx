@@ -38,35 +38,40 @@ const CONTENT_TYPES = [
     id: 'ALL',
     label: 'Tüm Türler',
     icon: Layers,
-    activePillClass: 'bg-white shadow-[0_0_20px_rgba(255,255,255,0.35)]',
-    activeTextClass: 'text-black font-extrabold',
+    activePillClass:
+      'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40',
+    activeTextClass: 'text-white font-extrabold',
   },
   {
     id: 'dizi',
     label: 'Diziler',
     icon: Tv,
-    activePillClass: 'bg-sky-500 shadow-[0_0_20px_rgba(56,189,248,0.45)]',
+    activePillClass:
+      'bg-gradient-to-r from-blue-500 to-indigo-600 shadow-[0_0_18px_rgba(99,102,241,0.45)] border border-indigo-400/40',
     activeTextClass: 'text-white font-extrabold',
   },
   {
     id: 'anime',
     label: 'Animeler',
     icon: Sparkles,
-    activePillClass: 'bg-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.45)]',
+    activePillClass:
+      'bg-gradient-to-r from-purple-500 to-pink-600 shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/40',
     activeTextClass: 'text-white font-extrabold',
   },
   {
     id: 'film',
     label: 'Sinema Filmleri',
     icon: Film,
-    activePillClass: 'bg-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.45)]',
+    activePillClass:
+      'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40',
     activeTextClass: 'text-white font-extrabold',
   },
   {
     id: 'program',
     label: 'Varyete & TV Programları',
     icon: Mic,
-    activePillClass: 'bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.45)]',
+    activePillClass:
+      'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40',
     activeTextClass: 'text-white font-extrabold',
   },
 ];
@@ -538,43 +543,45 @@ function DiscoverContent() {
         </div>
 
         {/* Content Type Row with Fluid Spring Sliding Pills */}
-        <div
-          ref={typeRowRef}
-          className="flex items-center gap-2 pt-2 border-t border-white/[0.06] overflow-x-auto no-scrollbar pb-1.5 [-webkit-overflow-scrolling:touch]"
-        >
-          {CONTENT_TYPES.map((ct) => {
-            const Icon = ct.icon;
-            const active = typeFilter === ct.id;
-            return (
-              <button
-                key={ct.id}
-                onClick={() => {
-                  triggerSound('click');
-                  setTypeFilter(ct.id);
-                  setCurrentPage(1);
-                }}
-                className={`relative shrink-0 flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition-colors duration-200 cursor-pointer ${
-                  active ? ct.activeTextClass : 'glass-pill text-white/75 hover:text-white'
-                }`}
-              >
-                {active && (
-                  <motion.span
-                    layoutId="kesfet-type-active-pill"
-                    initial={false}
-                    transition={{
-                      type: 'spring',
-                      stiffness: 480,
-                      damping: 34,
-                      mass: 0.6,
-                    }}
-                    className={`absolute inset-0 rounded-full ${ct.activePillClass}`}
-                  />
-                )}
-                <Icon className="w-3.5 h-3.5 relative z-10" />
-                <span className="relative z-10">{ct.label}</span>
-              </button>
-            );
-          })}
+        <div className="pt-2 border-t border-white/[0.06] overflow-x-auto no-scrollbar pb-1.5 [-webkit-overflow-scrolling:touch]">
+          <div
+            ref={typeRowRef}
+            className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10"
+          >
+            {CONTENT_TYPES.map((ct) => {
+              const Icon = ct.icon;
+              const active = typeFilter === ct.id;
+              return (
+                <button
+                  key={ct.id}
+                  onClick={() => {
+                    triggerSound('click');
+                    setTypeFilter(ct.id);
+                    setCurrentPage(1);
+                  }}
+                  className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-colors duration-200 cursor-pointer select-none active:scale-95 ${
+                    active ? ct.activeTextClass : 'text-white/70 hover:text-white'
+                  }`}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="kesfet-type-active-pill"
+                      initial={false}
+                      transition={{
+                        type: 'spring',
+                        stiffness: 480,
+                        damping: 34,
+                        mass: 0.6,
+                      }}
+                      className={`absolute inset-0 rounded-xl ${ct.activePillClass} z-0`}
+                    />
+                  )}
+                  <Icon className="w-3.5 h-3.5 relative z-10" />
+                  <span className="relative z-10">{ct.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Multi-Select Genre Chips with Drag-Scroll */}

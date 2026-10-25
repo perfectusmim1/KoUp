@@ -128,54 +128,73 @@ export default function WatchHistoryPage() {
 
       {/* Filter and Search Bar */}
       <div className="rounded-3xl bg-[#0f0f11] p-4 sm:p-5 border border-white/[0.08] flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
-        <div className="flex items-center gap-2 overflow-x-auto py-1.5 -my-1.5 px-0.5 no-scrollbar">
-          {[
-            {
-              id: 'ALL' as const,
-              label: `Tüm Geçmiş (${allHistoryItems.length})`,
-              activePillClass: 'bg-white shadow-[0_0_18px_rgba(255,255,255,0.35)]',
-              activeTextClass: 'text-black font-extrabold',
-            },
-            {
-              id: 'in_progress' as const,
-              label: 'Kaldığım Yerden Devam Et',
-              activePillClass: 'bg-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.45)]',
-              activeTextClass: 'text-white font-extrabold',
-            },
-            {
-              id: 'completed' as const,
-              label: 'Tamamlananlar',
-              activePillClass: 'bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.45)]',
-              activeTextClass: 'text-white font-extrabold',
-            },
-          ].map((flt) => {
-            const active = filterType === flt.id;
-            return (
-              <button
-                key={flt.id}
-                onClick={() => {
-                  triggerSound('click');
-                  setFilterType(flt.id);
-                  setCurrentPage(1);
-                }}
-                className={`relative px-4 py-2 rounded-full text-xs font-semibold transition-colors duration-200 cursor-pointer shrink-0 select-none ${
-                  active
-                    ? flt.activeTextClass
-                    : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10'
-                }`}
-              >
-                {active && (
-                  <motion.span
-                    layoutId="gecmis-filter-active-pill"
-                    initial={false}
-                    transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
-                    className={`absolute inset-0 rounded-full ${flt.activePillClass}`}
-                  />
-                )}
-                <span className="relative z-10">{flt.label}</span>
-              </button>
-            );
-          })}
+        <div className="overflow-x-auto no-scrollbar pb-1 sm:pb-0 [-webkit-overflow-scrolling:touch] shrink-0 mx-auto sm:mx-0">
+          <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10">
+            {[
+              {
+                id: 'ALL' as const,
+                label: 'Tüm Geçmiş',
+                count: allHistoryItems.length,
+                icon: Clock,
+                activePillClass:
+                  'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40',
+              },
+              {
+                id: 'in_progress' as const,
+                label: 'Kaldığım Yerden',
+                icon: Play,
+                activePillClass:
+                  'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40',
+              },
+              {
+                id: 'completed' as const,
+                label: 'Tamamlananlar',
+                icon: CheckCircle2,
+                activePillClass:
+                  'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40',
+              },
+            ].map((flt) => {
+              const Icon = flt.icon;
+              const active = filterType === flt.id;
+              return (
+                <button
+                  key={flt.id}
+                  onClick={() => {
+                    triggerSound('click');
+                    setFilterType(flt.id);
+                    setCurrentPage(1);
+                  }}
+                  className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-colors duration-200 cursor-pointer select-none active:scale-95 ${
+                    active
+                      ? 'text-white font-extrabold'
+                      : 'text-white/70 hover:text-white'
+                  }`}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="gecmis-filter-active-pill"
+                      initial={false}
+                      transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
+                      className={`absolute inset-0 rounded-xl ${flt.activePillClass} z-0`}
+                    />
+                  )}
+                  <Icon className="w-3.5 h-3.5 relative z-10" />
+                  <span className="relative z-10">{flt.label}</span>
+                  {flt.count !== undefined && (
+                    <span
+                      className={`relative z-10 text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                        active
+                          ? 'bg-white/25 text-white'
+                          : 'bg-white/10 text-white/75'
+                      }`}
+                    >
+                      {flt.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full glass-pill-dark focus-within:border-[var(--accent-blue)]/60 focus-within:ring-2 focus-within:ring-[var(--accent-blue)]/20 transition-colors duration-200 shadow-xs focus-within:shadow-[0_0_16px_rgba(41,151,255,0.28)] min-w-[220px]">

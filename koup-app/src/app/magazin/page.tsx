@@ -16,6 +16,7 @@ import {
   getProxiedImageUrl,
 } from '@/lib/supabase';
 import { cachedQuery, invalidateCache } from '@/lib/cache';
+import { useKoUp } from '@/context/KoUpContext';
 
 function getMagCategoryColor(cat: string): string {
   switch (cat) {
@@ -43,23 +44,45 @@ function getMagCategoryColor(cat: string): string {
 function getMagCategoryActivePill(cat: string): { pill: string; text: string } {
   switch (cat) {
     case 'Dedikodu':
-      return { pill: 'bg-rose-500 shadow-[0_0_18px_rgba(244,63,94,0.45)]', text: 'text-white font-extrabold' };
+      return {
+        pill: 'bg-gradient-to-r from-rose-500 to-red-600 shadow-[0_0_18px_rgba(244,63,94,0.45)] border border-rose-400/40',
+        text: 'text-white font-extrabold',
+      };
     case 'Kore':
-      return { pill: 'bg-emerald-500 shadow-[0_0_18px_rgba(16,185,129,0.45)]', text: 'text-white font-extrabold' };
+      return {
+        pill: 'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40',
+        text: 'text-white font-extrabold',
+      };
     case 'Çin':
-      return { pill: 'bg-orange-500 shadow-[0_0_18px_rgba(249,115,22,0.45)]', text: 'text-white font-extrabold' };
+      return {
+        pill: 'bg-gradient-to-r from-orange-500 to-amber-600 shadow-[0_0_18px_rgba(249,115,22,0.45)] border border-orange-400/40',
+        text: 'text-white font-extrabold',
+      };
     case 'Dizi':
-      return { pill: 'bg-sky-500 shadow-[0_0_18px_rgba(56,189,248,0.45)]', text: 'text-white font-extrabold' };
+      return {
+        pill: 'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40',
+        text: 'text-white font-extrabold',
+      };
     case 'Müzik':
-      return { pill: 'bg-purple-500 shadow-[0_0_18px_rgba(168,85,247,0.45)]', text: 'text-white font-extrabold' };
+      return {
+        pill: 'bg-gradient-to-r from-purple-500 to-pink-600 shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/40',
+        text: 'text-white font-extrabold',
+      };
     case 'Film':
-      return { pill: 'bg-amber-500 shadow-[0_0_18px_rgba(251,191,36,0.45)]', text: 'text-white font-extrabold' };
-    case 'BL GL':
-      return { pill: 'bg-pink-500 shadow-[0_0_18px_rgba(236,72,153,0.45)]', text: 'text-white font-extrabold' };
+      return {
+        pill: 'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(251,191,36,0.45)] border border-amber-400/40',
+        text: 'text-white font-extrabold',
+      };
     case 'Tayland':
-      return { pill: 'bg-teal-500 shadow-[0_0_18px_rgba(20,184,166,0.45)]', text: 'text-white font-extrabold' };
+      return {
+        pill: 'bg-gradient-to-r from-teal-500 to-emerald-600 shadow-[0_0_18px_rgba(20,184,166,0.45)] border border-teal-400/40',
+        text: 'text-white font-extrabold',
+      };
     default:
-      return { pill: 'bg-white shadow-[0_0_18px_rgba(255,255,255,0.35)]', text: 'text-black font-extrabold' };
+      return {
+        pill: 'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40',
+        text: 'text-white font-extrabold',
+      };
   }
 }
 
@@ -70,12 +93,12 @@ const MAGAZINE_CATEGORIES = [
   'Dizi',
   'Çin',
   'Müzik',
-  'BL GL',
   'Tayland',
   'Film',
 ];
 
 export default function MagazineHubPage() {
+  const { triggerSound } = useKoUp();
   const [allPosts, setAllPosts] = useState<MagazinePost[]>([]);
   const [activeCategory, setActiveCategory] = useState('Tümü');
   const [activeSource, setActiveSource] = useState<'Tümü' | 'KoreZin' | 'AsyaMag'>('Tümü');
@@ -230,49 +253,53 @@ export default function MagazineHubPage() {
       </div>
 
       {/* CATEGORY & SOURCE FILTER TABS */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         {/* Category Pills */}
-        <div className="flex flex-wrap items-center gap-2">
-          {MAGAZINE_CATEGORIES.map((cat) => {
-            const active = activeCategory === cat;
-            const style = getMagCategoryActivePill(cat);
-            return (
-              <button
-                key={cat}
-                onClick={() => setActiveCategory(cat)}
-                className={`relative flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-colors duration-200 cursor-pointer ${
-                  active
-                    ? style.text
-                    : 'glass-pill text-white/75 hover:text-white'
-                }`}
-              >
-                {active && (
-                  <motion.span
-                    layoutId="magazin-category-active-pill"
-                    initial={false}
-                    transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
-                    className={`absolute inset-0 rounded-full ${style.pill}`}
-                  />
-                )}
-                {cat === 'Dedikodu' && <Flame className="w-3.5 h-3.5 text-rose-400 relative z-10" />}
-                <span className="relative z-10">{cat}</span>
-              </button>
-            );
-          })}
+        <div className="overflow-x-auto no-scrollbar pb-1.5 [-webkit-overflow-scrolling:touch]">
+          <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10">
+            {MAGAZINE_CATEGORIES.map((cat) => {
+              const active = activeCategory === cat;
+              const style = getMagCategoryActivePill(cat);
+              return (
+                <button
+                  key={cat}
+                  onClick={() => {
+                    triggerSound?.('click');
+                    setActiveCategory(cat);
+                  }}
+                  className={`relative shrink-0 flex items-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-colors duration-200 cursor-pointer select-none active:scale-95 ${
+                    active ? style.text : 'text-white/70 hover:text-white'
+                  }`}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="magazin-category-active-pill"
+                      initial={false}
+                      transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
+                      className={`absolute inset-0 rounded-xl ${style.pill} z-0`}
+                    />
+                  )}
+                  {cat === 'Dedikodu' && <Flame className="w-3.5 h-3.5 text-rose-300 relative z-10" />}
+                  <span className="relative z-10">{cat}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Source Segmented Switch */}
-        <div className="flex items-center gap-1 p-1 rounded-full glass-pill-dark border border-white/12 self-start sm:self-auto shrink-0">
+        <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 self-start lg:self-auto shrink-0 overflow-x-auto no-scrollbar">
           {(['Tümü', 'KoreZin', 'AsyaMag'] as const).map((source) => {
             const active = activeSource === source;
             return (
               <button
                 key={source}
-                onClick={() => setActiveSource(source)}
-                className={`relative px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors duration-200 cursor-pointer ${
-                  active
-                    ? 'text-white'
-                    : 'text-white/60 hover:text-white'
+                onClick={() => {
+                  triggerSound?.('click');
+                  setActiveSource(source);
+                }}
+                className={`relative shrink-0 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-colors duration-200 cursor-pointer select-none active:scale-95 ${
+                  active ? 'text-white font-extrabold' : 'text-white/70 hover:text-white'
                 }`}
               >
                 {active && (
@@ -280,12 +307,12 @@ export default function MagazineHubPage() {
                     layoutId="magazin-source-active-pill"
                     initial={false}
                     transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
-                    className={`absolute inset-0 rounded-full shadow-md ${
+                    className={`absolute inset-0 rounded-xl z-0 ${
                       source === 'KoreZin'
-                        ? 'bg-gradient-to-r from-rose-500 to-pink-500 shadow-[0_0_15px_rgba(244,63,94,0.45)]'
+                        ? 'bg-gradient-to-r from-rose-500 to-pink-600 shadow-[0_0_15px_rgba(244,63,94,0.45)] border border-rose-400/40'
                         : source === 'AsyaMag'
-                        ? 'bg-sky-500 shadow-[0_0_15px_rgba(14,165,233,0.45)]'
-                        : 'bg-white/20 border border-white/20'
+                        ? 'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_15px_rgba(14,165,233,0.45)] border border-sky-400/40'
+                        : 'bg-gradient-to-r from-indigo-500 to-purple-600 shadow-[0_0_15px_rgba(99,102,241,0.45)] border border-indigo-400/40'
                     }`}
                   />
                 )}

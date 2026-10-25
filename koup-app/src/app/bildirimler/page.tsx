@@ -152,6 +152,7 @@ export default function NotificationsPage() {
   const deleteNotification = useKoUpSelector((s) => s.deleteNotification);
   const clearAllNotifications = useKoUpSelector((s) => s.clearAllNotifications);
   const confirmDialog = useKoUpSelector((s) => s.confirmDialog);
+  const triggerSound = useKoUpSelector((s) => s.triggerSound);
 
   const [selectedFilter, setSelectedFilter] = useState<CategoryFilter>('all');
   const [unreadOnly, setUnreadOnly] = useState<boolean>(false);
@@ -352,101 +353,98 @@ export default function NotificationsPage() {
         {/* Filter Bar */}
         <div className="py-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
           {/* Category Tabs */}
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-2.5 -my-2.5 px-1">
-            {[
-              {
-                id: 'all' as const,
-                label: 'Tümü',
-                countKey: 'all' as const,
-                activePillClass: 'bg-white shadow-[0_0_15px_rgba(255,255,255,0.35)]',
-                activeTextClass: 'text-black font-bold',
-                badgeActiveBg: 'bg-black/15 text-black',
-                badgeInactiveBg: 'bg-white/10 text-white/70',
-              },
-              {
-                id: 'episode' as const,
-                label: 'Bölümler',
-                icon: Tv,
-                countKey: 'episode' as const,
-                activePillClass: 'bg-amber-500 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
-                activeTextClass: 'text-white font-bold',
-                badgeActiveBg: 'bg-white/20 text-white',
-                badgeInactiveBg: 'bg-amber-500/20 text-amber-300',
-              },
-              {
-                id: 'actor' as const,
-                label: 'Takip & Oyuncular',
-                icon: UserCheck,
-                countKey: 'actor' as const,
-                activePillClass: 'bg-emerald-500 shadow-[0_0_18px_rgba(16,185,129,0.45)]',
-                activeTextClass: 'text-white font-bold',
-                badgeActiveBg: 'bg-white/20 text-white',
-                badgeInactiveBg: 'bg-emerald-500/20 text-emerald-300',
-              },
-              {
-                id: 'reply' as const,
-                label: 'Yorum Yanıtları',
-                icon: MessageSquare,
-                countKey: 'reply' as const,
-                activePillClass: 'bg-sky-500 shadow-[0_0_18px_rgba(56,189,248,0.45)]',
-                activeTextClass: 'text-white font-bold',
-                badgeActiveBg: 'bg-white/20 text-white',
-                badgeInactiveBg: 'bg-sky-500/20 text-sky-300',
-              },
-              {
-                id: 'system' as const,
-                label: 'Duyurular',
-                icon: Megaphone,
-                countKey: 'system' as const,
-                activePillClass: 'bg-indigo-500 shadow-[0_0_18px_rgba(99,102,241,0.45)]',
-                activeTextClass: 'text-white font-bold',
-                badgeActiveBg: 'bg-white/20 text-white',
-                badgeInactiveBg: 'bg-indigo-500/20 text-indigo-300',
-              },
-            ].map((tab) => {
-              const Icon = tab.icon;
-              const active = selectedFilter === tab.id;
-              const count = counts[tab.countKey];
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setSelectedFilter(tab.id)}
-                  className={`relative px-4 py-2 rounded-full text-xs whitespace-nowrap transition-colors cursor-pointer flex items-center gap-2 active:scale-[0.98] select-none ${
-                    active
-                      ? tab.activeTextClass
-                      : 'bg-white/[0.05] text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
-                  }`}
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="notifications-category-pill"
-                      transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                      className={`absolute inset-0 rounded-full ${tab.activePillClass}`}
-                    />
-                  )}
-                  {Icon && <Icon className="relative z-10 w-3.5 h-3.5" />}
-                  <span className="relative z-10 font-semibold">{tab.label}</span>
-                  {(tab.id === 'all' || count > 0) && (
-                    <span
-                      className={`relative z-10 text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
-                        active ? tab.badgeActiveBg : tab.badgeInactiveBg
-                      }`}
-                    >
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+          <div className="overflow-x-auto no-scrollbar pb-1.5 [-webkit-overflow-scrolling:touch]">
+            <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10">
+              {[
+                {
+                  id: 'all' as const,
+                  label: 'Tümü',
+                  countKey: 'all' as const,
+                  activePillClass:
+                    'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40',
+                },
+                {
+                  id: 'episode' as const,
+                  label: 'Bölümler',
+                  icon: Tv,
+                  countKey: 'episode' as const,
+                  activePillClass:
+                    'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40',
+                },
+                {
+                  id: 'actor' as const,
+                  label: 'Takip & Oyuncular',
+                  icon: UserCheck,
+                  countKey: 'actor' as const,
+                  activePillClass:
+                    'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40',
+                },
+                {
+                  id: 'reply' as const,
+                  label: 'Yorum Yanıtları',
+                  icon: MessageSquare,
+                  countKey: 'reply' as const,
+                  activePillClass:
+                    'bg-gradient-to-r from-blue-500 to-indigo-600 shadow-[0_0_18px_rgba(99,102,241,0.45)] border border-indigo-400/40',
+                },
+                {
+                  id: 'system' as const,
+                  label: 'Duyurular',
+                  icon: Megaphone,
+                  countKey: 'system' as const,
+                  activePillClass:
+                    'bg-gradient-to-r from-purple-500 to-pink-600 shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/40',
+                },
+              ].map((tab) => {
+                const Icon = tab.icon;
+                const active = selectedFilter === tab.id;
+                const count = counts[tab.countKey];
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => {
+                      triggerSound?.('click');
+                      setSelectedFilter(tab.id);
+                    }}
+                    className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-colors duration-200 cursor-pointer select-none active:scale-95 ${
+                      active ? 'text-white font-extrabold' : 'text-white/70 hover:text-white'
+                    }`}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="notifications-category-pill"
+                        initial={false}
+                        transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
+                        className={`absolute inset-0 rounded-xl ${tab.activePillClass} z-0`}
+                      />
+                    )}
+                    {Icon && <Icon className="relative z-10 w-3.5 h-3.5" />}
+                    <span className="relative z-10">{tab.label}</span>
+                    {(tab.id === 'all' || count > 0) && (
+                      <span
+                        className={`relative z-10 text-[10px] font-mono px-1.5 py-0.2 rounded-full transition-colors ${
+                          active ? 'bg-white/25 text-white' : 'bg-white/10 text-white/75'
+                        }`}
+                      >
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Unread Only Toggle */}
           <button
-            onClick={() => setUnreadOnly((prev) => !prev)}
-            className={`px-3.5 py-2 rounded-full text-xs font-medium transition-colors cursor-pointer flex items-center gap-2 self-start md:self-auto shrink-0 border ${
+            onClick={() => {
+              triggerSound?.('click');
+              setUnreadOnly((prev) => !prev);
+            }}
+            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 self-start md:self-auto shrink-0 border select-none active:scale-95 ${
               unreadOnly
                 ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 shadow-[0_0_15px_rgba(244,63,94,0.2)]'
-                : 'bg-white/[0.04] text-white/60 hover:text-white border-white/10'
+                : 'bg-white/[0.04] text-white/70 hover:text-white border-white/10'
             }`}
           >
             <span

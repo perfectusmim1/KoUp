@@ -349,18 +349,18 @@ export default function FollowedPage() {
       {/* MAIN TWO-SECTION TABS SWITCHER (GEMINI Design Principles) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         {/* Main Tab Switcher */}
-        <div className="inline-flex items-center p-1.5 rounded-2xl bg-[#0f0f12] border border-white/10 shadow-lg shrink-0">
+        <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 shadow-lg shrink-0">
           <button
             onClick={() => handleTabChange('media')}
-            className={`relative flex items-center gap-2 px-4 sm:px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-colors cursor-pointer duration-200 ${
+            className={`relative flex items-center gap-2 px-4 sm:px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-colors cursor-pointer duration-200 select-none active:scale-95 ${
               activeTab === 'media' ? 'text-white font-extrabold' : 'text-white/60 hover:text-white'
             }`}
           >
             {activeTab === 'media' && (
               <motion.span
                 layoutId="takip-main-tab-pill"
-                transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                className="absolute inset-0 rounded-xl bg-sky-500 shadow-[0_0_18px_rgba(56,189,248,0.45)]"
+                transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
+                className="absolute inset-0 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40 z-0"
               />
             )}
             <Tv className="w-4 h-4 relative z-10" />
@@ -378,15 +378,15 @@ export default function FollowedPage() {
 
           <button
             onClick={() => handleTabChange('people')}
-            className={`relative flex items-center gap-2 px-4 sm:px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-colors cursor-pointer duration-200 ${
+            className={`relative flex items-center gap-2 px-4 sm:px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-colors cursor-pointer duration-200 select-none active:scale-95 ${
               activeTab === 'people' ? 'text-white font-extrabold' : 'text-white/60 hover:text-white'
             }`}
           >
             {activeTab === 'people' && (
               <motion.span
                 layoutId="takip-main-tab-pill"
-                transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                className="absolute inset-0 rounded-xl bg-emerald-500 shadow-[0_0_18px_rgba(52,211,153,0.45)]"
+                transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
+                className="absolute inset-0 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40 z-0"
               />
             )}
             <Users className="w-4 h-4 relative z-10" />
@@ -455,118 +455,146 @@ export default function FollowedPage() {
       </div>
 
       {/* SUB-FILTER PILLS BAR */}
-      <div className="flex items-center gap-2 overflow-x-auto py-2 no-scrollbar mb-4 sm:mb-6">
-        {activeTab === 'media' ? (
-          <>
-            {[
-              {
-                id: 'ALL' as const,
-                label: `Tümü (${mediaItems.length})`,
-                activePillClass: 'bg-white shadow-[0_0_15px_rgba(255,255,255,0.35)]',
-                activeTextClass: 'text-black font-extrabold',
-              },
-              {
-                id: 'dizi' as const,
-                label: 'Diziler',
-                activePillClass: 'bg-sky-500 shadow-[0_0_18px_rgba(56,189,248,0.45)]',
-                activeTextClass: 'text-white font-extrabold',
-              },
-              {
-                id: 'anime' as const,
-                label: 'Animeler',
-                activePillClass: 'bg-purple-500 shadow-[0_0_18px_rgba(168,85,247,0.45)]',
-                activeTextClass: 'text-white font-extrabold',
-              },
-              {
-                id: 'film' as const,
-                label: 'Filmler',
-                activePillClass: 'bg-amber-500 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
-                activeTextClass: 'text-white font-extrabold',
-              },
-            ].map((flt) => {
-              const active = mediaFilter === flt.id;
-              return (
-                <button
-                  key={flt.id}
-                  onClick={() => {
-                    triggerSound?.('click');
-                    setMediaFilter(flt.id);
-                    setCurrentPage(1);
-                  }}
-                  className={`relative px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors duration-200 cursor-pointer shrink-0 ${
-                    active
-                      ? flt.activeTextClass
-                      : 'bg-white/[0.04] text-white/70 hover:text-white hover:bg-white/[0.08] border border-white/[0.06]'
-                  }`}
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="takip-subfilter-pill"
-                      transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                      className={`absolute inset-0 rounded-full ${flt.activePillClass}`}
-                    />
-                  )}
-                  <span className="relative z-10">{flt.label}</span>
-                </button>
-              );
-            })}
-          </>
-        ) : (
-          <>
-            {[
-              {
-                id: 'ALL' as const,
-                label: `Tümü (${peopleItems.length})`,
-                activePillClass: 'bg-white shadow-[0_0_15px_rgba(255,255,255,0.35)]',
-                activeTextClass: 'text-black font-extrabold',
-              },
-              {
-                id: 'actor' as const,
-                label: 'Oyuncular',
-                activePillClass: 'bg-emerald-500 shadow-[0_0_18px_rgba(52,211,153,0.45)]',
-                activeTextClass: 'text-white font-extrabold',
-              },
-              {
-                id: 'character' as const,
-                label: 'Karakterler',
-                activePillClass: 'bg-purple-500 shadow-[0_0_18px_rgba(168,85,247,0.45)]',
-                activeTextClass: 'text-white font-extrabold',
-              },
-              {
-                id: 'seiyuu' as const,
-                label: 'Seslendirmenler',
-                activePillClass: 'bg-amber-500 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
-                activeTextClass: 'text-white font-extrabold',
-              },
-            ].map((flt) => {
-              const active = personFilter === flt.id;
-              return (
-                <button
-                  key={flt.id}
-                  onClick={() => {
-                    triggerSound?.('click');
-                    setPersonFilter(flt.id);
-                    setCurrentPage(1);
-                  }}
-                  className={`relative px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors duration-200 cursor-pointer shrink-0 ${
-                    active
-                      ? flt.activeTextClass
-                      : 'bg-white/[0.04] text-white/70 hover:text-white hover:bg-white/[0.08] border border-white/[0.06]'
-                  }`}
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="takip-subfilter-pill"
-                      transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                      className={`absolute inset-0 rounded-full ${flt.activePillClass}`}
-                    />
-                  )}
-                  <span className="relative z-10">{flt.label}</span>
-                </button>
-              );
-            })}
-          </>
-        )}
+      <div className="overflow-x-auto no-scrollbar pb-1.5 [-webkit-overflow-scrolling:touch] mb-4 sm:mb-6">
+        <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10">
+          {activeTab === 'media' ? (
+            <>
+              {[
+                {
+                  id: 'ALL' as const,
+                  label: 'Tümü',
+                  count: mediaItems.length,
+                  activePillClass:
+                    'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40',
+                },
+                {
+                  id: 'dizi' as const,
+                  label: 'Diziler',
+                  activePillClass:
+                    'bg-gradient-to-r from-blue-500 to-indigo-600 shadow-[0_0_18px_rgba(99,102,241,0.45)] border border-indigo-400/40',
+                },
+                {
+                  id: 'anime' as const,
+                  label: 'Animeler',
+                  activePillClass:
+                    'bg-gradient-to-r from-purple-500 to-pink-600 shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/40',
+                },
+                {
+                  id: 'film' as const,
+                  label: 'Filmler',
+                  activePillClass:
+                    'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40',
+                },
+              ].map((flt) => {
+                const active = mediaFilter === flt.id;
+                return (
+                  <button
+                    key={flt.id}
+                    onClick={() => {
+                      triggerSound?.('click');
+                      setMediaFilter(flt.id);
+                      setCurrentPage(1);
+                    }}
+                    className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-colors duration-200 cursor-pointer select-none active:scale-95 ${
+                      active
+                        ? 'text-white font-extrabold'
+                        : 'text-white/70 hover:text-white'
+                    }`}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="takip-media-subfilter-pill"
+                        initial={false}
+                        transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
+                        className={`absolute inset-0 rounded-xl ${flt.activePillClass} z-0`}
+                      />
+                    )}
+                    <span className="relative z-10">{flt.label}</span>
+                    {flt.count !== undefined && (
+                      <span
+                        className={`relative z-10 text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                          active
+                            ? 'bg-white/25 text-white'
+                            : 'bg-white/10 text-white/75'
+                        }`}
+                      >
+                        {flt.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </>
+          ) : (
+            <>
+              {[
+                {
+                  id: 'ALL' as const,
+                  label: 'Tümü',
+                  count: peopleItems.length,
+                  activePillClass:
+                    'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40',
+                },
+                {
+                  id: 'actor' as const,
+                  label: 'Oyuncular',
+                  activePillClass:
+                    'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40',
+                },
+                {
+                  id: 'character' as const,
+                  label: 'Karakterler',
+                  activePillClass:
+                    'bg-gradient-to-r from-purple-500 to-pink-600 shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/40',
+                },
+                {
+                  id: 'seiyuu' as const,
+                  label: 'Seslendirmenler',
+                  activePillClass:
+                    'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40',
+                },
+              ].map((flt) => {
+                const active = personFilter === flt.id;
+                return (
+                  <button
+                    key={flt.id}
+                    onClick={() => {
+                      triggerSound?.('click');
+                      setPersonFilter(flt.id);
+                      setCurrentPage(1);
+                    }}
+                    className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-colors duration-200 cursor-pointer select-none active:scale-95 ${
+                      active
+                        ? 'text-white font-extrabold'
+                        : 'text-white/70 hover:text-white'
+                    }`}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="takip-people-subfilter-pill"
+                        initial={false}
+                        transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
+                        className={`absolute inset-0 rounded-xl ${flt.activePillClass} z-0`}
+                      />
+                    )}
+                    <span className="relative z-10">{flt.label}</span>
+                    {flt.count !== undefined && (
+                      <span
+                        className={`relative z-10 text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                          active
+                            ? 'bg-white/25 text-white'
+                            : 'bg-white/10 text-white/75'
+                        }`}
+                      >
+                        {flt.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </>
+          )}
+        </div>
       </div>
 
       {/* CONTENT AREA: TAB 1 (MEDIA) OR TAB 2 (PEOPLE) */}

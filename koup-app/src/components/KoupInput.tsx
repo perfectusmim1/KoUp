@@ -39,10 +39,10 @@ export const KoupInput = forwardRef<HTMLInputElement, KoupInputProps>(
   ) => {
     const glowClasses =
       glowColor === 'amber'
-        ? 'focus-within:border-amber-400/50 focus-within:ring-2 focus-within:ring-amber-400/20 focus-within:shadow-[0_0_16px_rgba(251,191,36,0.25)]'
+        ? 'focus-within:border-amber-400/50 focus-within:ring-1 focus-within:ring-amber-400/20'
         : glowColor === 'emerald'
-        ? 'focus-within:border-emerald-400/50 focus-within:ring-2 focus-within:ring-emerald-400/20 focus-within:shadow-[0_0_16px_rgba(16,185,129,0.25)]'
-        : 'focus-within:border-[#2997ff]/60 focus-within:ring-2 focus-within:ring-[#2997ff]/20 focus-within:shadow-[0_0_18px_rgba(41,151,255,0.28)]';
+        ? 'focus-within:border-emerald-400/50 focus-within:ring-1 focus-within:ring-emerald-400/20'
+        : 'focus-within:border-white/35 focus-within:ring-1 focus-within:ring-white/15';
 
     const sizeClasses =
       size === 'sm'
@@ -126,10 +126,10 @@ export const KoupTextarea = forwardRef<HTMLTextAreaElement, KoupTextareaProps>(
   ) => {
     const glowClasses =
       glowColor === 'amber'
-        ? 'focus-within:border-amber-400/50 focus-within:ring-2 focus-within:ring-amber-400/20'
+        ? 'focus-within:border-amber-400/50 focus-within:ring-1 focus-within:ring-amber-400/20'
         : glowColor === 'emerald'
-        ? 'focus-within:border-emerald-400/50 focus-within:ring-2 focus-within:ring-emerald-400/20'
-        : 'focus-within:border-[#2997ff]/60 focus-within:ring-2 focus-within:ring-[#2997ff]/20';
+        ? 'focus-within:border-emerald-400/50 focus-within:ring-1 focus-within:ring-emerald-400/20'
+        : 'focus-within:border-white/35 focus-within:ring-1 focus-within:ring-white/15';
 
     const box = (
       <div
