@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import type Hls from 'hls.js';
 import Link from 'next/link';
@@ -937,6 +938,49 @@ export default function NetflixPlayer({
     },
     []
   );
+
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  const isMobileInline =
+    !isFullscreen &&
+    (isTouchDevice || (typeof window !== 'undefined' && window.innerWidth < 768));
+
+  const SPEED_RATES = useMemo(
+    () => [
+      { value: 0.25, label: '0.25x' },
+      { value: 0.5, label: '0.5x' },
+      { value: 0.75, label: '0.75x' },
+      { value: 1, label: '1x' },
+      { value: 1.25, label: '1.25x' },
+      { value: 1.5, label: '1.5x' },
+      { value: 2, label: '2x' },
+    ],
+    []
+  );
+
+  const applySpeed = useCallback(
+    (rate: number) => {
+      if (rate === playbackRate) return;
+      setPlaybackRate(rate);
+      if (videoRef.current) videoRef.current.playbackRate = rate;
+      triggerHudToast(`Hız: ${rate === 1 ? '1x' : `${rate}x`}`);
+    },
+    [playbackRate, triggerHudToast]
+  );
+
+  // Prevent background body scroll when mobile bottom sheet modal is open
+  useEffect(() => {
+    if (isMobileInline && (activePanel === 'speed' || activePanel === 'audio_subtitles')) {
+      const origOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = origOverflow;
+      };
+    }
+  }, [isMobileInline, activePanel]);
   const [capturedFrameUrl, setCapturedFrameUrl] = useState<string | null>(null);
 
   // Instant Seek & Volume Feedback Animations
@@ -3482,10 +3526,14 @@ export default function NetflixPlayer({
             {/* NETFLIX AUTHENTIC SUBTITLE OVERLAY */}
             {activeSubtitleText && (
               <div
-                className={`pointer-events-none absolute inset-x-0 transition-[bottom] duration-200 z-30 flex justify-center px-4 sm:px-8 text-center ${
+                className={`pointer-events-none absolute inset-x-0 transition-[bottom] duration-200 z-30 flex justify-center px-2 sm:px-8 text-center ${
                   showOverlay
-                    ? 'bottom-20 sm:bottom-24 md:bottom-28'
-                    : 'bottom-6 sm:bottom-10 md:bottom-12'
+                    ? isFullscreen
+                      ? 'bottom-20 sm:bottom-24 md:bottom-28'
+                      : 'bottom-10 sm:bottom-14 md:bottom-16'
+                    : isFullscreen
+                      ? 'bottom-6 sm:bottom-10 md:bottom-12'
+                      : 'bottom-2 sm:bottom-4 md:bottom-6'
                 }`}
               >
                 <div
@@ -3495,7 +3543,11 @@ export default function NetflixPlayer({
                     textShadow:
                       '0 0 4px rgba(0,0,0,0.8), 0 2px 4px rgba(0,0,0,0.9)',
                   }}
-                  className="text-white font-normal text-xl sm:text-3xl md:text-[34px] lg:text-[38px] max-w-5xl tracking-normal select-none leading-snug whitespace-pre-line"
+                  className={`text-white font-normal max-w-5xl tracking-normal select-none leading-snug whitespace-pre-line text-center ${
+                    !isFullscreen
+                      ? 'text-xs sm:text-base md:text-xl lg:text-2xl'
+                      : 'text-sm sm:text-xl md:text-[28px] lg:text-[32px]'
+                  }`}
                 >
                   {activeSubtitleText}
                 </div>
@@ -4685,17 +4737,7 @@ export default function NetflixPlayer({
                ================================================================ */}
             <AnimatePresence>
               {/* A. AUTHENTIC NETFLIX PLAYBACK SPEED POPOVER */}
-              {activePanel === 'speed' && (() => {
-                const SPEED_RATES = [
-                  { value: 0.25, label: '0.25x' },
-                  { value: 0.5, label: '0.5x' },
-                  { value: 0.75, label: '0.75x' },
-                  { value: 1, label: '1x' },
-                  { value: 1.25, label: '1.25x' },
-                  { value: 1.5, label: '1.5x' },
-                  { value: 2, label: '2x' },
-                ];
-
+              {!isMobileInline && activePanel === 'speed' && (() => {
                 const currentRate = playbackRate || 1;
                 let activeIndex = SPEED_RATES.findIndex((r) => r.value === currentRate);
                 if (activeIndex === -1) {
@@ -4711,13 +4753,6 @@ export default function NetflixPlayer({
                   activeIndex = closestIdx;
                 }
                 const activePercent = (activeIndex / (SPEED_RATES.length - 1)) * 100;
-
-                const applySpeed = (rate: number) => {
-                  if (rate === playbackRate) return;
-                  setPlaybackRate(rate);
-                  if (videoRef.current) videoRef.current.playbackRate = rate;
-                  triggerHudToast(`Hız: ${rate === 1 ? '1x' : `${rate}x`}`);
-                };
 
                 const updateSpeedFromX = (clientX: number, trackEl: HTMLElement) => {
                   const rect = trackEl.getBoundingClientRect();
@@ -4766,7 +4801,7 @@ export default function NetflixPlayer({
                     onClick={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
                     onPointerUp={(e) => e.stopPropagation()}
-                    className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 sm:top-auto sm:bottom-20 sm:left-6 md:left-8 sm:translate-x-0 sm:translate-y-0 z-50 w-[94vw] sm:w-[480px] max-w-[500px] p-3.5 sm:p-6 rounded-xl bg-[#222222] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.9)] select-none"
+                    className="absolute bottom-16 sm:bottom-20 left-1/2 -translate-x-1/2 sm:left-6 md:left-8 sm:translate-x-0 z-50 w-[90vw] sm:w-[480px] max-w-[500px] p-3.5 sm:p-6 rounded-xl bg-[#222222] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.9)] select-none"
                   >
                     {/* Header: Title + Close Button */}
                     <div className="flex items-center justify-between mb-5 sm:mb-8">
@@ -4870,7 +4905,7 @@ export default function NetflixPlayer({
 
 
               {/* D. NETFLIX AUDIO & SUBTITLES POPOVER (Matched to Reference Screenshots) */}
-              {activePanel === 'audio_subtitles' && (
+              {!isMobileInline && activePanel === 'audio_subtitles' && (
                 <motion.div
                   key="panel-audio-subtitles"
                   initial={{ opacity: 0, scale: 0.95, y: 12 }}
@@ -4879,7 +4914,7 @@ export default function NetflixPlayer({
                   transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
                   data-netflix-control="true"
                   onClick={(e) => e.stopPropagation()}
-                  className="absolute bottom-12 sm:bottom-20 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-md sm:max-w-xl p-4 sm:p-6 rounded-xl bg-[#181818]/98 backdrop-blur-sm border border-white/10 shadow-[0_24px_60px_rgba(0,0,0,0.95)] max-h-[80%] overflow-y-auto custom-scrollbar select-none"
+                  className="absolute bottom-14 sm:bottom-20 left-1/2 -translate-x-1/2 z-50 w-[92vw] max-w-md sm:max-w-xl p-4 sm:p-6 rounded-xl bg-[#181818]/98 backdrop-blur-sm border border-white/10 shadow-[0_24px_60px_rgba(0,0,0,0.95)] max-h-[85%] overflow-y-auto custom-scrollbar select-none"
                 >
                   <div className="flex items-center justify-between mb-3 pb-2 border-b border-white/10">
                     <div className="text-white font-bold text-sm sm:text-base tracking-wide">
@@ -4894,7 +4929,7 @@ export default function NetflixPlayer({
                       <X className="w-4 h-4" />
                     </button>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+                  <div className="grid grid-cols-2 gap-3 sm:gap-6">
                     {/* LEFT COLUMN: AUDIO */}
                     <div className="space-y-2.5">
                       <div className="text-white font-bold text-sm sm:text-base tracking-wide">
@@ -4937,7 +4972,7 @@ export default function NetflixPlayer({
                     </div>
 
                     {/* RIGHT COLUMN: SUBTITLES */}
-                    <div className="space-y-2.5 border-t sm:border-t-0 sm:border-l border-white/10 pt-4 sm:pt-0 sm:pl-6">
+                    <div className="space-y-2.5 border-l border-white/10 pl-3 sm:pl-6">
                       <div className="text-white font-bold text-sm sm:text-base tracking-wide">
                         Altyazı
                       </div>
@@ -5293,6 +5328,200 @@ export default function NetflixPlayer({
           </div>
         )}
       </div>
+
+      {/* ================================================================
+         MOBILE INLINE BOTTOM SHEET PORTAL
+         Rendered directly to document.body when !isFullscreen on mobile
+         ================================================================ */}
+      {isMounted && isMobileInline && typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {(activePanel === 'speed' || activePanel === 'audio_subtitles') && (
+            <>
+              {/* Semi-transparent Dimmed Backdrop */}
+              <motion.div
+                key="mobile-sheet-backdrop"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.18 }}
+                onClick={() => setActivePanel(null)}
+                className="fixed inset-0 z-[99998] bg-black/60 backdrop-blur-sm touch-none"
+              />
+
+              {/* Bottom Sheet Drawer */}
+              <motion.div
+                key={`mobile-sheet-${activePanel}`}
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                onClick={(e) => e.stopPropagation()}
+                className="fixed inset-x-0 bottom-0 z-[99999] rounded-t-3xl bg-[#181818]/98 backdrop-blur-md border-t border-white/15 px-4 pt-3 pb-6 max-h-[75vh] flex flex-col shadow-[0_-12px_40px_rgba(0,0,0,0.85)] select-none"
+              >
+                {/* Pull Handle */}
+                <div className="w-10 h-1 rounded-full bg-white/20 mx-auto mb-3 shrink-0" />
+
+                {/* Header */}
+                <div className="flex items-center justify-between pb-3 mb-3 border-b border-white/10 shrink-0">
+                  <div className="text-white font-bold text-sm tracking-wide flex items-center gap-2">
+                    {activePanel === 'speed' && (
+                      <>
+                        <NetflixSpeedIcon className="w-4 h-4 text-[#E50914]" />
+                        <span>Oynatma Hızı</span>
+                        <span className="text-xs font-normal text-white/50">({playbackRate}x)</span>
+                      </>
+                    )}
+                    {activePanel === 'audio_subtitles' && (
+                      <>
+                        <NetflixAudioSubtitleIcon className="w-4 h-4 text-[#E50914]" />
+                        <span>Ses ve Altyazı</span>
+                      </>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActivePanel(null)}
+                    className="w-8 h-8 rounded-full bg-white/10 active:bg-white/20 flex items-center justify-center text-white/80 active:text-white cursor-pointer"
+                    aria-label="Kapat"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Panel 1: Playback Speed Quick Buttons */}
+                {activePanel === 'speed' && (
+                  <div className="py-2 space-y-4">
+                    <div className="grid grid-cols-3 gap-2.5">
+                      {[
+                        { value: 0.5, label: '0.5x' },
+                        { value: 0.75, label: '0.75x' },
+                        { value: 1, label: '1x (Normal)' },
+                        { value: 1.25, label: '1.25x' },
+                        { value: 1.5, label: '1.5x' },
+                        { value: 2, label: '2x' },
+                      ].map((item) => {
+                        const isSelected = Math.abs(playbackRate - item.value) < 0.05;
+                        return (
+                          <button
+                            key={`mobile-speed-${item.value}`}
+                            type="button"
+                            onClick={() => {
+                              applySpeed(item.value);
+                              setActivePanel(null);
+                            }}
+                            className={`min-h-[44px] px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-[#E50914] text-white shadow-lg shadow-[#E50914]/30'
+                                : 'bg-white/5 text-zinc-300 hover:bg-white/10 active:bg-white/15'
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Panel 2: Audio & Subtitles Two-Column Side-by-Side */}
+                {activePanel === 'audio_subtitles' && (
+                  <div className="grid grid-cols-2 gap-3 min-h-0 overflow-y-auto custom-scrollbar py-1">
+                    {/* AUDIO COLUMN */}
+                    <div className="space-y-1.5">
+                      <div className="text-white/60 font-semibold text-[11px] uppercase tracking-wider px-1">
+                        Seslendirme
+                      </div>
+                      <div className="space-y-1">
+                        {audioTracks.length > 0 ? (
+                          audioTracks.map((track) => {
+                            const isSelected = currentAudioTrackId === track.id;
+                            return (
+                              <button
+                                key={`sheet-audio-${track.id}`}
+                                type="button"
+                                onClick={() => switchAudioTrack(track.id)}
+                                className={`w-full min-h-[42px] px-2.5 py-1.5 rounded-xl text-left text-xs flex items-center justify-between gap-1.5 cursor-pointer transition-colors ${
+                                  isSelected
+                                    ? 'bg-white/10 text-white font-semibold'
+                                    : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                                }`}
+                              >
+                                <span className="truncate">{track.label}</span>
+                                {isSelected && (
+                                  <Check className="w-3.5 h-3.5 text-white stroke-[2.5] shrink-0" />
+                                )}
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <button
+                            type="button"
+                            className="w-full min-h-[42px] px-2.5 py-1.5 rounded-xl text-left text-xs flex items-center justify-between gap-1.5 cursor-default bg-white/10 text-white font-semibold"
+                          >
+                            <span className="truncate">Orijinal [Varsayılan]</span>
+                            <Check className="w-3.5 h-3.5 text-white stroke-[2.5] shrink-0" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* SUBTITLE COLUMN */}
+                    <div className="space-y-1.5 border-l border-white/10 pl-3">
+                      <div className="text-white/60 font-semibold text-[11px] uppercase tracking-wider px-1">
+                        Altyazı
+                      </div>
+                      <div className="space-y-1">
+                        <button
+                          type="button"
+                          onClick={() => handleSelectSubtitle('off')}
+                          className={`w-full min-h-[42px] px-2.5 py-1.5 rounded-xl text-left text-xs flex items-center justify-between gap-1.5 cursor-pointer transition-colors ${
+                            selectedSubtitle === 'off'
+                              ? 'bg-white/10 text-white font-semibold'
+                              : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                          }`}
+                        >
+                          <span>Kapalı</span>
+                          {selectedSubtitle === 'off' && (
+                            <Check className="w-3.5 h-3.5 text-white stroke-[2.5] shrink-0" />
+                          )}
+                        </button>
+
+                        {subtitles.map((sub, idx) => {
+                          const isSelected = selectedSubtitle === sub.label;
+                          return (
+                            <button
+                              key={`sheet-sub-${sub.label}-${idx}`}
+                              type="button"
+                              onClick={() => handleSelectSubtitle(sub.label)}
+                              className={`w-full min-h-[42px] px-2.5 py-1.5 rounded-xl text-left text-xs flex items-center justify-between gap-1.5 cursor-pointer transition-colors ${
+                                isSelected
+                                  ? 'bg-white/10 text-white font-semibold'
+                                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                              }`}
+                            >
+                              <span className="truncate">{sub.label}</span>
+                              {isSelected && (
+                                <Check className="w-3.5 h-3.5 text-white stroke-[2.5] shrink-0" />
+                              )}
+                            </button>
+                          );
+                        })}
+
+                        {subtitles.length === 0 && (
+                          <div className="text-[11px] text-zinc-500 italic py-2 px-1">
+                            Harici altyazı yok
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   );
 }
