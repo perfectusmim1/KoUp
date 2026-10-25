@@ -610,6 +610,10 @@ export default function AdminDashboardPage() {
   const [broadcastNotifType, setBroadcastNotifType] = useState('system');
   const [broadcastTargetType, setBroadcastTargetType] = useState<'all' | 'followers'>('all');
   const [broadcastTargetMediaId, setBroadcastTargetMediaId] = useState('');
+  const [broadcastSelectedMedia, setBroadcastSelectedMedia] = useState<MediaItem | null>(null);
+  const [broadcastMediaSearch, setBroadcastMediaSearch] = useState('');
+  const [broadcastMediaResults, setBroadcastMediaResults] = useState<MediaItem[]>([]);
+  const [broadcastSearchingMedia, setBroadcastSearchingMedia] = useState(false);
   const [broadcastSending, setBroadcastSending] = useState(false);
 
   // Users Tab State (Server-Side Paginated)
@@ -1477,15 +1481,21 @@ export default function AdminDashboardPage() {
   const handleSendBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!broadcastTitle.trim() || !broadcastBody.trim()) return;
+    const targetMediaId =
+      broadcastTargetType === 'followers' && broadcastTargetMediaId
+        ? Number(broadcastTargetMediaId)
+        : null;
+
+    if (broadcastTargetType === 'followers' && !targetMediaId) {
+      pushNotification('Dizi Seçilmedi', 'Lütfen bildirim göndermek istediğiniz diziyi arayıp seçin.', 'info');
+      return;
+    }
+
     setBroadcastSending(true);
     try {
       const bTitle = broadcastTitle.trim();
       const bBody = broadcastBody.trim();
       const bLink = broadcastLinkUrl.trim() || '/';
-      const targetMediaId =
-        broadcastTargetType === 'followers' && broadcastTargetMediaId
-          ? Number(broadcastTargetMediaId)
-          : null;
 
       let sentCount = 0;
       const { data: rpcRes, error: rpcErr } = await supabase.rpc('admin_send_broadcast', {
@@ -1511,6 +1521,10 @@ export default function AdminDashboardPage() {
 
       setBroadcastTitle('');
       setBroadcastBody('');
+      setBroadcastSelectedMedia(null);
+      setBroadcastTargetMediaId('');
+      setBroadcastMediaSearch('');
+      setBroadcastMediaResults([]);
       pushNotification(
         'Duyuru Yayınlandı',
         sentCount > 0
@@ -1763,6 +1777,32 @@ export default function AdminDashboardPage() {
       pushNotification('Vitrin Hatası', err.message || 'Güncellenemedi.', 'info');
     }
   };
+
+  // Broadcast Media Search Debouncer
+  useEffect(() => {
+    if (!broadcastMediaSearch.trim()) {
+      setBroadcastMediaResults([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      setBroadcastSearchingMedia(true);
+      try {
+        const query = broadcastMediaSearch.trim();
+        const { data } = await supabase
+          .from('media')
+          .select('*')
+          .or(`title.ilike.%${query}%,slug.ilike.%${query}%`)
+          .limit(10);
+        const ranked = rankSearchResults((data as MediaItem[]) || [], query);
+        setBroadcastMediaResults(ranked);
+      } catch {
+        setBroadcastMediaResults([]);
+      } finally {
+        setBroadcastSearchingMedia(false);
+      }
+    }, 200);
+    return () => clearTimeout(t);
+  }, [broadcastMediaSearch]);
 
   // Vitrin (Hero Slider) Search Debouncer
   useEffect(() => {
@@ -4985,14 +5025,112 @@ export default function AdminDashboardPage() {
             </div>
 
             {broadcastTargetType === 'followers' && (
-              <KoupInput
-                label="Hedef Dizi Media ID *"
-                type="number"
-                required
-                value={broadcastTargetMediaId}
-                onChange={(e) => setBroadcastTargetMediaId(e.target.value)}
-                placeholder="Örn: 14250"
-              />
+              <div className="space-y-2">
+                <label className="block text-[11px] text-white/70 font-medium">
+                  Hedef Dizi Seçimi *
+                </label>
+                {broadcastSelectedMedia ? (
+                  <div className="p-3 rounded-2xl bg-[#0e0e12] border border-emerald-500/30 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-14 rounded-lg overflow-hidden bg-black/60 border border-white/10 shrink-0">
+                        {broadcastSelectedMedia.cover_image ? (
+                          <img
+                            src={getProxiedImageUrl(broadcastSelectedMedia.cover_image, broadcastSelectedMedia.title)}
+                            alt={broadcastSelectedMedia.title}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <Film className="w-4 h-4 text-white/30 m-auto mt-5" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-white truncate">
+                          {broadcastSelectedMedia.title}
+                        </div>
+                        <div className="text-[10px] font-mono text-emerald-400 truncate">
+                          /seri/{broadcastSelectedMedia.slug}
+                        </div>
+                        <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                          Takipçileri Hedeflendi
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBroadcastSelectedMedia(null);
+                        setBroadcastTargetMediaId('');
+                        setBroadcastLinkUrl('/');
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white/70 hover:text-white text-xs font-medium cursor-pointer transition-colors shrink-0"
+                    >
+                      Diziyi Değiştir
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <div className="relative">
+                      <KoupInput
+                        type="text"
+                        placeholder="Bildirim göndermek istediğin diziyi ara... (Örn: Vincenzo, Squid Game)"
+                        value={broadcastMediaSearch}
+                        onChange={(e) => setBroadcastMediaSearch(e.target.value)}
+                        leftIcon={<Search className="w-4 h-4 text-white/40" />}
+                        clearable
+                        onClear={() => {
+                          setBroadcastMediaSearch('');
+                          setBroadcastMediaResults([]);
+                        }}
+                      />
+                      {broadcastSearchingMedia && (
+                        <RefreshCw className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 animate-spin pointer-events-none" />
+                      )}
+                    </div>
+
+                    {broadcastMediaResults.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 mt-2 z-50 p-2 rounded-2xl bg-[#0e0e12] border border-white/15 shadow-2xl max-h-60 overflow-y-auto space-y-1">
+                        {broadcastMediaResults.map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => {
+                              setBroadcastSelectedMedia(m);
+                              setBroadcastTargetMediaId(String(m.id));
+                              setBroadcastMediaSearch('');
+                              setBroadcastMediaResults([]);
+                              setBroadcastLinkUrl(`/seri/${m.slug}`);
+                            }}
+                            className="w-full p-2 rounded-xl hover:bg-white/10 text-left flex items-center gap-3 transition-colors cursor-pointer group"
+                          >
+                            <div className="w-8 h-11 rounded-lg overflow-hidden bg-black/60 border border-white/10 shrink-0">
+                              {m.cover_image ? (
+                                <img
+                                  src={getProxiedImageUrl(m.cover_image, m.title)}
+                                  alt={m.title}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <Film className="w-3.5 h-3.5 text-white/30 m-auto mt-3.5" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-bold text-white truncate group-hover:text-emerald-400 transition-colors">
+                                {m.title}
+                              </div>
+                              <div className="text-[10px] text-white/40 truncate font-mono">
+                                /seri/{m.slug}
+                              </div>
+                            </div>
+                            <span className="text-xs text-white/50 group-hover:text-white font-medium">
+                              Seç →
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
 
             <KoupInput

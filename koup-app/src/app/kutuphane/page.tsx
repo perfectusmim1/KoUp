@@ -411,18 +411,22 @@ export default function KutuphanePage() {
                 activePillClass:
                   'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40',
               },
-            ].map((tp) => {
+            ].map((tp, idx, arr) => {
               const Icon = tp.icon;
               const active = activeType === tp.id;
+              const prevType = idx > 0 ? arr[idx - 1].id : null;
+              const nextType = idx < arr.length - 1 ? arr[idx + 1].id : null;
+
               return (
                 <button
                   key={tp.id}
+                  type="button"
                   onClick={() => {
                     triggerSound('click');
                     setActiveType(tp.id);
                     setCurrentPage(1);
                   }}
-                  className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-colors duration-200 cursor-pointer select-none active:scale-95 ${
+                  className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
                     active
                       ? 'text-white font-extrabold'
                       : 'text-white/70 hover:text-white'
@@ -431,13 +435,28 @@ export default function KutuphanePage() {
                   {active && (
                     <motion.span
                       layoutId="kutuphane-type-active-pill"
+                      drag="x"
+                      dragConstraints={{ left: -45, right: 45 }}
+                      dragElastic={0.2}
+                      dragSnapToOrigin
+                      onDragEnd={(_, info) => {
+                        if (info.offset.x > 25 && nextType) {
+                          triggerSound('click');
+                          setActiveType(nextType);
+                          setCurrentPage(1);
+                        } else if (info.offset.x < -25 && prevType) {
+                          triggerSound('click');
+                          setActiveType(prevType);
+                          setCurrentPage(1);
+                        }
+                      }}
                       initial={false}
-                      transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
-                      className={`absolute inset-0 rounded-xl ${tp.activePillClass} z-0`}
+                      transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
+                      className={`absolute inset-0 rounded-xl ${tp.activePillClass} z-0 cursor-grab active:cursor-grabbing select-none`}
                     />
                   )}
-                  <Icon className="w-3.5 h-3.5 relative z-10" />
-                  <span className="relative z-10">{tp.label}</span>
+                  <Icon className="w-3.5 h-3.5 relative z-10 pointer-events-none" />
+                  <span className="relative z-10 pointer-events-none">{tp.label}</span>
                 </button>
               );
             })}
@@ -542,15 +561,8 @@ export default function KutuphanePage() {
             const totalEps = m.episode_count || 0;
 
             return (
-              <motion.div
+              <div
                 key={m.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  duration: 0.22,
-                  delay: Math.min(idx * 0.015, 0.18),
-                  ease: [0.16, 1, 0.3, 1],
-                }}
                 className="group relative flex flex-col rounded-2xl bg-[#0f0f12] border border-white/10 hover:border-white/25 overflow-hidden transition-[border-color,box-shadow] duration-200 shadow-lg hover:shadow-2xl"
               >
                 {/* Poster & Direct Play */}
@@ -619,7 +631,7 @@ export default function KutuphanePage() {
                     </div>
                   )}
                 </div>
-              </motion.div>
+              </div>
             );
           })}
         </motion.div>

@@ -415,7 +415,7 @@ function DiscoverContent() {
       triggerSound?.('click');
       setCurrentPage(page);
       if (typeof window !== 'undefined') {
-        window.scrollTo({ top: 180, behavior: 'smooth' });
+        window.scrollTo({ top: 180, behavior: 'instant' });
       }
     },
     [totalPages, currentPage, triggerSound]
@@ -542,42 +542,61 @@ function DiscoverContent() {
           </div>
         </div>
 
-        {/* Content Type Row with Fluid Spring Sliding Pills */}
+        {/* Content Type Row with Fluid Spring Sliding Pills & Drag Gesture */}
         <div className="pt-2 border-t border-white/[0.06] overflow-x-auto no-scrollbar pb-1.5 [-webkit-overflow-scrolling:touch]">
           <div
             ref={typeRowRef}
-            className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10"
+            className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none"
           >
-            {CONTENT_TYPES.map((ct) => {
+            {CONTENT_TYPES.map((ct, idx) => {
               const Icon = ct.icon;
               const active = typeFilter === ct.id;
+              const prevType = idx > 0 ? CONTENT_TYPES[idx - 1].id : null;
+              const nextType = idx < CONTENT_TYPES.length - 1 ? CONTENT_TYPES[idx + 1].id : null;
+
               return (
                 <button
                   key={ct.id}
+                  type="button"
                   onClick={() => {
                     triggerSound('click');
                     setTypeFilter(ct.id);
                     setCurrentPage(1);
                   }}
-                  className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-colors duration-200 cursor-pointer select-none active:scale-95 ${
+                  className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
                     active ? ct.activeTextClass : 'text-white/70 hover:text-white'
                   }`}
                 >
                   {active && (
                     <motion.span
                       layoutId="kesfet-type-active-pill"
+                      drag="x"
+                      dragConstraints={{ left: -45, right: 45 }}
+                      dragElastic={0.2}
+                      dragSnapToOrigin
+                      onDragEnd={(_, info) => {
+                        if (info.offset.x > 25 && nextType) {
+                          triggerSound('click');
+                          setTypeFilter(nextType);
+                          setCurrentPage(1);
+                        } else if (info.offset.x < -25 && prevType) {
+                          triggerSound('click');
+                          setTypeFilter(prevType);
+                          setCurrentPage(1);
+                        }
+                      }}
                       initial={false}
                       transition={{
                         type: 'spring',
-                        stiffness: 480,
-                        damping: 34,
-                        mass: 0.6,
+                        stiffness: 520,
+                        damping: 35,
+                        mass: 0.5,
                       }}
-                      className={`absolute inset-0 rounded-xl ${ct.activePillClass} z-0`}
+                      className={`absolute inset-0 rounded-xl ${ct.activePillClass} z-0 cursor-grab active:cursor-grabbing select-none`}
                     />
                   )}
-                  <Icon className="w-3.5 h-3.5 relative z-10" />
-                  <span className="relative z-10">{ct.label}</span>
+                  <Icon className="w-3.5 h-3.5 relative z-10 pointer-events-none" />
+                  <span className="relative z-10 pointer-events-none">{ct.label}</span>
                 </button>
               );
             })}
@@ -632,9 +651,9 @@ function DiscoverContent() {
         </div>
       </div>
 
-      {isLoading && items.length === 0 ? (
+      {isLoading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3.5 sm:gap-4 pt-2.5 pb-6">
-          {Array.from({ length: 12 }).map((_, i) => (
+          {Array.from({ length: 18 }).map((_, i) => (
             <div
               key={i}
               className="aspect-[2/3] rounded-2xl bg-white/[0.03] border border-white/[0.06] animate-pulse"
@@ -648,32 +667,16 @@ function DiscoverContent() {
           </p>
         </div>
       ) : (
-        <motion.div
-          key={`${typeFilter}-${countryFilter}-${selectedYears.slice().sort().join('-')}-${selectedGenres.join(',')}-${sortBy}-${debouncedQuery}-${currentPage}`}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3.5 sm:gap-4 pt-2.5 pb-6 [contain:layout_paint_style]"
-        >
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3.5 sm:gap-4 pt-2.5 pb-6 transition-opacity duration-200">
           {items.map((item, idx) => (
-            <motion.div
+            <AccordionMediaCard
               key={item.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{
-                duration: 0.22,
-                delay: Math.min(idx * 0.015, 0.18),
-                ease: [0.16, 1, 0.3, 1],
-              }}
-            >
-              <AccordionMediaCard
-                item={item}
-                fluidWidth={true}
-                priority={idx < 6}
-              />
-            </motion.div>
+              item={item}
+              fluidWidth={true}
+              priority={idx < 6}
+            />
           ))}
-        </motion.div>
+        </div>
       )}
 
       {/* PAGINATION DECK (Apple TV+ Cinema Glass Design) */}

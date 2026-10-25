@@ -485,17 +485,21 @@ export default function FollowedPage() {
                   activePillClass:
                     'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40',
                 },
-              ].map((flt) => {
+              ].map((flt, idx, arr) => {
                 const active = mediaFilter === flt.id;
+                const prevFlt = idx > 0 ? arr[idx - 1].id : null;
+                const nextFlt = idx < arr.length - 1 ? arr[idx + 1].id : null;
+
                 return (
                   <button
                     key={flt.id}
+                    type="button"
                     onClick={() => {
                       triggerSound?.('click');
                       setMediaFilter(flt.id);
                       setCurrentPage(1);
                     }}
-                    className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-colors duration-200 cursor-pointer select-none active:scale-95 ${
+                    className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
                       active
                         ? 'text-white font-extrabold'
                         : 'text-white/70 hover:text-white'
@@ -504,15 +508,30 @@ export default function FollowedPage() {
                     {active && (
                       <motion.span
                         layoutId="takip-media-subfilter-pill"
+                        drag="x"
+                        dragConstraints={{ left: -45, right: 45 }}
+                        dragElastic={0.2}
+                        dragSnapToOrigin
+                        onDragEnd={(_, info) => {
+                          if (info.offset.x > 25 && nextFlt) {
+                            triggerSound?.('click');
+                            setMediaFilter(nextFlt);
+                            setCurrentPage(1);
+                          } else if (info.offset.x < -25 && prevFlt) {
+                            triggerSound?.('click');
+                            setMediaFilter(prevFlt);
+                            setCurrentPage(1);
+                          }
+                        }}
                         initial={false}
-                        transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
-                        className={`absolute inset-0 rounded-xl ${flt.activePillClass} z-0`}
+                        transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
+                        className={`absolute inset-0 rounded-xl ${flt.activePillClass} z-0 cursor-grab active:cursor-grabbing select-none`}
                       />
                     )}
-                    <span className="relative z-10">{flt.label}</span>
+                    <span className="relative z-10 pointer-events-none">{flt.label}</span>
                     {flt.count !== undefined && (
                       <span
-                        className={`relative z-10 text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                        className={`relative z-10 pointer-events-none text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
                           active
                             ? 'bg-white/25 text-white'
                             : 'bg-white/10 text-white/75'
@@ -553,17 +572,21 @@ export default function FollowedPage() {
                   activePillClass:
                     'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40',
                 },
-              ].map((flt) => {
+              ].map((flt, idx, arr) => {
                 const active = personFilter === flt.id;
+                const prevFlt = idx > 0 ? arr[idx - 1].id : null;
+                const nextFlt = idx < arr.length - 1 ? arr[idx + 1].id : null;
+
                 return (
                   <button
                     key={flt.id}
+                    type="button"
                     onClick={() => {
                       triggerSound?.('click');
                       setPersonFilter(flt.id);
                       setCurrentPage(1);
                     }}
-                    className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-colors duration-200 cursor-pointer select-none active:scale-95 ${
+                    className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
                       active
                         ? 'text-white font-extrabold'
                         : 'text-white/70 hover:text-white'
@@ -572,15 +595,30 @@ export default function FollowedPage() {
                     {active && (
                       <motion.span
                         layoutId="takip-people-subfilter-pill"
+                        drag="x"
+                        dragConstraints={{ left: -45, right: 45 }}
+                        dragElastic={0.2}
+                        dragSnapToOrigin
+                        onDragEnd={(_, info) => {
+                          if (info.offset.x > 25 && nextFlt) {
+                            triggerSound?.('click');
+                            setPersonFilter(nextFlt);
+                            setCurrentPage(1);
+                          } else if (info.offset.x < -25 && prevFlt) {
+                            triggerSound?.('click');
+                            setPersonFilter(prevFlt);
+                            setCurrentPage(1);
+                          }
+                        }}
                         initial={false}
-                        transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
-                        className={`absolute inset-0 rounded-xl ${flt.activePillClass} z-0`}
+                        transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
+                        className={`absolute inset-0 rounded-xl ${flt.activePillClass} z-0 cursor-grab active:cursor-grabbing select-none`}
                       />
                     )}
-                    <span className="relative z-10">{flt.label}</span>
+                    <span className="relative z-10 pointer-events-none">{flt.label}</span>
                     {flt.count !== undefined && (
                       <span
-                        className={`relative z-10 text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                        className={`relative z-10 pointer-events-none text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
                           active
                             ? 'bg-white/25 text-white'
                             : 'bg-white/10 text-white/75'
@@ -654,15 +692,8 @@ export default function FollowedPage() {
             >
               {paginatedMedia.map((m, idx) => {
                 return (
-                  <motion.div
+                  <div
                     key={m.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{
-                      duration: 0.22,
-                      delay: Math.min(idx * 0.015, 0.18),
-                      ease: [0.16, 1, 0.3, 1],
-                    }}
                     className="group relative flex flex-col rounded-2xl bg-[#0f0f12] border border-white/10 hover:border-white/25 overflow-hidden transition-[border-color,box-shadow] duration-200 shadow-lg hover:shadow-2xl"
                   >
                     {/* Poster with Accordion Hover Interaction */}
@@ -688,7 +719,7 @@ export default function FollowedPage() {
                         <span className="hidden sm:inline">Takipte</span>
                       </button>
                     </div>
-                  </motion.div>
+                  </div>
                 );
               })}
             </motion.div>
