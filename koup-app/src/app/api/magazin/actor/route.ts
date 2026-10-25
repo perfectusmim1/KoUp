@@ -34,16 +34,22 @@ export async function GET(req: NextRequest) {
     const cleanName = name.trim();
     const cleanId = personId ? Number(personId) : null;
     const normName = normalizeTurkish(cleanName);
+    const personType = searchParams.get('type');
 
-    // Variations for hyphenated/spaced Korean romanized names (e.g. "Kim Soo-hyun", "Kim Soo Hyun", "kim-soo-hyun")
-    const spaceName = cleanName.replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
-    const hyphenName = spaceName.replace(/\s+/g, '-');
-
-    // Slug derived tag guess (e.g. "yoo-in-na-89" -> "yoo-in-na")
+    // Derived clean slug (e.g. "char-gokuu-son-246" -> "char-gokuu-son")
     const cleanSlug = (slug || '')
       .replace(/-\d+$/, '')
       .toLowerCase()
       .trim();
+
+    // Characters in anime/fiction should NEVER have celebrity gossip/magazin news
+    if (personType === 'character' || cleanSlug.startsWith('char-')) {
+      return NextResponse.json({ posts: [], total: 0 });
+    }
+
+    // Variations for hyphenated/spaced Korean romanized names (e.g. "Kim Soo-hyun", "Kim Soo Hyun", "kim-soo-hyun")
+    const spaceName = cleanName.replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+    const hyphenName = spaceName.replace(/\s+/g, '-');
 
     const mergedPosts: MagazinePost[] = [];
     const seenSlugs = new Set<string>();
@@ -112,8 +118,7 @@ export async function GET(req: NextRequest) {
                 if (
                   normTagName === normName ||
                   normTagSlug === cleanSlug ||
-                  normTagName.includes(normName) ||
-                  normName.includes(normTagName)
+                  (normTagName.length >= 3 && normName.length >= 3 && (normTagName.includes(normName) || normName.includes(normTagName)))
                 ) {
                   matchingTagIds.add(t.id);
                 }
@@ -179,16 +184,23 @@ export async function GET(req: NextRequest) {
           const normTitle = normalizeTurkish(kp.title || '');
           const normExcerpt = normalizeTurkish(kp.excerpt || '');
           const normContent = normalizeTurkish(kp.content_html || '');
-          const hasTagMatch = (kp.tags || []).some(
-            (t) => normalizeTurkish(t).includes(normName) || normName.includes(normalizeTurkish(t))
-          );
+          const hasTagMatch = (kp.tags || []).some((t) => {
+            const nt = normalizeTurkish(t);
+            if (!nt || nt.length < 2) return false;
+            return (
+              nt === normName ||
+              (nt.length >= 3 && nt.includes(normName)) ||
+              (normName.length >= 4 && nt.length >= 4 && normName.includes(nt))
+            );
+          });
 
-          if (
-            hasTagMatch ||
-            normTitle.includes(normName) ||
-            normExcerpt.includes(normName) ||
-            normContent.includes(normName)
-          ) {
+          const isNameMatch =
+            normName.length >= 3 &&
+            (normTitle.includes(normName) ||
+              normExcerpt.includes(normName) ||
+              normContent.includes(normName));
+
+          if (hasTagMatch || isNameMatch) {
             if (!seenSlugs.has(kp.slug)) {
               seenSlugs.add(kp.slug);
               mergedPosts.push(kp);

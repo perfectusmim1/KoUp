@@ -421,11 +421,15 @@ export default function PersonDetailPage({
     }
   }, [person?.id, person?.name, person?.person_type, person?.birth_date, person?.gender]);
 
-  // Fetch related AsyaMag magazine news & gossip for actor
+  // Fetch related AsyaMag / KoreZin magazine news & gossip for actor
   useEffect(() => {
     if (!person?.name) return;
+    if (person?.person_type === 'character' || person?.slug?.startsWith('char-')) {
+      setMagazinePosts([]);
+      return;
+    }
     const actorSlug = person.slug ? encodeURIComponent(person.slug) : '';
-    fetch(`/api/magazin/actor?name=${encodeURIComponent(person.name)}&id=${person.id}&slug=${actorSlug}`)
+    fetch(`/api/magazin/actor?name=${encodeURIComponent(person.name)}&id=${person.id}&slug=${actorSlug}&type=${person.person_type || 'actor'}`)
       .then((r) => r.json())
       .then((data) => {
         if (Array.isArray(data?.posts)) {
@@ -433,7 +437,7 @@ export default function PersonDetailPage({
         }
       })
       .catch(() => {});
-  }, [person?.id, person?.name, person?.slug]);
+  }, [person?.id, person?.name, person?.slug, person?.person_type]);
 
   if (isLoading) {
     return (
@@ -782,14 +786,16 @@ export default function PersonDetailPage({
         </section>
       )}
 
-      {/* 4. ASYAMAG MAGAZİN & DEDİKODU HABERLERİ */}
-      {magazinePosts.length > 0 && (
+      {/* 4. ASYAMAG & KOREZIN MAGAZİN HABERLERİ (YALNIZCA GERÇEK OYUNCULAR/KİŞİLER İÇİN) */}
+      {magazinePosts.length > 0 && person.person_type !== 'character' && (
         <section className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
             <div>
               <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
                 <Newspaper className="w-5 h-5 text-rose-400" />
-                <span>Oyuncuyla İlgili ({magazinePosts.length})</span>
+                <span>
+                  {person.person_type === 'seiyuu' ? 'Seslendirmenle İlgili' : 'Oyuncuyla İlgili'} ({magazinePosts.length})
+                </span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-rose-500/15 text-rose-300 border border-rose-400/30">
                   {person.name} Gündemi
                 </span>
