@@ -3,20 +3,14 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import {
-  Layers,
-  Play,
   Film,
   Tv,
   Sparkles,
-  CheckCircle2,
-  Clock,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  ChevronUp,
-  ArrowRight,
 } from 'lucide-react';
-import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
+import { motion, LayoutGroup } from 'motion/react';
 import type { FranchiseData, FranchiseItem } from '@/lib/server/seriesData';
 import { cleanMediaTitle, getProxiedImageUrl } from '@/lib/supabase';
 import { useDragScroll } from '@/hooks/useDragScroll';
@@ -32,7 +26,6 @@ type FilterTab = 'main' | 'side' | 'all';
 export default function FranchiseWatchOrder({
   franchise,
   currentMediaId,
-  progressMap,
 }: FranchiseWatchOrderProps) {
   const railRef = useDragScroll<HTMLDivElement>();
   const activeCardRef = useRef<HTMLAnchorElement | HTMLDivElement | null>(null);
@@ -46,9 +39,20 @@ export default function FranchiseWatchOrder({
     [franchise.items]
   );
 
+  // Interleave main + movies/specials chronologically by release_year for "Tümü"
+  const chronologicalAllItems = useMemo(() => {
+    return [...franchise.items].sort((a, b) => {
+      const yA = a.release_year && a.release_year > 0 ? a.release_year : 9999;
+      const yB = b.release_year && b.release_year > 0 ? b.release_year : 9999;
+      if (yA !== yB) return yA - yB;
+      // Within the same year, put main series before movies/specials
+      if (a.category !== b.category) return a.category === 'main' ? -1 : 1;
+      return a.watch_order - b.watch_order;
+    });
+  }, [franchise.items]);
+
   const hasBothCategories = mainItems.length > 0 && sideItems.length > 0;
 
-  // Determine if current series is in 'side' so we show the right tab by default
   const currentInSide = useMemo(
     () => sideItems.some((i) => i.id === currentMediaId),
     [sideItems, currentMediaId]
@@ -61,7 +65,6 @@ export default function FranchiseWatchOrder({
 
   const [isGridExpanded, setIsGridExpanded] = useState(false);
 
-  // Sync default tab when navigating between series
   useEffect(() => {
     if (!hasBothCategories) {
       setActiveTab('all');
@@ -72,13 +75,13 @@ export default function FranchiseWatchOrder({
 
   const displayedItems = useMemo(() => {
     if (!hasBothCategories || activeTab === 'all') {
-      return franchise.items;
+      return chronologicalAllItems;
     }
     if (activeTab === 'main') {
       return mainItems;
     }
     return sideItems;
-  }, [franchise.items, mainItems, sideItems, hasBothCategories, activeTab]);
+  }, [chronologicalAllItems, mainItems, sideItems, hasBothCategories, activeTab]);
 
   // Auto-scroll horizontal rail so the current media item is visible
   useEffect(() => {
@@ -119,214 +122,108 @@ export default function FranchiseWatchOrder({
     const isCurrent = item.id === currentMediaId;
     const cleanTitle = cleanMediaTitle(item.title);
     const posterUrl = getProxiedImageUrl(item.cover_image, item.title, null, 'w342');
-    const userProg = progressMap?.[item.id];
-    const isCompleted = userProg?.status === 'completed';
-    const isWatching = userProg?.status === 'watching';
     const isMovie =
       item.content_type === 'film' ||
       item.format === 'MOVIE' ||
       item.role_label.toLowerCase().includes('film');
 
     const stepNumber = idx + 1;
+    const metaParts: string[] = [];
+    if (item.release_year && item.release_year > 0) {
+      metaParts.push(String(item.release_year));
+    }
+    if (isMovie) {
+      metaParts.push('Film');
+    } else if (item.episode_count && item.episode_count > 0) {
+      metaParts.push(`${item.episode_count} Bölüm`);
+    } else {
+      metaParts.push('Dizi');
+    }
 
     return (
-      <React.Fragment key={item.id}>
-        <Link
-          ref={isCurrent && !isGrid ? (activeCardRef as React.RefObject<HTMLAnchorElement>) : undefined}
-          href={`/seri/${item.slug}`}
-          prefetch={false}
-          aria-current={isCurrent ? 'page' : undefined}
-          className={`group relative flex ${
-            isGrid
-              ? 'flex-row items-center gap-3.5 p-3 rounded-2xl w-full'
-              : 'flex-col w-[184px] sm:w-[204px] shrink-0 rounded-2xl p-2.5'
-          } transition-[transform,background-color,border-color,box-shadow] duration-200 select-none ${
-            isCurrent
-              ? 'bg-[#2997ff]/[0.09] border-2 border-[#2997ff]/70 shadow-[0_0_24px_rgba(41,151,255,0.18)]'
-              : 'bg-[#121216]/90 hover:bg-[#18181f] border border-white/[0.08] hover:border-white/25 hover:-translate-y-0.5'
+      <Link
+        key={item.id}
+        ref={isCurrent && !isGrid ? (activeCardRef as React.RefObject<HTMLAnchorElement>) : undefined}
+        href={`/seri/${item.slug}`}
+        prefetch={false}
+        aria-current={isCurrent ? 'page' : undefined}
+        className={`group relative flex ${
+          isGrid
+            ? 'flex-row items-center gap-3.5 p-2.5 rounded-2xl w-full'
+            : 'flex-col w-[176px] sm:w-[196px] shrink-0 rounded-2xl p-2.5'
+        } transition-colors duration-150 select-none ${
+          isCurrent
+            ? 'bg-[#2997ff]/[0.09] border-2 border-[#2997ff]/70'
+            : 'bg-[#121216]/90 hover:bg-[#18181f] border border-white/[0.08] hover:border-white/20'
+        }`}
+      >
+        {/* Poster Container */}
+        <div
+          className={`relative overflow-hidden rounded-xl bg-black/60 shrink-0 ${
+            isGrid ? 'w-14 sm:w-16 aspect-[2/3]' : 'w-full aspect-[16/10]'
           }`}
         >
-          {/* Poster Container */}
+          <img
+            src={posterUrl}
+            alt={cleanTitle}
+            loading="lazy"
+            decoding="async"
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+
+          {/* Top-left Step Order Number Badge */}
           <div
-            className={`relative overflow-hidden rounded-xl bg-black/60 shrink-0 ${
-              isGrid ? 'w-16 sm:w-20 aspect-[2/3]' : 'w-full aspect-[16/10]'
+            className={`absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold tracking-tight ${
+              isCurrent
+                ? 'bg-[#2997ff] text-white'
+                : 'bg-black/75 text-white/85 border border-white/15'
             }`}
           >
-            <img
-              src={posterUrl}
-              alt={cleanTitle}
-              loading="lazy"
-              decoding="async"
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
-
-            {/* Top-left Step Order Number Badge */}
-            <div
-              className={`absolute top-1.5 left-1.5 flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-black tracking-tight shadow-md ${
-                isCurrent
-                  ? 'bg-sky-400 text-black'
-                  : item.category === 'main'
-                  ? 'bg-black/80 text-white border border-white/20'
-                  : 'bg-black/75 text-white/80 border border-white/10'
-              }`}
-            >
-              <span>#{String(stepNumber).padStart(2, '0')}</span>
-            </div>
-
-            {/* Top-right User Progress or Current Indicator */}
-            {isCurrent ? (
-              <div className="absolute top-1.5 right-1.5 px-2 py-0.5 rounded-lg bg-sky-500 text-black text-[10px] font-extrabold uppercase tracking-wider shadow-md flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-black animate-ping" />
-                <span>Açık</span>
-              </div>
-            ) : isCompleted ? (
-              <div
-                title="İzlendi"
-                className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-emerald-500/90 text-black flex items-center justify-center shadow-md"
-              >
-                <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
-              </div>
-            ) : isWatching ? (
-              <div
-                title="İzleniyor"
-                className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-amber-400/90 text-black flex items-center justify-center shadow-md"
-              >
-                <Clock className="w-3.5 h-3.5 stroke-[2.5]" />
-              </div>
-            ) : null}
-
-            {/* Bottom-left Role Badge inside rail card */}
-            {!isGrid && (
-              <div className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between gap-1">
-                <span
-                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold truncate ${
-                    item.category === 'main'
-                      ? 'bg-sky-500/25 text-sky-200 border border-sky-400/35'
-                      : 'bg-amber-500/20 text-amber-200 border border-amber-400/30'
-                  }`}
-                >
-                  {item.role_label}
-                </span>
-                {item.release_year > 0 && (
-                  <span className="px-1.5 py-0.5 rounded bg-black/70 text-[10px] font-mono font-semibold text-white/80 shrink-0">
-                    {item.release_year}
-                  </span>
-                )}
-              </div>
-            )}
+            #{String(stepNumber).padStart(2, '0')}
           </div>
+        </div>
 
-          {/* Info Column */}
-          <div className={`flex flex-col min-w-0 flex-1 ${isGrid ? 'justify-center' : 'mt-2.5'}`}>
-            {isGrid && (
-              <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                <span
-                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                    item.category === 'main'
-                      ? 'bg-sky-500/20 text-sky-300 border border-sky-400/30'
-                      : 'bg-amber-500/15 text-amber-300 border border-amber-400/25'
-                  }`}
-                >
-                  {item.role_label}
-                </span>
-                {item.release_year > 0 && (
-                  <span className="text-[11px] font-mono text-white/50">
-                    • {item.release_year}
-                  </span>
-                )}
-                {isCurrent && (
-                  <span className="px-2 py-0.5 rounded-md bg-sky-400/20 text-sky-300 text-[10px] font-bold">
-                    Şu An Buradasınız
-                  </span>
-                )}
-              </div>
-            )}
-
-            <h3
-              className={`font-bold leading-snug line-clamp-2 transition-colors ${
-                isGrid ? 'text-xs sm:text-sm' : 'text-xs min-h-[2.25rem]'
-              } ${
-                isCurrent
-                  ? 'text-sky-300'
-                  : 'text-white/90 group-hover:text-white'
-              }`}
-            >
-              {cleanTitle}
-            </h3>
-
-            <div className="flex items-center justify-between gap-2 mt-1.5 pt-1.5 border-t border-white/[0.06] text-[11px] text-white/55">
-              <span className="inline-flex items-center gap-1 truncate">
-                {isMovie ? (
-                  <>
-                    <Film className="w-3 h-3 text-amber-400/80 shrink-0" />
-                    <span>Sinema Filmi</span>
-                  </>
-                ) : (
-                  <>
-                    <Tv className="w-3 h-3 text-sky-400/80 shrink-0" />
-                    <span>
-                      {item.episode_count > 0 ? `${item.episode_count} Bölüm` : 'Seri'}
-                    </span>
-                  </>
-                )}
-              </span>
-
-              <span
-                className={`inline-flex items-center gap-0.5 font-semibold shrink-0 ${
-                  isCurrent
-                    ? 'text-sky-400'
-                    : 'text-white/40 group-hover:text-white/80'
-                }`}
-              >
-                {isCurrent ? (
-                  <span>İnceleniyor</span>
-                ) : (
-                  <>
-                    <span>Aç</span>
-                    <Play className="w-2.5 h-2.5 fill-current" />
-                  </>
-                )}
-              </span>
-            </div>
-          </div>
-        </Link>
-
-        {/* Visual Watch-Order Arrow Connector between sequential items in Horizontal Rail */}
-        {!isGrid && idx < displayedItems.length - 1 && (
-          <div
-            aria-hidden="true"
-            className="flex items-center justify-center shrink-0 text-white/25 px-0.5"
+        {/* Info Column */}
+        <div className={`flex flex-col min-w-0 flex-1 ${isGrid ? 'justify-center' : 'mt-2'}`}>
+          <h3
+            className={`font-bold leading-snug line-clamp-2 transition-colors text-xs ${
+              isGrid ? 'sm:text-sm' : 'min-h-[2.1rem]'
+            } ${
+              isCurrent
+                ? 'text-[#2997ff]'
+                : 'text-white/90 group-hover:text-white'
+            }`}
           >
-            <ArrowRight className="w-4 h-4" />
+            {cleanTitle}
+          </h3>
+
+          <div className="flex items-center gap-1.5 mt-1 text-[11px] text-white/50 truncate">
+            {isMovie ? (
+              <Film className="w-3 h-3 text-white/40 shrink-0" />
+            ) : (
+              <Tv className="w-3 h-3 text-white/40 shrink-0" />
+            )}
+            <span className="truncate">{metaParts.join(' • ')}</span>
           </div>
-        )}
-      </React.Fragment>
+        </div>
+      </Link>
     );
   };
 
   return (
     <section
-      aria-label="İzleme Sırası ve Bağlantılı Seriler"
-      className="space-y-4 rounded-3xl bg-[#0c0c10]/90 border border-white/[0.08] p-4 sm:p-6 shadow-xl [content-visibility:auto] [contain-intrinsic-size:auto_none_auto_280px] [contain:layout_paint_style]"
+      aria-label="Seri Evreni"
+      className="space-y-3.5 rounded-3xl bg-[#0c0c10]/90 border border-white/[0.08] p-4 sm:p-6 shadow-xl [content-visibility:auto] [contain-intrinsic-size:auto_none_auto_260px] [contain:layout_paint_style]"
     >
       {/* Header Row */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 pb-3 border-b border-white/[0.07]">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold tracking-[0.16em] uppercase text-sky-400">
-            <Layers className="w-3.5 h-3.5 shrink-0" />
-            <span>SERİ EVRENİ & İZLEME SIRASI</span>
-            <span className="px-2 py-0.5 rounded-full bg-sky-500/15 border border-sky-400/25 text-sky-300 tracking-normal font-semibold">
-              {franchise.items.length} Yapım
-            </span>
-          </div>
-          <h2 className="text-lg sm:text-xl font-extrabold text-white tracking-tight flex flex-wrap items-center gap-2">
-            <span>{cleanFranchiseTitle}</span>
-            <span className="text-xs sm:text-sm font-medium text-white/50">
-              — Kronolojik İzleme Rehberi
-            </span>
-          </h2>
-        </div>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-white/[0.07]">
+        <h2 className="text-lg sm:text-xl font-extrabold text-white tracking-tight flex flex-wrap items-center gap-2">
+          <span>{cleanFranchiseTitle}</span>
+          <span className="text-xs sm:text-sm font-medium text-white/50">
+            — Seri Evreni
+          </span>
+        </h2>
 
         {/* Category Filter Tabs + View Switcher */}
         <div className="flex flex-wrap items-center gap-2">
@@ -428,44 +325,40 @@ export default function FranchiseWatchOrder({
         </div>
       </div>
 
-      {/* Primary Chronological Watch-Order Rail (Always smooth and accessible) */}
+      {/* Primary Watch-Order Rail */}
       <div
         ref={railRef}
-        className="flex items-stretch gap-2 overflow-x-auto overflow-y-hidden no-scrollbar py-1.5 [-webkit-overflow-scrolling:touch]"
+        className="flex items-stretch gap-3 overflow-x-auto overflow-y-hidden no-scrollbar py-1 [-webkit-overflow-scrolling:touch]"
       >
         {displayedItems.map((item, idx) => renderCard(item, idx, false))}
       </div>
 
-      {/* Expandable Multi-Column Grid Drawer (120fps fluid CSS expansion without DOM destruction) */}
+      {/* Expandable Multi-Column Grid Drawer */}
       {displayedItems.length > 4 && (
         <>
           <div className={`koup-expandable-drawer ${isGridExpanded ? 'is-expanded' : ''}`}>
             <div className="koup-expandable-inner">
-              <div className="pt-3.5 border-t border-white/[0.06]">
-                <div className="flex items-center justify-between mb-3 text-xs text-white/50">
-                  <span className="font-semibold uppercase tracking-wider text-[11px] text-[#2997ff]">Tüm Seri Kataloğu</span>
-                  <span>{displayedItems.length} Yapım Listeleniyor</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="pt-3 border-t border-white/[0.06]">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                   {displayedItems.map((item, idx) => renderCard(item, idx, true))}
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="flex justify-center pt-1">
+          <div className="flex justify-center pt-0.5">
             <button
               type="button"
               onClick={() => setIsGridExpanded((prev) => !prev)}
-              className="min-h-[38px] inline-flex items-center gap-2 px-5 py-2 rounded-full glass-pill hover:bg-white/15 text-xs font-semibold text-white/90 border border-white/15 hover:border-white/30 transition-all cursor-pointer active:scale-95 shadow-sm"
+              className="min-h-[36px] inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-pill hover:bg-white/15 text-xs font-semibold text-white/85 border border-white/12 hover:border-white/25 transition-colors cursor-pointer"
             >
               <span>
                 {isGridExpanded
-                  ? 'Genişletilmiş Listeyi Kapat'
-                  : `Tüm İzleme Sırasını Liste Olarak Aç (${displayedItems.length} Yapım)`}
+                  ? 'Listeyi Daralt'
+                  : `Tümünü Gör (${displayedItems.length})`}
               </span>
               <ChevronDown
-                className={`w-4 h-4 transition-transform duration-200 ${
+                className={`w-3.5 h-3.5 transition-transform duration-200 ${
                   isGridExpanded ? 'rotate-180 text-[#2997ff]' : 'text-white/60'
                 }`}
               />
