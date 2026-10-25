@@ -556,7 +556,7 @@ function DiscoverContent() {
           <div
             ref={typeRowRef}
             {...typeDragProps}
-            className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-y cursor-grab active:cursor-grabbing"
+            className="inline-flex w-max items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-x cursor-pointer sm:cursor-grab sm:active:cursor-grabbing overflow-hidden"
           >
             {CONTENT_TYPES.map((ct) => {
               const Icon = ct.icon;
@@ -572,7 +572,7 @@ function DiscoverContent() {
                     setTypeFilter(ct.id);
                     setCurrentPage(1);
                   }}
-                  className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
+                  className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 h-9 rounded-xl text-xs font-bold transition-colors duration-150 cursor-pointer select-none touch-manipulation ${
                     active ? ct.activeTextClass : 'text-white/70 hover:text-white'
                   }`}
                 >
@@ -582,9 +582,9 @@ function DiscoverContent() {
                       initial={false}
                       transition={{
                         type: 'spring',
-                        stiffness: 550,
-                        damping: 35,
-                        mass: 0.4,
+                        stiffness: 400,
+                        damping: 30,
+                        mass: 0.8,
                       }}
                       className={`absolute inset-0 rounded-xl ${ct.activePillClass} z-0 select-none pointer-events-none`}
                     />

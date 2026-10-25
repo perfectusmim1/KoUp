@@ -1274,14 +1274,14 @@ function ProfileInnerContent({ targetUsername }: { targetUsername: string }) {
                             triggerSound('click');
                             setLibraryFilter(st.id);
                           }}
-                          className={`relative flex items-center gap-1.5 px-4 py-2 rounded-full text-xs cursor-pointer transition-colors active:scale-[0.98] select-none ${
+                          className={`relative flex items-center gap-1.5 px-4 py-2 rounded-full text-xs cursor-pointer transition-colors select-none ${
                             active ? st.activeTextClass : st.inactiveClass
                           }`}
                         >
                           {active && (
                             <motion.span
                               layoutId="profile-library-filter-pill"
-                              transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                              transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
                               className={`absolute inset-0 rounded-full ${st.activePillClass}`}
                             />
                           )}

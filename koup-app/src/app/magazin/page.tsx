@@ -276,7 +276,7 @@ export default function MagazineHubPage() {
           <div
             ref={categoryTabsRef}
             {...categoryTabsDragProps}
-            className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-y cursor-grab active:cursor-grabbing"
+            className="inline-flex w-max items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-x cursor-pointer sm:cursor-grab sm:active:cursor-grabbing overflow-hidden"
           >
             {MAGAZINE_CATEGORIES.map((cat) => {
               const active = activeCategory === cat;
@@ -291,7 +291,7 @@ export default function MagazineHubPage() {
                     triggerSound?.('click');
                     setActiveCategory(cat);
                   }}
-                  className={`relative shrink-0 flex items-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
+                  className={`relative shrink-0 flex items-center gap-1.5 px-3.5 sm:px-4 h-9 rounded-xl text-xs font-bold transition-colors duration-150 cursor-pointer select-none touch-manipulation ${
                     active ? style.text : 'text-white/70 hover:text-white'
                   }`}
                 >
@@ -299,7 +299,7 @@ export default function MagazineHubPage() {
                     <motion.span
                       layoutId="magazin-category-active-pill"
                       initial={false}
-                      transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
                       className={`absolute inset-0 rounded-xl ${style.pill} z-0 select-none pointer-events-none`}
                     />
                   )}
@@ -315,7 +315,7 @@ export default function MagazineHubPage() {
         <div
           ref={sourceTabsRef}
           {...sourceTabsDragProps}
-          className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 self-start lg:self-auto shrink-0 overflow-x-auto no-scrollbar select-none touch-pan-y cursor-grab active:cursor-grabbing"
+          className="inline-flex w-max items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 self-start lg:self-auto shrink-0 overflow-x-auto no-scrollbar select-none touch-pan-x cursor-pointer sm:cursor-grab sm:active:cursor-grabbing overflow-hidden"
         >
           {(['Tümü', 'KoreZin', 'AsyaMag'] as const).map((source) => {
             const active = activeSource === source;
@@ -329,7 +329,7 @@ export default function MagazineHubPage() {
                   triggerSound?.('click');
                   setActiveSource(source);
                 }}
-                className={`relative shrink-0 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
+                className={`relative shrink-0 flex items-center px-3.5 sm:px-4 h-9 rounded-xl text-xs font-bold transition-colors duration-150 cursor-pointer select-none touch-manipulation ${
                   active ? 'text-white font-extrabold' : 'text-white/70 hover:text-white'
                 }`}
               >
@@ -337,7 +337,7 @@ export default function MagazineHubPage() {
                   <motion.span
                     layoutId="magazin-source-active-pill"
                     initial={false}
-                    transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
                     className={`absolute inset-0 rounded-xl z-0 select-none pointer-events-none ${
                       source === 'KoreZin'
                         ? 'bg-gradient-to-r from-rose-500 to-pink-600 shadow-[0_0_15px_rgba(244,63,94,0.45)] border border-rose-400/40'

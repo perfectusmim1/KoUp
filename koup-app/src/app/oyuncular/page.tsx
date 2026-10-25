@@ -189,7 +189,7 @@ export default function ActorsLeaderboardPage() {
         <div
           ref={personTabsRef}
           {...personTabsDragProps}
-          className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-y cursor-grab active:cursor-grabbing"
+          className="inline-flex w-max items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-x cursor-pointer sm:cursor-grab sm:active:cursor-grabbing overflow-hidden"
         >
           {PERSON_TABS.map((tab) => {
             const Icon = tab.icon;
@@ -205,7 +205,7 @@ export default function ActorsLeaderboardPage() {
                   setFilterType(tab.id as any);
                   setCurrentPage(1);
                 }}
-                className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
+                className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 h-9 rounded-xl text-xs font-bold transition-colors duration-150 cursor-pointer select-none touch-manipulation ${
                   active ? tab.activeTextClass : 'text-white/70 hover:text-white'
                 }`}
               >
@@ -213,7 +213,7 @@ export default function ActorsLeaderboardPage() {
                   <motion.span
                     layoutId="oyuncular-tab-active-pill"
                     initial={false}
-                    transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
                     className={`absolute inset-0 rounded-xl ${tab.activePillClass} z-0 select-none pointer-events-none`}
                   />
                 )}
@@ -227,7 +227,7 @@ export default function ActorsLeaderboardPage() {
 
       {/* LEADERBOARD GRID */}
       {isLoading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-6 pt-3 sm:pt-4">
           {Array.from({ length: 12 }).map((_, i) => (
             <div
               key={i}
@@ -246,7 +246,7 @@ export default function ActorsLeaderboardPage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-6 pt-3 sm:pt-4">
           {people.map((person, idx) => {
             const rank = (currentPage - 1) * PAGE_SIZE + idx + 1;
             const isFav = favPersonIds.includes(person.id);
@@ -256,8 +256,37 @@ export default function ActorsLeaderboardPage() {
             return (
               <div
                 key={person.id}
-                className="rounded-3xl p-4 flex flex-col justify-between group bg-[#0f0f11] border border-white/[0.08] hover:border-white/30 hover:shadow-[0_0_24px_-4px_rgba(41,151,255,0.25),0_10px_24px_rgba(0,0,0,0.7)] transition-all duration-200"
+                className="relative rounded-3xl p-4 flex flex-col justify-between group bg-[#0f0f11] border border-white/[0.08] hover:border-white/30 hover:shadow-[0_0_24px_-4px_rgba(41,151,255,0.25),0_10px_24px_rgba(0,0,0,0.7)] transition-all duration-200"
               >
+                {/* Sol üst kartın dışına çıkan net, şık rank rozeti (animasyonsuz ve %100 okunabilir) */}
+                <div
+                  className={`absolute -top-3 -left-2 sm:-top-3.5 sm:-left-2.5 z-20 flex items-center justify-center min-w-[32px] sm:min-w-[36px] h-8 sm:h-9 px-2 rounded-xl border shadow-xl select-none pointer-events-none ${
+                    rank === 1
+                      ? 'bg-[#161208] border-amber-400/90 shadow-[0_4px_16px_rgba(245,158,11,0.3)]'
+                      : rank === 2
+                      ? 'bg-[#10141a] border-slate-300/90 shadow-[0_4px_16px_rgba(203,213,225,0.25)]'
+                      : rank === 3
+                      ? 'bg-[#170e06] border-amber-600/90 shadow-[0_4px_16px_rgba(217,119,6,0.25)]'
+                      : 'bg-[#101014] border-white/20 shadow-[0_4px_12px_rgba(0,0,0,0.65)]'
+                  }`}
+                >
+                  <span
+                    className={`font-black tracking-normal leading-none tabular-nums ${
+                      rank < 10 ? 'text-base sm:text-lg' : 'text-xs sm:text-sm'
+                    } ${
+                      rank === 1
+                        ? 'text-amber-400'
+                        : rank === 2
+                        ? 'text-slate-100'
+                        : rank === 3
+                        ? 'text-amber-500'
+                        : 'text-white'
+                    }`}
+                  >
+                    {rank}
+                  </span>
+                </div>
+
                 <div>
                   <div className="relative aspect-square rounded-2xl overflow-hidden mb-3 bg-black/50 border border-white/10 group-hover:border-white/30 transition-colors">
                     <Link href={`/oyuncu/${person.slug}`}>
@@ -269,21 +298,6 @@ export default function ActorsLeaderboardPage() {
                         className="w-full h-full object-cover"
                       />
                     </Link>
-
-                    {/* Rank Badge */}
-                    <span
-                      className={`absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-extrabold border ${
-                        rank === 1
-                          ? 'bg-amber-400/25 text-amber-300 border-amber-400/50 shadow-[0_0_12px_rgba(245,158,11,0.4)]'
-                          : rank === 2
-                          ? 'bg-slate-300/25 text-slate-100 border-slate-300/50 shadow-[0_0_12px_rgba(203,213,225,0.3)]'
-                          : rank === 3
-                          ? 'bg-amber-700/30 text-amber-300 border-amber-600/50 shadow-[0_0_12px_rgba(180,83,9,0.3)]'
-                          : 'bg-black/80 text-white/90 border-white/15'
-                      }`}
-                    >
-                      #{rank}
-                    </span>
                   </div>
 
                   <Link

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   RefreshCw,
@@ -12,10 +12,12 @@ import {
   Link as LinkIcon,
   ExternalLink,
   Sparkles,
+  Clock,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import CustomSelect, { SelectOption } from '@/components/CustomSelect';
 import KoupInput from '@/components/KoupInput';
+import { useKoUpSelector } from '@/context/KoUpContext';
 
 interface AdminSeriesSyncProps {
   dramaId: number;
@@ -159,8 +161,8 @@ const SYNC_OPTIONS: SelectOption[] = [
   },
   {
     value: '__manual__',
-    label: 'Özel Dizi URL\'si Gir...',
-    description: 'DiziBOX, HDFilm vb. doğrudan dizi URL\'si yapıştırın',
+    label: "Özel Dizi URL'si Gir...",
+    description: "DiziBOX, HDFilm vb. doğrudan dizi URL'si yapıştırın",
     icon: (
       <div className="w-5 h-5 rounded-md bg-sky-950/30 border border-sky-500/30 flex items-center justify-center flex-shrink-0 text-sky-400">
         <LinkIcon className="w-3.5 h-3.5" />
@@ -176,11 +178,46 @@ export default function AdminSeriesSync({
   pendingCount,
   onSyncComplete,
 }: AdminSeriesSyncProps) {
+  const triggerSound = useKoUpSelector((s) => s.triggerSound);
   const [selectedProvider, setSelectedProvider] = useState<string>('auto');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'queued' | 'running' | 'completed' | 'failed'>('idle');
+  const [syncProgress, setSyncProgress] = useState<number>(0);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [internalPendingCount, setInternalPendingCount] = useState<number | null>(null);
 
+  // Active Job & Live Tracking
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [githubRunUrl, setGithubRunUrl] = useState<string | null>(null);
+
+  // Manual URL Modal
+  const [showManualModal, setShowManualModal] = useState(false);
+  const [manualUrlInput, setManualUrlInput] = useState('');
+
+  // Logs Modal
+  const [logs, setLogs] = useState<string[]>([]);
+  const [showLogsModal, setShowLogsModal] = useState(false);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // Toast feedback
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Auto-scroll logs
+  useEffect(() => {
+    if (showLogsModal && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs, showLogsModal]);
+
+  // Clear toast after 5s
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  // Fetch initial pending count
   useEffect(() => {
     if (pendingCount !== undefined) return;
     let isCancelled = false;
@@ -204,30 +241,156 @@ export default function AdminSeriesSync({
 
   const effectivePendingCount = pendingCount !== undefined ? pendingCount : (internalPendingCount || 0);
 
-  // Manual URL Modal
-  const [showManualModal, setShowManualModal] = useState(false);
-  const [manualUrlInput, setManualUrlInput] = useState('');
+  // Apply state update from Supabase Realtime or Poller
+  const applyJobState = useCallback(
+    (job: any) => {
+      if (!job) return;
 
-  // Logs Modal
-  const [logs, setLogs] = useState<string[]>([]);
-  const [showLogsModal, setShowLogsModal] = useState(false);
+      if (job.external_ref) {
+        setGithubRunUrl(job.external_ref);
+      }
 
-  // Toast feedback
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+      if (Array.isArray(job.logs) && job.logs.length > 0) {
+        setLogs(job.logs);
+      }
 
-  // Clear toast after 5s
+      const st = job.status as 'queued' | 'running' | 'completed' | 'failed';
+      setSyncStatus(st);
+      if (typeof job.progress === 'number') {
+        setSyncProgress(job.progress);
+      }
+
+      if (st === 'queued') {
+        setIsSyncing(true);
+        setStatusText('Kuyrukta (GitHub Actions Bekleniyor...)');
+      } else if (st === 'running') {
+        setIsSyncing(true);
+        const lastLog = Array.isArray(job.logs) && job.logs.length > 0 ? job.logs[job.logs.length - 1] : null;
+        const cleanMsg = lastLog ? lastLog.replace(/^\[[^\]]+\]\s*(\[[^\]]+\]\s*)?/, '').slice(0, 36) : null;
+        setStatusText(cleanMsg || `Bulutta Taranıyor (%${job.progress || 40})`);
+      } else if (st === 'completed') {
+        setIsSyncing(false);
+        setStatusText('Tamamlandı!');
+        setSyncProgress(100);
+        triggerSound('success');
+
+        const epAdded = job.result?.episodesAdded ?? 0;
+        const srcAdded = job.result?.sourcesAdded ?? 0;
+        const resolvedProv = job.params?.provider || selectedProvider;
+
+        setToast({
+          type: 'success',
+          message: `Senkronizasyon tamamlandı (${resolvedProv.toUpperCase()}): +${epAdded} yeni bölüm, +${srcAdded} yeni kaynak!`,
+        });
+
+        if (onSyncComplete) {
+          onSyncComplete({ episodesAdded: epAdded, sourcesAdded: srcAdded, provider: resolvedProv });
+        }
+      } else if (st === 'failed') {
+        setIsSyncing(false);
+        setStatusText('Hata Oluştu');
+        triggerSound('click');
+        setToast({
+          type: 'error',
+          message: job.error_message || 'Senkronizasyon işlemi hata ile sonuçlandı.',
+        });
+      }
+    },
+    [onSyncComplete, selectedProvider]
+  );
+
+  // Supabase Realtime listener & polling fallback for active job
   useEffect(() => {
-    if (toast) {
-      const timer = setTimeout(() => setToast(null), 5000);
-      return () => clearTimeout(timer);
+    if (!activeJobId) return;
+
+    let isSubscribed = true;
+    const channel = supabase
+      .channel(`realtime:admin_job:${activeJobId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'admin_jobs',
+          filter: `id=eq.${activeJobId}`,
+        },
+        (payload: any) => {
+          if (!isSubscribed) return;
+          applyJobState(payload.new);
+        }
+      )
+      .subscribe();
+
+    // Secondary fallback poller (every 2.5s) in case WebSocket reconnects
+    const pollInterval = setInterval(async () => {
+      if (!isSubscribed) return;
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+        const res = await fetch(`/api/admin/sync-series?jobId=${activeJobId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          cache: 'no-store',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (isSubscribed && data.job) {
+            applyJobState(data.job);
+            if (data.job.status === 'completed' || data.job.status === 'failed') {
+              clearInterval(pollInterval);
+            }
+          }
+        }
+      } catch {}
+    }, 2500);
+
+    return () => {
+      isSubscribed = false;
+      clearInterval(pollInterval);
+      void supabase.removeChannel(channel);
+    };
+  }, [activeJobId, applyJobState]);
+
+  // Check on mount if an active sync job is already running for this drama
+  useEffect(() => {
+    if (!dramaId) return;
+    let isCancelled = false;
+
+    async function checkExistingJob() {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+        const res = await fetch(`/api/admin/sync-series?dramaId=${dramaId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          cache: 'no-store',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (!isCancelled && data.job && (data.job.status === 'queued' || data.job.status === 'running')) {
+            const ageMs = Date.now() - new Date(data.job.created_at).getTime();
+            // Only attach if started within last 20 minutes
+            if (ageMs < 1200000) {
+              setActiveJobId(data.job.id);
+              applyJobState(data.job);
+            }
+          }
+        }
+      } catch {}
     }
-  }, [toast]);
+
+    void checkExistingJob();
+    return () => {
+      isCancelled = true;
+    };
+  }, [dramaId, applyJobState]);
 
   const handleTriggerSync = async (providerOverride?: string, customUrl?: string) => {
     const prov = providerOverride || selectedProvider;
     setIsSyncing(true);
-    setStatusText('Başlatılıyor...');
+    setSyncStatus('queued');
+    setSyncProgress(10);
+    setStatusText('Kuyruğa Alınıyor...');
     setLogs([]);
+    triggerSound('click');
 
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -242,14 +405,15 @@ export default function AdminSeriesSync({
         body: JSON.stringify({
           dramaId,
           slug: dramaSlug,
+          dramaTitle,
           provider: prov,
-          manualUrl: customUrl || (prov === 'manual' ? manualUrlInput : undefined),
+          manualUrl: customUrl || (prov === '__manual__' ? manualUrlInput : undefined),
         }),
       });
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'Senkronizasyon işlemi başarısız oldu.');
+        throw new Error(errData.error || 'Senkronizasyon işlemi başlatılamadı.');
       }
 
       const contentType = res.headers.get('content-type') || '';
@@ -257,23 +421,50 @@ export default function AdminSeriesSync({
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-        let finalResult: any = null;
-        let streamError: string | null = null;
 
         const handleMessage = (lineStr: string) => {
           const trimmed = lineStr.trim();
           if (!trimmed) return;
           try {
             const msg = JSON.parse(trimmed);
-            if (msg.type === 'log' && msg.line) {
+            if (msg.type === 'job_created' && msg.jobId) {
+              setActiveJobId(msg.jobId);
+              setSyncStatus(msg.status || 'queued');
+            } else if (msg.type === 'log' && msg.line) {
               setLogs((prev) => [...prev, msg.line]);
               const cleanStatus = msg.line.replace(/^\[[^\]]+\]\s*(\[[^\]]+\]\s*)?/, '').slice(0, 36);
               if (cleanStatus) setStatusText(cleanStatus);
             } else if (msg.type === 'result') {
-              finalResult = msg;
+              if (msg.jobId) {
+                setActiveJobId(msg.jobId);
+              }
+              if (msg.cloud) {
+                // In cloud mode, keep syncing state active and let Supabase Realtime update it!
+                setIsSyncing(true);
+                setSyncStatus('queued');
+                setStatusText('Kuyrukta (GitHub Actions Bekleniyor...)');
+                setSyncProgress(20);
+              } else {
+                // Local mode finished
+                setIsSyncing(false);
+                setSyncStatus('completed');
+                setSyncProgress(100);
+                triggerSound('success');
+                const epAdded = msg.episodesAdded ?? 0;
+                const srcAdded = msg.sourcesAdded ?? 0;
+                setToast({
+                  type: 'success',
+                  message: `Senkronizasyon tamamlandı (${(msg.provider || prov).toUpperCase()}): +${epAdded} yeni bölüm, +${srcAdded} yeni kaynak!`,
+                });
+                if (onSyncComplete) {
+                  onSyncComplete({ episodesAdded: epAdded, sourcesAdded: srcAdded, provider: msg.provider || prov });
+                }
+              }
             } else if (msg.type === 'error') {
-              streamError = msg.error || 'Senkronizasyon hatası';
-              setLogs((prev) => [...prev, `[HATA] ${streamError}`]);
+              setLogs((prev) => [...prev, `[HATA] ${msg.error}`]);
+              setSyncStatus('failed');
+              setIsSyncing(false);
+              throw new Error(msg.error);
             }
           } catch (_) {}
         };
@@ -291,74 +482,24 @@ export default function AdminSeriesSync({
         if (buffer.trim()) {
           handleMessage(buffer);
         }
-
-        if (streamError) {
-          throw new Error(streamError);
-        }
-
-        const resolvedProvider = finalResult?.provider || prov;
-
-        if (finalResult?.cloud) {
-          setToast({
-            type: 'success',
-            message: '🚀 GitHub Actions bulut senkronizasyonu başlatıldı! Arka planda 1-2 dakika içinde bölümler ve kaynaklar güncellenecektir.',
-          });
-          if (onSyncComplete) {
-            onSyncComplete({ episodesAdded: 0, sourcesAdded: 0, provider: resolvedProvider });
-          }
-        } else {
-          const epAdded = finalResult?.episodesAdded ?? 0;
-          const srcAdded = finalResult?.sourcesAdded ?? 0;
-
-          setToast({
-            type: 'success',
-            message: `Senkronizasyon tamamlandı (${resolvedProvider.toUpperCase()}): +${epAdded} yeni bölüm, +${srcAdded} yeni kaynak!`,
-          });
-
-          if (onSyncComplete) {
-            onSyncComplete({ episodesAdded: epAdded, sourcesAdded: srcAdded, provider: resolvedProvider });
-          }
-        }
       } else {
         const data = await res.json();
         if (!data.ok) {
-          throw new Error(data.error || 'Senkronizasyon işlemi başarısız oldu.');
+          throw new Error(data.error || 'Senkronizasyon başlatılamadı.');
         }
-
-        setLogs(data.logs || []);
-        const resolvedProvider = data.provider || prov;
-
-        if (data.cloud) {
-          setToast({
-            type: 'success',
-            message: '🚀 GitHub Actions bulut senkronizasyonu başlatıldı! Arka planda 1-2 dakika içinde bölümler ve kaynaklar güncellenecektir.',
-          });
-          if (onSyncComplete) {
-            onSyncComplete({ episodesAdded: 0, sourcesAdded: 0, provider: resolvedProvider });
-          }
-        } else {
-          const epAdded = data.episodesAdded ?? 0;
-          const srcAdded = data.sourcesAdded ?? 0;
-
-          setToast({
-            type: 'success',
-            message: `Senkronizasyon tamamlandı (${resolvedProvider.toUpperCase()}): +${epAdded} yeni bölüm, +${srcAdded} yeni kaynak!`,
-          });
-
-          if (onSyncComplete) {
-            onSyncComplete({ episodesAdded: epAdded, sourcesAdded: srcAdded, provider: resolvedProvider });
-          }
+        if (data.jobId) {
+          setActiveJobId(data.jobId);
         }
       }
     } catch (err: any) {
       console.error('Sync failed:', err);
+      setSyncStatus('failed');
+      setIsSyncing(false);
+      setStatusText(null);
       setToast({
         type: 'error',
         message: err.message || 'Senkronizasyon sırasında hata oluştu.',
       });
-    } finally {
-      setIsSyncing(false);
-      setStatusText(null);
     }
   };
 
@@ -403,30 +544,50 @@ export default function AdminSeriesSync({
         )}
       </AnimatePresence>
 
-      {/* Sitenin Genel CustomSelect Dropdown Bileşeni */}
-      <CustomSelect
-        value={selectedProvider}
-        onChange={handleProviderSelect}
-        options={SYNC_OPTIONS}
-        triggerLabel={isSyncing ? (statusText || 'Senkronize Ediliyor...') : 'Senkronize Et'}
-        leftIcon={
-          isSyncing ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
-          ) : (
-            <RefreshCw className="w-3.5 h-3.5 text-sky-400" />
-          )
-        }
-        disabled={isSyncing}
-        size="sm"
-        variant="glass"
-        triggerClassName="px-3.5 py-1.5 text-xs rounded-full gap-2 hover:border-white/30 transition-all font-bold cursor-pointer"
-        menuClassName="min-w-[280px] max-w-[340px]"
-        searchPlaceholder="Sağlayıcı veya site ara..."
-        direction="auto"
-      />
+      {/* Main Trigger / CustomSelect or Live Status Button */}
+      {isSyncing ? (
+        <div className="inline-flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowLogsModal(true)}
+            className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-2 border cursor-pointer shadow-lg ${
+              syncStatus === 'queued'
+                ? 'bg-amber-500/15 border-amber-500/35 text-amber-300 hover:bg-amber-500/25'
+                : 'bg-sky-500/15 border-sky-500/35 text-sky-300 hover:bg-sky-500/25'
+            }`}
+          >
+            {syncStatus === 'queued' ? (
+              <Clock className="w-3.5 h-3.5 animate-pulse text-amber-400" />
+            ) : (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
+            )}
+            <span>{statusText || (syncStatus === 'queued' ? 'Kuyrukta Bekliyor...' : 'Bulutta Taranıyor...')}</span>
+            {syncProgress > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-white/10 text-[10px] font-mono text-white/80">
+                %{syncProgress}
+              </span>
+            )}
+          </button>
+        </div>
+      ) : (
+        <CustomSelect
+          value={selectedProvider}
+          onChange={handleProviderSelect}
+          options={SYNC_OPTIONS}
+          triggerLabel="Senkronize Et"
+          leftIcon={<RefreshCw className="w-3.5 h-3.5 text-sky-400" />}
+          disabled={isSyncing}
+          size="sm"
+          variant="glass"
+          triggerClassName="px-3.5 py-1.5 text-xs rounded-full gap-2 hover:border-white/30 transition-all font-bold cursor-pointer"
+          menuClassName="min-w-[280px] max-w-[340px]"
+          searchPlaceholder="Sağlayıcı veya site ara..."
+          direction="auto"
+        />
+      )}
 
       {/* Pending Episodes Badge for Admins */}
-      {effectivePendingCount > 0 && (
+      {effectivePendingCount > 0 && !isSyncing && (
         <span
           className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0"
           title={`${effectivePendingCount} bölüm henüz oynatılabilir video kaynağına sahip değil ("pending_source")`}
@@ -436,17 +597,20 @@ export default function AdminSeriesSync({
         </span>
       )}
 
-      {/* View Last / Live Logs Button if logs exist */}
+      {/* View Live Logs Button */}
       {logs.length > 0 && (
         <button
           type="button"
           onClick={() => setShowLogsModal(true)}
-          className="text-[11px] font-mono text-sky-400/80 hover:text-sky-300 flex items-center gap-1 transition-colors px-1 cursor-pointer"
+          className={`text-[11px] font-mono flex items-center gap-1.5 transition-colors px-2.5 py-1 rounded-full border cursor-pointer ${
+            isSyncing
+              ? 'bg-sky-500/10 border-sky-500/30 text-sky-300 hover:bg-sky-500/20'
+              : 'bg-white/[0.04] border-white/10 text-white/60 hover:text-white'
+          }`}
         >
-          <Terminal className="w-3 h-3" />
-          <span>
-            {isSyncing ? `Canlı Günlük (${logs.length} satır)` : `Son Günlük (${logs.length} satır)`}
-          </span>
+          <Terminal className="w-3 h-3 text-sky-400" />
+          <span>{isSyncing ? `Canlı Terminal (${logs.length})` : `Günlük (${logs.length})`}</span>
+          {isSyncing && <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping" />}
         </button>
       )}
 
@@ -533,7 +697,7 @@ export default function AdminSeriesSync({
         )}
       </AnimatePresence>
 
-      {/* Logs Inspection Modal */}
+      {/* Logs Inspection Modal with Realtime Terminal */}
       <AnimatePresence>
         {showLogsModal && (
           <motion.div
@@ -553,23 +717,37 @@ export default function AdminSeriesSync({
             <motion.div
               initial={{ opacity: 0, scale: 0.94, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.94, y: 16 }}
+              exit={{ opacity: 0, scale: 1, y: 0 }}
               transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className="relative w-full max-w-2xl rounded-3xl bg-[#0c0c0e] border border-white/15 p-6 shadow-2xl flex flex-col max-h-[80vh] z-10"
+              className="relative w-full max-w-2xl rounded-3xl bg-[#0c0c0e] border border-white/15 p-6 shadow-2xl flex flex-col max-h-[85vh] z-10"
             >
               <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-3">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <div className="flex items-center gap-2.5">
                   <Terminal className="w-4 h-4 text-sky-400" />
-                  <span>Senkronizasyon İşlem Günlükleri</span>
-                </h3>
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <span>Senkronizasyon Canlı Konsolu</span>
+                      {isSyncing && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping" />
+                          <span>CANLI</span>
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-[11px] text-white/40 mt-0.5 font-mono">
+                      {dramaTitle} (#{dramaId})
+                    </p>
+                  </div>
+                </div>
+
                 <div className="flex items-center gap-2">
                   <a
-                    href="https://github.com/perfectusmim1/KoUp/actions"
+                    href={githubRunUrl || 'https://github.com/perfectusmim1/KoUp/actions'}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/20 text-[11px] font-medium transition-colors cursor-pointer"
                   >
-                    <span>GitHub Actions Canlı Takip Et</span>
+                    <span>GitHub Actions</span>
                     <ExternalLink className="w-3 h-3" />
                   </a>
                   <button
@@ -582,19 +760,63 @@ export default function AdminSeriesSync({
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-3.5 rounded-2xl bg-black/70 border border-white/10 font-mono text-[11px] text-emerald-300/90 space-y-1 no-scrollbar">
-                {logs.map((line, idx) => (
-                  <div key={idx} className="whitespace-pre-wrap leading-relaxed">
-                    {line}
+              {/* Progress Bar */}
+              {isSyncing && (
+                <div className="mb-3">
+                  <div className="flex items-center justify-between text-[11px] font-mono text-white/60 mb-1">
+                    <span>{statusText || 'İşleniyor...'}</span>
+                    <span className="text-sky-400 font-bold">%{syncProgress}</span>
                   </div>
-                ))}
+                  <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+                    <motion.div
+                      className="h-full bg-gradient-to-r from-sky-400 via-indigo-400 to-emerald-400 rounded-full"
+                      animate={{ width: `${Math.max(5, syncProgress)}%` }}
+                      transition={{ duration: 0.3 }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Terminal Logs Output */}
+              <div className="flex-1 overflow-y-auto p-4 rounded-2xl bg-black/80 border border-white/10 font-mono text-[11px] text-emerald-300/90 space-y-1.5 min-h-[240px] max-h-[420px] select-text">
+                {logs.length === 0 ? (
+                  <div className="flex items-center justify-center h-full text-white/30 italic">
+                    Konsol çıktısı bekleniyor...
+                  </div>
+                ) : (
+                  logs.map((line, idx) => {
+                    const isErr = line.includes('[HATA]') || line.includes('[UYARI]') || line.includes('Error');
+                    const isSuccess = line.includes('[BAŞARILI]') || line.includes('[TAMAMLANDI]');
+                    const isSection = line.startsWith('===');
+                    return (
+                      <div
+                        key={idx}
+                        className={`whitespace-pre-wrap leading-relaxed ${
+                          isErr
+                            ? 'text-rose-400 font-bold'
+                            : isSuccess
+                            ? 'text-emerald-400 font-bold'
+                            : isSection
+                            ? 'text-sky-400 font-bold pt-1 pb-0.5'
+                            : 'text-zinc-300'
+                        }`}
+                      >
+                        {line}
+                      </div>
+                    );
+                  })
+                )}
+                <div ref={logsEndRef} />
               </div>
 
-              <div className="flex justify-end pt-3">
+              <div className="flex items-center justify-between pt-3">
+                <span className="text-[11px] font-mono text-white/40">
+                  {logs.length} satır günlük kaydedildi
+                </span>
                 <button
                   type="button"
                   onClick={() => setShowLogsModal(false)}
-                  className="px-5 py-2.5 rounded-full glass-pill text-white font-semibold text-xs transition-colors cursor-pointer"
+                  className="px-5 py-2 rounded-full glass-pill text-white font-semibold text-xs transition-colors cursor-pointer"
                 >
                   Kapat
                 </button>

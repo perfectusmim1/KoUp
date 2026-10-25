@@ -889,6 +889,9 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       if (session?.user) {
         if (session.access_token) setCachedAccessToken(session.access_token);
         await syncUserProfile(session.user.id, session.user);
+        if (event === 'SIGNED_IN') {
+          void registerOrHeartbeatDevice(session.user.id, { isFreshLogin: true });
+        }
         if (isMounted) setAuthLoading(false);
       } else if (event === 'INITIAL_SESSION' && !session) {
         setUser(null);
@@ -2162,6 +2165,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       }
       if (data.user) {
         await syncUserProfile(data.user.id, data.user);
+        void registerOrHeartbeatDevice(data.user.id, { isFreshLogin: true });
         pushNotification('Giriş Başarılı', 'KoUp kütüphaneniz hazır.', 'success');
       }
       return null;
@@ -2192,6 +2196,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       if (data.user) {
         await new Promise((r) => setTimeout(r, 600));
         await syncUserProfile(data.user.id, data.user);
+        void registerOrHeartbeatDevice(data.user.id, { isFreshLogin: true });
         pushNotification('Hesap Oluşturuldu', `KoUp ailesine hoş geldin, ${username}!`, 'success');
       }
       return null;
@@ -2217,9 +2222,120 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('koup_fol_media_v1');
       localStorage.removeItem('koup_fol_people_v1');
       localStorage.removeItem('koup_mag_likes_v1');
+
+      // Purge any stored Supabase auth tokens so old sessions cannot revive
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('sb-') || key.includes('auth-token'))) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
     } catch {}
     invalidateCache();
   }, []);
+
+  // Realtime Remote Device Termination & Active Session Heartbeat Listener
+  useEffect(() => {
+    if (!user?.id || typeof window === 'undefined') return;
+
+    let isSubscribed = true;
+    const userId = user.id;
+
+    const handleRemoteRevocation = async (reason: string) => {
+      console.warn('[KoUpContext] Remote device session revocation triggered:', reason);
+      pushNotification(
+        'Oturum Sonlandırıldı',
+        'Bu cihazın oturumu başka bir cihaz tarafından kapatıldı.',
+        'error'
+      );
+      setTimeout(async () => {
+        await logout();
+        if (typeof window !== 'undefined') {
+          window.location.reload();
+        }
+      }, 500);
+    };
+
+    const channel = supabase
+      .channel(`device_session_${userId}`)
+      // 1. Postgres changes on public.user_devices table
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'user_devices',
+          filter: `user_id=eq.${userId}`,
+        },
+        async (payload: any) => {
+          if (!isSubscribed) return;
+          const updatedRow = payload?.new;
+          if (updatedRow?.is_revoked) {
+            const currentFp = await getClientFingerprint();
+            if (updatedRow.device_id === currentFp) {
+              await handleRemoteRevocation('Postgres change: current device is_revoked');
+            }
+          }
+        }
+      )
+      // 2. Realtime WebSocket Broadcast for single device revocation
+      .on('broadcast', { event: 'device_revoked' }, async (eventPayload: any) => {
+        if (!isSubscribed) return;
+        const currentFp = await getClientFingerprint();
+        if (eventPayload?.payload?.deviceId === currentFp) {
+          await handleRemoteRevocation('Broadcast: device_revoked');
+        }
+      })
+      // 3. Realtime WebSocket Broadcast for revoke all other devices
+      .on('broadcast', { event: 'revoke_all_others' }, async (eventPayload: any) => {
+        if (!isSubscribed) return;
+        const currentFp = await getClientFingerprint();
+        if (eventPayload?.payload?.keepDeviceId && eventPayload.payload.keepDeviceId !== currentFp) {
+          await handleRemoteRevocation('Broadcast: revoke_all_others');
+        }
+      })
+      .subscribe();
+
+    // 4. Periodic background verification (every 60s) & instant check on window focus / tab active
+    const checkRevocationStatus = async () => {
+      if (!isSubscribed) return;
+      try {
+        const currentFp = await getClientFingerprint();
+        const { data: dev } = await supabase
+          .from('user_devices')
+          .select('is_revoked')
+          .eq('user_id', userId)
+          .eq('device_id', currentFp)
+          .maybeSingle();
+
+        if (dev?.is_revoked) {
+          await handleRemoteRevocation('Active status check: device is_revoked');
+        }
+      } catch {
+        // network/quiet
+      }
+    };
+
+    const intervalId = setInterval(checkRevocationStatus, 60000);
+    const onVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        void checkRevocationStatus();
+      }
+    };
+
+    window.addEventListener('focus', onVisibilityOrFocus);
+    document.addEventListener('visibilitychange', onVisibilityOrFocus);
+
+    return () => {
+      isSubscribed = false;
+      clearInterval(intervalId);
+      window.removeEventListener('focus', onVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', onVisibilityOrFocus);
+      void supabase.removeChannel(channel);
+    };
+  }, [user?.id, logout, pushNotification]);
 
   const soundEnabled = Boolean(user?.notification_settings?.sound_enabled ?? true);
 

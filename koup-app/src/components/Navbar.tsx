@@ -201,6 +201,14 @@ export default function Navbar() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const [osShortcut, setOsShortcut] = useState<'⌘K' | 'Ctrl K'>('Ctrl K');
+
+  useEffect(() => {
+    if (typeof navigator !== 'undefined') {
+      const isMac = /Mac|iPod|iPhone|iPad/i.test(navigator.userAgent || navigator.platform || '');
+      setOsShortcut(isMac ? '⌘K' : 'Ctrl K');
+    }
+  }, []);
 
   const [isScrolled, setIsScrolled] = useState(false);
 
@@ -601,8 +609,11 @@ export default function Navbar() {
                 <X className="w-3.5 h-3.5" />
               </button>
             ) : (
-              <kbd className="hidden xl:inline-block text-[10px] font-mono text-white/50 px-1.5 py-0.5 rounded-md bg-white/[0.06] border border-white/[0.08]">
-                ⌘K
+              <kbd
+                suppressHydrationWarning
+                className="hidden xl:inline-block text-[10px] font-mono text-white/50 px-1.5 py-0.5 rounded-md bg-white/[0.06] border border-white/[0.08]"
+              >
+                {osShortcut}
               </kbd>
             )}
           </div>
@@ -651,6 +662,7 @@ export default function Navbar() {
                           {mediaResults.map((m) => (
                             <button
                               key={m.id}
+                              aria-label={cleanMediaTitle(m.title)}
                               onClick={() => {
                                 setSearchOpen(false);
                                 router.push(`/seri/${m.slug}`);
@@ -714,6 +726,7 @@ export default function Navbar() {
                           {personResults.map((p) => (
                             <button
                               key={p.id}
+                              aria-label={p.name}
                               onClick={() => {
                                 setSearchOpen(false);
                                 router.push(`/oyuncu/${p.slug}`);
@@ -1538,6 +1551,7 @@ export default function Navbar() {
                   setQuery('');
                 }}
                 className="px-3 py-2 text-xs font-semibold text-white/80 hover:text-white cursor-pointer"
+                aria-label="Aramayı Kapat"
               >
                 Kapat
               </button>
@@ -1581,6 +1595,7 @@ export default function Navbar() {
                             {mediaResults.map((m) => (
                               <button
                                 key={m.id}
+                                aria-label={m.title}
                                 onClick={() => {
                                   setMobileSearchOpen(false);
                                   router.push(`/seri/${m.slug}`);
@@ -1632,6 +1647,7 @@ export default function Navbar() {
                             {personResults.map((p) => (
                               <button
                                 key={p.id}
+                                aria-label={p.name}
                                 onClick={() => {
                                   setMobileSearchOpen(false);
                                   router.push(`/oyuncu/${p.slug}`);

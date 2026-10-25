@@ -356,6 +356,14 @@ export default function EpisodeWatchPage({
 
     async function loadEpisodeData() {
       try {
+        const knownId = cachedMedia?.id;
+        const episodesTarget = knownId ? String(knownId) : decodedSlug;
+
+        // Fetch verified episode sources in parallel from millisecond zero!
+        const episodesPromise = fetch(`/api/sources/${encodeURIComponent(episodesTarget)}`)
+          .then((r) => r.json())
+          .catch(() => ({ episodes: [] }));
+
         const rawMediaItem = await cachedQuery<any>(
           `media_item_${decodedSlug}`,
           300_000,
@@ -444,10 +452,9 @@ export default function EpisodeWatchPage({
         registerMediaItem(mediaItem, true);
         setMedia(mediaItem);
 
-        // Fetch verified episode sources directly from edge resolver
-        const res = await fetch(`/api/sources/${mediaItem.id}`, { cache: 'no-store' });
-        const payload = await res.json();
-        const rawEps: EpisodeData[] = (payload.episodes || []).map((ep: EpisodeData) => ({
+        // Await parallel episode sources response
+        const payload = await episodesPromise;
+        const rawEps: EpisodeData[] = (payload?.episodes || []).map((ep: EpisodeData) => ({
           ...ep,
           sources: (ep.sources || []).filter(
             (s) => s?.direct_url && s.direct_url.startsWith('http') && !s.direct_url.includes('javascript:') && !s.direct_url.includes('void(0)')

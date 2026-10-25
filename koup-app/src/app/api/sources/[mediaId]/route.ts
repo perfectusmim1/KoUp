@@ -33,12 +33,21 @@ let archiveDb: DatabaseSync | null = null;
 
 function getArchiveDb(): DatabaseSync | null {
   if (archiveDb) return archiveDb;
-  const dbPath =
-    process.env.ARCHIVE_DB_PATH ||
-    path.resolve(process.cwd(), '..', 'webdrama_archive.db');
-  if (!fs.existsSync(dbPath)) return null;
-  archiveDb = new DatabaseSync(dbPath, { readOnly: true });
-  return archiveDb;
+  const candidates = [
+    process.env.ARCHIVE_DB_PATH,
+    path.resolve(process.cwd(), '..', 'webdrama_archive.db'),
+    path.resolve(process.cwd(), 'webdrama_archive.db'),
+  ].filter(Boolean) as string[];
+
+  for (const dbPath of candidates) {
+    if (fs.existsSync(dbPath)) {
+      try {
+        archiveDb = new DatabaseSync(dbPath, { readOnly: true });
+        return archiveDb;
+      } catch {}
+    }
+  }
+  return null;
 }
 
 function classifyStreamType(
@@ -363,9 +372,34 @@ export async function GET(
   context: { params: Promise<{ mediaId: string }> }
 ) {
   const { mediaId } = await context.params;
-  const idNum = Number(mediaId);
+  const rawId = decodeURIComponent(mediaId || '').trim();
+  let idNum = Number(rawId);
+
+  // If mediaId is a slug instead of an ID, resolve it swiftly
+  if (Number.isNaN(idNum) || idNum <= 0) {
+    const db = getArchiveDb();
+    if (db) {
+      try {
+        const row = db.prepare('SELECT id FROM dramas WHERE slug = ?').get(rawId) as { id?: number } | undefined;
+        if (row?.id) idNum = row.id;
+      } catch {}
+    }
+    if (!idNum || Number.isNaN(idNum)) {
+      try {
+        const { data: mediaRow } = await supabase
+          .from('media')
+          .select('id')
+          .eq('slug', rawId)
+          .maybeSingle();
+        if (mediaRow?.id) {
+          idNum = mediaRow.id;
+        }
+      } catch {}
+    }
+  }
+
   if (!idNum || Number.isNaN(idNum)) {
-    return NextResponse.json({ error: 'Invalid mediaId' }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid mediaId or slug not found' }, { status: 400 });
   }
 
   try {
@@ -402,10 +436,28 @@ export async function GET(
       }>;
     }> = [];
 
-    // TIER 1: Cloudflare R2 Authenticated S3 Client
+    // TIER 0: Local disk bundle (Instant 0.2ms zero-latency read)
+    const localBundleCandidates = [
+      path.resolve(process.cwd(), '..', 'r2_bundles', 'sources', `${idNum}.json`),
+      path.resolve(process.cwd(), 'r2_bundles', 'sources', `${idNum}.json`),
+    ];
+    for (const bPath of localBundleCandidates) {
+      if (fs.existsSync(bPath)) {
+        try {
+          const localRaw = fs.readFileSync(bPath, 'utf-8');
+          const localData = JSON.parse(localRaw);
+          if (localData && Array.isArray(localData.episodes) && localData.episodes.length > 0) {
+            episodes = localData.episodes;
+            break;
+          }
+        } catch {}
+      }
+    }
+
+    // TIER 1: Cloudflare R2 Authenticated S3 Client (if not on local disk)
     const s3 = getS3Client();
     const bucket = process.env.CF_R2_BUCKET || 'koup-archive';
-    if (s3) {
+    if (episodes.length === 0 && s3) {
       try {
         const cmd = new GetObjectCommand({
           Bucket: bucket,
@@ -435,30 +487,6 @@ export async function GET(
           const r2Data = await r2Res.json();
           if (r2Data && Array.isArray(r2Data.episodes) && r2Data.episodes.length > 0) {
             episodes = r2Data.episodes;
-          }
-        }
-      } catch {}
-    }
-
-    // TIER 1.2: Check local disk bundle (if local disk has more up-to-date episodes than cloud R2)
-    const localBundlePath = path.resolve(process.cwd(), '..', 'r2_bundles', 'sources', `${idNum}.json`);
-    if (fs.existsSync(localBundlePath)) {
-      try {
-        const localRaw = fs.readFileSync(localBundlePath, 'utf-8');
-        const localData = JSON.parse(localRaw);
-        if (localData && Array.isArray(localData.episodes) && localData.episodes.length > episodes.length) {
-          episodes = localData.episodes;
-          // Auto-sync to R2 so Cloudflare R2 gets the complete dataset
-          if (s3) {
-            s3.send(
-              new PutObjectCommand({
-                Bucket: bucket,
-                Key: `sources/${idNum}.json`,
-                Body: localRaw,
-                ContentType: 'application/json',
-                CacheControl: 'public, max-age=60',
-              })
-            ).catch(() => {});
           }
         }
       } catch {}

@@ -31,7 +31,7 @@ function Footer() {
             </p>
             <div className="flex items-center gap-2 pt-1 text-[11px] text-white/40">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>17.500+ Dizi, Anime ve Film İndeksi</span>
+              <span>24.700+ Master Yapım: Dizi, Anime ve Film İndeksi</span>
             </div>
           </div>
 

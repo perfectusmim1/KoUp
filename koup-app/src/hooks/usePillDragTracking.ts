@@ -17,12 +17,89 @@ export interface UsePillDragTrackingOptions<T extends string | number> {
 }
 
 /**
- * High-performance real-time pointer/mouse drag tracking hook for pill tab bars.
- * Allows smooth sweeping drag gestures across any number of tabs:
- * - Switches tabs instantly in real time during the drag phase (not just on release)
- * - The active indicator morphs and follows the mouse across all tabs seamlessly
- * - Supports horizontal auto-scroll when dragging near edges of overflowing tab bars
- * - 0ms latency tactile response for normal clicks and touches
+ * Finds the scrollable horizontal parent element of a given node
+ */
+function getScrollParent(node: HTMLElement | null): HTMLElement | null {
+  if (!node || typeof window === 'undefined') return null;
+  let current: HTMLElement | null = node.parentElement;
+  while (current) {
+    const style = window.getComputedStyle(current);
+    if (
+      style.overflowX === 'auto' ||
+      style.overflowX === 'scroll'
+    ) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
+}
+
+/**
+ * Smoothly centers an active tab button within its scrollable parent container.
+ * - If the tab is first, it aligns to the start (scrollLeft = 0).
+ * - If the tab is last, it aligns to the end (scrollLeft = maxScrollLeft).
+ * - If the tab is anywhere in between, it centers directly in the container viewport.
+ */
+export function centerTabInContainer(
+  activeBtn: HTMLElement,
+  tabAttributeOrSmooth: string | boolean = 'data-tab-id',
+  smooth = true
+) {
+  if (!activeBtn || typeof window === 'undefined') return;
+  const tabAttribute =
+    typeof tabAttributeOrSmooth === 'string' ? tabAttributeOrSmooth : 'data-tab-id';
+  const isSmooth =
+    typeof tabAttributeOrSmooth === 'boolean' ? tabAttributeOrSmooth : smooth;
+
+  const scrollParent = getScrollParent(activeBtn) || activeBtn.parentElement;
+  if (!scrollParent) return;
+
+  const parentRect = scrollParent.getBoundingClientRect();
+  const btnRect = activeBtn.getBoundingClientRect();
+
+  // Find position among tab siblings
+  const siblings = Array.from(
+    (activeBtn.parentElement || scrollParent).querySelectorAll<HTMLElement>(`[${tabAttribute}]`)
+  );
+  const index = siblings.indexOf(activeBtn);
+  const isFirst = index === 0;
+  const isLast = index === siblings.length - 1;
+
+  const maxScrollLeft = Math.max(0, scrollParent.scrollWidth - scrollParent.clientWidth);
+
+  let targetScrollLeft: number;
+  if (isFirst) {
+    targetScrollLeft = 0;
+  } else if (isLast) {
+    targetScrollLeft = maxScrollLeft;
+  } else {
+    // Distance from button center to parent viewport center
+    const btnCenter = btnRect.left + btnRect.width / 2;
+    const parentCenter = parentRect.left + parentRect.width / 2;
+    const diff = btnCenter - parentCenter;
+    targetScrollLeft = scrollParent.scrollLeft + diff;
+  }
+
+  const clampedScrollLeft = Math.max(0, Math.min(maxScrollLeft, targetScrollLeft));
+
+  if (Math.abs(scrollParent.scrollLeft - clampedScrollLeft) > 1.5) {
+    scrollParent.scrollTo({
+      left: clampedScrollLeft,
+      behavior: isSmooth ? 'smooth' : 'auto',
+    });
+  }
+}
+
+/**
+ * High-performance tab navigation & auto-centering hook.
+ * - On Mobile / Touch devices:
+ *   Native, fluid horizontal swipe gestures with zero resistance (no pointer drag hijacking).
+ *   Selected options are automatically centered in the viewport smoothly.
+ * - On PC / Mouse:
+ *   Supports click-and-drag sweeping across tabs with mouse tracking and edge auto-scrolling.
+ * - Guaranteed centering:
+ *   Whenever activeTab changes, centers the chosen tab unless it's first or last.
  */
 export function usePillDragTracking<T extends string | number>({
   activeTab,
@@ -38,7 +115,7 @@ export function usePillDragTracking<T extends string | number>({
   const startYRef = useRef(0);
   const hasMovedRef = useRef(false);
 
-  // Store latest values in refs to avoid stale closures during pointer event loops
+  // Store latest values in refs to avoid stale closures during event loops
   const activeTabRef = useRef<T>(activeTab);
   activeTabRef.current = activeTab;
 
@@ -47,6 +124,39 @@ export function usePillDragTracking<T extends string | number>({
 
   const triggerSoundRef = useRef(triggerSound);
   triggerSoundRef.current = triggerSound;
+
+  // Center the active tab whenever activeTab changes
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    let timeoutId: NodeJS.Timeout | null = null;
+    const rafId = requestAnimationFrame(() => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      const activeBtn = container.querySelector<HTMLElement>(
+        `[${tabAttribute}="${String(activeTab)}"]`
+      );
+      if (activeBtn) {
+        centerTabInContainer(activeBtn, tabAttribute, true);
+      } else {
+        // Fallback retry shortly if button is mounting
+        timeoutId = setTimeout(() => {
+          const btn = container.querySelector<HTMLElement>(
+            `[${tabAttribute}="${String(activeTab)}"]`
+          );
+          if (btn) {
+            centerTabInContainer(btn, tabAttribute, false);
+          }
+        }, 70);
+      }
+    });
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [activeTab, tabAttribute]);
 
   const checkTabAtClientX = useCallback(
     (clientX: number) => {
@@ -88,16 +198,11 @@ export function usePillDragTracking<T extends string | number>({
         onTabChangeRef.current(closestTabId);
         triggerSoundRef.current?.('click');
 
-        // Ensure newly active tab is visible within scrollable containers
         const activeBtn = buttons.find(
           (b) => b.getAttribute(tabAttribute) === String(closestTabId)
         );
         if (activeBtn) {
-          activeBtn.scrollIntoView({
-            behavior: 'smooth',
-            block: 'nearest',
-            inline: 'nearest',
-          });
+          centerTabInContainer(activeBtn, true);
         }
       }
     },
@@ -110,15 +215,19 @@ export function usePillDragTracking<T extends string | number>({
       const container = containerRef.current;
       if (!container) return;
 
-      const rect = container.getBoundingClientRect();
-      const margin = 35;
+      const scrollParent = getScrollParent(container) || container;
+      const rect = scrollParent.getBoundingClientRect();
+      const margin = 40;
 
-      if (clientX > rect.right - margin && container.scrollLeft < container.scrollWidth - container.clientWidth) {
+      if (
+        clientX > rect.right - margin &&
+        scrollParent.scrollLeft < scrollParent.scrollWidth - scrollParent.clientWidth
+      ) {
         const factor = Math.min(1, (clientX - (rect.right - margin)) / margin);
-        container.scrollLeft += Math.max(2, Math.round(factor * 14));
-      } else if (clientX < rect.left + margin && container.scrollLeft > 0) {
-        const factor = Math.min(1, ((rect.left + margin) - clientX) / margin);
-        container.scrollLeft -= Math.max(2, Math.round(factor * 14));
+        scrollParent.scrollLeft += Math.max(3, Math.round(factor * 16));
+      } else if (clientX < rect.left + margin && scrollParent.scrollLeft > 0) {
+        const factor = Math.min(1, (rect.left + margin - clientX) / margin);
+        scrollParent.scrollLeft -= Math.max(3, Math.round(factor * 16));
       }
     },
     [disableAutoScroll]
@@ -126,7 +235,14 @@ export function usePillDragTracking<T extends string | number>({
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
-      // Only respond to main button (left click or primary touch)
+      // On mobile / touch devices: Do NOT initiate pointer drag tracking!
+      // This allows silky-smooth native swipe scrolling on touchscreens without
+      // dragging the button along with the user's thumb.
+      if (e.pointerType === 'touch') {
+        return;
+      }
+
+      // Mouse on Desktop: Only respond to primary left click
       if (e.button !== 0) return;
 
       const container = containerRef.current;
@@ -140,9 +256,7 @@ export function usePillDragTracking<T extends string | number>({
 
       try {
         e.currentTarget.setPointerCapture(e.pointerId);
-      } catch (_) {
-        // Fallback if setPointerCapture is unsupported or fails
-      }
+      } catch (_) {}
 
       checkTabAtClientX(e.clientX);
     },
@@ -152,24 +266,10 @@ export function usePillDragTracking<T extends string | number>({
   const onPointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (!isDraggingRef.current) return;
+      if (e.pointerType === 'touch') return;
 
       const deltaX = Math.abs(e.clientX - startXRef.current);
-      const deltaY = Math.abs(e.clientY - startYRef.current);
-
-      // On touch devices, if the initial gesture is predominantly vertical, release to allow normal page scrolling
-      if (e.pointerType === 'touch' && !hasMovedRef.current) {
-        if (deltaY > deltaX && deltaY > 8) {
-          isDraggingRef.current = false;
-          try {
-            if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-              e.currentTarget.releasePointerCapture(e.pointerId);
-            }
-          } catch (_) {}
-          return;
-        }
-      }
-
-      if (deltaX > 2 || e.pointerType === 'mouse') {
+      if (deltaX > 2) {
         hasMovedRef.current = true;
       }
 
@@ -188,8 +288,18 @@ export function usePillDragTracking<T extends string | number>({
           e.currentTarget.releasePointerCapture(e.pointerId);
         }
       } catch (_) {}
+
+      const container = containerRef.current;
+      if (container) {
+        const activeBtn = container.querySelector<HTMLElement>(
+          `[${tabAttribute}="${String(activeTabRef.current)}"]`
+        );
+        if (activeBtn) {
+          centerTabInContainer(activeBtn, true);
+        }
+      }
     },
-    []
+    [tabAttribute]
   );
 
   return {

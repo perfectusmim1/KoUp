@@ -58,7 +58,7 @@ export default function HakkimizdaPage() {
             </div>
             <h3 className="font-bold text-white text-base">Zengin Metaveri Arşivi</h3>
             <p className="text-xs text-white/60 leading-relaxed">
-              17.000&apos;den fazla yapım; MyDramaList, AniList, TMDb ve IMDb entegrasyonuyla oyuncu kadrosu, puanlar, fragmanlar ve türlerle detaylandırılmıştır.
+              24.700&apos;den fazla Master Yapım; MyDramaList, AniList, TMDb ve IMDb entegrasyonuyla oyuncu kadrosu, puanlar, fragmanlar ve türlerle detaylandırılmıştır.
             </p>
           </div>
 

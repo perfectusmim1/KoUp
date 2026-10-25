@@ -12,6 +12,8 @@ export interface UserDevice {
   ip: string | null;
   last_active_at: string;
   created_at: string;
+  is_revoked?: boolean;
+  revoked_at?: string | null;
   is_current?: boolean;
 }
 
@@ -124,15 +126,73 @@ export async function fetchClientIp(): Promise<string | null> {
 }
 
 /**
- * Register or update the current device session in Supabase with zero duplicate guarantee
+ * Perform a clean, complete client sign-out when this device has been revoked remotely.
  */
-export async function registerOrHeartbeatDevice(userId: string): Promise<UserDevice | null> {
+export async function performRemoteSignOut(reason?: string) {
+  if (typeof window === 'undefined') return;
+  console.warn('[DeviceTracker] Enforcing remote sign-out:', reason || 'Device session revoked');
+
+  try {
+    await supabase.auth.signOut();
+  } catch (err) {
+    console.warn('[DeviceTracker] Sign out error:', err);
+  }
+
+  try {
+    localStorage.removeItem('koup_profile_v1');
+    localStorage.removeItem('koup_notifs_v1');
+    localStorage.removeItem('koup_progress_v1');
+    localStorage.removeItem('koup_fav_people_v1');
+    localStorage.removeItem('koup_fol_media_v1');
+    localStorage.removeItem('koup_fol_people_v1');
+    localStorage.removeItem('koup_mag_likes_v1');
+
+    // Remove any supabase auth tokens to prevent stale session revival
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('sb-') || key.includes('auth-token'))) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+  } catch {}
+
+  // Force clean reload to guest mode
+  window.location.reload();
+}
+
+/**
+ * Register or update the current device session in Supabase with zero duplicate guarantee.
+ * If this device was remotely revoked by the user, immediately sign out and abort.
+ */
+export async function registerOrHeartbeatDevice(
+  userId: string,
+  options: { isFreshLogin?: boolean } = {}
+): Promise<UserDevice | null> {
   if (!userId || typeof window === 'undefined') return null;
 
   try {
     const deviceId = await getClientFingerprint();
     const { deviceType, os, browser, deviceName } = parseDeviceEnvironment();
     const ip = await fetchClientIp();
+
+    // If this is an existing restored session (not a brand new user login),
+    // verify that this device has not been revoked remotely.
+    if (!options.isFreshLogin) {
+      const { data: existingDevice } = await supabase
+        .from('user_devices')
+        .select('id, is_revoked')
+        .eq('user_id', userId)
+        .eq('device_id', deviceId)
+        .maybeSingle();
+
+      if (existingDevice?.is_revoked) {
+        console.warn('[DeviceTracker] Device is marked as revoked. Signing out immediately...');
+        await performRemoteSignOut('Remote revocation detected on device heartbeat');
+        return null;
+      }
+    }
 
     const payload = {
       user_id: userId,
@@ -143,6 +203,8 @@ export async function registerOrHeartbeatDevice(userId: string): Promise<UserDev
       os,
       ip: ip || null,
       last_active_at: new Date().toISOString(),
+      is_revoked: false,
+      revoked_at: null,
     };
 
     const { data, error } = await supabase
@@ -164,7 +226,7 @@ export async function registerOrHeartbeatDevice(userId: string): Promise<UserDev
 }
 
 /**
- * Fetch all registered active devices for the current user
+ * Fetch all registered active devices for the current user (strictly non-revoked).
  */
 export async function fetchUserDevices(userId: string, currentDeviceId?: string): Promise<UserDevice[]> {
   if (!userId) return [];
@@ -174,6 +236,7 @@ export async function fetchUserDevices(userId: string, currentDeviceId?: string)
       .from('user_devices')
       .select('*')
       .eq('user_id', userId)
+      .eq('is_revoked', false)
       .order('last_active_at', { ascending: false });
 
     if (error || !data) {
@@ -181,7 +244,13 @@ export async function fetchUserDevices(userId: string, currentDeviceId?: string)
       return [];
     }
 
-    const curId = currentDeviceId || (typeof window !== 'undefined' ? localStorage.getItem('koup_device_fingerprint_v1') : null);
+    let curId = currentDeviceId;
+    if (!curId && typeof window !== 'undefined') {
+      curId = localStorage.getItem('koup_device_fingerprint_v1') || undefined;
+      if (!curId) {
+        curId = await getClientFingerprint();
+      }
+    }
 
     return data.map((d: any) => ({
       ...d,
@@ -200,13 +269,45 @@ export async function terminateDeviceSession(deviceId: string, userId: string): 
   if (!deviceId || !userId) return false;
 
   try {
-    const { error } = await supabase
-      .from('user_devices')
-      .delete()
-      .eq('user_id', userId)
-      .eq('device_id', deviceId);
+    let updateSuccess = false;
 
-    return !error;
+    // 1. Mark device as revoked in PostgreSQL
+    const { error: rpcErr } = await supabase.rpc('revoke_user_device', { p_device_id: deviceId });
+    if (!rpcErr) {
+      updateSuccess = true;
+    } else {
+      const { error: updateErr } = await supabase
+        .from('user_devices')
+        .update({ is_revoked: true, revoked_at: new Date().toISOString() })
+        .eq('user_id', userId)
+        .eq('device_id', deviceId);
+      updateSuccess = !updateErr;
+    }
+
+    // 2. Broadcast realtime event so any active tab on that device terminates instantly
+    try {
+      const channel = supabase.channel(`device_session_${userId}`);
+      channel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          channel
+            .send({
+              type: 'broadcast',
+              event: 'device_revoked',
+              payload: { deviceId },
+            })
+            .then(() => {
+              setTimeout(() => {
+                void supabase.removeChannel(channel);
+              }, 1200);
+            })
+            .catch(() => {});
+        }
+      });
+    } catch {
+      // broadcast is best-effort
+    }
+
+    return updateSuccess;
   } catch (err) {
     console.warn('[DeviceTracker] Terminate session error:', err);
     return false;
@@ -220,13 +321,45 @@ export async function terminateAllOtherDevices(userId: string, currentDeviceId: 
   if (!userId || !currentDeviceId) return false;
 
   try {
-    const { error } = await supabase
-      .from('user_devices')
-      .delete()
-      .eq('user_id', userId)
-      .neq('device_id', currentDeviceId);
+    let updateSuccess = false;
 
-    return !error;
+    // 1. Mark all other devices as revoked in PostgreSQL
+    const { error: rpcErr } = await supabase.rpc('revoke_all_other_devices', { p_current_device_id: currentDeviceId });
+    if (!rpcErr) {
+      updateSuccess = true;
+    } else {
+      const { error: updateErr } = await supabase
+        .from('user_devices')
+        .update({ is_revoked: true, revoked_at: new Date().toISOString() })
+        .eq('user_id', userId)
+        .neq('device_id', currentDeviceId);
+      updateSuccess = !updateErr;
+    }
+
+    // 2. Broadcast realtime event so other active devices terminate instantly
+    try {
+      const channel = supabase.channel(`device_session_${userId}`);
+      channel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          channel
+            .send({
+              type: 'broadcast',
+              event: 'revoke_all_others',
+              payload: { keepDeviceId: currentDeviceId },
+            })
+            .then(() => {
+              setTimeout(() => {
+                void supabase.removeChannel(channel);
+              }, 1200);
+            })
+            .catch(() => {});
+        }
+      });
+    } catch {
+      // broadcast is best-effort
+    }
+
+    return updateSuccess;
   } catch (err) {
     console.warn('[DeviceTracker] Terminate all error:', err);
     return false;

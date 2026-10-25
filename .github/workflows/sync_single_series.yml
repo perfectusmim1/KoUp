@@ -17,6 +17,11 @@ on:
         required: false
         default: ''
         type: string
+      job_id:
+        description: 'Supabase admin_jobs UUID (Opsiyonel)'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   sync-series:
@@ -50,4 +55,5 @@ jobs:
           python scripts/sync_single_series_runner.py \
             --drama-id "${{ github.event.inputs.drama_id }}" \
             --provider "${{ github.event.inputs.provider }}" \
-            --manual-url "${{ github.event.inputs.manual_url }}"
+            --manual-url "${{ github.event.inputs.manual_url }}" \
+            --job-id "${{ github.event.inputs.job_id }}"

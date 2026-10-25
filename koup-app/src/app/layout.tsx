@@ -39,7 +39,7 @@ export const metadata: Metadata = {
     template: '%s | KoUp Cinema',
   },
   description:
-    '17.509 K-Drama, C-Drama, Anime ve Global Sinema yapımı. MyDramaList, AniList, IMDb ve AsyaMag entegrasyonlu Apple TV+ & Netflix deneyimi.',
+    '24.700+ K-Drama, C-Drama, Anime ve Global Sinema yapımı. MyDramaList, AniList, IMDb ve AsyaMag entegrasyonlu Apple TV+ & Netflix deneyimi.',
   icons: {
     icon: '/logo-dark.png',
     apple: '/logo-dark.png',
@@ -47,7 +47,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'KoUp | Asya Dizileri, Anime & Global Sinema Platformu',
     description:
-      '17.509 K-Drama, C-Drama, Anime ve Global Sinema yapımı. MyDramaList, AniList, IMDb ve AsyaMag entegrasyonlu Apple TV+ & Netflix deneyimi.',
+      '24.700+ K-Drama, C-Drama, Anime ve Global Sinema yapımı. MyDramaList, AniList, IMDb ve AsyaMag entegrasyonlu Apple TV+ & Netflix deneyimi.',
     siteName: 'KoUp Cinema',
     locale: 'tr_TR',
     type: 'website',

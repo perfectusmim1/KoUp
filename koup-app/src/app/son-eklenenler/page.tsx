@@ -276,7 +276,7 @@ function RecentEpisodesContent() {
           </div>
 
           {/* Content Type Filter Pills */}
-          <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 rounded-2xl glass-pill-dark shrink-0 overflow-x-auto no-scrollbar max-w-full">
+          <div className="inline-flex w-max items-center gap-1.5 sm:gap-2 p-1.5 rounded-2xl glass-pill-dark shrink-0 overflow-x-auto no-scrollbar max-w-full overflow-hidden">
             {TYPE_FILTERS.map((f) => {
               const active = typeFilter === f.id;
               const Icon = f.icon;
@@ -284,14 +284,14 @@ function RecentEpisodesContent() {
                 <button
                   key={f.id}
                   onClick={() => handleTypeChange(f.id)}
-                  className={`relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold cursor-pointer transition-colors duration-200 shrink-0 ${
+                  className={`relative flex items-center gap-2 px-4 h-9 rounded-xl text-xs font-semibold cursor-pointer transition-colors duration-200 shrink-0 select-none ${
                     active ? f.activeTextClass : 'text-white/70 hover:text-white'
                   }`}
                 >
                   {active && (
                     <motion.span
                       layoutId="recent-episodes-active-type"
-                      transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
                       className={`absolute inset-0 rounded-xl ${f.activePillClass}`}
                     />
                   )}

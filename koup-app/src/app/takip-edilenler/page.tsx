@@ -368,17 +368,17 @@ export default function FollowedPage() {
       {/* MAIN TWO-SECTION TABS SWITCHER (GEMINI Design Principles) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         {/* Main Tab Switcher */}
-        <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 shadow-lg shrink-0">
+        <div className="inline-flex w-max items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 shadow-lg shrink-0 overflow-hidden">
           <button
             onClick={() => handleTabChange('media')}
-            className={`relative flex items-center gap-2 px-4 sm:px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-colors cursor-pointer duration-200 select-none active:scale-95 ${
+            className={`relative flex items-center gap-2 px-4 sm:px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-colors cursor-pointer duration-200 select-none ${
               activeTab === 'media' ? 'text-white font-extrabold' : 'text-white/60 hover:text-white'
             }`}
           >
             {activeTab === 'media' && (
               <motion.span
                 layoutId="takip-main-tab-pill"
-                transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
                 className="absolute inset-0 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40 z-0"
               />
             )}
@@ -397,14 +397,14 @@ export default function FollowedPage() {
 
           <button
             onClick={() => handleTabChange('people')}
-            className={`relative flex items-center gap-2 px-4 sm:px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-colors cursor-pointer duration-200 select-none active:scale-95 ${
+            className={`relative flex items-center gap-2 px-4 sm:px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-colors cursor-pointer duration-200 select-none ${
               activeTab === 'people' ? 'text-white font-extrabold' : 'text-white/60 hover:text-white'
             }`}
           >
             {activeTab === 'people' && (
               <motion.span
                 layoutId="takip-main-tab-pill"
-                transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
                 className="absolute inset-0 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40 z-0"
               />
             )}
@@ -479,7 +479,7 @@ export default function FollowedPage() {
           <div
             ref={mediaTabsRef}
             {...mediaTabsDragProps}
-            className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-y cursor-grab active:cursor-grabbing"
+            className="inline-flex w-max items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-x cursor-pointer sm:cursor-grab sm:active:cursor-grabbing overflow-hidden"
           >
             {[
               {
@@ -520,7 +520,7 @@ export default function FollowedPage() {
                     setMediaFilter(flt.id);
                     setCurrentPage(1);
                   }}
-                  className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
+                  className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 h-9 rounded-xl text-xs font-bold transition-colors duration-150 cursor-pointer select-none touch-manipulation ${
                     active
                       ? 'text-white font-extrabold'
                       : 'text-white/70 hover:text-white'
@@ -530,7 +530,7 @@ export default function FollowedPage() {
                     <motion.span
                       layoutId="takip-media-subfilter-pill"
                       initial={false}
-                      transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
                       className={`absolute inset-0 rounded-xl ${flt.activePillClass} z-0 select-none pointer-events-none`}
                     />
                   )}
@@ -554,7 +554,7 @@ export default function FollowedPage() {
           <div
             ref={personTabsRef}
             {...personTabsDragProps}
-            className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-y cursor-grab active:cursor-grabbing"
+            className="inline-flex w-max items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-x cursor-pointer sm:cursor-grab sm:active:cursor-grabbing overflow-hidden"
           >
             {[
               {
@@ -595,7 +595,7 @@ export default function FollowedPage() {
                     setPersonFilter(flt.id);
                     setCurrentPage(1);
                   }}
-                  className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
+                  className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 h-9 rounded-xl text-xs font-bold transition-colors duration-150 cursor-pointer select-none touch-manipulation ${
                     active
                       ? 'text-white font-extrabold'
                       : 'text-white/70 hover:text-white'
@@ -605,7 +605,7 @@ export default function FollowedPage() {
                     <motion.span
                       layoutId="takip-people-subfilter-pill"
                       initial={false}
-                      transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
                       className={`absolute inset-0 rounded-xl ${flt.activePillClass} z-0 select-none pointer-events-none`}
                     />
                   )}

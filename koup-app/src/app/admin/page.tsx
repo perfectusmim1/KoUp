@@ -835,8 +835,9 @@ export default function AdminDashboardPage() {
 
         if (!dashRpcRes.error && dashRpcRes.data) {
           const d = dashRpcRes.data as Record<string, any>;
+          const mediaCount = Number(d.totalMedia || 0);
           setStats({
-            totalMedia: Number(d.totalMedia || 0),
+            totalMedia: mediaCount,
             totalPeople: Number(d.totalPeople || 0),
             totalEpisodes: Number(d.totalEpisodes || 0),
             totalUsers: Number(d.totalUsers || 0),
@@ -849,6 +850,7 @@ export default function AdminDashboardPage() {
             overdueScheduled: Number(d.overdueScheduled || 0),
             brokenEpisodes: Number(d.brokenEpisodes || 0),
           });
+          setSeriesTotalCount(mediaCount);
         } else {
           const [mCountRes, pCountRes, uCountRes, cCountRes, rCountRes] = await Promise.all([
             supabase.from('media').select('id', { count: 'exact', head: true }),
@@ -857,14 +859,16 @@ export default function AdminDashboardPage() {
             supabase.from('comments').select('id', { count: 'exact', head: true }),
             supabase.from('issue_reports').select('id', { count: 'exact', head: true }).neq('status', 'resolved'),
           ]);
+          const mediaCount = mCountRes.count ?? 0;
           setStats((prev) => ({
             ...prev,
-            totalMedia: mCountRes.count ?? 0,
+            totalMedia: mediaCount,
             totalPeople: pCountRes.count ?? 0,
             totalUsers: uCountRes.count ?? 0,
             totalComments: cCountRes.count ?? 0,
             openReports: rCountRes.count ?? 0,
           }));
+          setSeriesTotalCount(mediaCount);
         }
       } catch (err) {
         console.error('Admin initial load error:', err);
@@ -976,10 +980,13 @@ export default function AdminDashboardPage() {
             }
           } catch {}
 
+          const ADMIN_SERIES_SELECT =
+            'id, slug, title, native_title, content_type, country_code, release_year, cover_image, backdrop_image, overview, episode_count, sources_count, views_total, is_featured, created_at, status_broadcast, mdl_rating, imdb_rating, anilist_rating, categories, tags, trailer_url, air_days, air_time';
+
           // 2. Dogrudan indeksli sorgu (fallback)
           let q = supabase
             .from('media')
-            .select('*')
+            .select(ADMIN_SERIES_SELECT)
             .or(
               `title.ilike.%${searchQuery}%,slug.ilike.%${searchQuery}%,native_title.ilike.%${searchQuery}%`
             );
@@ -995,13 +1002,16 @@ export default function AdminDashboardPage() {
           const { data, error } = await q.limit(100);
           if (error) throw error;
 
-          const ranked = rankSearchResults((data as MediaItem[]) || [], searchQuery);
+          const ranked = rankSearchResults((data as unknown as MediaItem[]) || [], searchQuery);
           setSeriesList(ranked.slice(from, to + 1));
           setSeriesTotalCount(ranked.length);
         } else {
+          const ADMIN_SERIES_SELECT =
+            'id, slug, title, native_title, content_type, country_code, release_year, cover_image, backdrop_image, overview, episode_count, sources_count, views_total, is_featured, created_at, status_broadcast, mdl_rating, imdb_rating, anilist_rating, categories, tags, trailer_url, air_days, air_time';
+
           let q = supabase
             .from('media')
-            .select('*', { count: 'exact' })
+            .select(ADMIN_SERIES_SELECT, { count: 'exact' })
             .order('id', { ascending: false })
             .range(from, to);
 
@@ -1015,7 +1025,7 @@ export default function AdminDashboardPage() {
           const { data, count, error } = await q;
           if (error) throw error;
 
-          setSeriesList((data as MediaItem[]) || []);
+          setSeriesList((data as unknown as MediaItem[]) || []);
           if (typeof count === 'number') {
             setSeriesTotalCount(count);
             setStats((prev) => ({ ...prev, totalMedia: count }));
@@ -2845,7 +2855,7 @@ export default function AdminDashboardPage() {
       <div
         ref={adminMainTabsRef}
         {...adminMainTabsDragProps}
-        className="sticky top-20 z-40 p-1.5 rounded-2xl glass-pill-dark border border-white/10 shadow-2xl flex items-center gap-1.5 overflow-x-auto no-scrollbar overscroll-x-contain touch-pan-y select-none cursor-grab active:cursor-grabbing"
+        className="sticky top-20 z-40 p-1.5 rounded-2xl glass-pill-dark border border-white/10 shadow-2xl flex items-center gap-1.5 overflow-x-auto no-scrollbar overscroll-x-contain touch-pan-x select-none cursor-pointer sm:cursor-grab sm:active:cursor-grabbing overflow-hidden"
       >
         {[
           { id: 'overview', label: 'Genel Bakış', icon: Layers, adminOnly: true, glow: 'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40' },
@@ -2876,7 +2886,7 @@ export default function AdminDashboardPage() {
                   triggerSound?.('click');
                   setActiveTab(tab.id as AdminTab);
                 }}
-                className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 whitespace-nowrap ${
+                className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 h-9 rounded-xl text-xs font-bold transition-colors duration-150 cursor-pointer select-none touch-manipulation whitespace-nowrap ${
                   active
                     ? 'text-white font-extrabold'
                     : 'text-white/70 hover:text-white'
@@ -2886,7 +2896,7 @@ export default function AdminDashboardPage() {
                   <motion.span
                     layoutId="admin-main-tab-active-pill"
                     initial={false}
-                    transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
                     className={`absolute inset-0 rounded-xl ${tab.glow} z-0 select-none pointer-events-none`}
                   />
                 )}
@@ -3272,7 +3282,7 @@ export default function AdminDashboardPage() {
               <div
                 ref={userRolesRef}
                 {...userRolesDragProps}
-                className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 w-full sm:w-auto overflow-x-auto no-scrollbar select-none touch-pan-y cursor-grab active:cursor-grabbing"
+                className="inline-flex w-max items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 w-full sm:w-auto overflow-x-auto no-scrollbar select-none touch-pan-x cursor-pointer sm:cursor-grab sm:active:cursor-grabbing overflow-hidden"
               >
                 {[
                   { id: 'ALL', label: 'TÜMÜ', glow: 'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40' },
@@ -3294,7 +3304,7 @@ export default function AdminDashboardPage() {
                         setUserRoleFilter(r.id);
                         setUsersPage(1);
                       }}
-                      className={`relative shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
+                      className={`relative shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-colors duration-150 cursor-pointer select-none touch-manipulation ${
                         active ? 'text-white font-extrabold' : 'text-white/70 hover:text-white'
                       }`}
                     >
@@ -3302,7 +3312,7 @@ export default function AdminDashboardPage() {
                         <motion.span
                           layoutId="admin-user-roles-active-pill"
                           initial={false}
-                          transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                          transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
                           className={`absolute inset-0 rounded-xl ${r.glow} z-0 select-none pointer-events-none`}
                         />
                       )}
@@ -4219,7 +4229,7 @@ export default function AdminDashboardPage() {
               <div
                 ref={commentsFilterRef}
                 {...commentsFilterDragProps}
-                className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 overflow-x-auto no-scrollbar select-none touch-pan-y cursor-grab active:cursor-grabbing"
+                className="inline-flex w-max items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 overflow-x-auto no-scrollbar select-none touch-pan-x cursor-pointer sm:cursor-grab sm:active:cursor-grabbing overflow-hidden"
               >
                 {[
                   { id: 'ALL', label: 'TÜMÜ', glow: 'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40' },
@@ -4237,7 +4247,7 @@ export default function AdminDashboardPage() {
                         setCommentFilter(f.id as any);
                         setCommentsPage(1);
                       }}
-                      className={`relative shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
+                      className={`relative shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-colors duration-150 cursor-pointer select-none touch-manipulation ${
                         active ? 'text-white font-extrabold' : 'text-white/70 hover:text-white'
                       }`}
                     >
@@ -4245,7 +4255,7 @@ export default function AdminDashboardPage() {
                         <motion.span
                           layoutId="admin-comments-filter-active-pill"
                           initial={false}
-                          transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                          transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
                           className={`absolute inset-0 rounded-xl ${f.glow} z-0 select-none pointer-events-none`}
                         />
                       )}
@@ -4981,7 +4991,7 @@ export default function AdminDashboardPage() {
             <div
               ref={reportsFilterRef}
               {...reportsFilterDragProps}
-              className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-y cursor-grab active:cursor-grabbing overflow-x-auto no-scrollbar"
+              className="inline-flex w-max items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none touch-pan-x cursor-pointer sm:cursor-grab sm:active:cursor-grabbing overflow-x-auto no-scrollbar overflow-hidden"
             >
               {[
                 { id: 'open', label: `AÇIK (${reports.filter((r) => r.status !== 'resolved').length})`, glow: 'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40' },
@@ -4998,7 +5008,7 @@ export default function AdminDashboardPage() {
                       triggerSound?.('click');
                       setReportsFilter(rf.id as any);
                     }}
-                    className={`relative shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
+                    className={`relative shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-colors duration-150 cursor-pointer select-none touch-manipulation ${
                       active ? 'text-white font-extrabold' : 'text-white/70 hover:text-white'
                     }`}
                   >
@@ -5006,7 +5016,7 @@ export default function AdminDashboardPage() {
                       <motion.span
                         layoutId="admin-reports-filter-active-pill"
                         initial={false}
-                        transition={{ type: 'spring', stiffness: 550, damping: 35, mass: 0.4 }}
+                        transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
                         className={`absolute inset-0 rounded-xl ${rf.glow} z-0 select-none pointer-events-none`}
                       />
                     )}
