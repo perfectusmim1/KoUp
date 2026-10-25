@@ -393,34 +393,51 @@ export default function NotificationsPage() {
                   activePillClass:
                     'bg-gradient-to-r from-purple-500 to-pink-600 shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/40',
                 },
-              ].map((tab) => {
+              ].map((tab, idx, arr) => {
                 const Icon = tab.icon;
                 const active = selectedFilter === tab.id;
                 const count = counts[tab.countKey];
+                const prevTab = idx > 0 ? arr[idx - 1] : null;
+                const nextTab = idx < arr.length - 1 ? arr[idx + 1] : null;
+
                 return (
                   <button
                     key={tab.id}
+                    type="button"
                     onClick={() => {
                       triggerSound?.('click');
                       setSelectedFilter(tab.id);
                     }}
-                    className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-colors duration-200 cursor-pointer select-none active:scale-95 ${
+                    className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
                       active ? 'text-white font-extrabold' : 'text-white/70 hover:text-white'
                     }`}
                   >
                     {active && (
                       <motion.span
                         layoutId="notifications-category-pill"
+                        drag="x"
+                        dragConstraints={{ left: -45, right: 45 }}
+                        dragElastic={0.2}
+                        dragSnapToOrigin
+                        onDragEnd={(_, info) => {
+                          if (info.offset.x > 25 && nextTab) {
+                            triggerSound?.('click');
+                            setSelectedFilter(nextTab.id);
+                          } else if (info.offset.x < -25 && prevTab) {
+                            triggerSound?.('click');
+                            setSelectedFilter(prevTab.id);
+                          }
+                        }}
                         initial={false}
-                        transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
-                        className={`absolute inset-0 rounded-xl ${tab.activePillClass} z-0`}
+                        transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
+                        className={`absolute inset-0 rounded-xl ${tab.activePillClass} z-0 cursor-grab active:cursor-grabbing select-none`}
                       />
                     )}
-                    {Icon && <Icon className="relative z-10 w-3.5 h-3.5" />}
-                    <span className="relative z-10">{tab.label}</span>
+                    {Icon && <Icon className="relative z-10 w-3.5 h-3.5 pointer-events-none" />}
+                    <span className="relative z-10 pointer-events-none">{tab.label}</span>
                     {(tab.id === 'all' || count > 0) && (
                       <span
-                        className={`relative z-10 text-[10px] font-mono px-1.5 py-0.2 rounded-full transition-colors ${
+                        className={`relative z-10 pointer-events-none text-[10px] font-mono px-1.5 py-0.2 rounded-full transition-colors ${
                           active ? 'bg-white/25 text-white' : 'bg-white/10 text-white/75'
                         }`}
                       >

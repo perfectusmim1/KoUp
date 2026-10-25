@@ -322,38 +322,41 @@ export default function AdminSeriesRequests({
 
         {/* Filter Bar with Fluid Spring Sliding Active Pill */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-2 border-t border-white/10">
-          <div className="flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 overflow-x-auto no-scrollbar select-none">
             {[
               {
                 id: 'all' as const,
                 label: 'Tümü',
                 count: counts.all,
                 activeGlow:
-                  'bg-white/15 border border-white/20 text-white',
+                  'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40',
               },
               {
                 id: 'pending' as const,
                 label: 'Bekliyor',
                 count: counts.pending,
                 activeGlow:
-                  'bg-amber-500/20 border border-amber-500/30 text-amber-200',
+                  'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40',
               },
               {
                 id: 'approved' as const,
                 label: 'Onaylandı',
                 count: counts.approved,
                 activeGlow:
-                  'bg-emerald-500/20 border border-emerald-500/30 text-emerald-200',
+                  'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40',
               },
               {
                 id: 'rejected' as const,
                 label: 'Reddedildi',
                 count: counts.rejected,
                 activeGlow:
-                  'bg-rose-500/20 border border-rose-500/30 text-rose-200',
+                  'bg-gradient-to-r from-rose-500 to-red-600 shadow-[0_0_18px_rgba(244,63,94,0.45)] border border-rose-400/40',
               },
-            ].map((tab) => {
+            ].map((tab, idx, arr) => {
               const active = statusFilter === tab.id;
+              const prevTab = idx > 0 ? arr[idx - 1] : null;
+              const nextTab = idx < arr.length - 1 ? arr[idx + 1] : null;
+
               return (
                 <button
                   key={tab.id}
@@ -362,26 +365,39 @@ export default function AdminSeriesRequests({
                     triggerSound?.('click');
                     setStatusFilter(tab.id);
                   }}
-                  className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-colors duration-200 cursor-pointer select-none active:scale-95 ${
+                  className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
                     active ? 'text-white font-extrabold' : 'text-white/70 hover:text-white'
                   }`}
                 >
                   {active && (
                     <motion.span
                       layoutId="admin-series-requests-active-pill"
+                      drag="x"
+                      dragConstraints={{ left: -45, right: 45 }}
+                      dragElastic={0.2}
+                      dragSnapToOrigin
+                      onDragEnd={(_, info) => {
+                        if (info.offset.x > 25 && nextTab) {
+                          triggerSound?.('click');
+                          setStatusFilter(nextTab.id);
+                        } else if (info.offset.x < -25 && prevTab) {
+                          triggerSound?.('click');
+                          setStatusFilter(prevTab.id);
+                        }
+                      }}
                       initial={false}
                       transition={{
                         type: 'spring',
-                        stiffness: 480,
-                        damping: 34,
-                        mass: 0.6,
+                        stiffness: 520,
+                        damping: 35,
+                        mass: 0.5,
                       }}
-                      className={`absolute inset-0 rounded-xl ${tab.activeGlow} z-0`}
+                      className={`absolute inset-0 rounded-xl ${tab.activeGlow} z-0 cursor-grab active:cursor-grabbing select-none`}
                     />
                   )}
-                  <span className="relative z-10">{tab.label}</span>
+                  <span className="relative z-10 pointer-events-none">{tab.label}</span>
                   <span
-                    className={`relative z-10 px-1.5 py-0.2 rounded-full text-[10px] font-mono transition-colors ${
+                    className={`relative z-10 pointer-events-none px-1.5 py-0.2 rounded-full text-[10px] font-mono transition-colors ${
                       active ? 'bg-white/25 text-white' : 'bg-white/10 text-white/75'
                     }`}
                   >

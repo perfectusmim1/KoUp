@@ -733,8 +733,11 @@ export default function SeriesRequestPage() {
                   activeGlow:
                     'bg-gradient-to-r from-rose-500 to-red-600 shadow-[0_0_18px_rgba(244,63,94,0.45)] border border-rose-400/40',
                 },
-              ].map((tab) => {
+              ].map((tab, idx, arr) => {
                 const active = statusFilter === tab.id;
+                const prevTab = idx > 0 ? arr[idx - 1] : null;
+                const nextTab = idx < arr.length - 1 ? arr[idx + 1] : null;
+
                 return (
                   <button
                     key={tab.id}
@@ -743,26 +746,39 @@ export default function SeriesRequestPage() {
                       triggerSound?.('click');
                       setStatusFilter(tab.id);
                     }}
-                    className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-colors duration-200 cursor-pointer select-none active:scale-95 ${
+                    className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
                       active ? 'text-white font-extrabold' : 'text-white/70 hover:text-white'
                     }`}
                   >
                     {active && (
                       <motion.span
                         layoutId="seri-istek-filter-active-pill"
+                        drag="x"
+                        dragConstraints={{ left: -45, right: 45 }}
+                        dragElastic={0.2}
+                        dragSnapToOrigin
+                        onDragEnd={(_, info) => {
+                          if (info.offset.x > 25 && nextTab) {
+                            triggerSound?.('click');
+                            setStatusFilter(nextTab.id);
+                          } else if (info.offset.x < -25 && prevTab) {
+                            triggerSound?.('click');
+                            setStatusFilter(prevTab.id);
+                          }
+                        }}
                         initial={false}
                         transition={{
                           type: 'spring',
-                          stiffness: 480,
-                          damping: 34,
-                          mass: 0.6,
+                          stiffness: 520,
+                          damping: 35,
+                          mass: 0.5,
                         }}
-                        className={`absolute inset-0 rounded-xl ${tab.activeGlow} z-0`}
+                        className={`absolute inset-0 rounded-xl ${tab.activeGlow} z-0 cursor-grab active:cursor-grabbing select-none`}
                       />
                     )}
-                    <span className="relative z-10">{tab.label}</span>
+                    <span className="relative z-10 pointer-events-none">{tab.label}</span>
                     <span
-                      className={`relative z-10 px-1.5 py-0.2 rounded-full text-[10px] font-mono transition-colors ${
+                      className={`relative z-10 pointer-events-none px-1.5 py-0.2 rounded-full text-[10px] font-mono transition-colors ${
                         active ? 'bg-white/25 text-white' : 'bg-white/10 text-white/75'
                       }`}
                     >

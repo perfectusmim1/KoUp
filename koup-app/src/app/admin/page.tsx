@@ -472,6 +472,7 @@ export default function AdminDashboardPage() {
     loginWithEmail,
     logout,
     confirmDialog,
+    triggerSound,
   } = useKoUp();
 
   const [activeTab, setActiveTabState] = useState<AdminTab>('overview');
@@ -2808,51 +2809,79 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
-      {/* 2. TAB NAVIGATION BAR */}
-      <div className="sticky top-20 z-40 p-1.5 rounded-2xl glass-pill-dark border border-white/10 shadow-2xl flex items-center gap-1.5 overflow-x-auto no-scrollbar overscroll-x-contain touch-pan-x touch-pan-y">
+      {/* 2. TAB NAVIGATION BAR with Fluid Spring Sliding Active Pill & Drag Gestures */}
+      <div className="sticky top-20 z-40 p-1.5 rounded-2xl glass-pill-dark border border-white/10 shadow-2xl flex items-center gap-1.5 overflow-x-auto no-scrollbar overscroll-x-contain touch-pan-x touch-pan-y select-none">
         {[
-          { id: 'overview', label: 'Genel Bakış', icon: Layers, adminOnly: true },
-          { id: 'users', label: 'Kullanıcılar', icon: Users, badge: stats.totalUsers },
-          { id: 'series', label: 'Seri & Medya', icon: Film, badge: stats.totalMedia, adminOnly: true },
-          { id: 'series_automation', label: 'Seri Otomasyonu', icon: Workflow, adminOnly: true },
-          { id: 'episodes', label: 'Bölümler & Kaynaklar', icon: Tv, adminOnly: true },
-          { id: 'requests', label: 'Seri İstekleri', icon: Sparkles, badge: pendingSeriesRequestsCount },
-          { id: 'comments', label: 'Yorum Moderasyonu', icon: MessageSquare, badge: stats.totalComments },
-          { id: 'scrapers', label: 'Scraper Botları & Cron', icon: Radio, adminOnly: true },
-          { id: 'maintenance', label: 'Bakım & Sağlık', icon: Wrench, adminOnly: true },
-          { id: 'reports', label: 'Sorun Bildirimleri', icon: AlertTriangle, badge: stats.openReports, adminOnly: true },
-          { id: 'broadcast', label: 'Toplu Bildirim', icon: Send, adminOnly: true },
-          { id: 'settings', label: 'Site Ayarları', icon: Settings, adminOnly: true },
-          { id: 'audit_log', label: 'Denetim Kaydı', icon: ScrollText, badge: auditLogs.length, adminOnly: true },
+          { id: 'overview', label: 'Genel Bakış', icon: Layers, adminOnly: true, glow: 'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40' },
+          { id: 'users', label: 'Kullanıcılar', icon: Users, badge: stats.totalUsers, glow: 'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40' },
+          { id: 'series', label: 'Seri & Medya', icon: Film, badge: stats.totalMedia, adminOnly: true, glow: 'bg-gradient-to-r from-blue-500 to-indigo-600 shadow-[0_0_18px_rgba(99,102,241,0.45)] border border-indigo-400/40' },
+          { id: 'series_automation', label: 'Seri Otomasyonu', icon: Workflow, adminOnly: true, glow: 'bg-gradient-to-r from-purple-500 to-pink-600 shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/40' },
+          { id: 'episodes', label: 'Bölümler & Kaynaklar', icon: Tv, adminOnly: true, glow: 'bg-gradient-to-r from-cyan-500 to-blue-600 shadow-[0_0_18px_rgba(6,182,212,0.45)] border border-cyan-400/40' },
+          { id: 'requests', label: 'Seri İstekleri', icon: Sparkles, badge: pendingSeriesRequestsCount, glow: 'bg-gradient-to-r from-pink-500 to-rose-600 shadow-[0_0_18px_rgba(236,72,153,0.45)] border border-pink-400/40' },
+          { id: 'comments', label: 'Yorum Moderasyonu', icon: MessageSquare, badge: stats.totalComments, glow: 'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40' },
+          { id: 'scrapers', label: 'Scraper Botları & Cron', icon: Radio, adminOnly: true, glow: 'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40' },
+          { id: 'maintenance', label: 'Bakım & Sağlık', icon: Wrench, adminOnly: true, glow: 'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40' },
+          { id: 'reports', label: 'Sorun Bildirimleri', icon: AlertTriangle, badge: stats.openReports, adminOnly: true, glow: 'bg-gradient-to-r from-rose-500 to-red-600 shadow-[0_0_18px_rgba(244,63,94,0.45)] border border-rose-400/40' },
+          { id: 'broadcast', label: 'Toplu Bildirim', icon: Send, adminOnly: true, glow: 'bg-gradient-to-r from-indigo-500 to-purple-600 shadow-[0_0_18px_rgba(99,102,241,0.45)] border border-indigo-400/40' },
+          { id: 'settings', label: 'Site Ayarları', icon: Settings, adminOnly: true, glow: 'bg-gradient-to-r from-slate-500 to-zinc-600 shadow-[0_0_18px_rgba(148,163,184,0.45)] border border-slate-400/40' },
+          { id: 'audit_log', label: 'Denetim Kaydı', icon: ScrollText, badge: auditLogs.length, adminOnly: true, glow: 'bg-gradient-to-r from-purple-500 to-indigo-600 shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/40' },
         ]
           .filter((tab) => !tab.adminOnly || isAdmin)
-          .map((tab) => {
-          const Icon = tab.icon;
-          const active = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as AdminTab)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                active
-                  ? 'bg-white text-black shadow-lg font-bold'
-                  : 'text-white/70 hover:text-white hover:bg-white/[0.06]'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              <span>{tab.label}</span>
-              {typeof tab.badge === 'number' && tab.badge > 0 && (
-                <span
-                  className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                    active ? 'bg-black/15 text-black' : 'bg-white/10 text-white/75'
-                  }`}
-                >
-                  {tab.badge.toLocaleString('tr-TR')}
-                </span>
-              )}
-            </button>
-          );
-        })}
+          .map((tab, idx, arr) => {
+            const Icon = tab.icon;
+            const active = activeTab === tab.id;
+            const prevTab = idx > 0 ? arr[idx - 1] : null;
+            const nextTab = idx < arr.length - 1 ? arr[idx + 1] : null;
+
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  triggerSound?.('click');
+                  setActiveTab(tab.id as AdminTab);
+                }}
+                className={`relative shrink-0 flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 whitespace-nowrap ${
+                  active
+                    ? 'text-white font-extrabold'
+                    : 'text-white/70 hover:text-white'
+                }`}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="admin-main-tab-active-pill"
+                    drag="x"
+                    dragConstraints={{ left: -45, right: 45 }}
+                    dragElastic={0.2}
+                    dragSnapToOrigin
+                    onDragEnd={(_, info) => {
+                      if (info.offset.x > 25 && nextTab) {
+                        triggerSound?.('click');
+                        setActiveTab(nextTab.id as AdminTab);
+                      } else if (info.offset.x < -25 && prevTab) {
+                        triggerSound?.('click');
+                        setActiveTab(prevTab.id as AdminTab);
+                      }
+                    }}
+                    initial={false}
+                    transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
+                    className={`absolute inset-0 rounded-xl ${tab.glow} z-0 cursor-grab active:cursor-grabbing select-none`}
+                  />
+                )}
+                <Icon className="w-3.5 h-3.5 relative z-10 pointer-events-none" />
+                <span className="relative z-10 pointer-events-none">{tab.label}</span>
+                {typeof tab.badge === 'number' && tab.badge > 0 && (
+                  <span
+                    className={`relative z-10 pointer-events-none text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                      active ? 'bg-white/25 text-white' : 'bg-white/10 text-white/75'
+                    }`}
+                  >
+                    {tab.badge.toLocaleString('tr-TR')}
+                  </span>
+                )}
+              </button>
+            );
+          })}
       </div>
 
       {/* ================= TAB 1: GENEL BAKIŞ (OVERVIEW) ================= */}
@@ -3218,23 +3247,59 @@ export default function AdminDashboardPage() {
                 />
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto no-scrollbar">
-                {['ALL', 'admin', 'moderator', 'translator', 'editor', 'user', 'banned'].map((r) => (
-                  <button
-                    key={r}
-                    onClick={() => {
-                      setUserRoleFilter(r);
-                      setUsersPage(1);
-                    }}
-                    className={`px-3 py-2 rounded-xl text-xs font-mono font-medium transition-all cursor-pointer ${
-                      userRoleFilter === r
-                        ? 'bg-white text-black font-bold'
-                        : 'bg-white/[0.05] text-white/70 hover:text-white'
-                    }`}
-                  >
-                    {r === 'banned' ? 'YASAKLI (BAN)' : r.toUpperCase()}
-                  </button>
-                ))}
+              <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 w-full sm:w-auto overflow-x-auto no-scrollbar select-none">
+                {[
+                  { id: 'ALL', label: 'TÜMÜ', glow: 'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40' },
+                  { id: 'admin', label: 'ADMIN', glow: 'bg-gradient-to-r from-rose-500 to-red-600 shadow-[0_0_18px_rgba(244,63,94,0.45)] border border-rose-400/40' },
+                  { id: 'moderator', label: 'MOD', glow: 'bg-gradient-to-r from-purple-500 to-indigo-600 shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/40' },
+                  { id: 'translator', label: 'ÇEVİRMEN', glow: 'bg-gradient-to-r from-blue-500 to-indigo-600 shadow-[0_0_18px_rgba(99,102,241,0.45)] border border-indigo-400/40' },
+                  { id: 'editor', label: 'EDİTÖR', glow: 'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40' },
+                  { id: 'user', label: 'ÜYE', glow: 'bg-gradient-to-r from-zinc-500 to-slate-600 shadow-[0_0_18px_rgba(148,163,184,0.45)] border border-slate-400/40' },
+                  { id: 'banned', label: 'BAN', glow: 'bg-gradient-to-r from-red-600 to-rose-700 shadow-[0_0_18px_rgba(220,38,38,0.45)] border border-red-500/40' },
+                ].map((r, idx, arr) => {
+                  const active = userRoleFilter === r.id;
+                  const prevR = idx > 0 ? arr[idx - 1].id : null;
+                  const nextR = idx < arr.length - 1 ? arr[idx + 1].id : null;
+                  return (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => {
+                        triggerSound?.('click');
+                        setUserRoleFilter(r.id);
+                        setUsersPage(1);
+                      }}
+                      className={`relative shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
+                        active ? 'text-white font-extrabold' : 'text-white/70 hover:text-white'
+                      }`}
+                    >
+                      {active && (
+                        <motion.span
+                          layoutId="admin-user-roles-active-pill"
+                          drag="x"
+                          dragConstraints={{ left: -45, right: 45 }}
+                          dragElastic={0.2}
+                          dragSnapToOrigin
+                          onDragEnd={(_, info) => {
+                            if (info.offset.x > 25 && nextR) {
+                              triggerSound?.('click');
+                              setUserRoleFilter(nextR);
+                              setUsersPage(1);
+                            } else if (info.offset.x < -25 && prevR) {
+                              triggerSound?.('click');
+                              setUserRoleFilter(prevR);
+                              setUsersPage(1);
+                            }
+                          }}
+                          initial={false}
+                          transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
+                          className={`absolute inset-0 rounded-xl ${r.glow} z-0 cursor-grab active:cursor-grabbing select-none`}
+                        />
+                      )}
+                      <span className="relative z-10 pointer-events-none">{r.label}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -4140,28 +4205,56 @@ export default function AdminDashboardPage() {
                 
               </div>
 
-              {/* Filter Pills */}
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+              {/* Filter Pills with Fluid Spring Sliding Active Pill & Drag Gestures */}
+              <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 overflow-x-auto no-scrollbar select-none">
                 {[
-                  { id: 'ALL', label: 'TÜMÜ' },
-                  { id: 'spoiler', label: 'SPOILER' },
-                  { id: 'hidden', label: 'GİZLENENLER' },
-                ].map((f) => (
-                  <button
-                    key={f.id}
-                    onClick={() => {
-                      setCommentFilter(f.id as any);
-                      setCommentsPage(1);
-                    }}
-                    className={`px-3 py-2 rounded-xl text-xs font-mono transition-all cursor-pointer ${
-                      commentFilter === f.id
-                        ? 'bg-white text-black font-bold'
-                        : 'bg-white/[0.05] text-white/70 hover:text-white'
-                    }`}
-                  >
-                    {f.label}
-                  </button>
-                ))}
+                  { id: 'ALL', label: 'TÜMÜ', glow: 'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40' },
+                  { id: 'spoiler', label: 'SPOILER', glow: 'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40' },
+                  { id: 'hidden', label: 'GİZLENENLER', glow: 'bg-gradient-to-r from-rose-500 to-red-600 shadow-[0_0_18px_rgba(244,63,94,0.45)] border border-rose-400/40' },
+                ].map((f, idx, arr) => {
+                  const active = commentFilter === f.id;
+                  const prevF = idx > 0 ? arr[idx - 1].id : null;
+                  const nextF = idx < arr.length - 1 ? arr[idx + 1].id : null;
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => {
+                        triggerSound?.('click');
+                        setCommentFilter(f.id as any);
+                        setCommentsPage(1);
+                      }}
+                      className={`relative shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
+                        active ? 'text-white font-extrabold' : 'text-white/70 hover:text-white'
+                      }`}
+                    >
+                      {active && (
+                        <motion.span
+                          layoutId="admin-comments-filter-active-pill"
+                          drag="x"
+                          dragConstraints={{ left: -45, right: 45 }}
+                          dragElastic={0.2}
+                          dragSnapToOrigin
+                          onDragEnd={(_, info) => {
+                            if (info.offset.x > 25 && nextF) {
+                              triggerSound?.('click');
+                              setCommentFilter(nextF as any);
+                              setCommentsPage(1);
+                            } else if (info.offset.x < -25 && prevF) {
+                              triggerSound?.('click');
+                              setCommentFilter(prevF as any);
+                              setCommentsPage(1);
+                            }
+                          }}
+                          initial={false}
+                          transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
+                          className={`absolute inset-0 rounded-xl ${f.glow} z-0 cursor-grab active:cursor-grabbing select-none`}
+                        />
+                      )}
+                      <span className="relative z-10 pointer-events-none">{f.label}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -4887,25 +4980,52 @@ export default function AdminDashboardPage() {
               </h3>
               
             </div>
-            <div className="flex items-center gap-2">
+            <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 select-none">
               {[
-                { id: 'open', label: `AÇIK (${reports.filter((r) => r.status !== 'resolved').length})` },
-                { id: 'resolved', label: `ÇÖZÜLENLER (${reports.filter((r) => r.status === 'resolved').length})` },
-                { id: 'ALL', label: 'TÜMÜ' },
-              ].map((rf) => (
-                <button
-                  key={rf.id}
-                  type="button"
-                  onClick={() => setReportsFilter(rf.id as any)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-mono transition-all cursor-pointer ${
-                    reportsFilter === rf.id
-                      ? 'bg-white text-black font-bold'
-                      : 'bg-white/[0.05] text-white/70 hover:text-white'
-                  }`}
-                >
-                  {rf.label}
-                </button>
-              ))}
+                { id: 'open', label: `AÇIK (${reports.filter((r) => r.status !== 'resolved').length})`, glow: 'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40' },
+                { id: 'resolved', label: `ÇÖZÜLENLER (${reports.filter((r) => r.status === 'resolved').length})`, glow: 'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40' },
+                { id: 'ALL', label: 'TÜMÜ', glow: 'bg-gradient-to-r from-sky-500 to-blue-600 shadow-[0_0_18px_rgba(56,189,248,0.45)] border border-sky-400/40' },
+              ].map((rf, idx, arr) => {
+                const active = reportsFilter === rf.id;
+                const prevR = idx > 0 ? arr[idx - 1].id : null;
+                const nextR = idx < arr.length - 1 ? arr[idx + 1].id : null;
+                return (
+                  <button
+                    key={rf.id}
+                    type="button"
+                    onClick={() => {
+                      triggerSound?.('click');
+                      setReportsFilter(rf.id as any);
+                    }}
+                    className={`relative shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
+                      active ? 'text-white font-extrabold' : 'text-white/70 hover:text-white'
+                    }`}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="admin-reports-filter-active-pill"
+                        drag="x"
+                        dragConstraints={{ left: -45, right: 45 }}
+                        dragElastic={0.2}
+                        dragSnapToOrigin
+                        onDragEnd={(_, info) => {
+                          if (info.offset.x > 25 && nextR) {
+                            triggerSound?.('click');
+                            setReportsFilter(nextR as any);
+                          } else if (info.offset.x < -25 && prevR) {
+                            triggerSound?.('click');
+                            setReportsFilter(prevR as any);
+                          }
+                        }}
+                        initial={false}
+                        transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
+                        className={`absolute inset-0 rounded-xl ${rf.glow} z-0 cursor-grab active:cursor-grabbing select-none`}
+                      />
+                    )}
+                    <span className="relative z-10 pointer-events-none">{rf.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

@@ -253,34 +253,51 @@ export default function MagazineHubPage() {
       </div>
 
       {/* CATEGORY & SOURCE FILTER TABS */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 select-none">
         {/* Category Pills */}
         <div className="overflow-x-auto no-scrollbar pb-1.5 [-webkit-overflow-scrolling:touch]">
           <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10">
-            {MAGAZINE_CATEGORIES.map((cat) => {
+            {MAGAZINE_CATEGORIES.map((cat, idx, arr) => {
               const active = activeCategory === cat;
               const style = getMagCategoryActivePill(cat);
+              const prevCat = idx > 0 ? arr[idx - 1] : null;
+              const nextCat = idx < arr.length - 1 ? arr[idx + 1] : null;
+
               return (
                 <button
                   key={cat}
+                  type="button"
                   onClick={() => {
                     triggerSound?.('click');
                     setActiveCategory(cat);
                   }}
-                  className={`relative shrink-0 flex items-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-colors duration-200 cursor-pointer select-none active:scale-95 ${
+                  className={`relative shrink-0 flex items-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
                     active ? style.text : 'text-white/70 hover:text-white'
                   }`}
                 >
                   {active && (
                     <motion.span
                       layoutId="magazin-category-active-pill"
+                      drag="x"
+                      dragConstraints={{ left: -45, right: 45 }}
+                      dragElastic={0.2}
+                      dragSnapToOrigin
+                      onDragEnd={(_, info) => {
+                        if (info.offset.x > 25 && nextCat) {
+                          triggerSound?.('click');
+                          setActiveCategory(nextCat);
+                        } else if (info.offset.x < -25 && prevCat) {
+                          triggerSound?.('click');
+                          setActiveCategory(prevCat);
+                        }
+                      }}
                       initial={false}
-                      transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
-                      className={`absolute inset-0 rounded-xl ${style.pill} z-0`}
+                      transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
+                      className={`absolute inset-0 rounded-xl ${style.pill} z-0 cursor-grab active:cursor-grabbing select-none`}
                     />
                   )}
-                  {cat === 'Dedikodu' && <Flame className="w-3.5 h-3.5 text-rose-300 relative z-10" />}
-                  <span className="relative z-10">{cat}</span>
+                  {cat === 'Dedikodu' && <Flame className="w-3.5 h-3.5 text-rose-300 relative z-10 pointer-events-none" />}
+                  <span className="relative z-10 pointer-events-none">{cat}</span>
                 </button>
               );
             })}
@@ -289,25 +306,42 @@ export default function MagazineHubPage() {
 
         {/* Source Segmented Switch */}
         <div className="inline-flex items-center gap-1.5 p-1 rounded-2xl glass-pill-dark border border-white/10 self-start lg:self-auto shrink-0 overflow-x-auto no-scrollbar">
-          {(['Tümü', 'KoreZin', 'AsyaMag'] as const).map((source) => {
+          {(['Tümü', 'KoreZin', 'AsyaMag'] as const).map((source, idx, arr) => {
             const active = activeSource === source;
+            const prevSrc = idx > 0 ? arr[idx - 1] : null;
+            const nextSrc = idx < arr.length - 1 ? arr[idx + 1] : null;
+
             return (
               <button
                 key={source}
+                type="button"
                 onClick={() => {
                   triggerSound?.('click');
                   setActiveSource(source);
                 }}
-                className={`relative shrink-0 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-colors duration-200 cursor-pointer select-none active:scale-95 ${
+                className={`relative shrink-0 px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-[color,transform] duration-75 cursor-pointer select-none touch-manipulation active:scale-95 ${
                   active ? 'text-white font-extrabold' : 'text-white/70 hover:text-white'
                 }`}
               >
                 {active && (
                   <motion.span
                     layoutId="magazin-source-active-pill"
+                    drag="x"
+                    dragConstraints={{ left: -45, right: 45 }}
+                    dragElastic={0.2}
+                    dragSnapToOrigin
+                    onDragEnd={(_, info) => {
+                      if (info.offset.x > 25 && nextSrc) {
+                        triggerSound?.('click');
+                        setActiveSource(nextSrc);
+                      } else if (info.offset.x < -25 && prevSrc) {
+                        triggerSound?.('click');
+                        setActiveSource(prevSrc);
+                      }
+                    }}
                     initial={false}
-                    transition={{ type: 'spring', stiffness: 480, damping: 34, mass: 0.6 }}
-                    className={`absolute inset-0 rounded-xl z-0 ${
+                    transition={{ type: 'spring', stiffness: 520, damping: 35, mass: 0.5 }}
+                    className={`absolute inset-0 rounded-xl z-0 cursor-grab active:cursor-grabbing select-none ${
                       source === 'KoreZin'
                         ? 'bg-gradient-to-r from-rose-500 to-pink-600 shadow-[0_0_15px_rgba(244,63,94,0.45)] border border-rose-400/40'
                         : source === 'AsyaMag'
@@ -316,7 +350,7 @@ export default function MagazineHubPage() {
                     }`}
                   />
                 )}
-                <span className="relative z-10">
+                <span className="relative z-10 pointer-events-none">
                   {source === 'Tümü' ? 'Tüm Kaynaklar' : source}
                 </span>
               </button>
