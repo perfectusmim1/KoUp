@@ -656,32 +656,119 @@ def clean_animecix_provider(name: str, url: str) -> str:
         return name_low.replace(' ', '')
     return 'embed'
 
-def fetch_animecix_json(endpoint: str, qs: str, retries: int = 3):
-    url = f"https://animecix.tv/secure/{endpoint}?{qs}"
+def _normalize_animecix_search_payload(endpoint: str, data: dict) -> dict:
+    if not isinstance(data, dict):
+        return data
+    if endpoint == "titles" and "pagination" not in data and isinstance(data.get("results"), list):
+        titles_only = [
+            r for r in data["results"]
+            if isinstance(r, dict) and (r.get("model_type") in (None, "title") or r.get("id"))
+        ]
+        return {"pagination": {"data": titles_only, "last_page": 1}}
+    return data
+
+
+def fetch_animecix_json(endpoint: str, qs: str, retries: int = 2):
+    domains = ("https://animecix.tv", "https://animecix.net", "https://mangacix.net")
+    ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    last_err = None
+
+    # Extract raw search query if endpoint == "titles" so we can also hit the headerless /secure/search/<q> route
+    search_q_enc = None
+    if endpoint == "titles" and "query=" in (qs or ""):
+        m_q = re.search(r"(?:^|&)query=([^&]+)", qs)
+        if m_q:
+            search_q_enc = m_q.group(1)
+
     for attempt in range(retries):
-        try:
-            h = make_animecix_header(qs)
+        h = make_animecix_header(qs)
+        # 1. Try direct AnimeciX mirror domains
+        for dom in domains:
+            url = f"{dom}/secure/{endpoint}?{qs}" if qs else f"{dom}/secure/{endpoint}"
             headers = {
-                'X-E-H': h,
-                'Accept': 'application/json',
-                'Referer': 'https://animecix.tv/',
-                'Origin': 'https://animecix.tv',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+                "X-E-H": h,
+                "Accept": "application/json",
+                "Referer": f"{dom}/",
+                "Origin": dom,
+                "User-Agent": ua,
             }
             try:
-                from curl_cffi import requests as cffi_requests
-                resp = cffi_requests.get(url, headers=headers, impersonate='chrome120', timeout=15)
-                if resp.status_code == 200:
-                    return resp.json()
-            except ImportError:
-                req = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(req, timeout=12) as resp:
-                    if resp.status == 200:
-                        return json.loads(resp.read().decode('utf-8'))
+                if cffi_requests is not None:
+                    resp = cffi_requests.get(url, headers=headers, impersonate="chrome", timeout=12)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if endpoint != "titles" or "pagination" in data or "results" in data:
+                            return _normalize_animecix_search_payload(endpoint, data)
+                    else:
+                        last_err = f"HTTP {resp.status_code} ({dom})"
+                else:
+                    req = urllib.request.Request(url, headers=headers)
+                    with urllib.request.urlopen(req, timeout=12) as resp:
+                        if resp.status == 200:
+                            data = json.loads(resp.read().decode("utf-8"))
+                            if endpoint != "titles" or "pagination" in data or "results" in data:
+                                return _normalize_animecix_search_payload(endpoint, data)
+            except Exception as e:
+                last_err = str(e)
+
+            # 1b. If endpoint == "titles" failed or got challenged, try /secure/search/<q> on the same domain
+            if search_q_enc:
+                s_url = f"{dom}/secure/search/{search_q_enc}?limit=12"
+                try:
+                    if cffi_requests is not None:
+                        s_resp = cffi_requests.get(s_url, headers={"Accept": "application/json", "Referer": f"{dom}/", "User-Agent": ua}, impersonate="chrome", timeout=10)
+                        if s_resp.status_code == 200:
+                            s_data = s_resp.json()
+                            if isinstance(s_data, dict) and "results" in s_data:
+                                return _normalize_animecix_search_payload("titles", s_data)
+                except Exception:
+                    pass
+
+        # 2. Fallback: Cloudflare Edge Worker (/pichive-proxy with _=.mp4 suffix)
+        try:
+            edge_target = (
+                f"https://animecix.tv/secure/search/{search_q_enc}?limit=12&_=.mp4"
+                if search_q_enc
+                else f"https://animecix.tv/secure/{endpoint}?{qs}&_=.mp4"
+            )
+            edge_url = (
+                "https://koup-edge-worker.caganhuseyinerdil.workers.dev/pichive-proxy?url="
+                + urllib.parse.quote(edge_target, safe="")
+                + "&ref="
+                + urllib.parse.quote("https://animecix.tv/", safe="")
+            )
+            if cffi_requests is not None:
+                e_resp = cffi_requests.get(edge_url, headers={"Accept": "application/json", "User-Agent": ua}, impersonate="chrome", timeout=12)
+                if e_resp.status_code == 200:
+                    e_data = e_resp.json()
+                    if isinstance(e_data, dict) and ("pagination" in e_data or "results" in e_data or "data" in e_data):
+                        return _normalize_animecix_search_payload(endpoint, e_data)
         except Exception as e:
-            if attempt == retries - 1:
-                log("UYARI", f"AnimeciX API isteği başarısız ({endpoint}): {e}")
-            time.sleep(0.5)
+            last_err = str(e)
+
+        # 3. Fallback: KoUp Vercel EU (fra1) Proxy Endpoint (bypasses US Azure IP geo-blocks on GitHub Actions)
+        try:
+            svc_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SECRET_KEY") or ""
+            vercel_proxy_url = (
+                "https://koup-app.vercel.app/api/admin/sync-series?proxyAnimecix=1"
+                + f"&endpoint={urllib.parse.quote(endpoint, safe='')}"
+                + f"&qs={urllib.parse.quote(qs or '', safe='')}"
+            )
+            v_headers = {"Accept": "application/json", "User-Agent": ua}
+            if svc_key:
+                v_headers["x-service-key"] = svc_key
+            if cffi_requests is not None:
+                v_resp = cffi_requests.get(vercel_proxy_url, headers=v_headers, timeout=14)
+                if v_resp.status_code == 200:
+                    v_data = v_resp.json()
+                    if isinstance(v_data, dict) and ("pagination" in v_data or "results" in v_data or "data" in v_data):
+                        return _normalize_animecix_search_payload(endpoint, v_data)
+        except Exception as e:
+            last_err = str(e)
+
+        time.sleep(0.4)
+
+    log("UYARI", f"AnimeciX API isteği başarısız ({endpoint}): {last_err}")
     return None
 
 def scan_animecix(conn, cur, idx, limit=30, target=None):

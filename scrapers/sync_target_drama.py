@@ -59,6 +59,7 @@ from scrapers.live_scanner import (
     fetch_animecix_json,
     clean_animecix_provider,
 )
+from scrapers.supabase_sync_helper import sync_drama_bundle_and_counts
 
 DB_PATH = os.path.join(_ROOT, 'webdrama_archive.db')
 
@@ -1546,14 +1547,76 @@ def sync_animecix_target(conn, cur, drama, target_url=None):
         target_name = None
         matched_is_movie = is_movie_drama
 
-        # 1. If target_url or source_url has an AnimeciX ID, use it
+        # 1. If target_url, source_url, existing episodes, or series_automations has an AnimeciX ID, use it
         for u_cand in (target_url, d.get('source_url')):
-            if u_cand and 'animecix' in str(u_cand) and '/titles/' in str(u_cand):
+            if u_cand and '/titles/' in str(u_cand):
                 m = re.search(r'/titles/(\d+)', str(u_cand))
                 if m:
                     anime_id = int(m.group(1))
                     target_name = f"AnimeciX #{anime_id}"
                     break
+            elif u_cand and str(u_cand).strip().isdigit():
+                anime_id = int(str(u_cand).strip())
+                target_name = f"AnimeciX #{anime_id}"
+                break
+
+        if not anime_id:
+            try:
+                cur.execute(
+                    "SELECT episode_url FROM episodes WHERE drama_id = ? AND episode_url LIKE '%/titles/%' LIMIT 1",
+                    (d['id'],),
+                )
+                ep_u_row = cur.fetchone()
+                if ep_u_row and ep_u_row[0]:
+                    m_ep = re.search(r'/titles/(\d+)', str(ep_u_row[0]))
+                    if m_ep:
+                        anime_id = int(m_ep.group(1))
+                        target_name = f"{title} (AnimeciX #{anime_id})"
+                        log("AnimeciX", f"Mevcut bölümlerden AnimeciX ID tespit edildi: {anime_id}")
+            except Exception:
+                pass
+
+        if not anime_id:
+            try:
+                cur.execute("SELECT site_slugs FROM series_automations WHERE media_id = ?", (d['id'],))
+                sa_row = cur.fetchone()
+                if sa_row and sa_row[0]:
+                    sa_slugs = json.loads(sa_row[0]) if isinstance(sa_row[0], str) else sa_row[0]
+                    ac_val = str(sa_slugs.get('animecix') or '')
+                    m_sa = re.search(r'(\d+)', ac_val)
+                    if m_sa:
+                        anime_id = int(m_sa.group(1))
+                        target_name = f"{title} (AnimeciX #{anime_id})"
+            except Exception:
+                pass
+
+        # 1b. Reconcile any episodes/sources already synced to Cloudflare R2 bundle by Vercel Cloud Sync
+        try:
+            r2_pub = os.getenv("R2_PUBLIC_URL") or "https://pub-e62742f127324512937cc3ff34c976bd.r2.dev"
+            r2_resp = requests.get(f"{r2_pub}/sources/{d['id']}.json?t={int(time.time())}", timeout=8)
+            if r2_resp.ok:
+                r2_bundle = r2_resp.json()
+                for b_ep in (r2_bundle.get("episodes") or []):
+                    b_s = int(b_ep.get("season_number") or 1)
+                    b_e = int(b_ep.get("episode_number") or 1)
+                    b_ep_id, b_created = match_or_create_episode(
+                        cur, d['id'], b_s, b_e,
+                        b_ep.get("episode_name") or f"Bölüm {b_e}",
+                        f"https://animecix.tv/titles/{anime_id or 0}/season/{b_s}/episode/{b_e}" if anime_id else None,
+                    )
+                    if b_created:
+                        episodes_added += 1
+                    for b_src in (b_ep.get("sources") or []):
+                        b_url = (b_src.get("direct_url") or "").strip()
+                        b_pname = b_src.get("source_name") or "Tau Video"
+                        b_prov = b_src.get("provider") or "tau-video"
+                        b_site = b_src.get("site") or "animecix"
+                        if b_url and add_source(cur, b_ep_id, b_pname, b_url, b_prov, b_site):
+                            sources_added += 1
+                    reconcile_episode(cur, b_ep_id, is_placeholder=False)
+                safe_commit(conn)
+        except Exception:
+            pass
 
         # 2. Search AnimeciX titles via AESGCM API across candidate queries
         if not anime_id:

@@ -17,6 +17,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from scrapers.multisite import clean_episode_title
+from scrapers.clean_fansub import clean_source_name
 
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')

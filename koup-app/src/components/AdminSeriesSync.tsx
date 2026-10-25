@@ -383,8 +383,155 @@ export default function AdminSeriesSync({
     };
   }, [dramaId, applyJobState]);
 
+  const prefetchAnimecixFromEdge = async (
+    prov: string,
+    effectiveUrl?: string
+  ): Promise<{ animeId: number; targetName: string; isMovie: boolean; videos: any[] } | null> => {
+    try {
+      const edgeProxy = (target: string) =>
+        `https://koup-edge-worker.caganhuseyinerdil.workers.dev/pichive-proxy?url=${encodeURIComponent(
+          target
+        )}&ref=${encodeURIComponent('https://animecix.tv/')}`;
+
+      let animeId: number | null = null;
+      let targetName = dramaTitle;
+      let isMovie = false;
+
+      if (effectiveUrl) {
+        const mUrl = effectiveUrl.match(/\/titles\/(\d+)/i);
+        if (mUrl?.[1]) {
+          animeId = parseInt(mUrl[1], 10);
+        } else if (/^\d+$/.test(effectiveUrl.trim())) {
+          animeId = parseInt(effectiveUrl.trim(), 10);
+        }
+      }
+
+      const { data: mediaRow } = await supabase
+        .from('media')
+        .select('id, title, native_title, content_type, source_url, release_year')
+        .eq('id', dramaId)
+        .maybeSingle();
+
+      if (mediaRow?.content_type === 'film') {
+        isMovie = true;
+      }
+
+      if (!animeId && mediaRow?.source_url) {
+        const mSrc = String(mediaRow.source_url).match(/\/titles\/(\d+)/i);
+        if (mSrc?.[1]) {
+          animeId = parseInt(mSrc[1], 10);
+        }
+      }
+
+      const isExplicitAnimecix =
+        prov === 'animecix' ||
+        Boolean(effectiveUrl && /animecix|mangacix/i.test(effectiveUrl)) ||
+        Boolean(animeId) ||
+        (prov === 'auto' && mediaRow?.content_type === 'anime');
+
+      if (!isExplicitAnimecix) {
+        return null;
+      }
+
+      if (!animeId) {
+        setStatusText('AnimeciX Üzerinde Aranıyor...');
+        const norm = (s: string) =>
+          (s || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9\u00c0-\u024f\u0400-\u04ff\u3040-\u30ff\u4e00-\u9fff]+/g, ' ')
+            .trim();
+
+        const queries = Array.from(
+          new Set([dramaTitle, mediaRow?.title, mediaRow?.native_title].filter(Boolean) as string[])
+        );
+
+        for (const q of queries) {
+          const searchUrl = edgeProxy(
+            `https://animecix.tv/secure/search/${encodeURIComponent(q.trim())}?limit=12&_=.mp4`
+          );
+          const sRes = await fetch(searchUrl, { signal: AbortSignal.timeout(7000) }).catch(() => null);
+          if (!sRes || !sRes.ok) continue;
+          const sJson = await sRes.json().catch(() => null);
+          const results: any[] = sJson?.results || sJson?.pagination?.data || [];
+          const targetNorm = norm(q);
+
+          let bestItem: any = null;
+          let bestScore = 0;
+          for (const item of results) {
+            if (!item?.id) continue;
+            for (const cand of [item.name, item.name_english, item.original_title]) {
+              if (!cand) continue;
+              const cNorm = norm(cand);
+              if (!cNorm) continue;
+              let score = 0;
+              if (cNorm === targetNorm) {
+                score = 1.0;
+              } else if (cNorm.includes(targetNorm) || targetNorm.includes(cNorm)) {
+                const shorter = Math.min(cNorm.length, targetNorm.length);
+                const longer = Math.max(cNorm.length, targetNorm.length);
+                score = 0.78 + (shorter / Math.max(1, longer)) * 0.2;
+              }
+              if (mediaRow?.release_year && item.year && Number(mediaRow.release_year) === Number(item.year)) {
+                score += 0.05;
+              }
+              if (score > bestScore) {
+                bestScore = score;
+                bestItem = item;
+              }
+            }
+          }
+
+          if (bestItem && bestScore >= 0.75) {
+            animeId = Number(bestItem.id);
+            targetName = bestItem.name || bestItem.name_english || dramaTitle;
+            if (bestItem.title_type === 'movie' || bestItem.is_movie) {
+              isMovie = true;
+            }
+            break;
+          }
+        }
+      }
+
+      if (!animeId) {
+        return null;
+      }
+
+      setStatusText(`AnimeciX #${animeId} Bölümleri Çekiliyor...`);
+      const allVideos: any[] = [];
+      let page = 1;
+      while (page <= 20) {
+        const vUrl = edgeProxy(
+          `https://animecix.tv/secure/videos?titleId=${animeId}&page=${page}&perPage=100&_=.mp4`
+        );
+        const vRes = await fetch(vUrl, { signal: AbortSignal.timeout(8000) }).catch(() => null);
+        if (!vRes || !vRes.ok) break;
+        const vJson = await vRes.json().catch(() => null);
+        const pageVideos: any[] = vJson?.pagination?.data || [];
+        if (!pageVideos.length) break;
+        allVideos.push(...pageVideos);
+        const lastPage = Number(vJson?.pagination?.last_page || 1);
+        if (page >= lastPage) break;
+        page += 1;
+      }
+
+      if (allVideos.length === 0) {
+        return null;
+      }
+
+      return {
+        animeId,
+        targetName,
+        isMovie,
+        videos: allVideos,
+      };
+    } catch {
+      return null;
+    }
+  };
+
   const handleTriggerSync = async (providerOverride?: string, customUrl?: string) => {
     const prov = providerOverride || selectedProvider;
+    const effectiveManualUrl = customUrl || (prov === '__manual__' ? manualUrlInput : undefined);
     setIsSyncing(true);
     setSyncStatus('queued');
     setSyncProgress(10);
@@ -395,6 +542,12 @@ export default function AdminSeriesSync({
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
+
+      const prefetchedAnimecix = await prefetchAnimecixFromEdge(prov, effectiveManualUrl);
+      if (prefetchedAnimecix) {
+        setSyncProgress(45);
+        setStatusText(`AnimeciX (${prefetchedAnimecix.videos.length} Kaynak) Eşitleniyor...`);
+      }
 
       const res = await fetch('/api/admin/sync-series', {
         method: 'POST',
@@ -407,7 +560,8 @@ export default function AdminSeriesSync({
           slug: dramaSlug,
           dramaTitle,
           provider: prov,
-          manualUrl: customUrl || (prov === '__manual__' ? manualUrlInput : undefined),
+          manualUrl: effectiveManualUrl,
+          prefetchedAnimecix: prefetchedAnimecix || undefined,
         }),
       });
 

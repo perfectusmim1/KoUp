@@ -442,8 +442,9 @@ def run_gap_backfill(limit: int = 15) -> int:
             sync_ddizi_target, sync_dizibox_target, sync_dizikorea_target,
             sync_dizifon_target, sync_asyawatch_target, sync_animecix_target,
             sync_bldrama_target, sync_asyaanimeleri_target, sync_hdfilm_target,
-            sync_drama_bundle_and_counts,
         )
+        from scrapers.supabase_sync_helper import sync_drama_bundle_and_counts
+        from scrapers.multisite import safe_commit
 
         resolved_count = 0
         for did, dtitle, dsrc, min_e, max_e, cnt_e in gap_dramas:
