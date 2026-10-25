@@ -106,6 +106,9 @@ export interface PersonItem {
   also_known_as?: string[] | null;
   blood_type?: string | null;
   height?: string | null;
+  race?: string | null;
+  weight?: string | null;
+  aliases_text?: string | null;
   favorites_count: number;
   followers_count: number;
   comments_count: number;

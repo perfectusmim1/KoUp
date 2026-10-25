@@ -201,6 +201,50 @@ function resolveActorNationality(
   };
 }
 
+// Helper to clean leftover raw attribute key-value prefixes from translated bio strings
+function parseBioAndExtractSpecs(
+  bioTr?: string | null,
+  person?: PersonItem | null
+): {
+  cleanBio: string;
+  race?: string | null;
+  height?: string | null;
+  birthYear?: string | null;
+} {
+  if (!bioTr) return { cleanBio: '' };
+
+  let race = person?.race || null;
+  let height = person?.height || null;
+  let birthYear: string | null = null;
+
+  // Extract from raw bio text if missing
+  if (!race) {
+    const m = bioTr.match(/(?:Irk|Race)\s*:\s*([^.\n]+?)(?=\s+(?:Boy|Doğum|Height|Age|Kan|Cinsiyet)|[.|\n]|$)/i);
+    if (m && m[1] && m[1].trim()) {
+      race = m[1].trim();
+    }
+  }
+
+  if (!height) {
+    const m = bioTr.match(/(?:Boy|Height)\s*:\s*([^.\n]+?)(?=\s+(?:Doğum|Irk|Race|Age|Kan|Cinsiyet)|[.|\n]|$)/i);
+    if (m && m[1] && m[1].trim()) {
+      height = m[1].trim();
+    }
+  }
+
+  const mYear = bioTr.match(/(?:Doğum Yılı|Birth Year)\s*:\s*([^.\n]+?)(?=\s+(?:Yaş|Boy|Irk|Kan)|[.|\n]|$)/i);
+  if (mYear && mYear[1] && mYear[1].trim()) {
+    birthYear = mYear[1].trim();
+  }
+
+  // Strip attribute key-value header prefixes
+  const clean = bioTr
+    .replace(/^(?:(?:Irk|Race|Boy|Height|Doğum Yılı|Doğum Tarihi|Yaş|Age|Cinsiyet|Gender|Kan Grubu|Blood Type)\s*:[^.\n]*[.|\n]?\s*)+/gi, '')
+    .trim();
+
+  return { cleanBio: clean || bioTr, race, height, birthYear };
+}
+
 export default function PersonDetailPage({
   params,
 }: {
@@ -229,7 +273,7 @@ export default function PersonDetailPage({
 
       try {
         const bundle = await cachedQuery<PersonBundle>(
-          `person_v6_${cleanSlug}`,
+          `person_v7_${cleanSlug}`,
           60_000, // 1 minute TTL for instant hydration + fresh actor sync
           async () => {
             let { data: pData } = await supabase
@@ -569,64 +613,117 @@ export default function PersonDetailPage({
             <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight">
               {person.name}
             </h1>
-            {person.native_name && (
-              <div className="text-base text-white/55 mt-1">{person.native_name}</div>
-            )}
+            {(() => {
+              const subItems: string[] = [];
+              if (person.native_name) subItems.push(person.native_name);
+              if (person.also_known_as && person.also_known_as.length > 0) {
+                const uniqueAliases = person.also_known_as.filter(
+                  (a) => a.toLowerCase() !== person.name.toLowerCase() && a !== person.native_name
+                );
+                subItems.push(...uniqueAliases.slice(0, 5));
+              }
+              if (subItems.length === 0) return null;
+              return (
+                <div className="text-sm sm:text-base text-white/60 mt-1 font-medium tracking-wide">
+                  {subItems.join(', ')}
+                </div>
+              );
+            })()}
           </div>
 
-          {/* Wiki-Style Interactive Biography with Series Hovercards */}
-          <div className="max-w-3xl">
-            <WikiBioText
-              text={person.bio_tr}
-              credits={credits}
-              personName={person.name}
-              fallbackText={`${person.name}, KoUp arşivindeki ${credits.length} yapımda yer almaktadır.`}
-            />
-          </div>
+          {/* Wiki-Style Interactive Biography with Series & Character Hovercards */}
+          {(() => {
+            const { cleanBio, race: extRace, height: extHeight, birthYear: extBirthYear } = parseBioAndExtractSpecs(person.bio_tr, person);
+            const activeRace = person.race || extRace;
+            const activeHeight = person.height || extHeight;
+            const activeBirth = formatBirthDate(person.birth_date, person.death_date);
+            const nat = resolveActorNationality(person, credits);
 
-          {/* DETAILED ACTOR / CHARACTER METADATA SPECS BAR */}
-          {(person.gender || person.birth_date || person.place_of_birth || person.country_code || (person.also_known_as && person.also_known_as.length > 0) || person.blood_type) && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 pt-1 max-w-3xl text-left">
-              {person.gender && (
-                <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
-                  <User className="w-4 h-4 text-sky-400 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Cinsiyet</div>
-                    <div className="text-xs font-semibold text-white/90 truncate">{person.gender}</div>
-                  </div>
+            return (
+              <>
+                <div className="max-w-3xl">
+                  <WikiBioText
+                    text={cleanBio}
+                    credits={credits}
+                    coStars={coStars}
+                    personName={person.name}
+                    fallbackText={`${person.name}, KoUp arşivindeki ${credits.length} yapımda yer almaktadır.`}
+                  />
                 </div>
-              )}
 
-              {formatBirthDate(person.birth_date, person.death_date) && (
-                <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
-                  <Calendar className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Doğum & Yaş</div>
-                    <div className="text-xs font-semibold text-white/90">
-                      <div>{formatBirthDate(person.birth_date, person.death_date)?.formatted}</div>
-                      <span className="text-[10px] text-emerald-400 font-mono font-bold">
-                        {formatBirthDate(person.birth_date, person.death_date)?.ageText}
-                      </span>
+                {/* DETAILED ACTOR / CHARACTER METADATA SPECS BAR (Up to 8-9 clean responsive cards) */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1 max-w-4xl text-left">
+                  {/* 1. Cinsiyet */}
+                  {person.gender && (
+                    <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
+                      <User className="w-4 h-4 text-sky-400 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Cinsiyet</div>
+                        <div className="text-xs font-semibold text-white/90 truncate">{person.gender}</div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              )}
+                  )}
 
-              {person.death_date && (
-                <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
-                  <Activity className="w-4 h-4 text-rose-400 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Vefat Tarihi</div>
-                    <div className="text-xs font-semibold text-rose-300">
-                      {new Date(person.death_date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  {/* 2. Irk / Tür */}
+                  {activeRace && (
+                    <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
+                      <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Irk / Tür</div>
+                        <div className="text-xs font-semibold text-emerald-300 truncate">{activeRace}</div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              )}
+                  )}
 
-              {(() => {
-                const nat = resolveActorNationality(person, credits);
-                return (
+                  {/* 3. Boy */}
+                  {activeHeight && (
+                    <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
+                      <Activity className="w-4 h-4 text-indigo-400 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Boy</div>
+                        <div className="text-xs font-semibold text-white/90 truncate">{activeHeight}</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 4. Doğum Tarihi & Yaş */}
+                  {(activeBirth || extBirthYear || person.birth_date) && (
+                    <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
+                      <Calendar className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">
+                          {person.person_type === 'character' ? 'Yaş / Doğum' : 'Doğum & Yaş'}
+                        </div>
+                        <div className="text-xs font-semibold text-white/90 truncate">
+                          {activeBirth ? (
+                            <>
+                              <div>{activeBirth.formatted}</div>
+                              <span className="text-[10px] text-emerald-400 font-mono font-bold">
+                                {activeBirth.ageText}
+                              </span>
+                            </>
+                          ) : (
+                            <div>{person.birth_date || extBirthYear}</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 5. Vefat Tarihi */}
+                  {person.death_date && (
+                    <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
+                      <Activity className="w-4 h-4 text-rose-400 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Vefat Tarihi</div>
+                        <div className="text-xs font-semibold text-rose-300">
+                          {new Date(person.death_date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 6. Ülke / Doğum Yeri */}
                   <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
                     <MapPin className="w-4 h-4 text-amber-400 shrink-0" />
                     <div className="min-w-0">
@@ -637,32 +734,46 @@ export default function PersonDetailPage({
                       </div>
                     </div>
                   </div>
-                );
-              })()}
 
-              {person.blood_type && (
-                <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
-                  <Activity className="w-4 h-4 text-red-400 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Kan Grubu</div>
-                    <div className="text-xs font-semibold text-white/90">{person.blood_type}</div>
-                  </div>
-                </div>
-              )}
-
-              {person.also_known_as && person.also_known_as.length > 0 && (
-                <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
-                  <Globe className="w-4 h-4 text-purple-400 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Diğer İsimleri</div>
-                    <div className="text-xs font-semibold text-white/80 truncate">
-                      {person.also_known_as.slice(0, 2).join(', ')}
+                  {/* 7. Kan Grubu */}
+                  {person.blood_type && (
+                    <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
+                      <Activity className="w-4 h-4 text-red-400 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Kan Grubu</div>
+                        <div className="text-xs font-semibold text-white/90">{person.blood_type}</div>
+                      </div>
                     </div>
-                  </div>
+                  )}
+
+                  {/* 8. Diğer İsimleri */}
+                  {person.also_known_as && person.also_known_as.length > 0 && (
+                    <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
+                      <Globe className="w-4 h-4 text-purple-400 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Diğer İsimleri</div>
+                        <div className="text-xs font-semibold text-white/80 truncate" title={person.also_known_as.join(', ')}>
+                          {person.also_known_as.slice(0, 3).join(', ')}
+                          {person.also_known_as.length > 3 ? ` (+${person.also_known_as.length - 3})` : ''}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 9. Orijinal İsim */}
+                  {person.native_name && (
+                    <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center gap-2.5">
+                      <Globe className="w-4 h-4 text-cyan-400 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Orijinal İsim</div>
+                        <div className="text-xs font-semibold text-cyan-300 truncate">{person.native_name}</div>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          )}
+              </>
+            );
+          })()}
 
           {/* Action Buttons: Favorite (Heart), Follow (Bell) */}
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 pt-2">

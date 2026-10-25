@@ -97,7 +97,8 @@ export default function ActorsLeaderboardPage() {
           query = query.eq('person_type', filterType);
         }
         if (searchQuery.trim().length >= 2) {
-          query = query.ilike('name', `%${searchQuery.trim()}%`);
+          const q = searchQuery.trim();
+          query = query.or(`name.ilike.%${q}%,native_name.ilike.%${q}%,aliases_text.ilike.%${q}%`);
         }
         if (sortBy === 'favs') {
           query = query

@@ -210,6 +210,8 @@ export async function GET(req: NextRequest) {
     let countryCode: string | null = dbPerson?.country_code || null;
     let alsoKnownAs: string[] = dbPerson?.also_known_as || [];
     let bloodType: string | null = dbPerson?.blood_type || null;
+    let height: string | null = dbPerson?.height || null;
+    let race: string | null = dbPerson?.race || null;
     let tmdbId: number | null = paramTmdbId || dbPerson?.tmdb_id || null;
     let anilistId: number | null = dbPerson?.anilist_id || null;
 
@@ -217,13 +219,14 @@ export async function GET(req: NextRequest) {
     if (personType === 'character') {
       try {
         const anilistQuery = `
-          query ($search: String) {
-            Character(search: $search) {
+          query ($search: String, $id: Int) {
+            Character(search: $search, id: $id) {
               id
-              name { full native alternative }
+              name { full native alternative alternativeSpoiler }
               gender
               dateOfBirth { year month day }
               bloodType
+              age
               description
             }
           }
@@ -236,7 +239,7 @@ export async function GET(req: NextRequest) {
           },
           body: JSON.stringify({
             query: anilistQuery,
-            variables: { search: cleanName },
+            variables: anilistId ? { id: anilistId } : { search: cleanName },
           }),
           signal: AbortSignal.timeout(5000),
         });
@@ -246,21 +249,54 @@ export async function GET(req: NextRequest) {
           const char = aData?.data?.Character;
           if (char) {
             anilistId = char.id;
-            if (char.description) englishBio = cleanAniListBio(char.description);
+            const rawDesc = char.description || '';
+
+            // Extract structured attributes before stripping
+            const mRace = rawDesc.match(/(?:__|[*]{1,2})?Race:(?:__|[*]{1,2})?\s*(?:~!)?(.*?)(?:!~)?(?:\n|$)/i);
+            if (mRace && mRace[1]) {
+              const rVal = mRace[1].replace(/[~!_*]/g, '').trim();
+              if (rVal) race = rVal;
+            }
+
+            const mHeight = rawDesc.match(/(?:__|[*]{1,2})?Height:(?:__|[*]{1,2})?\s*(.*?)(?:\n|$)/i);
+            if (mHeight && mHeight[1]) {
+              const hVal = mHeight[1].replace(/[~!_*]/g, '').trim();
+              if (hVal) height = hVal;
+            }
+
+            const mBirth = rawDesc.match(/(?:__|[*]{1,2})?Birth Year:(?:__|[*]{1,2})?\s*(.*?)(?:\n|$)/i);
+            if (mBirth && mBirth[1]) {
+              const bVal = mBirth[1].replace(/[~!_*]/g, '').trim();
+              if (bVal && !birthDate) birthDate = bVal;
+            }
+
+            // Strip top key-values from description so narrative text starts cleanly
+            const cleanDesc = rawDesc.replace(/^(?:(?:__|[*]{1,2})?(?:Race|Height|Weight|Birth Year|Age|Gender|Blood Type|Affiliation):(.*?)(?:\n|$)\s*)+/gi, '').trim();
+
+            if (cleanDesc) englishBio = cleanAniListBio(cleanDesc);
+
             if (char.gender) {
               const g = char.gender.toLowerCase();
               genderStr = g.includes('female') ? 'Kadın' : g.includes('male') ? 'Erkek' : char.gender;
             }
             if (char.name?.native && !nativeName) nativeName = char.name.native;
-            if (Array.isArray(char.name?.alternative)) {
-              alsoKnownAs = Array.from(new Set([...alsoKnownAs, ...char.name.alternative])).slice(0, 8);
+
+            const allAlt = [
+              ...(Array.isArray(char.name?.alternative) ? char.name.alternative : []),
+              ...(Array.isArray(char.name?.alternativeSpoiler) ? char.name.alternativeSpoiler : []),
+            ].filter(Boolean);
+            if (allAlt.length > 0) {
+              alsoKnownAs = Array.from(new Set([...alsoKnownAs, ...allAlt])).slice(0, 12);
             }
+
             if (char.bloodType) bloodType = char.bloodType;
             if (char.dateOfBirth?.year && char.dateOfBirth?.month && char.dateOfBirth?.day) {
               const y = String(char.dateOfBirth.year);
               const m = String(char.dateOfBirth.month).padStart(2, '0');
               const d = String(char.dateOfBirth.day).padStart(2, '0');
               birthDate = `${y}-${m}-${d}`;
+            } else if (char.age && !birthDate) {
+              birthDate = `${char.age} Yaşında`;
             }
           }
         }
@@ -384,6 +420,8 @@ export async function GET(req: NextRequest) {
       if (nativeName) updatePayload.native_name = nativeName;
       if (alsoKnownAs.length > 0) updatePayload.also_known_as = alsoKnownAs;
       if (bloodType) updatePayload.blood_type = bloodType;
+      if (height) updatePayload.height = height;
+      if (race) updatePayload.race = race;
       if (tmdbId) updatePayload.tmdb_id = tmdbId;
       if (anilistId) updatePayload.anilist_id = anilistId;
 
@@ -438,6 +476,8 @@ export async function GET(req: NextRequest) {
         country_code: countryCode,
         also_known_as: alsoKnownAs,
         blood_type: bloodType,
+        height: height,
+        race: race,
         bio_tr: turkishBio,
       },
       bio_tr: turkishBio || null,

@@ -303,8 +303,8 @@ export default function Navbar() {
           try {
             const pRes = await supabase
               .from('people')
-              .select('id, slug, name, native_name, person_type, image_url, favorites_count')
-              .or(`name.ilike.%${normalized}%,native_name.ilike.%${raw}%`)
+              .select('id, slug, name, native_name, person_type, image_url, favorites_count, also_known_as')
+              .or(`name.ilike.%${normalized}%,native_name.ilike.%${raw}%,aliases_text.ilike.%${raw}%`)
               .order('favorites_count', { ascending: false })
               .limit(4);
             if (pRes.data && Array.isArray(pRes.data)) {

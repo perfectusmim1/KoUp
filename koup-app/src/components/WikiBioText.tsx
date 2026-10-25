@@ -4,23 +4,25 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Film, Star, ChevronRight, Play, Sparkles, BookOpen, ChevronDown, ChevronUp } from 'lucide-react';
+import { Film, Star, ChevronRight, Play, Sparkles, BookOpen, ChevronDown, ChevronUp, User, Heart } from 'lucide-react';
 import {
   MediaItem,
   CastMember,
+  PersonItem,
   getProxiedImageUrl,
   formatContentTypeTR,
   cleanOverviewText,
   supabase,
 } from '@/lib/supabase';
 
-// Common words to ignore when scanning for titles to avoid false positives
+// Common words to ignore when scanning for titles and names to avoid false positives
 const STOP_WORDS = new Set([
   'the', 'and', 'for', 'you', 'love', 'in', 'of', 'to', 'a', 'an', 'tv', 'drama',
   'dizi', 'dizisi', 'dizileri', 'film', 'filmi', 'filmleri', 'anime', 'kore',
   'güney kore', 'south korea', 'bir', 've', 'ile', 'veya', 'ben', 'sen', 'o',
   'rol', 'rolleri', 'rolleriyle', 'başrol', 'oyuncu', 'oyuncusu', 'aktris', 'aktör',
-  'hangul', 'hanja', 'doğumlu', 'dikkat', 'çekti', 'yılında', 'başladı', 'yer', 'aldı'
+  'hangul', 'hanja', 'doğumlu', 'dikkat', 'çekti', 'yılında', 'başladı', 'yer', 'aldı',
+  'son', 'karakter', 'karakteri', 'bölüm', 'sezon', 'hikaye', 'hikayesi'
 ]);
 
 function getCountryFlag(code?: string | null): string {
@@ -44,15 +46,15 @@ function getCountryFlag(code?: string | null): string {
   return '🌐';
 }
 
-interface ActiveHoverState {
-  media: MediaItem;
-  rect: DOMRect;
-  showBelow: boolean;
-}
+export type ActiveHoverState =
+  | { type: 'media'; media: MediaItem; rect: DOMRect; showBelow: boolean }
+  | { type: 'character'; person: PersonItem; rect: DOMRect; showBelow: boolean };
 
-interface WikiBioTextProps {
+export interface WikiBioTextProps {
   text?: string | null;
   credits?: CastMember[];
+  coStars?: PersonItem[];
+  characters?: PersonItem[];
   personName?: string;
   fallbackText?: string;
   className?: string;
@@ -61,11 +63,14 @@ interface WikiBioTextProps {
 export default function WikiBioText({
   text,
   credits = [],
+  coStars = [],
+  characters = [],
   personName = '',
   fallbackText,
   className = '',
 }: WikiBioTextProps) {
   const [extraMediaMap, setExtraMediaMap] = useState<Record<string, MediaItem>>({});
+  const [extraPeopleMap, setExtraPeopleMap] = useState<Record<string, PersonItem>>({});
   const [activeHover, setActiveHover] = useState<ActiveHoverState | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [hasOverflow, setHasOverflow] = useState(false);
@@ -112,7 +117,37 @@ export default function WikiBioText({
     return map;
   }, [credits, personName]);
 
-  // 2. Discover potential external titles mentioned in bio like "Title (YYYY)" that might not be in credits
+  // 2. Build initial character / person lookup map from coStars + characters
+  const initialPeopleMap = useMemo(() => {
+    const map = new Map<string, PersonItem>();
+    const lowerPerson = personName.trim().toLowerCase();
+    const allPeers = [...coStars, ...characters];
+
+    for (const p of allPeers) {
+      if (!p || !p.name) continue;
+      const candidates = [
+        p.name,
+        p.native_name,
+        ...(Array.isArray(p.also_known_as) ? p.also_known_as : []),
+      ].filter(Boolean) as string[];
+
+      for (const raw of candidates) {
+        const cleaned = raw.trim();
+        const low = cleaned.toLowerCase();
+        if (
+          cleaned.length >= 2 &&
+          !STOP_WORDS.has(low) &&
+          low !== lowerPerson &&
+          !/^\d+$/.test(cleaned)
+        ) {
+          map.set(low, p);
+        }
+      }
+    }
+    return map;
+  }, [coStars, characters, personName]);
+
+  // 3. Discover potential external titles mentioned in bio like "Title (YYYY)"
   useEffect(() => {
     if (!text) return;
 
@@ -172,7 +207,67 @@ export default function WikiBioText({
     };
   }, [text, creditsMediaMap, extraMediaMap, personName]);
 
-  // 3. Combined map of known titles -> MediaItem
+  // 4. Discover potential character links like [Bulma](...) or standalone character names
+  useEffect(() => {
+    if (!text) return;
+
+    // Check markdown links e.g. [Bulma](https://anilist.co/character/678/Bulma)
+    const mdMatches = text.match(/\[([^\]]+)\]\([^)]+\)/g) || [];
+    const discoveredNames = mdMatches.map((m) => m.replace(/\[([^\]]+)\]\([^)]+\)/, '$1').trim());
+
+    // Also look for prominent Anime characters commonly referenced in bios
+    const candidatesToFetch: string[] = [];
+    for (const n of discoveredNames) {
+      const low = n.toLowerCase();
+      if (
+        n.length >= 2 &&
+        !STOP_WORDS.has(low) &&
+        !initialPeopleMap.has(low) &&
+        !extraPeopleMap[low] &&
+        low !== personName.trim().toLowerCase()
+      ) {
+        candidatesToFetch.push(n);
+      }
+    }
+
+    if (candidatesToFetch.length === 0) return;
+
+    let isCancelled = false;
+    async function fetchMissingPeople() {
+      try {
+        const { data } = await supabase
+          .from('people')
+          .select('id, slug, name, native_name, person_type, country_code, image_url, favorites_count, gender, blood_type, height, race, also_known_as')
+          .in('name', candidatesToFetch.slice(0, 8));
+
+        if (data && data.length > 0 && !isCancelled) {
+          setExtraPeopleMap((prev) => {
+            const next = { ...prev };
+            for (const p of data as PersonItem[]) {
+              if (p.name) next[p.name.toLowerCase()] = p;
+              if (p.native_name) next[p.native_name.toLowerCase()] = p;
+              if (Array.isArray(p.also_known_as)) {
+                for (const a of p.also_known_as) {
+                  if (typeof a === 'string' && a.length >= 2) next[a.toLowerCase()] = p;
+                }
+              }
+            }
+            return next;
+          });
+        }
+      } catch (err) {
+        console.error('Failed to auto-resolve bio character names:', err);
+      }
+    }
+
+    fetchMissingPeople();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [text, initialPeopleMap, extraPeopleMap, personName]);
+
+  // 5. Combined map of known titles -> MediaItem
   const allMediaMap = useMemo(() => {
     const combined = new Map<string, MediaItem>(creditsMediaMap);
     for (const [key, val] of Object.entries(extraMediaMap)) {
@@ -183,15 +278,32 @@ export default function WikiBioText({
     return combined;
   }, [creditsMediaMap, extraMediaMap]);
 
-  // 4. Sorted candidates (longest first to avoid greedy substring collisions)
-  const sortedCandidateKeys = useMemo(() => {
-    return Array.from(allMediaMap.keys()).sort((a, b) => b.length - a.length);
-  }, [allMediaMap]);
+  // 6. Combined map of known characters / people -> PersonItem
+  const allPeopleMap = useMemo(() => {
+    const combined = new Map<string, PersonItem>(initialPeopleMap);
+    for (const [key, val] of Object.entries(extraPeopleMap)) {
+      if (!combined.has(key)) {
+        combined.set(key, val);
+      }
+    }
+    return combined;
+  }, [initialPeopleMap, extraPeopleMap]);
 
-  // 5. Build regex and parse text into segments
+  // 7. Combined and sorted candidates (longest first to avoid greedy substring collisions)
+  const sortedCandidateKeys = useMemo(() => {
+    const allKeys = new Set([...allMediaMap.keys(), ...allPeopleMap.keys()]);
+    return Array.from(allKeys).sort((a, b) => b.length - a.length);
+  }, [allMediaMap, allPeopleMap]);
+
+  // 8. Build regex and parse text into segments
   const bioSegments = useMemo(() => {
-    const rawContent = (text || fallbackText || '').trim();
-    if (!rawContent || sortedCandidateKeys.length === 0) {
+    let rawContent = (text || fallbackText || '').trim();
+    if (!rawContent) return [];
+
+    // Clean any markdown link syntax [Name](url) into clean Name
+    rawContent = rawContent.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+
+    if (sortedCandidateKeys.length === 0) {
       return [{ type: 'text' as const, content: rawContent }];
     }
 
@@ -205,6 +317,7 @@ export default function WikiBioText({
     const segments: Array<
       | { type: 'text'; content: string }
       | { type: 'media'; content: string; media: MediaItem }
+      | { type: 'character'; content: string; person: PersonItem }
     > = [];
 
     let lastIdx = 0;
@@ -214,6 +327,7 @@ export default function WikiBioText({
       const matchStart = m.index;
       const matchEnd = regex.lastIndex;
       const matchedString = m[0];
+      const low = matchedString.toLowerCase();
 
       if (matchStart > lastIdx) {
         segments.push({
@@ -222,8 +336,17 @@ export default function WikiBioText({
         });
       }
 
-      const mediaObj = allMediaMap.get(matchedString.toLowerCase());
-      if (mediaObj) {
+      // People / Characters take priority, then media titles
+      const personObj = allPeopleMap.get(low);
+      const mediaObj = allMediaMap.get(low);
+
+      if (personObj) {
+        segments.push({
+          type: 'character',
+          content: matchedString,
+          person: personObj,
+        });
+      } else if (mediaObj) {
         segments.push({
           type: 'media',
           content: matchedString,
@@ -247,10 +370,10 @@ export default function WikiBioText({
     }
 
     return segments;
-  }, [text, fallbackText, sortedCandidateKeys, allMediaMap]);
+  }, [text, fallbackText, sortedCandidateKeys, allMediaMap, allPeopleMap]);
 
   // Handlers for hovercard interactions
-  const handleLinkMouseEnter = useCallback(
+  const handleMediaMouseEnter = useCallback(
     (media: MediaItem, element: HTMLElement) => {
       if (closeTimerRef.current) {
         clearTimeout(closeTimerRef.current);
@@ -262,13 +385,36 @@ export default function WikiBioText({
         const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 900;
         const spaceBelow = viewportHeight - rect.bottom;
         const POPOVER_HEIGHT = 240;
-
-        // User preference: "wiki iyi hoş ama yazının altında çıksın"
-        // Always prefer showing BELOW the text, unless there is physically no space at the bottom
         const showBelow = spaceBelow >= POPOVER_HEIGHT || spaceBelow >= rect.top;
 
         setActiveHover({
+          type: 'media',
           media,
+          rect,
+          showBelow,
+        });
+      }, 100);
+    },
+    []
+  );
+
+  const handleCharacterMouseEnter = useCallback(
+    (person: PersonItem, element: HTMLElement) => {
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+
+      hoverTimerRef.current = setTimeout(() => {
+        const rect = element.getBoundingClientRect();
+        const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 900;
+        const spaceBelow = viewportHeight - rect.bottom;
+        const POPOVER_HEIGHT = 200;
+        const showBelow = spaceBelow >= POPOVER_HEIGHT || spaceBelow >= rect.top;
+
+        setActiveHover({
+          type: 'character',
+          person,
           rect,
           showBelow,
         });
@@ -349,12 +495,27 @@ export default function WikiBioText({
             return <React.Fragment key={idx}>{segment.content}</React.Fragment>;
           }
 
+          if (segment.type === 'character') {
+            const p = segment.person;
+            return (
+              <Link
+                key={idx}
+                href={`/oyuncu/${p.slug || p.id}`}
+                onMouseEnter={(e) => handleCharacterMouseEnter(p, e.currentTarget)}
+                onMouseLeave={handleLinkMouseLeave}
+                className="inline-flex items-center gap-0.5 text-emerald-400 hover:text-emerald-300 font-semibold underline decoration-emerald-400/40 hover:decoration-emerald-300 underline-offset-4 px-1 py-0.5 -mx-0.5 rounded-md hover:bg-emerald-500/10 transition-colors duration-150 cursor-pointer"
+              >
+                <span>{segment.content}</span>
+              </Link>
+            );
+          }
+
           const m = segment.media;
           return (
             <Link
               key={idx}
               href={`/seri/${m.slug || m.id}`}
-              onMouseEnter={(e) => handleLinkMouseEnter(m, e.currentTarget)}
+              onMouseEnter={(e) => handleMediaMouseEnter(m, e.currentTarget)}
               onMouseLeave={handleLinkMouseLeave}
               className="inline-flex items-center gap-0.5 text-sky-400 hover:text-sky-300 font-semibold underline decoration-sky-400/40 hover:decoration-sky-300 underline-offset-4 px-1 py-0.5 -mx-0.5 rounded-md hover:bg-sky-500/10 transition-colors duration-150 cursor-pointer"
             >
@@ -364,7 +525,7 @@ export default function WikiBioText({
         })}
       </div>
 
-      {/* Expand / Collapse toggle: Rendered ONLY when text actually exceeds 4 lines */}
+      {/* Expand / Collapse toggle */}
       {hasOverflow && (
         <button
           type="button"
@@ -386,7 +547,7 @@ export default function WikiBioText({
         createPortal(
           <AnimatePresence>
             {activeHover && (
-              <WikiHoverCard
+              <WikiHoverCardPortal
                 state={activeHover}
                 onMouseEnter={handleCardMouseEnter}
                 onMouseLeave={handleCardMouseLeave}
@@ -403,19 +564,16 @@ export default function WikiBioText({
 // Dedicated Wiki Hovercard Component (rendered inside React Portal)
 // ----------------------------------------------------------------------
 
-interface WikiHoverCardProps {
+interface WikiHoverCardPortalProps {
   state: ActiveHoverState;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
 }
 
-function WikiHoverCard({ state, onMouseEnter, onMouseLeave }: WikiHoverCardProps) {
-  const { media, rect, showBelow } = state;
-
+function WikiHoverCardPortal({ state, onMouseEnter, onMouseLeave }: WikiHoverCardPortalProps) {
+  const { rect, showBelow } = state;
   const POPOVER_WIDTH = 320;
-  const POPOVER_ESTIMATED_HEIGHT = 230;
 
-  // Compute fixed coordinates relative to viewport
   const top = showBelow
     ? rect.bottom + 8
     : Math.max(12, rect.top - 8);
@@ -427,18 +585,6 @@ function WikiHoverCard({ state, onMouseEnter, onMouseLeave }: WikiHoverCardProps
       rect.left + rect.width / 2 - POPOVER_WIDTH / 2
     )
   );
-
-  const ratingVal =
-    media.site_rating ||
-    media.rating ||
-    media.mdl_rating ||
-    media.imdb_rating ||
-    0;
-
-  const isFilm = media.content_type === 'film' || media.content_type === 'movie';
-  const flag = getCountryFlag(media.country_code);
-  const typeLabel = formatContentTypeTR(media.content_type, media.country_code);
-  const overviewClean = cleanOverviewText(media.overview);
 
   return (
     <motion.div
@@ -458,138 +604,240 @@ function WikiHoverCard({ state, onMouseEnter, onMouseLeave }: WikiHoverCardProps
       }}
       className="rounded-2xl bg-[#0e0e13]/95 backdrop-blur-2xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_25px_rgba(56,189,248,0.18)] overflow-hidden pointer-events-auto select-none"
     >
-      <Link
-        href={`/seri/${media.slug || media.id}`}
-        className="block group cursor-pointer"
-      >
-        {/* Top Mini Backdrop Banner */}
-        <div className="h-16 relative overflow-hidden bg-black/60 border-b border-white/[0.08]">
-          {media.backdrop_image || media.cover_image ? (
-            <img
-              src={getProxiedImageUrl(
-                media.backdrop_image || media.cover_image,
-                media.title
-              )}
-              alt=""
-              loading="lazy"
-              decoding="async"
-              className="w-full h-full object-cover opacity-35 filter blur-xs group-hover:scale-105 transition-transform duration-500"
-            />
-          ) : (
-            <div className="w-full h-full bg-gradient-to-r from-sky-500/10 via-purple-500/10 to-transparent" />
-          )}
-          <div className="absolute inset-0 bg-gradient-to-t from-[#0e0e13] via-[#0e0e13]/60 to-transparent" />
+      {state.type === 'character' ? (
+        <CharacterHoverCardContent person={state.person} />
+      ) : (
+        <MediaHoverCardContent media={state.media} />
+      )}
+    </motion.div>
+  );
+}
 
-          {/* Floating Badges over banner */}
-          <div className="absolute top-2 left-2.5 right-2.5 flex items-center justify-between pointer-events-none">
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-[10px] font-mono text-white/90">
-              <span>{flag}</span>
-              <span>{typeLabel}</span>
-              {media.release_year ? <span>• {media.release_year}</span> : null}
+function CharacterHoverCardContent({ person }: { person: PersonItem }) {
+  const flag = getCountryFlag(person.country_code);
+  const typeLabel =
+    person.person_type === 'character'
+      ? 'Anime Karakteri'
+      : person.person_type === 'seiyuu'
+      ? 'Seslendirmen'
+      : 'Oyuncu';
+
+  return (
+    <Link
+      href={`/oyuncu/${person.slug || person.id}`}
+      className="block group cursor-pointer"
+    >
+      {/* Top Banner */}
+      <div className="h-14 relative overflow-hidden bg-gradient-to-r from-emerald-600/25 via-teal-500/15 to-purple-600/20 border-b border-white/[0.08]">
+        <div className="absolute inset-0 bg-black/40 backdrop-blur-md" />
+        <div className="absolute top-2 left-2.5 right-2.5 flex items-center justify-between pointer-events-none">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-[10px] font-mono text-white/90">
+            <span>{flag}</span>
+            <span>{typeLabel}</span>
+          </span>
+
+          {person.favorites_count > 0 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/20 backdrop-blur-md border border-rose-400/30 text-rose-300 text-[10px] font-mono font-bold">
+              <Heart className="w-3 h-3 fill-rose-400 text-rose-400" />
+              <span>{person.favorites_count}</span>
             </span>
+          )}
+        </div>
+      </div>
 
-            {ratingVal > 0 && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 backdrop-blur-md border border-amber-400/30 text-amber-300 text-[10px] font-mono font-bold">
-                <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                <span>{ratingVal.toFixed(1)}</span>
+      {/* Profile Body */}
+      <div className="p-3.5 flex items-start gap-3">
+        <div className="w-14 h-14 rounded-2xl overflow-hidden border border-white/20 shadow-lg shrink-0 bg-black/50 -mt-6 relative z-10">
+          <img
+            src={getProxiedImageUrl(person.image_url, person.name, null, 'w500', 'person')}
+            alt={person.name}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <h4 className="text-sm font-bold text-white group-hover:text-emerald-300 transition-colors truncate">
+            {person.name}
+          </h4>
+          {person.native_name && (
+            <div className="text-[11px] text-white/50 truncate font-mono">{person.native_name}</div>
+          )}
+
+          {/* Quick Specs */}
+          <div className="flex flex-wrap items-center gap-1.5 mt-2">
+            {person.gender && (
+              <span className="px-1.5 py-0.5 rounded-md text-[9px] font-mono bg-white/[0.06] text-white/70 border border-white/10">
+                {person.gender}
+              </span>
+            )}
+            {person.race && (
+              <span className="px-1.5 py-0.5 rounded-md text-[9px] font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-400/20">
+                {person.race}
+              </span>
+            )}
+            {person.blood_type && (
+              <span className="px-1.5 py-0.5 rounded-md text-[9px] font-mono bg-red-500/15 text-red-300 border border-red-400/20">
+                Kan: {person.blood_type}
               </span>
             )}
           </div>
         </div>
+      </div>
 
-        {/* Content Body */}
-        <div className="p-3.5 pt-2">
-          <div className="flex gap-3">
-            {/* Poster Thumbnail */}
-            <div className="w-16 h-24 rounded-xl overflow-hidden shrink-0 border border-white/20 shadow-2xl bg-black/50 -mt-7 relative z-10">
-              {media.cover_image ? (
-                <img
-                  src={getProxiedImageUrl(media.cover_image, media.title)}
-                  alt={media.title}
-                  loading="lazy"
-                  decoding="async"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-white/30">
-                  <Film className="w-6 h-6" />
-                </div>
-              )}
-            </div>
+      {/* Bottom Action Footer */}
+      <div className="px-3.5 py-2 border-t border-white/[0.08] flex items-center justify-between text-[11px] font-bold text-emerald-400 group-hover:text-emerald-300 bg-white/[0.02]">
+        <span>Profili İncele</span>
+        <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+      </div>
+    </Link>
+  );
+}
 
-            {/* Title & Metadata */}
-            <div className="min-w-0 flex-1">
-              <h4 className="text-xs sm:text-sm font-extrabold text-white group-hover:text-sky-300 transition-colors line-clamp-1 leading-snug break-words">
-                {media.title}
-              </h4>
-              {media.native_title && media.native_title !== media.title && (
-                <div className="text-[10px] text-white/45 font-mono truncate mt-0.5">
-                  {media.native_title}
-                </div>
-              )}
+function MediaHoverCardContent({ media }: { media: MediaItem }) {
+  const ratingVal =
+    media.site_rating ||
+    media.rating ||
+    media.mdl_rating ||
+    media.imdb_rating ||
+    0;
 
-              {/* Episodes / Duration / Status */}
-              {isFilm ? (
-                <div className="flex items-center gap-2 mt-1.5 text-[10px] font-mono text-white/60">
-                  {media.duration_minutes && media.duration_minutes > 0 ? (
-                    <span>{media.duration_minutes} Dk</span>
-                  ) : (
-                    <span>Film</span>
-                  )}
-                </div>
-              ) : (
-                (media.episode_count || media.status_broadcast) && (
-                  <div className="flex items-center gap-2 mt-1.5 text-[10px] font-mono text-white/60">
-                    {media.episode_count ? (
-                      <span>{media.episode_count} Bölüm</span>
-                    ) : null}
-                    {media.episode_count && media.status_broadcast ? (
-                      <span>•</span>
-                    ) : null}
-                    {media.status_broadcast ? (
-                      <span className="text-sky-400">{media.status_broadcast}</span>
-                    ) : null}
-                  </div>
-                )
-              )}
+  const isFilm = media.content_type === 'film' || media.content_type === 'movie';
+  const flag = getCountryFlag(media.country_code);
+  const typeLabel = formatContentTypeTR(media.content_type, media.country_code);
+  const overviewClean = cleanOverviewText(media.overview);
 
-              {/* Category Pills */}
-              {Array.isArray(media.categories) && media.categories.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-1.5">
-                  {media.categories.slice(0, 2).map((cat, cIdx) => (
-                    <span
-                      key={cIdx}
-                      className="px-1.5 py-0.5 rounded-md bg-white/[0.06] border border-white/10 text-[9px] text-white/70 font-mono"
-                    >
-                      {cat}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
+  return (
+    <Link
+      href={`/seri/${media.slug || media.id}`}
+      className="block group cursor-pointer"
+    >
+      {/* Top Mini Backdrop Banner */}
+      <div className="h-16 relative overflow-hidden bg-black/60 border-b border-white/[0.08]">
+        {media.backdrop_image || media.cover_image ? (
+          <img
+            src={getProxiedImageUrl(
+              media.backdrop_image || media.cover_image,
+              media.title
+            )}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="w-full h-full object-cover opacity-35 filter blur-xs group-hover:scale-105 transition-transform duration-500"
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-r from-sky-500/10 via-purple-500/10 to-transparent" />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0e0e13] via-[#0e0e13]/60 to-transparent" />
+
+        {/* Floating Badges over banner */}
+        <div className="absolute top-2 left-2.5 right-2.5 flex items-center justify-between pointer-events-none">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-[10px] font-mono text-white/90">
+            <span>{flag}</span>
+            <span>{typeLabel}</span>
+            {media.release_year ? <span>• {media.release_year}</span> : null}
+          </span>
+
+          {ratingVal > 0 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 backdrop-blur-md border border-amber-400/30 text-amber-300 text-[10px] font-mono font-bold">
+              <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+              <span>{ratingVal.toFixed(1)}</span>
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Content Body */}
+      <div className="p-3.5 pt-2">
+        <div className="flex gap-3">
+          {/* Poster Thumbnail */}
+          <div className="w-16 h-24 rounded-xl overflow-hidden shrink-0 border border-white/20 shadow-2xl bg-black/50 -mt-7 relative z-10">
+            {media.cover_image ? (
+              <img
+                src={getProxiedImageUrl(media.cover_image, media.title)}
+                alt={media.title}
+                loading="lazy"
+                decoding="async"
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-white/30">
+                <Film className="w-6 h-6" />
+              </div>
+            )}
           </div>
 
-          {/* Overview Synopsis */}
-          {overviewClean && (
-            <p className="text-[11px] text-white/70 line-clamp-2 mt-2 leading-relaxed break-words">
-              {overviewClean}
-            </p>
-          )}
+          {/* Title & Metadata */}
+          <div className="min-w-0 flex-1">
+            <h4 className="text-xs sm:text-sm font-extrabold text-white group-hover:text-sky-300 transition-colors line-clamp-1 leading-snug break-words">
+              {media.title}
+            </h4>
+            {media.native_title && media.native_title !== media.title && (
+              <div className="text-[10px] text-white/45 font-mono truncate mt-0.5">
+                {media.native_title}
+              </div>
+            )}
 
-          {/* Footer Action */}
-          <div className="mt-2.5 pt-2 border-t border-white/[0.08] flex items-center justify-between text-xs">
-            <span className="inline-flex items-center gap-1.5 text-[10px] font-mono text-emerald-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>KoUp Arşivinde</span>
-            </span>
+            {/* Episodes / Duration / Status */}
+            {isFilm ? (
+              <div className="flex items-center gap-2 mt-1.5 text-[10px] font-mono text-white/60">
+                {media.duration_minutes && media.duration_minutes > 0 ? (
+                  <span>{media.duration_minutes} Dk</span>
+                ) : (
+                  <span>Film</span>
+                )}
+              </div>
+            ) : (
+              (media.episode_count || media.status_broadcast) && (
+                <div className="flex items-center gap-2 mt-1.5 text-[10px] font-mono text-white/60">
+                  {media.episode_count ? (
+                    <span>{media.episode_count} Bölüm</span>
+                  ) : null}
+                  {media.episode_count && media.status_broadcast ? (
+                    <span>•</span>
+                  ) : null}
+                  {media.status_broadcast ? (
+                    <span className="text-sky-400">{media.status_broadcast}</span>
+                  ) : null}
+                </div>
+              )
+            )}
 
-            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-400 group-hover:text-sky-300 group-hover:translate-x-0.5 transition-all">
-              <span>{isFilm ? 'Film Sayfasına Git' : 'Seri Sayfasına Git'}</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </span>
+            {/* Category Pills */}
+            {Array.isArray(media.categories) && media.categories.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1.5">
+                {media.categories.slice(0, 2).map((cat, cIdx) => (
+                  <span
+                    key={cIdx}
+                    className="px-1.5 py-0.5 rounded-md bg-white/[0.06] border border-white/10 text-[9px] text-white/70 font-mono"
+                  >
+                    {cat}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
-      </Link>
-    </motion.div>
+
+        {/* Overview Synopsis */}
+        {overviewClean && (
+          <p className="text-[11px] text-white/70 line-clamp-2 mt-2 leading-relaxed break-words">
+            {overviewClean}
+          </p>
+        )}
+
+        {/* Footer Action */}
+        <div className="mt-2.5 pt-2 border-t border-white/[0.08] flex items-center justify-between text-xs">
+          <span className="inline-flex items-center gap-1.5 text-[10px] font-mono text-emerald-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span>KoUp Arşivinde</span>
+          </span>
+
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-400 group-hover:text-sky-300 group-hover:translate-x-0.5 transition-all">
+            <span>{isFilm ? 'Film Sayfasına Git' : 'Seri Sayfasına Git'}</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </span>
+        </div>
+      </div>
+    </Link>
   );
 }
