@@ -40,13 +40,24 @@ export interface Anime4KOptions {
   onError?: (err: Error) => void;
 
   /**
+   * Callback fired when WebGL fails due to CORS / tainted canvas or texture upload error,
+   * triggering instant graceful fallback to native video.
+   */
+  onFallback?: (err: Error) => void;
+
+  /**
+   * Callback fired when a frame is rendered successfully to the WebGL canvas.
+   */
+  onRenderSuccess?: () => void;
+
+  /**
    * Periodic callback providing real-time rendering statistics.
    */
   onStatsUpdate?: (stats: Anime4KStats) => void;
 
   /**
    * Initial processing mode on creation.
-   * @default 'fast'
+   * @default 'off'
    */
   initialMode?: Anime4KMode;
 

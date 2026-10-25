@@ -4,6 +4,7 @@ import { Anime4KRenderer, Anime4KMode, Anime4KStats } from '@/lib/anime4k';
 export type { Anime4KMode, Anime4KStats };
 
 const STORAGE_KEY = 'koup_anime4k_mode';
+const RESET_KEY = 'koup_anime4k_v2_default_off';
 
 export interface UseAnime4KOptions {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -11,6 +12,7 @@ export interface UseAnime4KOptions {
   enabled: boolean; // Yalnızca native_hls ve native_mp4 durumunda true
   onFpsWarning?: (fps: number, downgradedTo: Anime4KMode) => void;
   onError?: (err: Error) => void;
+  onFallback?: (err: Error) => void;
 }
 
 export interface UseAnime4KReturn {
@@ -19,6 +21,7 @@ export interface UseAnime4KReturn {
   isSupported: boolean;
   stats: Anime4KStats | null;
   isUpscaling: boolean;
+  isRenderingSuccessfully: boolean;
   rendererRef: React.RefObject<Anime4KRenderer | null>;
 }
 
@@ -35,6 +38,7 @@ export function useAnime4K({
   enabled,
   onFpsWarning,
   onError,
+  onFallback,
 }: UseAnime4KOptions): UseAnime4KReturn {
   // WebGL 2.0 capability detection (synchronous & SSR-safe)
   const isSupported = useMemo(() => {
@@ -42,18 +46,28 @@ export function useAnime4K({
     return Anime4KRenderer.isSupported();
   }, []);
 
-  // Initialize mode from localStorage or capability-aware default
+  // Initialize mode: ALWAYS default strictly to 'off'
+  // If legacy localStorage has 'fast' from prior default, reset it to 'off'
   const [mode, setModeState] = useState<Anime4KMode>(() => {
     if (typeof window === 'undefined') return 'off';
     try {
+      if (!localStorage.getItem(RESET_KEY)) {
+        localStorage.setItem(RESET_KEY, '1');
+        const legacy = localStorage.getItem(STORAGE_KEY);
+        if (legacy === 'fast') {
+          localStorage.setItem(STORAGE_KEY, 'off');
+          return 'off';
+        }
+      }
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved === 'off' || saved === 'fast' || saved === 'ultra') {
+      if (saved === 'fast' || saved === 'ultra') {
         return saved;
       }
     } catch {}
-    return Anime4KRenderer.isSupported() ? 'fast' : 'off';
+    return 'off';
   });
 
+  const [isRenderingSuccessfully, setIsRenderingSuccessfully] = useState(false);
   const [stats, setStats] = useState<Anime4KStats | null>(null);
   const rendererRef = useRef<Anime4KRenderer | null>(null);
 
@@ -68,9 +82,17 @@ export function useAnime4K({
     onErrorRef.current = onError;
   }, [onError]);
 
+  const onFallbackRef = useRef(onFallback);
+  useEffect(() => {
+    onFallbackRef.current = onFallback;
+  }, [onFallback]);
+
   const modeRef = useRef(mode);
   useEffect(() => {
     modeRef.current = mode;
+    if (mode === 'off') {
+      setIsRenderingSuccessfully(false);
+    }
     if (rendererRef.current && rendererRef.current.getMode() !== mode) {
       rendererRef.current.setMode(mode);
     }
@@ -80,6 +102,9 @@ export function useAnime4K({
   const setMode = useCallback((newMode: Anime4KMode) => {
     modeRef.current = newMode;
     setModeState(newMode);
+    if (newMode === 'off') {
+      setIsRenderingSuccessfully(false);
+    }
     try {
       localStorage.setItem(STORAGE_KEY, newMode);
     } catch {}
@@ -95,6 +120,7 @@ export function useAnime4K({
         rendererRef.current.destroy();
         rendererRef.current = null;
       }
+      setIsRenderingSuccessfully(false);
       setStats(null);
       return;
     }
@@ -123,6 +149,9 @@ export function useAnime4K({
               const downgraded: Anime4KMode = current === 'ultra' ? 'fast' : 'off';
               modeRef.current = downgraded;
               setModeState(downgraded);
+              if (downgraded === 'off') {
+                setIsRenderingSuccessfully(false);
+              }
               try {
                 localStorage.setItem(STORAGE_KEY, downgraded);
               } catch {}
@@ -130,6 +159,20 @@ export function useAnime4K({
             },
             onError: (err: Error) => {
               onErrorRef.current?.(err);
+            },
+            onFallback: (err: Error) => {
+              modeRef.current = 'off';
+              setModeState('off');
+              setIsRenderingSuccessfully(false);
+              try {
+                localStorage.setItem(STORAGE_KEY, 'off');
+              } catch {}
+              onFallbackRef.current?.(err);
+            },
+            onRenderSuccess: () => {
+              if (!cancelled) {
+                setIsRenderingSuccessfully(true);
+              }
             },
             onStatsUpdate: (newStats: Anime4KStats) => {
               if (!cancelled) {
@@ -154,6 +197,7 @@ export function useAnime4K({
 
     return () => {
       cancelled = true;
+      setIsRenderingSuccessfully(false);
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
       }
@@ -165,7 +209,7 @@ export function useAnime4K({
     };
   }, [enabled, isSupported, canvasRef, videoRef]);
 
-  const isUpscaling = mode !== 'off' && isSupported && enabled;
+  const isUpscaling = mode !== 'off' && isSupported && enabled && isRenderingSuccessfully;
 
   return {
     mode,
@@ -173,6 +217,7 @@ export function useAnime4K({
     isSupported,
     stats,
     isUpscaling,
+    isRenderingSuccessfully,
     rendererRef,
   };
 }

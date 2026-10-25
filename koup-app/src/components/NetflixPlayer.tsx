@@ -652,6 +652,7 @@ export default function NetflixPlayer({
     isSupported: isAnime4kSupported,
     stats: anime4kStats,
     isUpscaling: isAnime4kActive,
+    isRenderingSuccessfully: isAnime4kRenderingSuccessfully,
   } = useAnime4K({
     videoRef,
     canvasRef: anime4kCanvasRef,
@@ -660,6 +661,13 @@ export default function NetflixPlayer({
       pushNotification(
         'AI Upscale Uyarısı',
         'Düşük performans tespit edildi (<23 FPS). Akıcı izleme için AI Upscale düşürüldü.',
+        'warning' as any
+      );
+    },
+    onFallback: () => {
+      pushNotification(
+        'AI Upscale Devre Dışı',
+        'Bu video kaynağı CORS kısıtlaması nedeniyle AI Upscale desteklemiyor.',
         'warning' as any
       );
     },
@@ -3626,8 +3634,8 @@ export default function NetflixPlayer({
                   setResolvedMode('error');
                 }
               }}
-              className={`w-full h-full object-contain pointer-events-none transition-opacity duration-300 ${
-                isAnime4kActive
+              className={`block w-full h-full object-contain pointer-events-none transition-opacity duration-300 ${
+                isAnime4kActive && isAnime4kRenderingSuccessfully
                   ? 'opacity-0'
                   : isResumeReady || targetResumeRef.current <= 3
                   ? 'opacity-100'
@@ -3645,9 +3653,11 @@ export default function NetflixPlayer({
                   transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), opacity 300ms ease',
                 }}
                 className={`absolute inset-0 w-full h-full object-contain pointer-events-none transition-opacity duration-300 ${
-                  isAnime4kActive && (isResumeReady || targetResumeRef.current <= 3)
+                  isAnime4kActive &&
+                  isAnime4kRenderingSuccessfully &&
+                  (isResumeReady || targetResumeRef.current <= 3)
                     ? 'opacity-100'
-                    : 'opacity-0 pointer-events-none'
+                    : 'opacity-0'
                 }`}
               />
             )}

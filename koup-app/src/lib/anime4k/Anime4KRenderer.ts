@@ -24,8 +24,10 @@ interface ProgramInfo {
 
 export class Anime4KRenderer {
   private canvas: HTMLCanvasElement;
-  private options: Required<Omit<Anime4KOptions, 'onFpsDrop' | 'onError' | 'onStatsUpdate'>> &
-    Pick<Anime4KOptions, 'onFpsDrop' | 'onError' | 'onStatsUpdate'>;
+  private options: Required<
+    Omit<Anime4KOptions, 'onFpsDrop' | 'onError' | 'onFallback' | 'onRenderSuccess' | 'onStatsUpdate'>
+  > &
+    Pick<Anime4KOptions, 'onFpsDrop' | 'onError' | 'onFallback' | 'onRenderSuccess' | 'onStatsUpdate'>;
 
   private gl: WebGL2RenderingContext;
   private mode: Anime4KMode;
@@ -84,7 +86,7 @@ export class Anime4KRenderer {
   constructor(canvas: HTMLCanvasElement, options?: Anime4KOptions) {
     this.canvas = canvas;
     this.options = {
-      initialMode: options?.initialMode ?? 'fast',
+      initialMode: options?.initialMode ?? 'off',
       fpsThreshold: options?.fpsThreshold ?? 23,
       fpsDropConsecutiveFrames: options?.fpsDropConsecutiveFrames ?? 45,
       strength: options?.strength ?? 1.0,
@@ -92,6 +94,8 @@ export class Anime4KRenderer {
       maxPixelRatio: options?.maxPixelRatio ?? 2.0,
       onFpsDrop: options?.onFpsDrop,
       onError: options?.onError,
+      onFallback: options?.onFallback,
+      onRenderSuccess: options?.onRenderSuccess,
       onStatsUpdate: options?.onStatsUpdate,
     };
 
@@ -135,12 +139,16 @@ export class Anime4KRenderer {
     };
 
     this.handleSeeked = () => {
-      this.requestRender();
+      if (this.mode !== 'off') {
+        this.requestRender();
+      }
     };
 
     this.handleLoadedMetadata = () => {
       this.updateDimensions();
-      this.requestRender();
+      if (this.mode !== 'off') {
+        this.requestRender();
+      }
     };
 
     this.canvas.addEventListener('webglcontextlost', this.handleContextLost, false);
@@ -251,7 +259,9 @@ export class Anime4KRenderer {
       this.updateDimensions();
     }
 
-    this.startLoop();
+    if (this.mode !== 'off') {
+      this.startLoop();
+    }
   }
 
   /**
@@ -275,7 +285,7 @@ export class Anime4KRenderer {
    * falling back to requestAnimationFrame.
    */
   private startLoop(): void {
-    if (this.isDestroyed || !this.video) return;
+    if (this.isDestroyed || !this.video || this.mode === 'off') return;
 
     const video = this.video;
     const hasVFC =
@@ -358,7 +368,7 @@ export class Anime4KRenderer {
    * Processes a video frame, tracks performance metrics, and applies FPS watchdog.
    */
   private processFrame(now: number): void {
-    if (this.isDestroyed || this.isContextLost || !this.video) return;
+    if (this.isDestroyed || this.isContextLost || !this.video || this.mode === 'off') return;
 
     // Only render when video has valid dimensions and frame data
     if (this.video.readyState < 2 || this.video.videoWidth === 0 || this.video.videoHeight === 0) {
@@ -366,11 +376,9 @@ export class Anime4KRenderer {
     }
 
     const renderStart = performance.now();
-    try {
-      this.render();
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      this.options.onError?.(error);
+    const rendered = this.render();
+    if (!rendered) {
+      return;
     }
     this.lastRenderTimeMs = performance.now() - renderStart;
 
@@ -390,7 +398,7 @@ export class Anime4KRenderer {
 
     // FPS Watchdog: active during playback when enhancement is enabled
     const isPlaying = !this.video.paused && !this.video.ended && this.video.readyState >= 2;
-    if (isPlaying && this.mode !== 'off') {
+    if (isPlaying) {
       if (currentFps < this.options.fpsThreshold) {
         this.consecutiveLowFpsCount++;
         if (this.consecutiveLowFpsCount >= this.options.fpsDropConsecutiveFrames) {
@@ -444,69 +452,94 @@ export class Anime4KRenderer {
 
   /**
    * Internal render execution: uploads video texture and renders fullscreen quad with active shader.
+   * Catches CORS SecurityError and WebGL failures to trigger seamless fallback.
    */
-  private render(): void {
+  private render(): boolean {
     const gl = this.gl;
     const video = this.video;
-    if (!video || !this.texture || !this.vao) return;
+    if (!video || !this.texture || !this.vao || this.mode === 'off') return false;
 
     this.updateDimensions();
 
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
 
     // Efficient texture upload: reallocation on size change, subimage update otherwise
-    if (this.textureWidth !== video.videoWidth || this.textureHeight !== video.videoHeight) {
-      this.textureWidth = video.videoWidth;
-      this.textureHeight = video.videoHeight;
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-    } else {
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, video);
+    try {
+      if (this.textureWidth !== video.videoWidth || this.textureHeight !== video.videoHeight) {
+        this.textureWidth = video.videoWidth;
+        this.textureHeight = video.videoHeight;
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+      } else {
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, video);
+      }
+    } catch (err: unknown) {
+      // SecurityError (CORS / tainted canvas) or WebGL upload failure
+      this.stopLoop();
+      this.mode = 'off';
+      const isCors =
+        (err instanceof DOMException && (err.name === 'SecurityError' || err.code === 18)) ||
+        (err instanceof Error && /cross-origin|tainted|security/i.test(err.message));
+
+      const error = isCors
+        ? new Error('CORS_RESTRICTION: Bu video kaynağı CORS kısıtlaması nedeniyle AI Upscale desteklemiyor.')
+        : (err instanceof Error ? err : new Error(String(err)));
+
+      this.options.onError?.(error);
+      this.options.onFallback?.(error);
+      return false;
     }
 
     const programInfo = this.programs.get(this.mode) || this.programs.get('off');
-    if (!programInfo) return;
+    if (!programInfo) return false;
 
-    gl.useProgram(programInfo.program);
+    try {
+      gl.useProgram(programInfo.program);
 
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.texture);
-    if (programInfo.uTexture) {
-      gl.uniform1i(programInfo.uTexture, 0);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.texture);
+      if (programInfo.uTexture) {
+        gl.uniform1i(programInfo.uTexture, 0);
+      }
+
+      if (programInfo.uFlipY) {
+        // 1 flattens top-of-video to top-of-quad without UNPACK_FLIP_Y overhead
+        gl.uniform1i(programInfo.uFlipY, 1);
+      }
+
+      if (programInfo.uTexelSize && this.textureWidth > 0 && this.textureHeight > 0) {
+        gl.uniform2f(
+          programInfo.uTexelSize,
+          1.0 / this.textureWidth,
+          1.0 / this.textureHeight
+        );
+      }
+
+      if (programInfo.uStrength) {
+        gl.uniform1f(programInfo.uStrength, this.strength);
+      }
+
+      gl.bindVertexArray(this.vao);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.bindVertexArray(null);
+
+      this.options.onRenderSuccess?.();
+      return true;
+    } catch (err: unknown) {
+      this.stopLoop();
+      this.mode = 'off';
+      const error = err instanceof Error ? err : new Error(String(err));
+      this.options.onError?.(error);
+      this.options.onFallback?.(error);
+      return false;
     }
-
-    if (programInfo.uFlipY) {
-      // 1 flattens top-of-video to top-of-quad without UNPACK_FLIP_Y overhead
-      gl.uniform1i(programInfo.uFlipY, 1);
-    }
-
-    if (programInfo.uTexelSize && this.textureWidth > 0 && this.textureHeight > 0) {
-      gl.uniform2f(
-        programInfo.uTexelSize,
-        1.0 / this.textureWidth,
-        1.0 / this.textureHeight
-      );
-    }
-
-    if (programInfo.uStrength) {
-      gl.uniform1f(programInfo.uStrength, this.strength);
-    }
-
-    gl.bindVertexArray(this.vao);
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-    gl.bindVertexArray(null);
   }
 
   /**
    * Manually triggers a single frame render (useful when video is paused or seeking).
    */
   public requestRender(): void {
-    if (this.isDestroyed || this.isContextLost) return;
-    try {
-      this.render();
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      this.options.onError?.(error);
-    }
+    if (this.isDestroyed || this.isContextLost || this.mode === 'off') return;
+    this.render();
   }
 
   /**
@@ -516,7 +549,13 @@ export class Anime4KRenderer {
     if (this.mode === mode) return;
     this.mode = mode;
     this.consecutiveLowFpsCount = 0;
-    this.requestRender();
+    if (mode === 'off') {
+      this.stopLoop();
+    } else {
+      this.stopLoop();
+      this.startLoop();
+      this.requestRender();
+    }
   }
 
   /**
