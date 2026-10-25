@@ -829,13 +829,20 @@ export default function SeriesRequestPage() {
                         cls: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
                       };
 
+                const cardStyle =
+                  req.status === 'approved'
+                    ? 'border-emerald-500/40 hover:border-emerald-400/60 bg-gradient-to-br from-emerald-950/20 via-[#0d0d11]/90 to-[#0d0d11]/95 shadow-[0_0_24px_rgba(16,185,129,0.06)]'
+                    : req.status === 'rejected'
+                    ? 'border-rose-500/40 hover:border-rose-400/60 bg-gradient-to-br from-rose-950/20 via-[#0d0d11]/90 to-[#0d0d11]/95 shadow-[0_0_24px_rgba(244,63,94,0.06)]'
+                    : 'border-amber-500/40 hover:border-amber-400/60 bg-gradient-to-br from-amber-950/20 via-[#0d0d11]/90 to-[#0d0d11]/95 shadow-[0_0_24px_rgba(245,158,11,0.06)]';
+
                 return (
                   <motion.div
                     key={req.id}
                     layout
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="rounded-3xl border border-white/10 bg-[#0d0d11]/90 hover:border-white/20 p-4 sm:p-5 flex gap-4 transition-all relative overflow-hidden group"
+                    className={`rounded-3xl border p-4 sm:p-5 flex gap-4 transition-all duration-300 relative overflow-hidden group ${cardStyle}`}
                   >
                     {/* Poster */}
                     <div className="w-24 sm:w-28 aspect-[2/3] rounded-2xl overflow-hidden bg-zinc-900 border border-white/10 shrink-0">

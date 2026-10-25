@@ -474,10 +474,17 @@ export default function AdminSeriesRequests({
             const currentNote =
               draftNotes[req.id] !== undefined ? draftNotes[req.id] : req.admin_note || '';
 
+            const cardStyle =
+              req.status === 'approved'
+                ? 'border-emerald-500/40 hover:border-emerald-400/60 bg-gradient-to-br from-emerald-950/20 via-[#0e0e12]/95 to-[#0e0e12] shadow-[0_0_24px_rgba(16,185,129,0.06)]'
+                : req.status === 'rejected'
+                ? 'border-rose-500/40 hover:border-rose-400/60 bg-gradient-to-br from-rose-950/20 via-[#0e0e12]/95 to-[#0e0e12] shadow-[0_0_24px_rgba(244,63,94,0.06)]'
+                : 'border-amber-500/40 hover:border-amber-400/60 bg-gradient-to-br from-amber-950/20 via-[#0e0e12]/95 to-[#0e0e12] shadow-[0_0_24px_rgba(245,158,11,0.06)]';
+
             return (
               <div
                 key={req.id}
-                className="rounded-3xl apple-glass border border-white/15 p-5 sm:p-6 flex flex-col lg:flex-row gap-5 transition-all hover:border-white/25"
+                className={`rounded-3xl border p-5 sm:p-6 flex flex-col lg:flex-row gap-5 transition-all duration-300 relative overflow-hidden ${cardStyle}`}
               >
                 {/* Left: Poster + Source Info */}
                 <div className="flex gap-4 flex-1 min-w-0">
