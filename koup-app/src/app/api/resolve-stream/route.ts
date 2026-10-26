@@ -253,7 +253,11 @@ function extractHdfilmSubtitles(
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const url = searchParams.get('url') || '';
+  const rawUrl = searchParams.get('url') || '';
+  let url = rawUrl;
+  if (url.includes('dbx.molystream.org/embed/') && !url.includes('/embed/sheila/')) {
+    url = url.replace(/dbx\.molystream\.org\/embed\/(?!sheila\/)/i, 'dbx.molystream.org/embed/sheila/');
+  }
   const provider = (searchParams.get('provider') || '').toLowerCase();
   const commonUA =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -265,12 +269,13 @@ export async function GET(req: NextRequest) {
   // Check in-memory cache first to avoid hammering hosts (especially VOE / OK.RU rate limits)
   const forceRefresh = searchParams.get('refresh') === '1' || searchParams.get('fresh') === '1';
   if (!forceRefresh) {
-    const cachedStream = getCachedStream(url);
+    const cachedStream = getCachedStream(url) || (rawUrl && rawUrl !== url ? getCachedStream(rawUrl) : null);
     if (cachedStream) {
       return NextResponse.json(cachedStream, { headers: CACHE_HEADERS });
     }
   } else {
     streamResolutionCache.delete(url);
+    if (rawUrl) streamResolutionCache.delete(rawUrl);
   }
 
   // Validate URL protocol
@@ -699,13 +704,18 @@ export async function GET(req: NextRequest) {
         if (m) embedUrl = m[1];
       }
 
+      if (embedUrl.includes('dbx.molystream.org/embed/') && !embedUrl.includes('/embed/sheila/')) {
+        embedUrl = embedUrl.replace(/dbx\.molystream\.org\/embed\/(?!sheila\/)/i, 'dbx.molystream.org/embed/sheila/');
+      }
+
       const mId = embedUrl.match(/embed\/(?:sheila\/)?([a-zA-Z0-9-]+)/);
       const videoId = mId?.[1];
       if (videoId) {
-        const fullEmbed = `https://dbx.molystream.org/embed/${videoId}`;
+        const hlsUrl = `https://dbx.molystream.org/embed/sheila/${videoId}`;
+        const fullEmbed = hlsUrl;
         // Health check: probe embed to ensure video is not 404 / deleted / "No Video Found"
         try {
-          const probe = await fetch(fullEmbed, {
+          const probe = await fetch(hlsUrl, {
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
               'Referer': 'https://www.dizibox.live/',
@@ -736,7 +746,6 @@ export async function GET(req: NextRequest) {
           }
         } catch {}
 
-        const hlsUrl = `https://dbx.molystream.org/embed/sheila/${videoId}`;
         const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(hlsUrl)}&ref=${encodeURIComponent('https://dbx.molystream.org/')}`;
         const result = {
           mode: 'native_hls' as const,
@@ -747,6 +756,9 @@ export async function GET(req: NextRequest) {
           fallbackIframe: fullEmbed,
         };
         setCachedStream(url, result);
+        if (rawUrl && rawUrl !== url) {
+          setCachedStream(rawUrl, result);
+        }
         return NextResponse.json(result, { headers: CACHE_HEADERS });
       }
     } catch {}

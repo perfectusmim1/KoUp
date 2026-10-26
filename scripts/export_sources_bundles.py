@@ -8,6 +8,7 @@ This matches the exact schema expected by /api/sources/[mediaId] and Cloudflare 
 
 import os
 import sys
+import re
 import json
 import sqlite3
 from pathlib import Path
@@ -66,15 +67,17 @@ def classify_stream_type(provider: str, direct_url: str) -> str:
         return "hls"
     return "locked_iframe"
 
-def get_provider_priority(provider: str, direct_url: str, content_type: str) -> int:
+def get_provider_priority(provider: str, direct_url: str, content_type: str) -> float:
     p = (provider or "").lower()
     u = (direct_url or "").lower()
 
     if p in ("tau-video", "morencius", "ev") or "tau-video" in u or "morencius" in u:
         return 0
-    if p in ("rapidrame", "diziyou-hls") or "rplayer" in u or "storage.diziyou" in u:
+    if p in ("diziyou-hls",) or "storage.diziyou" in u:
+        return 0.5
+    if p in ("rapidrame",) or "rplayer" in u:
         return 1
-    if p in ("hdfilm-close", "dizikorea", "dizibox", "dbx", "dizilla", "asyawatch") or "pichive" in u or "dplayer" in u:
+    if p in ("hdfilm-close", "dizikorea", "dizibox", "dbx", "dizilla", "asyawatch") or "pichive" in u or "dplayer" in u or "molystream" in u:
         return 2
     if p in ("vidmoly", "uqload") or "vidmoly" in u or "uqload" in u:
         return 3
@@ -178,11 +181,21 @@ def export_all(drama_id: int = None):
             processed = []
 
             for s_name, embed_id, direct_url, provider, site, fansub in raw_sources:
-                if not direct_url or direct_url in seen_urls:
+                if not direct_url:
                     continue
+                direct_url = direct_url.strip()
                 p_low = (provider or "").lower()
                 u_low = direct_url.lower()
 
+                if p_low == "rapidrame" or "hdfilmcehennemi.nl/rplayer/" in u_low or "/rplayer/" in u_low:
+                    continue
+
+                if "dbx.molystream.org/embed/" in u_low:
+                    direct_url = re.sub(r'dbx\.molystream\.org/embed/(?!sheila/)', 'dbx.molystream.org/embed/sheila/', direct_url, flags=re.IGNORECASE)
+                    u_low = direct_url.lower()
+
+                if direct_url in seen_urls:
+                    continue
                 seen_urls.add(direct_url)
                 stype = classify_stream_type(provider, direct_url)
                 prio = get_provider_priority(provider, direct_url, content_type)
@@ -256,6 +269,9 @@ def export_all(drama_id: int = None):
             processed = processed[:18]
 
             # Apply clean numbering per base name (e.g. "Tau Video", "Tau Video 2")
+            for item in processed:
+                item["source_name"] = re.sub(r'\s+\d+$', '', item["source_name"]).strip()
+
             counts = {}
             for item in processed:
                 counts[item["source_name"]] = counts.get(item["source_name"], 0) + 1

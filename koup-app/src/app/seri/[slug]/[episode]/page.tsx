@@ -106,6 +106,37 @@ export default function EpisodeWatchPage({
     setSelectedSourceIdx(idx);
   }, []);
 
+  const handleSourceDead = useCallback(
+    (deadUrl: string) => {
+      if (!deadUrl) return;
+      setEpisodes((prevEpisodes) => {
+        const updated = prevEpisodes.map((ep) => {
+          if (
+            (ep.season_number || 1) === (currentSeason || 1) &&
+            ep.episode_number === activeEpNum
+          ) {
+            return {
+              ...ep,
+              sources: (ep.sources || []).filter((s) => s.direct_url !== deadUrl),
+            };
+          }
+          return ep;
+        });
+
+        if (media?.id) {
+          try {
+            setCache(`episodes_${media.id}`, updated, 300_000);
+          } catch {}
+        }
+
+        return updated;
+      });
+
+      setSelectedSourceIdx(0);
+    },
+    [currentSeason, activeEpNum, media?.id]
+  );
+
   // Ambient Lighting (persisted across episode changes and refreshes)
   const [ambientLightingEnabled, setAmbientLightingEnabled] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
@@ -335,6 +366,8 @@ export default function EpisodeWatchPage({
           !s.direct_url.includes('playerdkorea.xyz') &&
           !s.direct_url.includes('asyaanim.upns.one') &&
           !s.direct_url.includes('vidmoly.me') &&
+          !s.direct_url.includes('/rplayer/') &&
+          s.provider !== 'rapidrame' &&
           s.provider !== 'dead' &&
           s.provider !== 'sibnet' &&
           s.provider !== 'sendvid' &&
@@ -697,11 +730,32 @@ export default function EpisodeWatchPage({
     new Set(episodes.map((e) => e.season_number || 1))
   ).sort((a, b) => a - b);
 
-  const rawSources: EpisodeSource[] = currentEpObj?.sources || [];
-  const availableSources: EpisodeSource[] = rawSources.map((s) => ({
-    ...s,
-    source_name: cleanSourceName(s.source_name),
-  }));
+  const rawSources: EpisodeSource[] = (currentEpObj?.sources || []).filter(
+    (s) =>
+      s?.direct_url &&
+      !s.direct_url.includes('/rplayer/') &&
+      s.provider !== 'rapidrame'
+  );
+  const baseNames = rawSources.map((s) =>
+    cleanSourceName(s.source_name || '').replace(/\s+\d+$/, '').trim() || 'Kaynak'
+  );
+  const nameCounts: Record<string, number> = {};
+  for (const base of baseNames) {
+    nameCounts[base] = (nameCounts[base] || 0) + 1;
+  }
+  const nameSeen: Record<string, number> = {};
+  const availableSources: EpisodeSource[] = rawSources.map((s, idx) => {
+    const base = baseNames[idx];
+    nameSeen[base] = (nameSeen[base] || 0) + 1;
+    const finalName =
+      nameCounts[base] > 1 && nameSeen[base] > 1
+        ? `${base} ${nameSeen[base]}`
+        : base;
+    return {
+      ...s,
+      source_name: finalName,
+    };
+  });
 
   const filteredSources = availableSources;
 
@@ -1192,6 +1246,7 @@ export default function EpisodeWatchPage({
                   onSelectEpisode={handleSelectEpisode}
                   selectedSourceIdx={selectedSourceIdx}
                   onSelectSourceIdx={handleSelectSourceIdx}
+                  onSourceDead={handleSourceDead}
                   ambientLightingEnabled={ambientLightingEnabled}
                   onToggleAmbientLighting={handleToggleAmbientLighting}
                   autoNextEnabled={autoNextEnabled}

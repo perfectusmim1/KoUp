@@ -449,6 +449,7 @@ export interface NetflixPlayerProps {
   onSelectEpisode?: (season: number, episode: number) => void;
   cast?: CastMember[];
   selectedSourceIdx?: number;
+  onSourceDead?: (deadUrl: string) => void;
   onSelectSourceIdx?: (idx: number) => void;
   cinemaLightsOff?: boolean;
   onToggleCinemaLights?: () => void;
@@ -481,6 +482,7 @@ export default function NetflixPlayer({
   onSelectEpisode = () => {},
   selectedSourceIdx: propSelectedSourceIdx,
   onSelectSourceIdx,
+  onSourceDead,
   cinemaLightsOff: propCinemaLightsOff,
   onToggleCinemaLights,
   ambientLightingEnabled: propAmbientLightingEnabled,
@@ -1665,14 +1667,24 @@ export default function NetflixPlayer({
         if (cancelled) return;
 
         if (respStatus === 410 || data.isDead) {
-          const deadKey = activeSource?.id ? String(activeSource.id) : (activeSource?.direct_url || activeSourceUrl);
-          setDeadSourceKeys((prev) => new Set(prev).add(deadKey));
+          const deadUrl = activeSource?.direct_url || activeSourceUrl;
+          const deadKey = activeSource?.id ? String(activeSource.id) : deadUrl;
+          if (deadUrl) {
+            setDeadSourceKeys((prev) => new Set(prev).add(deadUrl).add(deadKey));
+          }
+
+          if (onSourceDead && deadUrl) {
+            onSourceDead(deadUrl);
+            return;
+          }
 
           const nextWorkingIdx = filteredSources.findIndex(
             (s, idx) =>
               idx !== selectedSourceIdx &&
+              s.direct_url !== deadUrl &&
+              s.direct_url !== activeSourceUrl &&
               !deadSourceKeys.has(s.id ? String(s.id) : (s.direct_url || '')) &&
-              s.direct_url !== activeSourceUrl
+              !deadSourceKeys.has(s.direct_url || '')
           );
 
           if (nextWorkingIdx !== -1) {
@@ -1744,15 +1756,24 @@ export default function NetflixPlayer({
         } else {
           const finalIframe = data.iframeUrl || normalizedFallback;
           if (isUnframableUrl(finalIframe)) {
-            const deadKey = activeSource?.id ? String(activeSource.id) : (activeSourceUrl || '');
-            if (deadKey) {
-              setDeadSourceKeys((prev) => new Set(prev).add(deadKey));
+            const deadUrl = activeSource?.direct_url || activeSourceUrl;
+            const deadKey = activeSource?.id ? String(activeSource.id) : deadUrl;
+            if (deadUrl) {
+              setDeadSourceKeys((prev) => new Set(prev).add(deadUrl).add(deadKey));
             }
+
+            if (onSourceDead && deadUrl) {
+              onSourceDead(deadUrl);
+              return;
+            }
+
             const nextWorkingIdx = filteredSources.findIndex(
               (s, idx) =>
                 idx !== selectedSourceIdx &&
+                s.direct_url !== deadUrl &&
+                s.direct_url !== activeSourceUrl &&
                 !deadSourceKeys.has(s.id ? String(s.id) : (s.direct_url || '')) &&
-                s.direct_url !== activeSourceUrl
+                !deadSourceKeys.has(s.direct_url || '')
             );
             if (nextWorkingIdx !== -1) {
               pushNotification(
@@ -1778,15 +1799,24 @@ export default function NetflixPlayer({
         }
       } catch {
         if (!cancelled && activeSourceUrl) {
-          const deadKey = activeSource?.id ? String(activeSource.id) : (activeSourceUrl || '');
-          if (deadKey) {
-            setDeadSourceKeys((prev) => new Set(prev).add(deadKey));
+          const deadUrl = activeSource?.direct_url || activeSourceUrl;
+          const deadKey = activeSource?.id ? String(activeSource.id) : deadUrl;
+          if (deadUrl) {
+            setDeadSourceKeys((prev) => new Set(prev).add(deadUrl).add(deadKey));
           }
+
+          if (onSourceDead && deadUrl) {
+            onSourceDead(deadUrl);
+            return;
+          }
+
           const nextWorkingIdx = filteredSources.findIndex(
             (s, idx) =>
               idx !== selectedSourceIdx &&
+              s.direct_url !== deadUrl &&
+              s.direct_url !== activeSourceUrl &&
               !deadSourceKeys.has(s.id ? String(s.id) : (s.direct_url || '')) &&
-              s.direct_url !== activeSourceUrl
+              !deadSourceKeys.has(s.direct_url || '')
           );
           if (nextWorkingIdx !== -1) {
             pushNotification(
@@ -2003,21 +2033,57 @@ export default function NetflixPlayer({
                               setStreamUrl(freshData.streamUrl);
                               hls.loadSource(freshData.streamUrl);
                               hls.startLoad();
-                            } else if (selectedSourceIdx + 1 < filteredSources.length) {
-                              pushNotification(
-                                'Otomatik Yedek Kaynağa Geçildi',
-                                `${activeSource?.source_name || 'Mevcut kaynak'} yanıt vermedi (${httpCode || 'bağlantı hatası'}), sıradaki kaynağa geçiliyor.`,
-                                'info'
+                            } else {
+                              const deadUrl = activeSource?.direct_url || activeSourceUrl;
+                              const deadKey = activeSource?.id ? String(activeSource.id) : deadUrl;
+                              if (deadUrl) {
+                                setDeadSourceKeys((prev) => new Set(prev).add(deadUrl).add(deadKey));
+                              }
+                              if (onSourceDead && deadUrl) {
+                                onSourceDead(deadUrl);
+                                return;
+                              }
+                              const nextWorkingIdx = filteredSources.findIndex(
+                                (s, idx) =>
+                                  idx !== selectedSourceIdx &&
+                                  s.direct_url !== deadUrl &&
+                                  s.direct_url !== activeSourceUrl &&
+                                  !deadSourceKeys.has(s.id ? String(s.id) : (s.direct_url || '')) &&
+                                  !deadSourceKeys.has(s.direct_url || '')
                               );
-                              setSelectedSourceIdx(selectedSourceIdx + 1);
-                            } else if (fallbackIframeUrl) {
-                              setStreamUrl(fallbackIframeUrl);
-                              setResolvedMode('iframe');
+                              if (nextWorkingIdx !== -1) {
+                                pushNotification(
+                                  'Otomatik Yedek Kaynağa Geçildi',
+                                  `${activeSource?.source_name || 'Mevcut kaynak'} yanıt vermedi (${httpCode || 'bağlantı hatası'}), sıradaki kaynağa geçiliyor.`,
+                                  'info'
+                                );
+                                setSelectedSourceIdx(nextWorkingIdx);
+                              } else if (fallbackIframeUrl) {
+                                setStreamUrl(fallbackIframeUrl);
+                                setResolvedMode('iframe');
+                              }
                             }
                           })
                           .catch(() => {
-                            if (selectedSourceIdx + 1 < filteredSources.length) {
-                              setSelectedSourceIdx(selectedSourceIdx + 1);
+                            const deadUrl = activeSource?.direct_url || activeSourceUrl;
+                            const deadKey = activeSource?.id ? String(activeSource.id) : deadUrl;
+                            if (deadUrl) {
+                              setDeadSourceKeys((prev) => new Set(prev).add(deadUrl).add(deadKey));
+                            }
+                            if (onSourceDead && deadUrl) {
+                              onSourceDead(deadUrl);
+                              return;
+                            }
+                            const nextWorkingIdx = filteredSources.findIndex(
+                              (s, idx) =>
+                                idx !== selectedSourceIdx &&
+                                s.direct_url !== deadUrl &&
+                                s.direct_url !== activeSourceUrl &&
+                                !deadSourceKeys.has(s.id ? String(s.id) : (s.direct_url || '')) &&
+                                !deadSourceKeys.has(s.direct_url || '')
+                            );
+                            if (nextWorkingIdx !== -1) {
+                              setSelectedSourceIdx(nextWorkingIdx);
                             } else if (fallbackIframeUrl) {
                               setStreamUrl(fallbackIframeUrl);
                               setResolvedMode('iframe');
@@ -2026,13 +2092,30 @@ export default function NetflixPlayer({
                         return;
                       }
 
-                      if (selectedSourceIdx + 1 < filteredSources.length) {
+                      const deadUrl = activeSource?.direct_url || activeSourceUrl;
+                      const deadKey = activeSource?.id ? String(activeSource.id) : deadUrl;
+                      if (deadUrl) {
+                        setDeadSourceKeys((prev) => new Set(prev).add(deadUrl).add(deadKey));
+                      }
+                      if (onSourceDead && deadUrl) {
+                        onSourceDead(deadUrl);
+                        return;
+                      }
+                      const nextWorkingIdx = filteredSources.findIndex(
+                        (s, idx) =>
+                          idx !== selectedSourceIdx &&
+                          s.direct_url !== deadUrl &&
+                          s.direct_url !== activeSourceUrl &&
+                          !deadSourceKeys.has(s.id ? String(s.id) : (s.direct_url || '')) &&
+                          !deadSourceKeys.has(s.direct_url || '')
+                      );
+                      if (nextWorkingIdx !== -1) {
                         pushNotification(
                           'Otomatik Yedek Kaynağa Geçildi',
                           `${activeSource?.source_name || 'Mevcut kaynak'} yanıt vermedi (${httpCode || 'bağlantı hatası'}), sıradaki kaynağa geçiliyor.`,
                           'info'
                         );
-                        setSelectedSourceIdx(selectedSourceIdx + 1);
+                        setSelectedSourceIdx(nextWorkingIdx);
                       } else if (fallbackIframeUrl) {
                         setStreamUrl(fallbackIframeUrl);
                         setResolvedMode('iframe');
@@ -2045,14 +2128,31 @@ export default function NetflixPlayer({
                   case Hls.ErrorTypes.MEDIA_ERROR:
                     hls.recoverMediaError();
                     break;
-                  default:
-                    if (selectedSourceIdx + 1 < filteredSources.length) {
+                  default: {
+                    const deadUrl = activeSource?.direct_url || activeSourceUrl;
+                    const deadKey = activeSource?.id ? String(activeSource.id) : deadUrl;
+                    if (deadUrl) {
+                      setDeadSourceKeys((prev) => new Set(prev).add(deadUrl).add(deadKey));
+                    }
+                    if (onSourceDead && deadUrl) {
+                      onSourceDead(deadUrl);
+                      return;
+                    }
+                    const nextWorkingIdx = filteredSources.findIndex(
+                      (s, idx) =>
+                        idx !== selectedSourceIdx &&
+                        s.direct_url !== deadUrl &&
+                        s.direct_url !== activeSourceUrl &&
+                        !deadSourceKeys.has(s.id ? String(s.id) : (s.direct_url || '')) &&
+                        !deadSourceKeys.has(s.direct_url || '')
+                    );
+                    if (nextWorkingIdx !== -1) {
                       pushNotification(
                         'Otomatik Yedek Kaynağa Geçildi',
-                        `${activeSource?.source_name} yanıt vermedi, sıradaki kaynağa geçiliyor.`,
+                        `${activeSource?.source_name || 'Kaynak'} yanıt vermedi, sıradaki kaynağa geçiliyor.`,
                         'info'
                       );
-                      setSelectedSourceIdx(selectedSourceIdx + 1);
+                      setSelectedSourceIdx(nextWorkingIdx);
                     } else if (fallbackIframeUrl) {
                       setStreamUrl(fallbackIframeUrl);
                       setResolvedMode('iframe');
@@ -2060,6 +2160,7 @@ export default function NetflixPlayer({
                       setResolvedMode('iframe');
                     }
                     break;
+                  }
                 }
               }
             });

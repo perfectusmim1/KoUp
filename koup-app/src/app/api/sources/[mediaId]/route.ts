@@ -149,6 +149,9 @@ function isDeadSource(provider?: string | null, directUrl?: string | null, sourc
   const n = (sourceName || '').toLowerCase();
   if (!u || u === 'dead' || !u.startsWith('http') || u.startsWith('javascript:') || u.includes('void(0)')) return true;
   if (
+    p === 'rapidrame' ||
+    u.includes('hdfilmcehennemi.nl/rplayer/') ||
+    u.includes('/rplayer/') ||
     p === 'dead' ||
     p === 'sibnet' ||
     p === 'sendvid' ||
@@ -267,19 +270,49 @@ function getDisplaySourceName(
 
   // 6. If original raw name is already descriptive
   if (raw && !['kaynak', 'other', 'default', 'varsayılan', 'vip', 'vi̇p'].includes(raw.toLowerCase())) {
-    return raw;
+    return raw.replace(/\s+\d+$/, '').trim();
   }
 
   return p && p !== 'other' ? p.toUpperCase() : 'Kaynak';
 }
 
-function applySourceNumbering<T extends { source_name: string }>(sources: T[]): T[] {
-  const counts: Record<string, number> = {};
+function deduplicateSources<T extends { direct_url: string; provider?: string }>(sources: T[]): T[] {
+  const seenMolyIds = new Set<string>();
+  const seenUrls = new Set<string>();
+  const result: T[] = [];
+
   for (const s of sources) {
+    if (!s.direct_url) continue;
+    let directUrl = s.direct_url;
+    const molyMatch = directUrl.match(/dbx\.molystream\.org\/embed\/(?:sheila\/)?([a-zA-Z0-9-]+)/i);
+    if (molyMatch?.[1]) {
+      const molyId = molyMatch[1];
+      if (seenMolyIds.has(molyId)) continue;
+      seenMolyIds.add(molyId);
+      directUrl = `https://dbx.molystream.org/embed/sheila/${molyId}`;
+    }
+    if (seenUrls.has(directUrl)) continue;
+    seenUrls.add(directUrl);
+
+    result.push({
+      ...s,
+      direct_url: directUrl,
+    });
+  }
+  return result;
+}
+
+function applySourceNumbering<T extends { source_name: string }>(sources: T[]): T[] {
+  const cleaned = sources.map((s) => ({
+    ...s,
+    source_name: (s.source_name || '').replace(/\s+\d+$/, '').trim(),
+  }));
+  const counts: Record<string, number> = {};
+  for (const s of cleaned) {
     counts[s.source_name] = (counts[s.source_name] || 0) + 1;
   }
   const seen: Record<string, number> = {};
-  return sources.map((s) => {
+  return cleaned.map((s) => {
     const base = s.source_name;
     seen[base] = (seen[base] || 0) + 1;
     const finalName = counts[base] > 1 && seen[base] > 1 ? `${base} ${seen[base]}` : base;
@@ -313,12 +346,12 @@ function getProviderPriority(provider: string, directUrl: string, contentType: s
     return -4.5;
   }
 
-  // Priority #2: Direct native HLS players (Rapidrame, Diziyou)
+  // Priority #2: Direct native HLS players (Diziyou, Rapidrame)
+  if (p.includes('diziyou') || u.includes('storage.diziyou') || u.includes('diziyou')) {
+    return -4.2;
+  }
   if (p === 'rapidrame' || u.includes('/rplayer/') || (u.includes('rapidrame') && !u.includes('/embed/'))) {
     return -4;
-  }
-  if (p.includes('diziyou') || u.includes('storage.diziyou')) {
-    return -3;
   }
 
   // Priority #3: Verified Turkish subtitled/dubbed players (HDFilm, DiziKorea, DiziBox, Dizilla, DBX)
@@ -502,7 +535,8 @@ export async function GET(
       const cType = (dramaRow?.content_type || 'dizi').toLowerCase();
 
       episodes = episodes.map((ep) => {
-        const filtered = (ep.sources || []).filter(
+        const deduped = deduplicateSources(ep.sources || []);
+        const filtered = deduped.filter(
           (s) => !isDeadSource(s.provider, s.direct_url, s.source_name)
         );
         const sorted = [...filtered].sort(
@@ -604,8 +638,9 @@ export async function GET(
           fansub: string | null;
         }>;
 
+        const rawDeduped = deduplicateSources(rawSources);
         const seenUrls = new Set<string>();
-        const processed = rawSources
+        const processed = rawDeduped
           .filter((s) => {
             if (!s.direct_url || seenUrls.has(s.direct_url)) return false;
             if (isDeadSource(s.provider, s.direct_url, s.source_name)) return false;
@@ -790,12 +825,15 @@ export async function GET(
 
     // Sort episode sources by provider priority & re-number
     for (const ep of episodes) {
-      if (Array.isArray(ep.sources) && ep.sources.length > 1) {
-        ep.sources.sort((a, b) => {
-          const prioA = getProviderPriority(a.provider, a.direct_url, '', a.source_name);
-          const prioB = getProviderPriority(b.provider, b.direct_url, '', b.source_name);
-          return prioA - prioB;
-        });
+      if (Array.isArray(ep.sources) && ep.sources.length > 0) {
+        ep.sources = deduplicateSources(ep.sources);
+        if (ep.sources.length > 1) {
+          ep.sources.sort((a, b) => {
+            const prioA = getProviderPriority(a.provider, a.direct_url, '', a.source_name);
+            const prioB = getProviderPriority(b.provider, b.direct_url, '', b.source_name);
+            return prioA - prioB;
+          });
+        }
         ep.sources = applySourceNumbering(ep.sources);
       }
     }
