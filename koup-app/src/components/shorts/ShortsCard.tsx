@@ -8,32 +8,11 @@ import {
   getProxiedImageUrl,
   cleanMediaTitle,
   formatViewCount,
+  isShortDrama,
 } from '@/lib/supabase';
 import CountryFlag from '@/components/CountryFlag';
 
-/**
- * Universal Short Drama (Kısa Drama) helper.
- * Detects whether a given media item qualifies as a vertical short drama.
- */
-export function isShortDrama(
-  media?: { content_type?: string | null; categories?: string[] | null } | null
-): boolean {
-  if (!media) return false;
-  if (media.content_type === 'kisa_drama' || media.content_type === 'short') return true;
-  if (
-    Array.isArray(media.categories) &&
-    media.categories.some(
-      (c) =>
-        typeof c === 'string' &&
-        (c.toLowerCase().includes('kısa drama') ||
-          c.toLowerCase() === 'short drama' ||
-          c.toLowerCase() === 'shorts')
-    )
-  ) {
-    return true;
-  }
-  return false;
-}
+export { isShortDrama };
 
 export interface ShortsCardProps {
   item: MediaItem;

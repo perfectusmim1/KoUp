@@ -199,7 +199,10 @@ def get_real_imdb_rating(imdb_id: str, content_type: str = "series") -> float | 
 
 def resolve_anilist_metadata(title: str, year: int = None) -> dict | None:
     """Resolves AniList ID, cover, year, and Turkish synopsis for anime without stripping Season/Part."""
-    clean_q = re.sub(r"\s*\((19|20)\d{2}\)\s*", " ", title or "").strip()
+    # Strip known noise brackets only, keep legitimate title brackets (e.g. [Oshi no Ko] -> Oshi no Ko)
+    clean_q = re.sub(r'\[\s*(?:1080p|720p|480p|hd|fhd|uhd|4k|türkçe\s+altyazılı|turkce\s+altyazili|türkçe\s+dublaj|turkce\s+dublaj|dublajlı|dublajli|dublaj|altyazılı|altyazili|final|raw|tr|eng|sub|bluray|bdrip|web-?dl|webrip)\s*\]', ' ', title or "", flags=re.I)
+    clean_q = re.sub(r'[\[\]]', ' ', clean_q)
+    clean_q = re.sub(r"\s*\((19|20)\d{2}\)\s*", " ", clean_q).strip()
     clean_q = re.sub(r"\b(izle|türkçe|altyazılı|anime)\b", "", clean_q, flags=re.I).strip()
     if not clean_q:
         return None
@@ -367,7 +370,9 @@ def resolve_tmdb_metadata(
     if m_yr and not year:
         year = int(m_yr.group(1))
 
-    clean_t = re.sub(r"\(\d{4}\)", "", title or "")
+    clean_t = re.sub(r'\[\s*(?:1080p|720p|480p|hd|fhd|uhd|4k|türkçe\s+altyazılı|turkce\s+altyazili|türkçe\s+dublaj|turkce\s+dublaj|dublajlı|dublajli|dublaj|altyazılı|altyazili|final|raw|tr|eng|sub|bluray|bdrip|web-?dl|webrip)\s*\]', ' ', title or "", flags=re.I)
+    clean_t = re.sub(r'[\[\]]', ' ', clean_t)
+    clean_t = re.sub(r"\(\d{4}\)", "", clean_t)
     clean_t = re.sub(
         r"\b(izle|hd izle|film izle|dizi izle|türkçe dublaj|türkçe altyazılı|tek parça)\b",
         "",
@@ -548,6 +553,10 @@ def resolve_tmdb_metadata(
         if ani:
             result["anilist_id"] = ani["anilist_id"]
             result["anilist_url"] = ani["anilist_url"]
+            if ani.get("cover_image"):
+                result["cover_image"] = ani["cover_image"]
+            if ani.get("backdrop_image"):
+                result["backdrop_image"] = ani["backdrop_image"]
             if not result["overview"] and ani.get("overview"):
                 result["overview"] = ani["overview"]
 

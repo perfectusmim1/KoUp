@@ -20,8 +20,6 @@ const SCRAPER_BLOCK_HOSTS = [
   'asyaking',
   'diziyou',
   'dizilla',
-  'mydramalist',
-  'i.mydramalist.com',
   'sinefy',
   'filmmodu',
   'sezonlukdizi',
@@ -33,8 +31,18 @@ const SCRAPER_BLOCK_HOSTS = [
   'tranimeci',
 ];
 
+const KNOWN_GOOD_CDN_REGEX = /s4\.anilist\.co|anilistcdn|image\.tmdb\.org|mydramalist\.com|i\.mydramalist\.com|r2\.dev/i;
+const TECH_NOISE_BRACKET_REGEX = /\s*[\(\[](?:[^\)\]]*(?:1080p|720p|480p|4k|hd|uhd|web-dl|bluray|dual|dublaj|altyaz[ıi]l[ıi]|altyaz[ıi]|türkçe|turkce|izle|full|final|tv|ova|ona|movie|film|dizi|19\d\d|20\d\d)[^\)\]]*)[\)\]]/gi;
+const TOXIC_POSTER_SUBSTRINGS = ['3j7Dqo0Zp2P7hO0HmiUu4Dtwzv8'];
+
+function isKnownGoodCdn(urlStr?: string | null): boolean {
+  if (!urlStr) return false;
+  return KNOWN_GOOD_CDN_REGEX.test(urlStr);
+}
+
 function isScraperHost(urlStr?: string | null): boolean {
   if (!urlStr) return false;
+  if (isKnownGoodCdn(urlStr)) return false;
   const low = urlStr.toLowerCase();
   return SCRAPER_BLOCK_HOSTS.some((h) => low.includes(h));
 }
@@ -45,18 +53,37 @@ function cleanTitleForSearch(raw?: string | null): string {
     .replace(/•.*$/, '') // Strip "• Yeni Proje!", "• Yeni Bölüm!"
     .replace(/\s*[-–—]\s*(?:\d+\.\s*bölüm|yeni bölüm|fragman|sezon).*$/i, '')
     .replace(/\b\d+\.\s*bölüm\b.*$/i, '')
-    .replace(/\b\d+\.\s*sezon\b.*$/i, '')
+    .replace(TECH_NOISE_BRACKET_REGEX, '')
+    .replace(/[\[\]()]/g, ' ')
+    .replace(/\b(\d+)\.\s*sezon\b/gi, 'Season $1')
     .replace(/\s*kadrosuna katıldı.*$/i, '')
     .replace(/\s*yeni yapım.*$/i, '')
-    .replace(/\s*[\(\[].*?[\)\]]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-function persistEnrichedCoverToSupabase(mediaId?: string | number | null, posterUrl?: string | null, tmdbId?: string | number | null) {
-  if (!mediaId || !posterUrl || !posterUrl.startsWith('https://image.tmdb.org/')) return;
+function persistEnrichedCoverToSupabase(
+  mediaId?: string | number | null,
+  posterUrl?: string | null,
+  tmdbId?: string | number | null,
+  existingCover?: string | null
+) {
+  if (!mediaId || !posterUrl) return;
+  // Toxic poster block: "Almost Funny, Season 3"
+  if (TOXIC_POSTER_SUBSTRINGS.some((s) => posterUrl.includes(s))) return;
+  if (!posterUrl.startsWith('https://')) return;
+
   const mId = typeof mediaId === 'number' ? mediaId : parseInt(String(mediaId), 10);
   if (isNaN(mId) || mId <= 0) return;
+
+  // Protect AniList cover: if existing cover is AniList, never overwrite with TMDB
+  if (
+    existingCover &&
+    (existingCover.includes('s4.anilist.co') || existingCover.includes('anilistcdn')) &&
+    posterUrl.includes('image.tmdb.org')
+  ) {
+    return;
+  }
 
   const payload: Record<string, any> = {
     cover_image: posterUrl,
@@ -65,6 +92,23 @@ function persistEnrichedCoverToSupabase(mediaId?: string | number | null, poster
   if (tmdbId) {
     const tId = typeof tmdbId === 'number' ? tmdbId : parseInt(String(tmdbId), 10);
     if (!isNaN(tId) && tId > 0) payload.tmdb_id = tId;
+  }
+
+  if (!existingCover && posterUrl.includes('image.tmdb.org')) {
+    void Promise.resolve(
+      supabaseAdmin
+        .from('media')
+        .select('cover_image')
+        .eq('id', mId)
+        .maybeSingle()
+    ).then((res) => {
+      const current = res.data?.cover_image;
+      if (current && (current.includes('s4.anilist.co') || current.includes('anilistcdn'))) {
+        return;
+      }
+      return supabaseAdmin.from('media').update(payload).eq('id', mId);
+    }).catch(() => {});
+    return;
   }
 
   void Promise.resolve(
@@ -407,6 +451,9 @@ function extractSlugFromUrl(urlStr?: string | null): string | null {
   }
 }
 
+const GENERIC_TITLE_PATTERN =
+  /^((season|sezon|part|cour|bolum|episode|movie|film)\s*\d+|\d+\s*(season|sezon|st|nd|rd|th)|season|sezon|part|cour|bolum|episode|movie|film|\d+)$/i;
+
 function isTitleMatch(expectedTitle?: string | null, candidateTitle?: string | null): boolean {
   if (!expectedTitle) return true;
   if (!candidateTitle) return false;
@@ -417,12 +464,23 @@ function isTitleMatch(expectedTitle?: string | null, candidateTitle?: string | n
   if (!cleanExp) return true;
   if (!cleanCand) return false;
 
+  // Generic titles (e.g. "Season 3", "Part 2", "Episode 10") can never match anything
+  if (GENERIC_TITLE_PATTERN.test(cleanExp) || GENERIC_TITLE_PATTERN.test(cleanCand)) {
+    return false;
+  }
+
   if (cleanCand === cleanExp) return true;
 
   // Check matching without trailing season numbers
   const expNoSeason = cleanExp.replace(/\s+(?:season|sezon|\d+)$/gi, '').trim();
   const candNoSeason = cleanCand.replace(/\s+(?:season|sezon|\d+)$/gi, '').trim();
-  if (expNoSeason && candNoSeason && expNoSeason === candNoSeason) {
+  if (
+    expNoSeason &&
+    candNoSeason &&
+    !GENERIC_TITLE_PATTERN.test(expNoSeason) &&
+    !GENERIC_TITLE_PATTERN.test(candNoSeason) &&
+    expNoSeason === candNoSeason
+  ) {
     return true;
   }
 
@@ -436,27 +494,132 @@ function isTitleMatch(expectedTitle?: string | null, candidateTitle?: string | n
     return cleanCand === cleanExp;
   }
 
-  // Exact phrase containment with minimal word count difference
+  // Substring match: require matching initial word (series name root), reject short/generic targets
   const candSpaced = ` ${cleanCand} `;
   const expSpaced = ` ${cleanExp} `;
   if (candSpaced.includes(expSpaced) || expSpaced.includes(candSpaced)) {
-    if (Math.abs(candWords.length - expWords.length) <= 2) {
+    // Both must start with the same root word (e.g. "oshi no ko" and "oshi no ko season 3")
+    if (candWords[0] === expWords[0] && Math.abs(candWords.length - expWords.length) <= 2) {
       return true;
     }
   }
 
   // Word overlap match for multi-word titles
   if (expWords.length >= 2 && candWords.length >= 2) {
-    const common = expWords.filter((w) => candWords.includes(w));
-    if (
-      common.length >= Math.ceil(expWords.length * 0.8) &&
-      Math.abs(expWords.length - candWords.length) <= 1
-    ) {
-      return true;
+    // Must start with the same first word to avoid unrelated franchises matching
+    if (candWords[0] === expWords[0]) {
+      const common = expWords.filter((w) => candWords.includes(w));
+      if (
+        common.length >= Math.ceil(expWords.length * 0.8) &&
+        Math.abs(expWords.length - candWords.length) <= 1
+      ) {
+        return true;
+      }
     }
   }
 
   return false;
+}
+
+async function fetchAniListMedia(params: {
+  anilistId?: number | string | null;
+  searchTitle?: string | null;
+  isBanner?: boolean;
+}): Promise<string | null> {
+  const { anilistId, searchTitle, isBanner = false } = params;
+  const numId = anilistId ? parseInt(String(anilistId), 10) : null;
+
+  if (numId && !isNaN(numId) && numId > 0) {
+    const cacheKey = `anilist_id_${numId}_${isBanner ? 'banner' : 'poster'}`;
+    if (titlePosterCache.has(cacheKey)) {
+      return titlePosterCache.get(cacheKey) || null;
+    }
+
+    try {
+      const gql = `
+        query ($id: Int) {
+          Media(id: $id, type: ANIME) {
+            id
+            bannerImage
+            coverImage { extraLarge large }
+          }
+        }
+      `;
+      const res = await fetch('https://graphql.anilist.co', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ query: gql, variables: { id: numId } }),
+        signal: AbortSignal.timeout(3500),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const media = json.data?.Media;
+        const img = isBanner
+          ? media?.bannerImage || media?.coverImage?.extraLarge || media?.coverImage?.large
+          : media?.coverImage?.extraLarge || media?.coverImage?.large;
+        if (img && !TOXIC_POSTER_SUBSTRINGS.some((s) => img.includes(s))) {
+          titlePosterCache.set(cacheKey, img);
+          return img;
+        }
+      }
+    } catch {}
+  }
+
+  if (searchTitle && searchTitle.trim()) {
+    const cleanSearch = cleanTitleForSearch(searchTitle);
+    if (!cleanSearch || GENERIC_TITLE_PATTERN.test(cleanSearch)) return null;
+
+    const cacheKey = `anilist_search_${cleanSearch.toLowerCase()}_${isBanner ? 'banner' : 'poster'}`;
+    if (titlePosterCache.has(cacheKey)) {
+      return titlePosterCache.get(cacheKey) || null;
+    }
+
+    const searchQueries = [cleanSearch];
+    const noSeason = cleanSearch.replace(/\s+(?:season|sezon|\d+)$/gi, '').trim();
+    if (noSeason && noSeason !== cleanSearch && !GENERIC_TITLE_PATTERN.test(noSeason)) {
+      searchQueries.push(noSeason);
+    }
+
+    for (const q of searchQueries) {
+      try {
+        const gql = `
+          query ($search: String) {
+            Media(search: $search, type: ANIME) {
+              id
+              bannerImage
+              coverImage { extraLarge large }
+              title { romaji english native }
+            }
+          }
+        `;
+        const res = await fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ query: gql, variables: { search: q } }),
+          signal: AbortSignal.timeout(3500),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          const media = json.data?.Media;
+          if (media) {
+            const titles = [media.title?.romaji, media.title?.english, media.title?.native].filter(Boolean);
+            const match = titles.some((t) => isTitleMatch(q, t));
+            if (match) {
+              const img = isBanner
+                ? media.bannerImage || media.coverImage?.extraLarge || media.coverImage?.large
+                : media.coverImage?.extraLarge || media.coverImage?.large;
+              if (img && !TOXIC_POSTER_SUBSTRINGS.some((s) => img.includes(s))) {
+                titlePosterCache.set(cacheKey, img);
+                return img;
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+  }
+
+  return null;
 }
 
 async function fetchTmdbPosterById(
@@ -487,23 +650,23 @@ async function fetchTmdbPosterById(
           if (d.adult === true) continue;
 
           if (isBanner) {
-            if (d.backdrop_path) {
+            if (d.backdrop_path && !TOXIC_POSTER_SUBSTRINGS.some((s) => d.backdrop_path.includes(s))) {
               const backdropUrl = `https://image.tmdb.org/t/p/w1280${d.backdrop_path}`;
               titlePosterCache.set(cacheKey, backdropUrl);
               return backdropUrl;
             }
-            if (d.poster_path) {
+            if (d.poster_path && !TOXIC_POSTER_SUBSTRINGS.some((s) => d.poster_path.includes(s))) {
               const posterAsBanner = `https://image.tmdb.org/t/p/w780${d.poster_path}`;
               titlePosterCache.set(cacheKey, posterAsBanner);
               return posterAsBanner;
             }
           } else {
-            if (d.poster_path) {
+            if (d.poster_path && !TOXIC_POSTER_SUBSTRINGS.some((s) => d.poster_path.includes(s))) {
               const posterUrl = `https://image.tmdb.org/t/p/w500${d.poster_path}`;
               titlePosterCache.set(cacheKey, posterUrl);
               return posterUrl;
             }
-            if (d.backdrop_path) {
+            if (d.backdrop_path && !TOXIC_POSTER_SUBSTRINGS.some((s) => d.backdrop_path.includes(s))) {
               const backdropAsPoster = `https://image.tmdb.org/t/p/w500${d.backdrop_path}`;
               titlePosterCache.set(cacheKey, backdropAsPoster);
               return backdropAsPoster;
@@ -514,8 +677,8 @@ async function fetchTmdbPosterById(
     } catch {}
   }
 
-  // Fallback to title search if ID didn't give images
-  if (titleHint) {
+  // Fallback to title search if ID didn't give images, but ONLY if titleHint is not generic!
+  if (titleHint && !GENERIC_TITLE_PATTERN.test(titleHint)) {
     return fetchTmdbPosterForTitle(titleHint, null, mediaType);
   }
 
@@ -551,22 +714,39 @@ async function fetchTmdbPosterForTitle(
   urlHint?: string | null,
   mediaType?: 'tv' | 'movie' | null,
   year?: string | number | null,
-  nativeTitle?: string | null
+  nativeTitle?: string | null,
+  isAnime?: boolean
 ): Promise<string | null> {
   const cleanTitle = (rawTitle || '')
     .replace(/\(\d{4}\)/g, '')
-    .replace(/\b(izle|turkce|altyazili|dizi|film|hd|full|\d+\.\s*sezon|\d+\.\s*bolum)\b/gi, '')
+    .replace(/\b(izle|turkce|altyazili|dizi|film|hd|full|\d+\.\s*bolum)\b/gi, '')
+    .replace(/\b(\d+)\.\s*sezon\b/gi, 'Season $1')
     .replace(/²/g, '2')
     .replace(/³/g, '3')
     .replace(/\s+/g, ' ')
     .trim();
 
+  // If title is only generic (e.g. "Season 3"), never search TMDB unless we have a specific nativeTitle or slugHint!
   const slugHint = extractSlugFromUrl(urlHint);
-  const numYear = year ? parseInt(String(year), 10) : null;
+  if (GENERIC_TITLE_PATTERN.test(cleanTitle) && !nativeTitle && (!slugHint || GENERIC_TITLE_PATTERN.test(slugHint))) {
+    return null;
+  }
 
+  const numYear = year ? parseInt(String(year), 10) : null;
   const cacheKey = `${cleanTitle.toLowerCase()}__${(slugHint || '').toLowerCase()}__${mediaType || ''}__${numYear || ''}__${(nativeTitle || '').toLowerCase()}`;
   if (titlePosterCache.has(cacheKey)) {
     return titlePosterCache.get(cacheKey) || null;
+  }
+
+  // If anime, check AniList FIRST before TMDB!
+  if (isAnime || mediaType === ('anime' as any)) {
+    const aniPoster = await fetchAniListMedia({
+      searchTitle: nativeTitle || cleanTitle || slugHint,
+    });
+    if (aniPoster) {
+      titlePosterCache.set(cacheKey, aniPoster);
+      return aniPoster;
+    }
   }
 
   const queries: string[] = [];
@@ -578,18 +758,19 @@ async function fetchTmdbPosterForTitle(
         .replace(/²/g, '2')
         .replace(/³/g, '3')
         .trim();
+      if (GENERIC_TITLE_PATTERN.test(trimmed)) continue;
       if (trimmed.length >= 2 && !queries.includes(trimmed)) {
         queries.push(trimmed);
       }
       const ascii = transliterateTrToAscii(trimmed);
-      if (ascii.length >= 2 && !queries.includes(ascii)) {
+      if (!GENERIC_TITLE_PATTERN.test(ascii) && ascii.length >= 2 && !queries.includes(ascii)) {
         queries.push(ascii);
       }
       const noSeason = trimmed.replace(/\s+(?:season|sezon|\d+\.?\s*(?:sezon|season)|\d+)$/gi, '').trim();
-      if (noSeason && noSeason.length >= 2 && !queries.includes(noSeason)) {
+      if (noSeason && noSeason.length >= 2 && !GENERIC_TITLE_PATTERN.test(noSeason) && !queries.includes(noSeason)) {
         queries.push(noSeason);
         const noSeasonAscii = transliterateTrToAscii(noSeason);
-        if (noSeasonAscii.length >= 2 && !queries.includes(noSeasonAscii)) {
+        if (!GENERIC_TITLE_PATTERN.test(noSeasonAscii) && noSeasonAscii.length >= 2 && !queries.includes(noSeasonAscii)) {
           queries.push(noSeasonAscii);
         }
       }
@@ -633,6 +814,7 @@ async function fetchTmdbPosterForTitle(
             const results = ((d.results || []) as any[]).filter((r) => !r.adult);
             const hit = results.find((r: any) => {
               if (!r.poster_path) return false;
+              if (TOXIC_POSTER_SUBSTRINGS.some((s) => r.poster_path.includes(s))) return false;
               // Validate release year if known
               const relDate = r.release_date || r.first_air_date || '';
               if (relDate && numYear && numYear > 1900) {
@@ -664,29 +846,12 @@ async function fetchTmdbPosterForTitle(
   // AniList Fallback for anime or TV
   if (mediaType !== 'movie') {
     for (const q of queries.slice(0, 3)) {
-      try {
-        const gql = `
-          query ($search: String) {
-            Media(search: $search, type: ANIME) {
-              coverImage { extraLarge large }
-            }
-          }
-        `;
-        const alResp = await fetch('https://graphql.anilist.co', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ query: gql, variables: { search: q } }),
-          signal: AbortSignal.timeout(3000),
-        });
-        if (alResp.ok) {
-          const alJson = await alResp.json();
-          const img = alJson.data?.Media?.coverImage?.extraLarge || alJson.data?.Media?.coverImage?.large;
-          if (img) {
-            titlePosterCache.set(cacheKey, img);
-            return img;
-          }
-        }
-      } catch {}
+      if (GENERIC_TITLE_PATTERN.test(q)) continue;
+      const img = await fetchAniListMedia({ searchTitle: q });
+      if (img) {
+        titlePosterCache.set(cacheKey, img);
+        return img;
+      }
     }
   }
 
@@ -793,7 +958,7 @@ export async function GET(req: NextRequest) {
 
     if (targetUrl) {
       // Dead scraper domain or scraper hosts should never be fetched directly (causes 403 or slow timeout)
-      if (targetUrl.includes('image.tmdb.org') || targetUrl.includes('s4.anilist.co')) {
+      if (isKnownGoodCdn(targetUrl)) {
         urlsToTry.push(targetUrl);
       } else if (!isScraperHost(targetUrl) && !targetUrl.includes('cdn.webdrama.io')) {
         const uncroppedMaster = targetUrl
@@ -810,8 +975,7 @@ export async function GET(req: NextRequest) {
       fallbackUrl &&
       !urlsToTry.includes(fallbackUrl) &&
       (fallbackUrl.startsWith('http://') || fallbackUrl.startsWith('https://')) &&
-      !isScraperHost(fallbackUrl) &&
-      !fallbackUrl.includes('cdn.webdrama.io')
+      (isKnownGoodCdn(fallbackUrl) || (!isScraperHost(fallbackUrl) && !fallbackUrl.includes('cdn.webdrama.io')))
     ) {
       urlsToTry.push(fallbackUrl);
     }
@@ -947,13 +1111,24 @@ export async function GET(req: NextRequest) {
     }
 
     // 3. Media / Title branch (with fast Supabase cache lookup)
+    let mediaRecord: {
+      id: number;
+      tmdb_id?: number | null;
+      anilist_id?: number | null;
+      content_type?: string | null;
+      title?: string | null;
+      original_title?: string | null;
+      poster_url?: string | null;
+      cover_image?: string | null;
+      backdrop_image?: string | null;
+    } | null = null;
+
     if (!resolvedTmdbId) {
-      let mediaRecord: { id: number; tmdb_id?: number | null; poster_url?: string | null; cover_image?: string | null } | null = null;
       const targetMediaId = mediaIdParam ? parseInt(mediaIdParam, 10) : null;
       if (targetMediaId && !isNaN(targetMediaId) && targetMediaId > 0) {
         const { data } = await supabaseAdmin
           .from('media')
-          .select('id, tmdb_id, poster_url, cover_image')
+          .select('id, tmdb_id, anilist_id, content_type, title, original_title, poster_url, cover_image, backdrop_image')
           .eq('id', targetMediaId)
           .maybeSingle();
         if (data) mediaRecord = data;
@@ -961,7 +1136,7 @@ export async function GET(req: NextRequest) {
       if (!mediaRecord && cleanSearchTitle) {
         const { data } = await supabaseAdmin
           .from('media')
-          .select('id, tmdb_id, poster_url, cover_image')
+          .select('id, tmdb_id, anilist_id, content_type, title, original_title, poster_url, cover_image, backdrop_image')
           .ilike('title', cleanSearchTitle)
           .limit(1)
           .maybeSingle();
@@ -970,7 +1145,7 @@ export async function GET(req: NextRequest) {
       if (!mediaRecord && targetUrl) {
         const { data } = await supabaseAdmin
           .from('media')
-          .select('id, tmdb_id, poster_url, cover_image')
+          .select('id, tmdb_id, anilist_id, content_type, title, original_title, poster_url, cover_image, backdrop_image')
           .eq('cover_image', targetUrl)
           .limit(1)
           .maybeSingle();
@@ -978,10 +1153,34 @@ export async function GET(req: NextRequest) {
       }
 
       if (mediaRecord) {
-        if (mediaRecord.poster_url && mediaRecord.poster_url.startsWith('https://image.tmdb.org/')) {
-          const streamed = await fetchAndStreamImage(mediaRecord.poster_url, sizeParam);
+        const isBanner = typeParam === 'banner' || typeParam === 'backdrop';
+        const storedImg = isBanner
+          ? mediaRecord.backdrop_image || mediaRecord.cover_image
+          : mediaRecord.cover_image || mediaRecord.poster_url;
+        if (
+          storedImg &&
+          isKnownGoodCdn(storedImg) &&
+          !TOXIC_POSTER_SUBSTRINGS.some((s) => storedImg.includes(s))
+        ) {
+          const streamed = await fetchAndStreamImage(storedImg, sizeParam);
           if (streamed) return streamed;
         }
+
+        if (mediaRecord.content_type === 'anime' || mediaRecord.anilist_id) {
+          const aniImg = await fetchAniListMedia({
+            anilistId: mediaRecord.anilist_id,
+            searchTitle: mediaRecord.original_title || mediaRecord.title || cleanSearchTitle,
+            isBanner,
+          });
+          if (aniImg) {
+            if (!isBanner) {
+              persistEnrichedCoverToSupabase(mediaRecord.id, aniImg, null, mediaRecord.cover_image);
+            }
+            const streamed = await fetchAndStreamImage(aniImg, sizeParam);
+            if (streamed) return streamed;
+          }
+        }
+
         if (mediaRecord.tmdb_id) {
           resolvedTmdbId = String(mediaRecord.tmdb_id);
         }
@@ -993,7 +1192,7 @@ export async function GET(req: NextRequest) {
       const tmdbPoster = await fetchTmdbPosterById(resolvedTmdbId, mediaTypeParam, cleanSearchTitle || titleParam, isBanner);
       if (tmdbPoster) {
         if (!isBanner) {
-          persistEnrichedCoverToSupabase(mediaIdParam, tmdbPoster, resolvedTmdbId);
+          persistEnrichedCoverToSupabase(mediaIdParam, tmdbPoster, resolvedTmdbId, mediaRecord?.cover_image);
         }
         const streamed = await fetchAndStreamImage(tmdbPoster, sizeParam);
         if (streamed) return streamed;
@@ -1006,10 +1205,11 @@ export async function GET(req: NextRequest) {
         targetUrl || fallbackUrl,
         mediaTypeParam,
         yearParam,
-        nativeTitleParam
+        nativeTitleParam,
+        mediaRecord?.content_type === 'anime'
       );
       if (posterUrl) {
-        persistEnrichedCoverToSupabase(mediaIdParam, posterUrl);
+        persistEnrichedCoverToSupabase(mediaIdParam, posterUrl, undefined, mediaRecord?.cover_image);
         const streamed = await fetchAndStreamImage(posterUrl, sizeParam);
         if (streamed) return streamed;
       }

@@ -93,7 +93,10 @@ def norm_title(s):
         return ""
     s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode()
     s = s.translate(TR).lower()
-    s = re.sub(r'\(.*?\)|\[.*?\]', '', s)
+    # Strip known noise bracket tags only, keep legitimate bracket words (e.g. [Oshi no Ko] -> Oshi no Ko)
+    s = re.sub(r'\[\s*(?:1080p|720p|480p|hd|fhd|uhd|4k|turkce\s*altyazili|turkce\s*dublaj|dublajli|dublaj|altyazili|final|raw|tr|eng|sub|bluray|bdrip|web-?dl|webrip)\s*\]', '', s, flags=re.I)
+    s = re.sub(r'[\[\]]', ' ', s)
+    s = re.sub(r'\(.*?\)', '', s)
     # Strip dates like 26 ekim 2026, 26.10.2026
     s = re.sub(r'\b\d{1,2}\s+(?:ocak|subat|mart|nisan|mayis|haziran|temmuz|agustos|eylul|ekim|kasim|aralik)(?:\s+\d{4})?\b', '', s, flags=re.I)
     s = re.sub(r'\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b', '', s)

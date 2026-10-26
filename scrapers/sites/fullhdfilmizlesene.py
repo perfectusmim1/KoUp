@@ -15,6 +15,7 @@ import time
 import codecs
 import base64
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup
 import sqlite3
 
@@ -139,14 +140,14 @@ def extract_movie_sources(html):
     return sources
 
 
-def scrape_movie(conn, cur, idx, session, movie_url):
-    time.sleep(1.5)  # 1.5s rate-limit requirement
+def fetch_movie_data(session, movie_url):
+    """Fetches movie HTML and extracts metadata + sources in memory."""
     try:
         r = session.get(movie_url, timeout=12)
         if r.status_code != 200:
-            return 0
+            return None
     except Exception:
-        return 0
+        return None
 
     html = r.text
     soup = BeautifulSoup(html, "html.parser")
@@ -177,33 +178,47 @@ def scrape_movie(conn, cur, idx, session, movie_url):
             raw_title = title_elem.get_text(strip=True).replace("İzle", "").replace("izle", "").replace("Filmi", "").strip()
 
     if not raw_title:
-        return 0
+        return None
 
     slug = clean_scraped_slug(movie_url)
     if not year:
         m_yr = re.search(r"\b(19\d{2}|20\d{2})\b", raw_title)
         year = int(m_yr.group(1)) if m_yr else None
 
+    sources = extract_movie_sources(html)
+    return {
+        "raw_title": raw_title,
+        "slug": slug,
+        "year": year,
+        "movie_url": movie_url,
+        "sources": sources,
+    }
+
+
+def scrape_movie(conn, cur, idx, session, movie_url):
+    data = fetch_movie_data(session, movie_url)
+    if not data:
+        return 0
+
     drama_id, d_title, d_slug, d_cover = match_or_create_enriched_drama(
         conn=conn,
         cur=cur,
         idx=idx,
-        raw_title=raw_title,
-        slug_cand=slug,
+        raw_title=data["raw_title"],
+        slug_cand=data["slug"],
         content_type="film",
         country_hint="US",
         site_tag=SITE_TAG,
-        source_url=movie_url,
-        year_hint=year,
+        source_url=data["movie_url"],
+        year_hint=data["year"],
     )
     if not drama_id:
         return 0
 
-    sources = extract_movie_sources(html)
+    sources = data["sources"]
     added_count = 0
     if sources:
-        # Film episode: Season 1 Episode 1
-        ep_id, is_new = match_or_create_episode(cur, drama_id, 1, 1, d_title or raw_title, movie_url)
+        ep_id, is_new = match_or_create_episode(cur, drama_id, 1, 1, d_title or data["raw_title"], data["movie_url"])
         for sname, surl, sprovider in sources:
             if add_source(cur, ep_id, sname, surl, sprovider, SITE_TAG):
                 added_count += 1
@@ -215,7 +230,54 @@ def scrape_movie(conn, cur, idx, session, movie_url):
     return added_count
 
 
-def get_catalog_urls(session=None, base_url=None, max_pages=3):
+def scrape_movies_batch(conn, cur, idx, session, movie_urls):
+    """Fetches movies concurrently in memory with ThreadPoolExecutor, then commits batch."""
+    fetched_data = []
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        futs = {executor.submit(fetch_movie_data, session, u): u for u in movie_urls}
+        for fut in as_completed(futs):
+            try:
+                res = fut.result()
+                if res:
+                    fetched_data.append(res)
+            except Exception:
+                pass
+
+    total_added = 0
+    for data in fetched_data:
+        drama_id, d_title, d_slug, d_cover = match_or_create_enriched_drama(
+            conn=conn,
+            cur=cur,
+            idx=idx,
+            raw_title=data["raw_title"],
+            slug_cand=data["slug"],
+            content_type="film",
+            country_hint="US",
+            site_tag=SITE_TAG,
+            source_url=data["movie_url"],
+            year_hint=data["year"],
+        )
+        if not drama_id:
+            continue
+
+        sources = data["sources"]
+        added_for_film = 0
+        if sources:
+            ep_id, is_new = match_or_create_episode(cur, drama_id, 1, 1, d_title or data["raw_title"], data["movie_url"])
+            for sname, surl, sprovider in sources:
+                if add_source(cur, ep_id, sname, surl, sprovider, SITE_TAG):
+                    added_for_film += 1
+
+        tag_site(cur, drama_id, SITE_TAG)
+        if added_for_film > 0:
+            sync_drama_bundle_and_counts(conn, cur, drama_id)
+            total_added += added_for_film
+
+    safe_commit(conn)
+    return total_added
+
+
+def get_catalog_urls(session=None, base_url=None, max_pages=10):
     session = session or _get_session()
     base_url = base_url or resolve_base_url(session)
     movie_urls = []
@@ -236,5 +298,5 @@ def get_catalog_urls(session=None, base_url=None, max_pages=3):
                         movie_urls.append(href)
         except Exception:
             continue
-        time.sleep(1.0)
+        time.sleep(0.05)
     return movie_urls

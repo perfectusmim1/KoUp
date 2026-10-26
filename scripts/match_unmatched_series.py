@@ -225,8 +225,8 @@ def main():
             cur.execute('''
                 UPDATE dramas
                 SET anilist_id = ?,
-                    cover_image = COALESCE(cover_image, ?),
-                    backdrop_image = COALESCE(backdrop_image, ?),
+                    cover_image = COALESCE(?, cover_image),
+                    backdrop_image = COALESCE(?, backdrop_image),
                     overview = COALESCE(overview, ?)
                 WHERE id = ?
             ''', (al_id, al_img, al_banner, al_desc, did))

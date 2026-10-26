@@ -273,7 +273,11 @@ def match_or_create_enriched_drama(
         raw_title or "",
         flags=re.I,
     )
+    # Strip known noise brackets only, keep meaningful bracket content (e.g. [Oshi no Ko] -> Oshi no Ko)
+    clean_t = re.sub(r'\[\s*(?:1080p|720p|480p|hd|fhd|uhd|4k|türkçe\s+altyazılı|turkce\s+altyazili|türkçe\s+dublaj|turkce\s+dublaj|dublajlı|dublajli|dublaj|altyazılı|altyazili|final|raw|tr|eng|sub|bluray|bdrip|web-?dl|webrip)\s*\]', ' ', clean_t, flags=re.I)
+    clean_t = re.sub(r'[\[\]]', ' ', clean_t)
     clean_t = re.sub(r"[\-_|:•]+$", "", clean_t).strip()
+    clean_t = re.sub(r"\s+", " ", clean_t).strip()
     if not clean_t:
         clean_t = (slug_cand or "yapim").replace("-", " ").title()
 
@@ -323,14 +327,26 @@ def match_or_create_enriched_drama(
             tmdb_id = row[5]
             if not cover or cover == "/logo-dark.png" or any(h in (cover or "").lower() for h in ["dizifon", "dizikorea", "ddizi", "dizibox", "asyaanimeleri"]):
                 try:
-                    meta = resolve_tmdb_metadata(clean_t, year=year_hint, country_hint=country_hint, content_type=content_type)
-                    if meta and meta.get("cover_image") and "image.tmdb.org" in meta["cover_image"]:
-                        cover = meta["cover_image"]
-                        backdrop = meta.get("backdrop_image") or backdrop or cover
-                        tmdb_id = meta.get("tmdb_id") or tmdb_id
-                        cur.execute("UPDATE dramas SET cover_image = ?, backdrop_image = COALESCE(?, backdrop_image), tmdb_id = COALESCE(?, tmdb_id) WHERE id = ?", (cover, backdrop, tmdb_id, row[0]))
-                        conn.commit()
-                        sb_request("PATCH", f"/rest/v1/media?id=eq.{row[0]}", body={"cover_image": cover, "backdrop_image": backdrop, "tmdb_id": tmdb_id})
+                    if content_type == "anime":
+                        ani_q = re.sub(r'(\d+)\s*\.?\s*sezon\b', r'Season \1', clean_t, flags=re.I)
+                        ani_q = re.sub(r'sezon\s*(\d+)\b', r'Season \1', ani_q, flags=re.I)
+                        ani = resolve_anilist_metadata(ani_q, year=year_hint)
+                        if ani and ani.get("cover_image"):
+                            cover = ani["cover_image"]
+                            backdrop = ani.get("backdrop_image") or backdrop or cover
+                            al_id = ani.get("anilist_id")
+                            cur.execute("UPDATE dramas SET cover_image = ?, backdrop_image = COALESCE(?, backdrop_image), anilist_id = COALESCE(?, anilist_id) WHERE id = ?", (cover, backdrop, al_id, row[0]))
+                            conn.commit()
+                            sb_request("PATCH", f"/rest/v1/media?id=eq.{row[0]}", body={"cover_image": cover, "backdrop_image": backdrop, "anilist_id": al_id})
+                    else:
+                        meta = resolve_tmdb_metadata(clean_t, year=year_hint, country_hint=country_hint, content_type=content_type)
+                        if meta and meta.get("cover_image") and "image.tmdb.org" in meta["cover_image"]:
+                            cover = meta["cover_image"]
+                            backdrop = meta.get("backdrop_image") or backdrop or cover
+                            tmdb_id = meta.get("tmdb_id") or tmdb_id
+                            cur.execute("UPDATE dramas SET cover_image = ?, backdrop_image = COALESCE(?, backdrop_image), tmdb_id = COALESCE(?, tmdb_id) WHERE id = ?", (cover, backdrop, tmdb_id, row[0]))
+                            conn.commit()
+                            sb_request("PATCH", f"/rest/v1/media?id=eq.{row[0]}", body={"cover_image": cover, "backdrop_image": backdrop, "tmdb_id": tmdb_id})
                 except Exception:
                     pass
             return row[0], row[1], row[2], cover or "/logo-dark.png"
@@ -346,13 +362,17 @@ def match_or_create_enriched_drama(
         tmdb = resolve_tmdb_metadata(ani_search_title, year=year_hint, country_hint="JP", content_type="anime")
         meta = tmdb or {}
         if ani:
-            meta.setdefault("anilist_id", ani.get("anilist_id"))
-            meta.setdefault("anilist_url", ani.get("anilist_url"))
+            meta["anilist_id"] = ani.get("anilist_id")
+            meta["anilist_url"] = ani.get("anilist_url")
             meta.setdefault("original_title", ani.get("original_title"))
             meta.setdefault("release_year", ani.get("release_year"))
-            meta.setdefault("cover_image", ani.get("cover_image"))
-            meta.setdefault("backdrop_image", ani.get("backdrop_image"))
-            meta.setdefault("overview", ani.get("overview"))
+            # AniList coverImage is #1 priority for anime; never allow TMDB to overwrite
+            if ani.get("cover_image"):
+                meta["cover_image"] = ani["cover_image"]
+            if ani.get("backdrop_image"):
+                meta["backdrop_image"] = ani["backdrop_image"]
+            if not meta.get("overview") and ani.get("overview"):
+                meta["overview"] = ani["overview"]
             # Fetch clean country, genres and tags from AniList
             ani_details = fetch_clean_anilist_details(ani.get("anilist_id"))
             c_code = ani_details.get("country_code") or "JP"

@@ -54,9 +54,9 @@ def run_animelvl(limit=None, resume=False):
     except Exception as e:
         print(f"[AnimeLVL] Calendar sync notice: {e}", flush=True)
 
-    urls = animelvl.get_sitemap_urls(session)
-    if not urls:
-        print("[AnimeLVL] Sitemap unavailable or 503 maintenance mode. Tested fallback.", flush=True)
+    catalog = animelvl.get_animes_catalog(session)
+    if not catalog:
+        print("[AnimeLVL] Catalog unavailable. Exiting.", flush=True)
         conn.close()
         return 0
 
@@ -64,18 +64,20 @@ def run_animelvl(limit=None, resume=False):
     total_added = 0
     processed = 0
 
-    for u in urls:
+    for item in catalog:
+        slug = item.get("slug")
+        u = f"https://animelvl.com/anime/{item.get('id', '')}-{slug}"
         if resume and u in already_done:
             continue
         try:
-            added = animelvl.scrape_anime_page(conn, cur, idx, session, u)
+            added = animelvl.scrape_anime_item(conn, cur, idx, item)
             mark_done(cur, "animelvl", u)
             safe_commit(conn)
             total_added += added
             processed += 1
-            print(f"[AnimeLVL] Processed: {u} (+{added} sources)", flush=True)
+            print(f"[AnimeLVL] Processed: {item.get('t') or slug} (+{added} sources)", flush=True)
         except Exception as e:
-            print(f"[AnimeLVL] Error on {u}: {e}", flush=True)
+            print(f"[AnimeLVL] Error on {slug}: {e}", flush=True)
 
         if limit and processed >= limit:
             break
@@ -92,7 +94,7 @@ def run_sezonlukdizi(limit=None, resume=False):
     idx = build_drama_index(cur, content_types=("dizi", "anime", "film"))
     session = sezonlukdizi._get_session()
 
-    urls = sezonlukdizi.get_series_sitemap_urls(session, max_pages=1)
+    urls = sezonlukdizi.get_series_sitemap_urls(session, max_pages=3)
     print(f"[SezonlukDizi] Found {len(urls)} series in sitemap", flush=True)
 
     already_done = done_urls(cur, "sezonlukdizi") if resume else set()
@@ -129,20 +131,7 @@ def run_dizipal(limit=None, resume=False):
     base_url = dizipal.resolve_current_domain(session)
     print(f"[Dizipal] Active domain: {base_url}", flush=True)
 
-    # Fetch recent episodes or series
-    try:
-        r = session.get(f"{base_url}/yeni-eklenen-dizi-bolumler", timeout=10)
-        import re
-        series_links = re.findall(r'href=["\'](/series/[^"\']+|/bolum/[^"\']+)["\']', r.text)
-        unique_urls = []
-        for l in series_links:
-            full = f"{base_url}{l}"
-            if full not in unique_urls:
-                unique_urls.append(full)
-    except Exception as e:
-        print(f"[Dizipal] Catalog fetch error: {e}", flush=True)
-        unique_urls = []
-
+    unique_urls = dizipal.get_catalog_items(session, base_url, max_pages=3)
     print(f"[Dizipal] Found {len(unique_urls)} items in catalog", flush=True)
 
     already_done = done_urls(cur, "dizipal") if resume else set()
@@ -156,7 +145,6 @@ def run_dizipal(limit=None, resume=False):
             if "/series/" in u:
                 added = dizipal.scrape_series(conn, cur, idx, session, u, base_url)
             else:
-                # Direct episode
                 added = dizipal.scrape_episode_and_save(conn, cur, idx, session, u, base_url)
             mark_done(cur, "dizipal", u)
             safe_commit(conn)
@@ -183,29 +171,20 @@ def run_fullhdfilmizlesene(limit=None, resume=False):
     base_url = fullhdfilmizlesene.resolve_base_url(session)
     print(f"[FullHDFilmizlesene] Base domain: {base_url}", flush=True)
 
-    urls = fullhdfilmizlesene.get_catalog_urls(session, base_url=base_url, max_pages=1)
+    urls = fullhdfilmizlesene.get_catalog_urls(session, base_url=base_url, max_pages=10)
     print(f"[FullHDFilmizlesene] Found {len(urls)} movies in catalog", flush=True)
 
     already_done = done_urls(cur, "fullhdfilmizlesene") if resume else set()
-    total_added = 0
-    processed = 0
+    to_process = [u for u in urls if not (resume and u in already_done)]
+    if limit:
+        to_process = to_process[:limit]
 
-    for u in urls:
-        if resume and u in already_done:
-            continue
-        try:
-            added = fullhdfilmizlesene.scrape_movie(conn, cur, idx, session, u)
-            mark_done(cur, "fullhdfilmizlesene", u)
-            safe_commit(conn)
-            total_added += added
-            processed += 1
-            print(f"[FullHDFilmizlesene] Processed: {u} (+{added} sources)", flush=True)
-        except Exception as e:
-            print(f"[FullHDFilmizlesene] Error on {u}: {e}", flush=True)
-
-        if limit and processed >= limit:
-            break
-
+    print(f"[FullHDFilmizlesene] Batch processing {len(to_process)} movies...", flush=True)
+    total_added = fullhdfilmizlesene.scrape_movies_batch(conn, cur, idx, session, to_process)
+    for u in to_process:
+        mark_done(cur, "fullhdfilmizlesene", u)
+    safe_commit(conn)
+    print(f"[FullHDFilmizlesene] Completed: {len(to_process)} movies (+{total_added} sources)", flush=True)
     conn.close()
     return total_added
 
@@ -253,7 +232,7 @@ def run_anizm(limit=None, resume=False):
     idx = build_drama_index(cur, content_types=("anime", "dizi"))
     session = tranimaci_anizm._get_session("anizm")
 
-    urls = tranimaci_anizm.get_anizm_catalog_urls(session, max_pages=1)
+    urls = tranimaci_anizm.get_anizm_catalog_urls(session, max_pages=5)
     print(f"[Anizm] Found {len(urls)} items in catalog", flush=True)
 
     already_done = done_urls(cur, "anizm") if resume else set()

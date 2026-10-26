@@ -1,10 +1,15 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import { notFound, permanentRedirect } from 'next/navigation';
 import { getSeriesDataServer } from '@/lib/server/seriesData';
 import SeriesDetailClient from './SeriesDetailClient';
 import { ShortsDetailClient } from '@/components/shorts/ShortsWatchClient';
-import { isShortDrama } from '@/components/shorts/ShortsCard';
-import { cleanMediaTitle, cleanOverviewText, getProxiedImageUrl } from '@/lib/supabase';
+import {
+  cleanMediaTitle,
+  cleanOverviewText,
+  getProxiedImageUrl,
+  isShortDrama,
+} from '@/lib/supabase';
 
 // Incremental Static Regeneration (ISR): Cache rendered series page for 1 hour
 export const revalidate = 3600;
@@ -51,7 +56,7 @@ export async function generateMetadata({
       `${cleanTitle} türkçe altyazılı`,
       `${cleanTitle} kore dizisi`,
       `${cleanTitle} full hd`,
-      ...(media.categories || []),
+      ...(Array.isArray(media.categories) ? media.categories : []),
     ],
     alternates: {
       canonical: canonicalUrl,
@@ -164,18 +169,22 @@ export default async function SeriesDetailPage({
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
       {isShort ? (
-        <ShortsDetailClient
-          media={media}
-          episodes={episodes}
-        />
+        <Suspense fallback={null}>
+          <ShortsDetailClient
+            media={media}
+            episodes={episodes}
+          />
+        </Suspense>
       ) : (
-        <SeriesDetailClient
-          slug={slug}
-          initialMedia={media}
-          initialEpisodes={episodes}
-          initialCast={cast}
-          initialFranchise={franchise}
-        />
+        <Suspense fallback={null}>
+          <SeriesDetailClient
+            slug={slug}
+            initialMedia={media}
+            initialEpisodes={episodes}
+            initialCast={cast}
+            initialFranchise={franchise}
+          />
+        </Suspense>
       )}
     </>
   );

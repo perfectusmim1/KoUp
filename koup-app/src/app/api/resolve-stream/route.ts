@@ -2912,14 +2912,219 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 5. If the host is known to forbid framing (e.g. X-Frame-Options SAMEORIGIN / DENY or direct media files), mark as dead rather than returning a blocked iframe
+  // 4j. Dizipal / DPlayer Resolver (sn.dplayer82.site, etc.)
+  if (provider === 'dizipal' || lowerUrl.includes('dplayer') || lowerUrl.includes('source2.php')) {
+    try {
+      if (lowerUrl.includes('.m3u8')) {
+        const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(url)}&ref=${encodeURIComponent('https://sn.dplayer82.site/')}`;
+        return NextResponse.json(
+          {
+            mode: 'native_hls',
+            streamUrl: proxiedUrl,
+            qualities: [{ label: '1080p', url: proxiedUrl }],
+            fallbackIframe: url,
+          },
+          { headers: CACHE_HEADERS }
+        );
+      }
+
+      const dplayerResp = await fetch(url, {
+        headers: { 'User-Agent': commonUA, Referer: 'https://dizipal1592.com/' },
+        signal: AbortSignal.timeout(6000),
+      });
+      if (dplayerResp.ok) {
+        const dplayerHtml = await dplayerResp.text();
+        const openMatch = dplayerHtml.match(/openPlayer\(['"]([^'"]+)['"]/);
+        if (openMatch?.[1]) {
+          const playlistArg = openMatch[1];
+          const baseMatch = url.match(/^(https?:\/\/[^/]+)/);
+          const dplayerHost = baseMatch ? baseMatch[1] : 'https://sn.dplayer82.site';
+          const s2Resp = await fetch(`${dplayerHost}/source2.php?v=${playlistArg}`, {
+            headers: {
+              'User-Agent': commonUA,
+              Referer: url,
+              'X-Requested-With': 'XMLHttpRequest',
+            },
+            signal: AbortSignal.timeout(6000),
+          });
+          if (s2Resp.ok) {
+            const s2Data = await s2Resp.json();
+            const playlist = s2Data?.playlist || [];
+            if (playlist[0]?.sources?.[0]?.file) {
+              const rawFile = playlist[0].sources[0].file;
+              const masterHls = rawFile.replace('m.php', 'master.m3u8');
+              const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(masterHls)}&ref=${encodeURIComponent(`${dplayerHost}/`)}`;
+              return NextResponse.json(
+                {
+                  mode: 'native_hls',
+                  streamUrl: proxiedUrl,
+                  qualities: [{ label: '1080p', url: proxiedUrl }],
+                  fallbackIframe: url,
+                },
+                { headers: CACHE_HEADERS }
+              );
+            }
+          }
+        }
+      }
+    } catch {
+      // Fall through
+    }
+  }
+
+  // 4k. AnimeLVL Stream Proxy (/api/stream.mp4 or /api/stream.m3u8)
+  if (provider === 'animelvl' || lowerUrl.includes('animelvl.com/api/stream')) {
+    const isHls = lowerUrl.includes('.m3u8');
+    const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(url)}&ref=${encodeURIComponent('https://animelvl.com/')}`;
+    return NextResponse.json(
+      {
+        mode: isHls ? 'native_hls' : 'native_mp4',
+        streamUrl: proxiedUrl,
+        qualities: [{ label: '1080p', url: proxiedUrl }],
+        fallbackIframe: url,
+      },
+      { headers: CACHE_HEADERS }
+    );
+  }
+
+  // 4l. Anizm Player Resolver (anizm.net/player/{id})
+  if (provider === 'anizm' || lowerUrl.includes('anizm.net/player/')) {
+    try {
+      const anizmResp = await fetch(url, {
+        headers: { 'User-Agent': commonUA, Referer: 'https://anizm.net/' },
+        signal: AbortSignal.timeout(6000),
+      });
+      if (anizmResp.ok) {
+        const aHtml = await anizmResp.text();
+        const mIfr = aHtml.match(/<iframe[^\>]+src=["']([^"']+)["']/i);
+        if (mIfr?.[1]) {
+          let nestedUrl = mIfr[1];
+          if (nestedUrl.startsWith('//')) nestedUrl = 'https:' + nestedUrl;
+          else if (!nestedUrl.startsWith('http')) nestedUrl = `https://anizm.net${nestedUrl}`;
+
+          // If nested is OK.ru / Odnoklassniki or VK, delegate to iframe shell
+          return NextResponse.json(
+            {
+              mode: 'iframe',
+              iframeUrl: nestedUrl,
+            },
+            { headers: CACHE_HEADERS }
+          );
+        }
+      }
+    } catch {
+      // Fall through
+    }
+    return NextResponse.json(
+      {
+        mode: 'iframe',
+        iframeUrl: url,
+      },
+      { headers: CACHE_HEADERS }
+    );
+  }
+
+  // 4m. FullHDFilmizlesene / Turbo.imgz.me / Rapidvid
+  if (
+    provider === 'fullhdfilmizlesene' ||
+    lowerUrl.includes('turbo.imgz.me') ||
+    lowerUrl.includes('rapidvid.org')
+  ) {
+    try {
+      const parsedU = new URL(url);
+      const refOrigin = `${parsedU.protocol}//${parsedU.host}/`;
+      const resp = await fetch(url, {
+        headers: { 'User-Agent': commonUA, Referer: refOrigin },
+        signal: AbortSignal.timeout(6000),
+      });
+      if (resp.ok) {
+        const rawHtml = await resp.text();
+        const html = rawHtml.includes('eval(function') ? unpackDeanEdwards(rawHtml) : rawHtml;
+        const m3u8Match = html.match(/(https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)/i);
+        if (m3u8Match?.[1]) {
+          const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(m3u8Match[1])}&ref=${encodeURIComponent(refOrigin)}`;
+          return NextResponse.json(
+            {
+              mode: 'native_hls',
+              streamUrl: proxiedUrl,
+              qualities: [{ label: '1080p', url: proxiedUrl }],
+              fallbackIframe: url,
+            },
+            { headers: CACHE_HEADERS }
+          );
+        }
+        const mp4Match = html.match(/(https?:\/\/[^"'\s]+\.mp4[^"'\s]*)/i);
+        if (mp4Match?.[1]) {
+          const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(mp4Match[1])}&ref=${encodeURIComponent(refOrigin)}`;
+          return NextResponse.json(
+            {
+              mode: 'native_mp4',
+              streamUrl: proxiedUrl,
+              qualities: [{ label: '1080p', url: proxiedUrl }],
+              fallbackIframe: url,
+            },
+            { headers: CACHE_HEADERS }
+          );
+        }
+      }
+    } catch {
+      // Fall through
+    }
+    return NextResponse.json(
+      {
+        mode: 'iframe',
+        iframeUrl: url,
+      },
+      { headers: CACHE_HEADERS }
+    );
+  }
+
+  // 4n. Direct Media URL Fallback (.m3u8 or .mp4)
+  if (lowerUrl.includes('.m3u8')) {
+    try {
+      const parsedU = new URL(url);
+      const refOrigin = `${parsedU.protocol}//${parsedU.host}/`;
+      const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(url)}&ref=${encodeURIComponent(refOrigin)}`;
+      return NextResponse.json(
+        {
+          mode: 'native_hls',
+          streamUrl: proxiedUrl,
+          qualities: [{ label: '1080p', url: proxiedUrl }],
+          fallbackIframe: url,
+        },
+        { headers: CACHE_HEADERS }
+      );
+    } catch {
+      // Fall through
+    }
+  }
+
+  if (lowerUrl.includes('.mp4')) {
+    try {
+      const parsedU = new URL(url);
+      const refOrigin = `${parsedU.protocol}//${parsedU.host}/`;
+      const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(url)}&ref=${encodeURIComponent(refOrigin)}`;
+      return NextResponse.json(
+        {
+          mode: 'native_mp4',
+          streamUrl: proxiedUrl,
+          qualities: [{ label: '1080p', url: proxiedUrl }],
+          fallbackIframe: url,
+        },
+        { headers: CACHE_HEADERS }
+      );
+    } catch {
+      // Fall through
+    }
+  }
+
+  // 5. If the host is known to forbid framing (e.g. X-Frame-Options SAMEORIGIN / DENY), mark as dead rather than returning a blocked iframe
   const lowUrlCheck = url.toLowerCase();
   if (
     lowUrlCheck.includes('hdfilmcehennemi') ||
     lowUrlCheck.includes('/rplayer/') ||
     lowUrlCheck.includes('rapidrame') ||
     lowUrlCheck.includes('pichive') ||
-    lowUrlCheck.includes('dplayer') ||
     lowUrlCheck.includes('hotlinger') ||
     lowUrlCheck.includes('asyawatch') ||
     lowUrlCheck.includes('dizilla') ||
@@ -2934,10 +3139,7 @@ export async function GET(req: NextRequest) {
     lowUrlCheck.includes('sprintcdn') ||
     lowUrlCheck.includes('fastsupplyhub') ||
     lowUrlCheck.includes('smartcheckout') ||
-    lowUrlCheck.includes('videopixelvanto') ||
-    lowUrlCheck.includes('.m3u8') ||
-    lowUrlCheck.includes('.mp4') ||
-    lowUrlCheck.includes('.ts')
+    lowUrlCheck.includes('videopixelvanto')
   ) {
     return NextResponse.json(
       {

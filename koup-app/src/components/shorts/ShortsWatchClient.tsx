@@ -692,9 +692,44 @@ export function ShortsDetailClient({
   media: MediaItem;
   episodes: EpisodeData[];
 }) {
+  const [loadedEpisodes, setLoadedEpisodes] = useState<EpisodeData[]>(episodes);
+
+  useEffect(() => {
+    if (episodes && episodes.length > 0) {
+      setLoadedEpisodes(episodes);
+      return;
+    }
+    let active = true;
+    fetch(`/api/sources/${media.id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (active && d?.episodes && Array.isArray(d.episodes) && d.episodes.length > 0) {
+          setLoadedEpisodes(d.episodes);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [media.id, episodes]);
+
   const sortedEpisodes = useMemo(() => {
-    return [...episodes].sort((a, b) => a.episode_number - b.episode_number);
-  }, [episodes]);
+    if (loadedEpisodes && loadedEpisodes.length > 0) {
+      return [...loadedEpisodes].sort((a, b) => a.episode_number - b.episode_number);
+    }
+    const count = media.episode_count || 0;
+    if (count > 0) {
+      return Array.from({ length: count }, (_, i) => ({
+        id: -(i + 1),
+        season_number: 1,
+        episode_number: i + 1,
+        episode_name: `${i + 1}. Bölüm`,
+        episode_type: 'bolum' as const,
+        sources: [],
+      })) as EpisodeData[];
+    }
+    return [];
+  }, [loadedEpisodes, media.episode_count]);
 
   const CHUNK_SIZE = 50;
   const totalChunks = Math.max(1, Math.ceil(sortedEpisodes.length / CHUNK_SIZE));

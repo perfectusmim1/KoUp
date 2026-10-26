@@ -71,7 +71,9 @@ def extract_order_markers(title: str, slug: str):
     for m in re.finditer(r"\b(ii|iii|iv|v|vi)\b", t_no_lupin):
         season_num = max(season_num, roman_map[m.group(1)])
 
-    clean_t = re.sub(r"[\(\[].*?[\)\]]", "", (title or "").lower()).strip()
+    clean_t = re.sub(r"\(.*?\)", "", (title or "").lower())
+    clean_t = re.sub(r"\[\s*(?:1080p|720p|480p|hd|fhd|uhd|4k|turkce\s*altyazili|turkce\s*dublaj|dublajli|dublaj|altyazili|final|raw|tr|eng|sub|bluray|bdrip|web-?dl|webrip)\s*\]", "", clean_t, flags=re.I)
+    clean_t = re.sub(r"[\[\]]", " ", clean_t).strip()
     m_end = re.search(r"\s+(\d)$", clean_t)
     if m_end and 2 <= int(m_end.group(1)) <= 9:
         season_num = max(season_num, int(m_end.group(1)))

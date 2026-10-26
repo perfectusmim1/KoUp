@@ -15,6 +15,7 @@ import time
 import base64
 import hashlib
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup
 import sqlite3
 
@@ -218,6 +219,34 @@ def scrape_series(conn, cur, idx, session, series_url, base_url):
     m_yr = re.search(r"\b(19\d{2}|20\d{2})\b", raw_title)
     year = int(m_yr.group(1)) if m_yr else None
 
+    # Extract all episode links from page
+    ep_links = []
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        if "/bolum/" in href:
+            if not href.startswith("http"):
+                href = f"{base_url}{href}" if href.startswith("/") else f"{base_url}/{href}"
+            if href not in [x[0] for x in ep_links]:
+                ep_links.append((href, a.get_text(strip=True)))
+
+    if not ep_links:
+        return 0
+
+    # Parallel in-memory episode stream fetching
+    resolved_episodes = []
+    def _fetch_ep(ep_u, ep_t):
+        s_list = scrape_dizipal_episode(session, ep_u, base_url)
+        return (ep_u, ep_t, s_list)
+
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        futs = [executor.submit(_fetch_ep, u, t) for u, t in ep_links]
+        for fut in as_completed(futs):
+            try:
+                resolved_episodes.append(fut.result())
+            except Exception:
+                pass
+
+    # Batch write to SQLite
     drama_id, d_title, d_slug, d_cover = match_or_create_enriched_drama(
         conn=conn,
         cur=cur,
@@ -233,33 +262,48 @@ def scrape_series(conn, cur, idx, session, series_url, base_url):
     if not drama_id:
         return 0
 
-    # Extract all episode links from page
-    ep_links = []
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        if "/bolum/" in href:
-            if not href.startswith("http"):
-                href = f"{base_url}{href}" if href.startswith("/") else f"{base_url}/{href}"
-            if href not in ep_links:
-                ep_links.append((href, a.get_text(strip=True)))
-
     added_sources_count = 0
-    for ep_url, ep_text in ep_links:
+    for ep_url, ep_text, sources in resolved_episodes:
+        if not sources:
+            continue
         season, number = parse_season_and_episode(ep_url, ep_text)
         ep_name = f"Bölüm {number}" if season == 1 else f"{season}. Sezon {number}. Bölüm"
-
-        sources = scrape_dizipal_episode(session, ep_url, base_url)
-        if sources:
-            ep_id, is_new = match_or_create_episode(cur, drama_id, season, number, ep_name, ep_url)
-            for sname, surl, sprovider in sources:
-                if add_source(cur, ep_id, sname, surl, sprovider, SITE_TAG):
-                    added_sources_count += 1
+        ep_id, is_new = match_or_create_episode(cur, drama_id, season, number, ep_name, ep_url)
+        for sname, surl, sprovider in sources:
+            if add_source(cur, ep_id, sname, surl, sprovider, SITE_TAG):
+                added_sources_count += 1
 
     tag_site(cur, drama_id, SITE_TAG)
     safe_commit(conn)
     if added_sources_count > 0:
         sync_drama_bundle_and_counts(conn, cur, drama_id)
     return added_sources_count
+
+
+def get_catalog_items(session, base_url, max_pages=3):
+    """Gathers catalog items from /yeni-eklenen-dizi-bolumler, /yabanci-dizi-izle, /film-izle."""
+    unique_urls = []
+    seen = set()
+    routes = [
+        "/yeni-eklenen-dizi-bolumler",
+        "/yabanci-dizi-izle",
+        "/film-izle",
+    ]
+    for route in routes:
+        for p in range(1, max_pages + 1):
+            p_url = f"{base_url}{route}" if p == 1 else f"{base_url}{route}?page={p}"
+            try:
+                r = session.get(p_url, timeout=10)
+                if r.status_code == 200:
+                    links = re.findall(r'href=["\'](/series/[^"\']+|/bolum/[^"\']+|/film/[^"\']+)["\']', r.text)
+                    for l in links:
+                        full = f"{base_url}{l}"
+                        if full not in seen:
+                            seen.add(full)
+                            unique_urls.append(full)
+            except Exception:
+                continue
+    return unique_urls
 
 
 def scrape_episode_and_save(conn, cur, idx, session, ep_url, base_url):

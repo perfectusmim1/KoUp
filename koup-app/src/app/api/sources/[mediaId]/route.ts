@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'node:path';
 import fs from 'node:fs';
-import { DatabaseSync } from 'node:sqlite';
 import { supabase } from '@/lib/supabase';
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { cleanFansubName, cleanSourceName } from '@/lib/cleanFansub';
@@ -29,24 +28,27 @@ function getS3Client(): S3Client | null {
   return s3Client;
 }
 
-let archiveDb: DatabaseSync | null = null;
+let archiveDb: any = null;
 
-function getArchiveDb(): DatabaseSync | null {
+function getArchiveDb(): any {
   if (archiveDb) return archiveDb;
-  const candidates = [
-    process.env.ARCHIVE_DB_PATH,
-    path.resolve(process.cwd(), '..', 'webdrama_archive.db'),
-    path.resolve(process.cwd(), 'webdrama_archive.db'),
-  ].filter(Boolean) as string[];
+  try {
+    const { DatabaseSync } = require('node:sqlite');
+    const candidates = [
+      process.env.ARCHIVE_DB_PATH,
+      path.resolve(process.cwd(), '..', 'webdrama_archive.db'),
+      path.resolve(process.cwd(), 'webdrama_archive.db'),
+    ].filter(Boolean) as string[];
 
-  for (const dbPath of candidates) {
-    if (fs.existsSync(dbPath)) {
-      try {
-        archiveDb = new DatabaseSync(dbPath, { readOnly: true });
-        return archiveDb;
-      } catch {}
+    for (const dbPath of candidates) {
+      if (fs.existsSync(dbPath)) {
+        try {
+          archiveDb = new DatabaseSync(dbPath, { readOnly: true });
+          return archiveDb;
+        } catch {}
+      }
     }
-  }
+  } catch {}
   return null;
 }
 
@@ -165,7 +167,6 @@ function isDeadSource(provider?: string | null, directUrl?: string | null, sourc
     u.includes('upns.live') ||
     u.includes('embed-7fm0wb9yzf4m.html') ||
     u.includes('playerdkorea.xyz') ||
-    u.includes('vidmoly.me') ||
     p.includes('gdrive') ||
     p.includes('google') ||
     u.includes('drive.google.com') ||
@@ -194,7 +195,6 @@ function isDeadSource(provider?: string | null, directUrl?: string | null, sourc
     u.includes('cloudvideo.tv') ||
     u.includes('wolfstream.tv') ||
     u.includes('mystream.to') ||
-    u.includes('vidmoly.me') ||
     u.includes('fembed.com') ||
     u.includes('feurl.com') ||
     u.includes('suzihaza.com') ||

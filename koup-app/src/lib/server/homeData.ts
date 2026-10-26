@@ -4,8 +4,8 @@ import {
   MediaItem,
   PersonItem,
   MagazinePost,
+  isShortDrama,
 } from '@/lib/supabase';
-import { isShortDrama } from '@/components/shorts/ShortsCard';
 
 export interface HomeDataBundle {
   feats: MediaItem[];

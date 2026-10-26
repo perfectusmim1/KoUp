@@ -67,8 +67,33 @@ def fetch_with_retry(session, url, retries=3, timeout=12):
     return None
 
 
+_ANIMES_CACHE = None
+
+def get_animes_catalog(session=None):
+    """Fetches full catalog from https://animelvl.com/animes.json (1650+ anime with episodes & streams)."""
+    global _ANIMES_CACHE
+    if _ANIMES_CACHE is not None:
+        return _ANIMES_CACHE
+    session = session or _get_session()
+    for cand in [f"{BASE_URL}/animes.json", f"{BASE_URL}/data/animes.json"]:
+        try:
+            r = session.get(cand, timeout=18)
+            if r.status_code == 200 and r.text:
+                data = r.json()
+                if isinstance(data, list) and len(data) > 0:
+                    _ANIMES_CACHE = data
+                    return _ANIMES_CACHE
+        except Exception:
+            continue
+    return []
+
+
 def get_sitemap_urls(session=None):
     session = session or _get_session()
+    catalog = get_animes_catalog(session)
+    if catalog:
+        return [f"{BASE_URL}/anime/{a.get('id', '')}-{a.get('slug', '')}" for a in catalog if a.get("slug")]
+
     urls = []
     xml_text = fetch_with_retry(session, f"{BASE_URL}/sitemap.xml", timeout=15)
     if xml_text:
@@ -84,46 +109,109 @@ def get_sitemap_urls(session=None):
     return urls
 
 
-def extract_stream_from_episode(session, ep_url):
-    html = fetch_with_retry(session, ep_url, timeout=12)
-    if not html:
-        return []
+def _detect_provider(url):
+    u_low = (url or "").lower()
+    if "mail.ru" in u_low:
+        return "mailru"
+    if "ok.ru" in u_low or "odnoklassniki" in u_low:
+        return "okru"
+    if "vidmoly" in u_low:
+        return "vidmoly"
+    if "filemoon" in u_low or "byse" in u_low:
+        return "filemoon"
+    if "vk.com" in u_low:
+        return "vk"
+    return "animelvl"
 
-    sources = []
-    # 1. Direct stream API pattern
-    stream_matches = re.findall(r'["\'](https?://animelvl\.com/api/stream\.mp4\?url=[^"\']+)["\']', html)
-    for sm in stream_matches:
-        sources.append(("AnimeLVL (Direct MP4)", sm, "animelvl"))
 
-    # 2. Extract embedded video iframe sources
-    for iframe in re.findall(r'<iframe[^\>]+src=["\']([^"\']+)["\']', html):
-        if not iframe.startswith("http"):
-            iframe = "https:" + iframe if iframe.startswith("//") else f"{BASE_URL}{iframe}"
-        u_low = iframe.lower()
-        if "sibnet" in u_low or "drive.google" in u_low:
+def scrape_anime_item(conn, cur, idx, a_data):
+    """Ingests anime directly from animes.json object."""
+    if not isinstance(a_data, dict):
+        return 0
+
+    raw_title = (a_data.get("title") or a_data.get("t") or "").strip()
+    slug = a_data.get("slug") or clean_scraped_slug(raw_title)
+    if not raw_title or not slug:
+        return 0
+
+    a_id = a_data.get("id", "")
+    anime_url = f"{BASE_URL}/anime/{a_id}-{slug}" if a_id else f"{BASE_URL}/anime/{slug}"
+    year = None
+    try:
+        if a_data.get("y"):
+            year = int(a_data.get("y"))
+    except Exception:
+        pass
+
+    drama_id, d_title, d_slug, d_cover = match_or_create_enriched_drama(
+        conn=conn,
+        cur=cur,
+        idx=idx,
+        raw_title=raw_title,
+        slug_cand=slug,
+        content_type="anime",
+        country_hint="JP",
+        site_tag=SITE_TAG,
+        source_url=anime_url,
+        year_hint=year,
+    )
+    if not drama_id:
+        return 0
+
+    episodes = a_data.get("episodes") or []
+    added_sources_count = 0
+
+    for ep in episodes:
+        if not isinstance(ep, dict):
             continue
-        if "vidmoly" in u_low:
-            sources.append(("Vidmoly", iframe, "vidmoly"))
-        elif "filemoon" in u_low or "byse" in u_low:
-            sources.append(("Filemoon", iframe, "filemoon"))
-        elif "mail.ru" in u_low:
-            sources.append(("Mail.ru", iframe, "mailru"))
-        elif "ok.ru" in u_low:
-            sources.append(("OK.ru", iframe, "okru"))
-        elif "vk.com" in u_low:
-            sources.append(("VK", iframe, "vk"))
-        elif "animelvl" in u_low:
-            sources.append(("AnimeLVL Player", iframe, "animelvl"))
+        try:
+            number = int(ep.get("n", 1))
+        except Exception:
+            number = 1
+        season = 1
+        ep_name = f"Bölüm {number}"
+        ep_url = f"{BASE_URL}/izle/{a_id}-{slug}/{number}" if a_id else f"{BASE_URL}/izle/{slug}/{number}"
 
-    # 3. Direct MP4 / M3U8 links
-    for m in re.findall(r'["\'](https?://[^\s"\'\\]+\.(?:m3u8|mp4)[^\s"\'\\]*)["\']', html):
-        if "animelvl.com" in m or "stream" in m:
-            sources.append(("AnimeLVL Direct", m, "animelvl"))
+        ep_id, is_new = match_or_create_episode(cur, drama_id, season, number, ep_name, ep_url)
 
-    return sources
+        # Collect streams
+        streams = []
+        sub = ep.get("sub")
+        if sub and isinstance(sub, str) and sub.startswith("http"):
+            streams.append(("AnimeLVL Altyazılı", sub, _detect_provider(sub)))
+
+        embed = ep.get("embed")
+        if embed and isinstance(embed, str) and embed.startswith("http") and embed != sub:
+            streams.append(("AnimeLVL Embed", embed, _detect_provider(embed)))
+
+        dub = ep.get("dub")
+        if dub and isinstance(dub, str) and dub.startswith("http"):
+            streams.append(("AnimeLVL Dublaj", dub, _detect_provider(dub)))
+
+        for sname, surl, sprovider in streams:
+            if add_source(cur, ep_id, sname, surl, sprovider, SITE_TAG):
+                added_sources_count += 1
+
+    tag_site(cur, drama_id, SITE_TAG)
+    safe_commit(conn)
+    if added_sources_count > 0:
+        sync_drama_bundle_and_counts(conn, cur, drama_id)
+    return added_sources_count
 
 
 def scrape_anime_page(conn, cur, idx, session, anime_url):
+    catalog = get_animes_catalog(session)
+    slug_cand = clean_scraped_slug(anime_url)
+    m_id = re.search(r"/anime/(\d+)-", anime_url)
+    a_id = int(m_id.group(1)) if m_id else None
+
+    # Search in catalog
+    for item in catalog:
+        if a_id and item.get("id") == a_id:
+            return scrape_anime_item(conn, cur, idx, item)
+        if slug_cand and item.get("slug") == slug_cand:
+            return scrape_anime_item(conn, cur, idx, item)
+
     html = fetch_with_retry(session, anime_url, timeout=12)
     if not html:
         return 0
@@ -138,7 +226,6 @@ def scrape_anime_page(conn, cur, idx, session, anime_url):
     m_yr = re.search(r"\b(19\d{2}|20\d{2})\b", raw_title)
     year = int(m_yr.group(1)) if m_yr else None
 
-    # Get or create anime in DB
     drama_id, d_title, d_slug, d_cover = match_or_create_enriched_drama(
         conn=conn,
         cur=cur,
@@ -155,7 +242,6 @@ def scrape_anime_page(conn, cur, idx, session, anime_url):
     if not drama_id:
         return 0
 
-    # Extract episode links
     ep_links = []
     for a in soup.find_all("a", href=True):
         href = a["href"]

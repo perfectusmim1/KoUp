@@ -37,17 +37,19 @@ class ShortizleScraper:
         drama_urls = []
         seen = set()
 
-        # Check title sitemaps 1..max_sitemaps
+        # Check title sitemaps 1..max_sitemaps with generation token
+        gen_tokens = ["?generation=4025c34a-c191-4bbc-84f1-e59463b0e7a0", ""]
         for i in range(1, max_sitemaps + 1):
-            sitemap_url = f"{BASE_URL}/sitemap-titles-{i}.xml"
-            resp = safe_request(self.session, "GET", sitemap_url, delay=0.3)
-            if not resp or resp.status_code != 200:
-                break
-            found = re.findall(r"<loc>(https://shortizle\.com/watch/[^<]+)</loc>", resp.text)
-            for u in found:
-                if u not in seen:
-                    seen.add(u)
-                    drama_urls.append(u)
+            for tok in gen_tokens:
+                sitemap_url = f"{BASE_URL}/sitemap-titles-{i}.xml{tok}"
+                resp = safe_request(self.session, "GET", sitemap_url, delay=0.1)
+                if resp and resp.status_code == 200 and "<loc>" in resp.text:
+                    found = re.findall(r"<loc>(https://shortizle\.com/watch/[^<]+)</loc>", resp.text)
+                    for u in found:
+                        if u not in seen:
+                            seen.add(u)
+                            drama_urls.append(u)
+                    break
 
         if not drama_urls:
             # Fallback to main sitemap index

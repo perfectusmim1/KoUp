@@ -456,8 +456,6 @@ const SCRAPER_BLOCK_HOSTS = [
   'asyaking',
   'diziyou',
   'dizilla',
-  'mydramalist',
-  'i.mydramalist.com',
   'sinefy',
   'filmmodu',
   'sezonlukdizi',
@@ -468,6 +466,9 @@ const SCRAPER_BLOCK_HOSTS = [
   'animecix',
   'tranimeci',
 ];
+
+const KNOWN_GOOD_CDN_REGEX = /s4\.anilist\.co|anilistcdn|image\.tmdb\.org|mydramalist\.com|i\.mydramalist\.com|r2\.dev/i;
+const TECH_NOISE_BRACKET_REGEX = /\s*[\(\[](?:[^\)\]]*(?:1080p|720p|480p|4k|hd|uhd|web-dl|bluray|dual|dublaj|altyaz[ıi]l[ıi]|altyaz[ıi]|türkçe|turkce|izle|full|final|tv|ova|ona|movie|film|dizi|19\d\d|20\d\d)[^\)\]]*)[\)\]]/gi;
 
 export function getProxiedImageUrl(
   url?: string | null,
@@ -488,10 +489,11 @@ export function getProxiedImageUrl(
         .replace(/•.*$/, '')
         .replace(/\s*[-–—]\s*(?:\d+\.\s*bölüm|yeni bölüm|fragman|sezon).*$/i, '')
         .replace(/\b\d+\.\s*bölüm\b.*$/i, '')
-        .replace(/\b\d+\.\s*sezon\b.*$/i, '')
+        .replace(TECH_NOISE_BRACKET_REGEX, '')
+        .replace(/[\[\]()]/g, ' ')
+        .replace(/\b(\d+)\.\s*sezon\b/gi, 'Season $1')
         .replace(/\s*kadrosuna katıldı.*$/i, '')
         .replace(/\s*yeni yapım.*$/i, '')
-        .replace(/\s*[\(\[].*?[\)\]]/g, '')
         .replace(/\s+/g, ' ')
         .trim()
     : null;
@@ -514,18 +516,20 @@ export function getProxiedImageUrl(
     return type === 'person' ? '/logo-dark.png' : '/logo-dark.png';
   }
 
-  // Fast-track: Turkish scraper hosts & MyDramaList block direct server fetching (Cloudflare/DDoS-Guard 403).
+  // Fast-track: Turkish scraper hosts block direct server fetching (Cloudflare/DDoS-Guard 403).
   // Immediately bypass to TMDB/Supabase resolver to avoid 4.5s fetch timeout stall.
-  const lowerUrl = url ? url.toLowerCase() : '';
-  const isScraperUrl = Boolean(lowerUrl && SCRAPER_BLOCK_HOSTS.some((h) => lowerUrl.includes(h)));
+  const cleanUrl = url.trim();
+  const lowerUrl = cleanUrl.toLowerCase();
+  const isCdn = KNOWN_GOOD_CDN_REGEX.test(lowerUrl);
+  const isScraperUrl = !isCdn && Boolean(lowerUrl && SCRAPER_BLOCK_HOSTS.some((h) => lowerUrl.includes(h)));
   if (isScraperUrl) {
     if (tmdbId) {
       return `/api/image-proxy?tmdbId=${encodeURIComponent(String(tmdbId))}${typeQuery}${mtQuery}${yrQuery}${ntQuery}${mIdQuery}&size=${tmdbSize}`;
     }
     if (resolvedTitle && resolvedTitle.trim()) {
-      return `/api/image-proxy?title=${encodeURIComponent(resolvedTitle.trim())}${typeQuery}${mtQuery}${yrQuery}${ntQuery}${mIdQuery}&size=${tmdbSize}&fallback=${encodeURIComponent(url)}`;
+      return `/api/image-proxy?title=${encodeURIComponent(resolvedTitle.trim())}${typeQuery}${mtQuery}${yrQuery}${ntQuery}${mIdQuery}&size=${tmdbSize}&fallback=${encodeURIComponent(cleanUrl)}`;
     }
-    return `/api/image-proxy?url=${encodeURIComponent(url)}${typeQuery}${mtQuery}${yrQuery}${ntQuery}${mIdQuery}&size=${tmdbSize}`;
+    return `/api/image-proxy?url=${encodeURIComponent(cleanUrl)}${typeQuery}${mtQuery}${yrQuery}${ntQuery}${mIdQuery}&size=${tmdbSize}`;
   }
 
   if (url.startsWith('/') || url.startsWith('data:')) return url;
@@ -565,7 +569,7 @@ export function getProxiedImageUrl(
   }
 
   // AniList images: vitrin ve seri sayfasında orijinal kaliteli hali, kartlarda 720p standardına optimize edilir
-  if (url.includes('s4.anilist.co')) {
+  if (url.includes('s4.anilist.co') || url.includes('anilistcdn')) {
     if (tmdbSize === 'original') {
       return url;
     }
@@ -583,7 +587,8 @@ export function getProxiedImageUrl(
   if (isFallbackUrl && fallbackOrTitle) {
     params.set('fallback', fallbackOrTitle);
   }
-  if (resolvedTitle && resolvedTitle.trim()) {
+  // If URL is from a known good CDN, never append title search query to avoid unintended fallback
+  if (!isCdn && resolvedTitle && resolvedTitle.trim()) {
     params.set('title', resolvedTitle.trim());
   }
   if (type) {
@@ -1028,6 +1033,26 @@ export function formatBroadcastStatus(status?: string | null): string {
     return 'Askıda';
   }
   return status;
+}
+
+export function isShortDrama(
+  media?: { content_type?: string | null; categories?: string[] | null } | null
+): boolean {
+  if (!media) return false;
+  if (media.content_type === 'kisa_drama' || media.content_type === 'short') return true;
+  if (
+    Array.isArray(media.categories) &&
+    media.categories.some(
+      (c) =>
+        typeof c === 'string' &&
+        (c.toLowerCase().includes('kısa drama') ||
+          c.toLowerCase() === 'short drama' ||
+          c.toLowerCase() === 'shorts')
+    )
+  ) {
+    return true;
+  }
+  return false;
 }
 
 

@@ -202,6 +202,23 @@ export async function getSeriesDataServer(rawSlug: string): Promise<ServerSeries
         }
       }
 
+      // Tier 1: Cloudflare R2 CDN bundle (Vercel serverless fallback)
+      const r2PublicUrl =
+        process.env.R2_PUBLIC_URL ||
+        'https://pub-e62742f127324512937cc3ff34c976bd.r2.dev';
+      try {
+        const r2Res = await fetch(`${r2PublicUrl}/sources/${mediaId}.json`, {
+          next: { revalidate: 3600 },
+          signal: AbortSignal.timeout(2500),
+        });
+        if (r2Res.ok) {
+          const parsed = await r2Res.json();
+          if (parsed && Array.isArray(parsed.episodes) && parsed.episodes.length > 0) {
+            return parsed.episodes as EpisodeData[];
+          }
+        }
+      } catch {}
+
       // Fallback: Supabase episodes table
       const { data: epRows } = await client
         .from('episodes')

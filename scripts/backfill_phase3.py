@@ -57,23 +57,52 @@ def run_phase3(site: str = "all", limit: int = 5, resume: bool = False):
         try:
             idx = build_drama_index(cur)
 
-            # High priority Turkish series from our archive that currently rely on YouTube
-            cur.execute("""
-                SELECT DISTINCT d.id, d.title, d.slug 
-                FROM dramas d
-                JOIN episodes e ON e.drama_id = d.id
-                JOIN episode_sources es ON es.episode_id = e.id
-                WHERE es.provider = 'youtube' AND d.country = 'TR'
-                LIMIT ?
-            """, (limit,))
-            yt_rows = cur.fetchall()
-            targeted_slugs = [r["slug"] for r in yt_rows if r["slug"]]
-            if targeted_slugs:
-                print(f"[DIZIIZLE TARGET] YouTube kaynaklı {len(targeted_slugs)} Türk dizisi önceliklendiriliyor:", flush=True)
-                for r in yt_rows:
-                    print(f"  - #{r['id']} {r['title']} ({r['slug']})", flush=True)
+            # Fetch sitemap to ensure 100% verified URLs
+            import re
+            import requests
+            from scrapers.multisite import norm_title
 
-            targeted_urls = [f"https://diziizle.wiki/dizi/{s}" for s in targeted_slugs]
+            dizi_sitemap_urls = {}
+            try:
+                r_sm = requests.get("https://diziizle.wiki/sitemap-series.xml", timeout=12)
+                if r_sm.status_code == 200:
+                    for l in r_sm.text.splitlines():
+                        m = re.search(r"<loc>(https://diziizle\.wiki/dizi/([^<]+))</loc>", l)
+                        if m:
+                            full_u, s_slug = m.group(1), m.group(2)
+                            dizi_sitemap_urls[s_slug] = full_u
+            except Exception:
+                pass
+
+            # Map normalized titles to sitemap URLs for fuzzy matching
+            norm_map = {}
+            for s_slug, full_u in dizi_sitemap_urls.items():
+                clean_name = norm_title(s_slug.replace("-", " "))
+                if len(clean_name) >= 4:
+                    norm_map[clean_name] = full_u
+
+            # Match our Turkish dramas (especially YouTube ones)
+            cur.execute("""
+                SELECT d.id, d.title, d.slug 
+                FROM dramas d
+                WHERE d.country = 'TR'
+            """)
+            tr_all = cur.fetchall()
+
+            targeted_urls = []
+            seen_target = set()
+            for did, title, slug in tr_all:
+                url_match = None
+                if slug in dizi_sitemap_urls:
+                    url_match = dizi_sitemap_urls[slug]
+                elif title and norm_title(title) in norm_map:
+                    url_match = norm_map[norm_title(title)]
+
+                if url_match and url_match not in seen_target:
+                    targeted_urls.append(url_match)
+                    seen_target.add(url_match)
+
+            print(f"[DIZIIZLE TARGET] Arşivimizdeki Türk dizilerinden {len(targeted_urls)} tanesi Diziİzle ile %100 eşleşti.", flush=True)
 
             # Crawl targeted or recent diziizle series (0 = full episodes for each series)
             diziizle_results = crawl_diziizle_recent(

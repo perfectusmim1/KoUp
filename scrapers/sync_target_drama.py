@@ -216,8 +216,12 @@ def get_drama_search_queries(drama: dict) -> list:
 
     title = d.get('title') or ''
     _add(title)
+    # Strip known noise brackets only, preserve legitimate bracket contents (e.g. [Oshi no Ko] -> Oshi no Ko)
+    clean_t = re.sub(r'\[\s*(?:1080p|720p|480p|hd|fhd|uhd|4k|türkçe\s+altyazılı|turkce\s+altyazili|türkçe\s+dublaj|turkce\s+dublaj|dublajlı|dublajli|dublaj|altyazılı|altyazili|final|raw|tr|eng|sub|bluray|bdrip|web-?dl|webrip)\s*\]', ' ', title, flags=re.I)
+    clean_t = re.sub(r'[\[\]]', ' ', clean_t)
+    _add(clean_t)
     # Without parenthetical/season suffixes
-    base_t = re.sub(r'\(.*?\)|\[.*?\]', ' ', title)
+    base_t = re.sub(r'\(.*?\)', ' ', clean_t)
     base_t = re.sub(r'(\d+)\.\s*sezon|season\s*(\d+)|\b(\d+)(?:st|nd|rd|th)\s*season\b|\bfinal\s*season\b', '', base_t, flags=re.I)
     base_t = re.sub(r'\s+(?:II|III|IV|V|VI)$', '', base_t.strip())
     _add(base_t)

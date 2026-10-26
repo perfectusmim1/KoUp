@@ -515,7 +515,10 @@ def resolve_drama_cross_site(conn, cur, drama_id: int, dry_run: bool = False) ->
     if not pending_eps:
         return 0
 
-    clean_t = re.sub(r'\(.*?\)|\[.*?\]', '', title).strip()
+    # Strip known noise bracket tags only, preserve legitimate title brackets
+    clean_t = re.sub(r'\[\s*(?:1080p|720p|480p|hd|fhd|uhd|4k|türkçe\s+altyazılı|turkce\s+altyazili|türkçe\s+dublaj|turkce\s+dublaj|dublajlı|dublajli|dublaj|altyazılı|altyazili|final|raw|tr)\s*\]', ' ', title, flags=re.I)
+    clean_t = re.sub(r'[\[\]]', ' ', clean_t)
+    clean_t = re.sub(r'\(.*?\)', ' ', clean_t).strip()
     clean_t = re.sub(r'\s+', ' ', clean_t).strip()
     nt_target = norm_title(clean_t)
     dk_eps = {}

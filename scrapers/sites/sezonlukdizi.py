@@ -13,6 +13,7 @@ import re
 import json
 import time
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
 import sqlite3
@@ -228,28 +229,44 @@ def scrape_series(conn, cur, idx, session, series_url):
         if re.search(r"/\d+-sezon-\d+-bolum\.html", href) or re.search(r"/bolum/\d+", href):
             if not href.startswith("http"):
                 href = f"{BASE_URL}{href}" if href.startswith("/") else f"{BASE_URL}/{href}"
-            if href not in ep_links:
+            if href not in [x[0] for x in ep_links]:
                 ep_links.append((href, a.get_text(strip=True)))
 
+    if not ep_links:
+        return 0
+
+    # Parallel in-memory episode alternatives fetching
+    def _fetch_single_ep(ep_u, ep_t):
+        ep_html = fetch_html(session, ep_u, referer=series_url, timeout=10)
+        if not ep_html:
+            return (ep_u, ep_t, [])
+        bid = extract_bid_from_episode(ep_html)
+        if not bid:
+            return (ep_u, ep_t, [])
+        s_list = fetch_episode_alternatives(session, bid, ep_u)
+        return (ep_u, ep_t, s_list)
+
+    resolved_episodes = []
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        futs = [executor.submit(_fetch_single_ep, u, t) for u, t in ep_links]
+        for fut in as_completed(futs):
+            try:
+                resolved_episodes.append(fut.result())
+            except Exception:
+                pass
+
+    # Batch write to SQLite
     added_sources_count = 0
-    for ep_url, ep_text in ep_links:
+    for ep_url, ep_text, sources in resolved_episodes:
+        if not sources:
+            continue
         season, number = parse_season_and_episode(ep_url, ep_text)
         ep_name = f"Bölüm {number}" if season == 1 else f"{season}. Sezon {number}. Bölüm"
 
-        ep_html = fetch_html(session, ep_url, referer=series_url, timeout=10)
-        if not ep_html:
-            continue
-
-        bid = extract_bid_from_episode(ep_html)
-        if not bid:
-            continue
-
-        sources = fetch_episode_alternatives(session, bid, ep_url)
-        if sources:
-            ep_id, is_new = match_or_create_episode(cur, drama_id, season, number, ep_name, ep_url)
-            for sname, surl, sprovider in sources:
-                if add_source(cur, ep_id, sname, surl, sprovider, SITE_TAG):
-                    added_sources_count += 1
+        ep_id, is_new = match_or_create_episode(cur, drama_id, season, number, ep_name, ep_url)
+        for sname, surl, sprovider in sources:
+            if add_source(cur, ep_id, sname, surl, sprovider, SITE_TAG):
+                added_sources_count += 1
 
     tag_site(cur, drama_id, SITE_TAG)
     safe_commit(conn)
