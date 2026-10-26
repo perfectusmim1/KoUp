@@ -88,6 +88,24 @@ export interface SeriesDetailClientProps {
   initialFranchise?: FranchiseData | null;
 }
 
+function isEpisodePendingOrUpcoming(ep: any): boolean {
+  if (!ep) return false;
+  if (ep.pending === true) return true;
+  if (ep.is_published === false) return true;
+  if (
+    ep.status === 'pending_source' ||
+    ep.status === 'upcoming' ||
+    ep.status === 'scheduled' ||
+    ep.status === 'yakinda' ||
+    ep.status === 'placeholder'
+  ) {
+    return true;
+  }
+  if (Array.isArray(ep.sources) && ep.sources.length === 0) return true;
+  if (Array.isArray(ep.video_sources) && ep.video_sources.length === 0) return true;
+  return false;
+}
+
 export default function SeriesDetailClient({
   slug,
   initialMedia,
@@ -232,35 +250,68 @@ export default function SeriesDetailClient({
     next_episode_at?: string | null;
   } | null>(null);
 
-  // Compute actual highest episode number available on this series in real time
-  const effectiveMaxEpisode = useMemo(() => {
-    const fromEpList = (episodes || []).reduce(
+  // 1. Detect earliest upcoming / unreleased ("Yakında") episode in episodes list
+  const nextUpcomingEpisode = useMemo(() => {
+    if (!episodes || episodes.length === 0) return null;
+    const upcoming = episodes.filter(isEpisodePendingOrUpcoming);
+    if (upcoming.length === 0) return null;
+    return [...upcoming].sort((a, b) => {
+      const sA = Number(a.season_number) || 1;
+      const sB = Number(b.season_number) || 1;
+      if (sA !== sB) return sA - sB;
+      return (Number(a.episode_number) || 0) - (Number(b.episode_number) || 0);
+    })[0];
+  }, [episodes]);
+
+  // 2. Compute highest PUBLISHED episode number
+  const effectiveMaxPublishedEpisode = useMemo(() => {
+    if (!episodes || episodes.length === 0) return 0;
+    const published = episodes.filter((ep) => !isEpisodePendingOrUpcoming(ep));
+    return published.reduce(
       (max, ep) => Math.max(max, Number(ep.episode_number) || 0),
       0
     );
-    const fromMediaAvail = Number((media as any)?.episodes_available || 0);
-    const fromMediaCount = Number((media as any)?.episode_count || 0);
-    return Math.max(fromEpList, fromMediaAvail, fromMediaCount);
-  }, [episodes, media]);
+  }, [episodes]);
 
-  // Reactive Next Episode Label: Always strictly > effectiveMaxEpisode
+  // Backwards compatibility alias
+  const effectiveMaxEpisode = effectiveMaxPublishedEpisode;
+
+  // 3. Computed Next Episode details (Number & Label)
+  const computedNextEpisode = useMemo(() => {
+    if (nextUpcomingEpisode) {
+      const epNum = Number(nextUpcomingEpisode.episode_number) || 1;
+      const sNum = Number(nextUpcomingEpisode.season_number) || 1;
+      const hasMultipleSeasons = (episodes || []).some((e) => (e.season_number || 1) > 1);
+      const label =
+        hasMultipleSeasons && sNum > 1
+          ? `${sNum}. Sezon ${epNum}. Bölüm`
+          : `${epNum}. Bölüm`;
+      return { number: epNum, label };
+    }
+
+    if (effectiveMaxPublishedEpisode > 0) {
+      const nextNum = effectiveMaxPublishedEpisode + 1;
+      return { number: nextNum, label: `${nextNum}. Bölüm` };
+    }
+
+    if (seriesSchedule?.next_episode_number) {
+      const epNum = seriesSchedule.next_episode_number;
+      return { number: epNum, label: seriesSchedule.next_episode_label || `${epNum}. Bölüm` };
+    }
+
+    const mediaNextNum = Number((media as any)?.next_episode_number || 0);
+    if (mediaNextNum > 0) {
+      return { number: mediaNextNum, label: `${mediaNextNum}. Bölüm` };
+    }
+
+    return { number: null, label: 'Yeni Bölüm' };
+  }, [nextUpcomingEpisode, effectiveMaxPublishedEpisode, episodes, seriesSchedule, media]);
+
+  // Reactive Next Episode Label: Priority to upcoming episode, then next published
   const effectiveNextEpisodeLabel = useMemo(() => {
     if (!seriesSchedule?.supported) return '';
-    const rawLabel = seriesSchedule.next_episode_label || '';
-    const rawNum = seriesSchedule.next_episode_number;
-
-    // Check if rawLabel or rawNum is behind or equal to current episodes
-    const match = rawLabel.match(/(\d+)\s*\.?\s*Bölüm/i);
-    const parsedFromLabel = match ? parseInt(match[1], 10) : null;
-    const epNumToCheck = rawNum || parsedFromLabel;
-
-    if (effectiveMaxEpisode > 0 && epNumToCheck && epNumToCheck <= effectiveMaxEpisode) {
-      return `${effectiveMaxEpisode + 1}. Bölüm`;
-    }
-    if (rawLabel) return rawLabel;
-    if (effectiveMaxEpisode > 0) return `${effectiveMaxEpisode + 1}. Bölüm`;
-    return 'Yeni Bölüm';
-  }, [seriesSchedule, effectiveMaxEpisode]);
+    return computedNextEpisode.label || 'Yeni Bölüm';
+  }, [seriesSchedule?.supported, computedNextEpisode.label]);
 
   // Issue report rate-limit cooldown tracker
   useEffect(() => {
@@ -835,11 +886,17 @@ export default function SeriesDetailClient({
                 ? 'Yarın (1 Gün Sonra)'
                 : `${minDelta} Gün Sonra`,
             next_episode_label:
-              effectiveMaxEpisode > 0
+              computedNextEpisode.label ||
+              (effectiveMaxEpisode > 0
                 ? `${effectiveMaxEpisode + 1}. Bölüm`
                 : (media as any).next_episode_number
                 ? `${(media as any).next_episode_number}. Bölüm`
-                : 'Yeni Bölüm',
+                : 'Yeni Bölüm'),
+            next_episode_number:
+              computedNextEpisode.number ||
+              (effectiveMaxEpisode > 0
+                ? effectiveMaxEpisode + 1
+                : (media as any).next_episode_number || null),
           }
         );
       }
@@ -859,7 +916,10 @@ export default function SeriesDetailClient({
       .then((res) => {
         if (cancelled) return;
         if (res?.supported) {
-          if (
+          if (computedNextEpisode.number) {
+            res.next_episode_number = computedNextEpisode.number;
+            res.next_episode_label = computedNextEpisode.label;
+          } else if (
             effectiveMaxEpisode > 0 &&
             res.next_episode_number &&
             res.next_episode_number <= effectiveMaxEpisode
@@ -877,7 +937,7 @@ export default function SeriesDetailClient({
     return () => {
       cancelled = true;
     };
-  }, [media?.id, media?.slug, media?.status_broadcast, media?.content_type]);
+  }, [media?.id, media?.slug, media?.status_broadcast, media?.content_type, computedNextEpisode.number, computedNextEpisode.label, effectiveMaxEpisode]);
 
   if (isLoading && !media) {
     return (
@@ -1142,19 +1202,19 @@ export default function SeriesDetailClient({
       if (res.ok) {
         const payload = await res.json();
         if (payload?.episodes && Array.isArray(payload.episodes) && payload.episodes.length > 0) {
-          setEpisodes(payload.episodes as unknown as EpisodeData[]);
-          setMedia((prev) => (prev ? { ...prev, episode_count: payload.episodes.length, episodes_available: payload.episodes.length } : prev));
-          const newMax = Math.max(
-            0,
-            ...payload.episodes.map((e: any) => Number(e.episode_number) || 0),
-            payload.episodes.length
-          );
+          const freshEps = payload.episodes as unknown as EpisodeData[];
+          setEpisodes(freshEps);
+          const firstUp = freshEps.find(isEpisodePendingOrUpcoming);
+          const pubList = freshEps.filter((e) => !isEpisodePendingOrUpcoming(e));
+          const maxPub = pubList.reduce((max, ep) => Math.max(max, Number(ep.episode_number) || 0), 0);
+          const nextNum = firstUp ? Number(firstUp.episode_number) : (maxPub > 0 ? maxPub + 1 : 1);
+          setMedia((prev) => (prev ? { ...prev, episode_count: payload.episodes.length, episodes_available: maxPub || payload.episodes.length } : prev));
           setSeriesSchedule((prev) => {
             if (!prev) return prev;
             return {
               ...prev,
-              next_episode_number: newMax + 1,
-              next_episode_label: `${newMax + 1}. Bölüm`,
+              next_episode_number: nextNum,
+              next_episode_label: `${nextNum}. Bölüm`,
             };
           });
           setCache(`episodes_${media.id}`, payload.episodes, 300_000);
@@ -2203,7 +2263,7 @@ export default function SeriesDetailClient({
                     dramaId={media.id}
                     dramaTitle={media.title}
                     dramaSlug={media.slug}
-                    pendingCount={episodes.filter((e) => e.pending || e.status === 'pending_source').length}
+                    pendingCount={episodes.filter(isEpisodePendingOrUpcoming).length}
                     onSyncComplete={handleAdminSyncComplete}
                   />
                 )}
@@ -2345,7 +2405,7 @@ export default function SeriesDetailClient({
                         >
                           {epTitle}
                         </div>
-                        {(ep.pending || ep.status === 'pending_source') && (
+                        {isEpisodePendingOrUpcoming(ep) && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0 select-none">
                             Yakında
                           </span>

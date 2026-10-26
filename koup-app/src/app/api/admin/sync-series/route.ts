@@ -353,14 +353,36 @@ async function runDirectAnimecixSync(
     if (error) log(`[UYARI] Supabase episodes: ${error.message}`);
   }
 
-  const publishedCount = bundle.episodes.filter((e: any) => !e.pending && (e.sources || []).length > 0).length;
+  const upcomingEpisodes = bundle.episodes.filter((e: any) => {
+    if (e.pending) return true;
+    if (e.status === 'pending_source' || e.status === 'scheduled' || e.status === 'upcoming' || e.status === 'placeholder' || e.status === 'yakinda') return true;
+    if (!e.sources || e.sources.length === 0) return true;
+    return false;
+  });
+
+  const publishedEpisodes = bundle.episodes.filter((e: any) =>
+    !e.pending &&
+    (e.sources || []).length > 0 &&
+    e.status !== 'pending_source' &&
+    e.status !== 'scheduled' &&
+    e.status !== 'placeholder' &&
+    e.status !== 'upcoming' &&
+    e.status !== 'yakinda'
+  );
+  const maxPublishedEp = Math.max(0, ...publishedEpisodes.map((e: any) => Number(e.episode_number) || 0));
   const maxEpInBundle = Math.max(0, ...bundle.episodes.map((e: any) => Number(e.episode_number) || 0));
-  const newTotalEpisodes = Math.max(publishedCount, maxEpInBundle);
-  const nextEpisodeNumber = newTotalEpisodes + 1;
+
+  let nextEpisodeNumber: number;
+  if (upcomingEpisodes.length > 0) {
+    const sortedUpcoming = [...upcomingEpisodes].sort((a: any, b: any) => (Number(a.episode_number) || 0) - (Number(b.episode_number) || 0));
+    nextEpisodeNumber = Number(sortedUpcoming[0].episode_number) || (maxPublishedEp + 1);
+  } else {
+    nextEpisodeNumber = (maxPublishedEp || maxEpInBundle) + 1;
+  }
 
   const mediaPatch: Record<string, any> = {
     episode_count: Math.max(bundle.episodes.length, mediaRow?.episode_count || 0),
-    episodes_available: newTotalEpisodes,
+    episodes_available: maxPublishedEp || publishedEpisodes.length,
     next_episode_number: nextEpisodeNumber,
     updated_at: nowIso,
   };
@@ -954,19 +976,23 @@ export async function POST(req: NextRequest) {
               // Ensure media.episodes_available, next_episode_number and calendar_schedules are up-to-date
               const { data: epRows } = await supabaseAdmin
                 .from('episodes')
-                .select('episode_number')
+                .select('episode_number, status')
                 .eq('media_id', dramaId)
-                .order('episode_number', { ascending: false });
+                .order('episode_number', { ascending: true });
 
-              const maxEp = epRows && epRows.length > 0 ? Number(epRows[0].episode_number || 0) : 0;
-              const epCount = epRows?.length || 0;
-              const actualMax = Math.max(maxEp, epCount);
-              if (actualMax > 0) {
-                const nextNum = actualMax + 1;
+              const upcomingEps = (epRows || []).filter((e: any) =>
+                e.status === 'pending_source' || e.status === 'scheduled' || e.status === 'placeholder' || e.status === 'upcoming' || e.status === 'yakinda'
+              );
+              const publishedEps = (epRows || []).filter((e: any) =>
+                e.status !== 'pending_source' && e.status !== 'scheduled' && e.status !== 'placeholder' && e.status !== 'upcoming' && e.status !== 'yakinda'
+              );
+              const maxPublished = publishedEps.length > 0 ? Math.max(...publishedEps.map((e: any) => Number(e.episode_number) || 0)) : 0;
+              const nextNum = upcomingEps.length > 0 ? Number(upcomingEps[0].episode_number) : (maxPublished > 0 ? maxPublished + 1 : 1);
+              if (nextNum > 0) {
                 await supabaseAdmin
                   .from('media')
                   .update({
-                    episodes_available: actualMax,
+                    episodes_available: maxPublished,
                     next_episode_number: nextNum,
                   })
                   .eq('id', dramaId);

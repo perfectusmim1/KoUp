@@ -349,17 +349,39 @@ export async function GET(req: Request) {
         return NextResponse.json({ supported: false, schedules: [] });
       }
 
-      // Check the true max episode from episodes table to never fall behind published content
-      const { data: epMaxRow } = await supabase
+      // Check episodes table: detect upcoming/pending episodes vs max published episode
+      const { data: epStatusRows } = await supabase
         .from('episodes')
-        .select('episode_number')
+        .select('episode_number, season_number, status')
         .eq('media_id', mediaRow.id)
-        .order('episode_number', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .order('season_number', { ascending: true })
+        .order('episode_number', { ascending: true });
 
-      const maxEpFromDb = Number(epMaxRow?.episode_number || 0);
-      const actualMaxEp = Math.max(Number(mediaRow.episodes_available || 0), maxEpFromDb);
+      let firstUpcomingEpNum: number | null = null;
+      let maxPublishedEpFromDb = 0;
+
+      if (epStatusRows && epStatusRows.length > 0) {
+        for (const ep of epStatusRows) {
+          const num = Number(ep.episode_number) || 0;
+          const isPending =
+            ep.status === 'pending_source' ||
+            ep.status === 'scheduled' ||
+            ep.status === 'placeholder' ||
+            ep.status === 'upcoming' ||
+            ep.status === 'yakinda';
+          if (isPending) {
+            if (firstUpcomingEpNum === null || num < firstUpcomingEpNum) {
+              firstUpcomingEpNum = num;
+            }
+          } else {
+            if (num > maxPublishedEpFromDb) {
+              maxPublishedEpFromDb = num;
+            }
+          }
+        }
+      }
+
+      const actualMaxEp = maxPublishedEpFromDb || Number(mediaRow.episodes_available || 0);
 
       const normStatus = (mediaRow.status_broadcast || '').trim();
       if (normStatus === 'Final' || normStatus === 'Canceled') {
@@ -432,8 +454,11 @@ export async function GET(req: Request) {
         return NextResponse.json({ supported: false, schedules: [] });
       }
 
-      // Enforce: "Next Episode" MUST always be strictly greater than actual published episodes
-      if (actualMaxEp > 0) {
+      // Enforce: If upcoming episodes exist, next episode MUST be the earliest upcoming one!
+      if (firstUpcomingEpNum !== null) {
+        nextEpNum = firstUpcomingEpNum;
+        epLabel = `${firstUpcomingEpNum}. Bölüm`;
+      } else if (actualMaxEp > 0) {
         const epMatch = (epLabel || '').match(/(\d+)\s*\.?\s*Bölüm/i);
         const labelEpNum = epMatch ? parseInt(epMatch[1], 10) : 0;
         if (!nextEpNum || nextEpNum <= actualMaxEp || (labelEpNum > 0 && labelEpNum <= actualMaxEp)) {
@@ -456,7 +481,7 @@ export async function GET(req: Request) {
 
       // If countdown says "Bugün Yayınlanıyor" (daysUntil === 0) but that episode is ALREADY available on the site,
       // advance countdown to the next weekly air date so it does not stay stuck on today's already-uploaded episode!
-      if (countdown.daysUntil === 0 && actualMaxEp >= (nextEpNum ? nextEpNum - 1 : 1)) {
+      if (countdown.daysUntil === 0 && actualMaxEp >= (nextEpNum || 1)) {
         const nextWeekDays = finalAirDays.length > 0 ? finalAirDays : [countdown.nextAirDayOfWeek];
         let minAdvance = 7;
         let nextDow = nextWeekDays[0];
@@ -636,19 +661,12 @@ export async function GET(req: Request) {
         s.next_episode_at || s.media?.next_episode_at
       );
 
-      const avail = Math.max(
-        Number(s.media?.episodes_available || 0),
-        Number(s.media?.episode_count || 0)
-      );
+      const avail = Number(s.media?.episodes_available || 0);
       let sNextEp = s.next_episode_number || s.media?.next_episode_number || null;
       let sEpLabel = s.episode_label;
-      if (avail > 0) {
-        const epMatch = (sEpLabel || '').match(/(\d+)\s*\.?\s*Bölüm/i);
-        const labelEp = epMatch ? parseInt(epMatch[1], 10) : 0;
-        if (!sNextEp || sNextEp <= avail || (labelEp > 0 && labelEp <= avail)) {
-          sNextEp = avail + 1;
-          sEpLabel = `${sNextEp}. Bölüm`;
-        }
+      if (avail > 0 && sNextEp && sNextEp < avail) {
+        sNextEp = avail + 1;
+        sEpLabel = `${sNextEp}. Bölüm`;
       }
 
       return {
