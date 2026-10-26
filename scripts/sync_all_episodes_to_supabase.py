@@ -10,6 +10,7 @@ import json
 import sqlite3
 import requests
 import time
+import argparse
 from concurrent.futures import ThreadPoolExecutor
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -31,7 +32,7 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 
-def sync_episodes():
+def sync_episodes(include_short_drama: bool = False):
     db_path = os.path.join(_ROOT, "webdrama_archive.db")
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
@@ -143,6 +144,15 @@ def sync_episodes():
             "quality_label": ql,
         })
 
+    # Identify short drama media IDs
+    cur.execute("SELECT id, content_type, genres FROM dramas")
+    short_drama_ids = set()
+    for did, ctype, genres in cur.fetchall():
+        ct = (ctype or "").lower()
+        gn = str(genres or "").lower()
+        if ct in ("kisa_drama", "short", "short_drama") or "kısa drama" in gn or "kisa drama" in gn:
+            short_drama_ids.add(did)
+
     # Fetch all episodes belonging to valid Supabase media
     cur.execute("""
         SELECT id, drama_id, season_number, episode_number, episode_name, episode_type
@@ -152,8 +162,12 @@ def sync_episodes():
     all_episodes = cur.fetchall()
     conn.close()
 
-    valid_episodes = [ep for ep in all_episodes if ep[1] in all_media_ids]
-    print(f"🎬 Senkronize edilecek geçerli bölüm sayısı: {len(valid_episodes)}")
+    if not include_short_drama:
+        valid_episodes = [ep for ep in all_episodes if ep[1] in all_media_ids and ep[1] not in short_drama_ids]
+        print(f"🎬 Senkronize edilecek geçerli bölüm sayısı: {len(valid_episodes)} ({len(short_drama_ids)} kısa drama yapımı Supabase episodes tablosundan filtrelendi; R2 bundle & media üzerinden çalışır).")
+    else:
+        valid_episodes = [ep for ep in all_episodes if ep[1] in all_media_ids]
+        print(f"🎬 Senkronize edilecek geçerli bölüm sayısı: {len(valid_episodes)} (Kısa dramalar dahil).")
 
     batches = []
     chunk_size = 200
@@ -216,4 +230,7 @@ def sync_episodes():
     print(f"🎉 Tamamlandı! Toplam {total_synced} bölüm ve video kaynakları Supabase `public.episodes` tablosuna aktarıldı.")
 
 if __name__ == "__main__":
-    sync_episodes()
+    parser = argparse.ArgumentParser(description="Sync SQLite episodes to Supabase public.episodes")
+    parser.add_argument("--include-short-drama", action="store_true", help="Include short dramas into Supabase episodes table")
+    args = parser.parse_args()
+    sync_episodes(include_short_drama=args.include_short_drama)

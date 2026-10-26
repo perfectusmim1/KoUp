@@ -22,6 +22,7 @@ import {
 import { motion } from 'motion/react';
 import { supabase, MediaItem, getCountryFlag } from '@/lib/supabase';
 import AccordionMediaCard from '@/components/AccordionMediaCard';
+import ShortsCard, { isShortDrama } from '@/components/shorts/ShortsCard';
 import CountryFlag from '@/components/CountryFlag';
 import Pagination from '@/components/Pagination';
 import { useKoUpSelector } from '@/context/KoUpContext';
@@ -57,6 +58,14 @@ const CONTENT_TYPES = [
     icon: Sparkles,
     activePillClass:
       'bg-gradient-to-r from-purple-500 to-pink-600 shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/40',
+    activeTextClass: 'text-white font-extrabold',
+  },
+  {
+    id: 'kisa_drama',
+    label: 'Kısa Drama',
+    icon: Sparkles,
+    activePillClass:
+      'bg-gradient-to-r from-amber-500 to-rose-600 shadow-[0_0_18px_rgba(245,158,11,0.5)] border border-amber-400/50',
     activeTextClass: 'text-white font-extrabold',
   },
   {
@@ -97,6 +106,7 @@ const YEAR_OPTIONS = [
 ];
 
 const GENRES = [
+  'Kısa Drama',
   'Romantik',
   'Dram',
   'Aksiyon',
@@ -298,8 +308,13 @@ function DiscoverContent() {
             // 2. Direct database query with multi-genre & year support
             let query = supabase.from('media').select('*');
 
-            if (typeFilter !== 'ALL') {
-              query = query.eq('content_type', typeFilter);
+            if (typeFilter === 'kisa_drama') {
+              query = query.or('content_type.eq.kisa_drama,content_type.eq.short,categories.cs.{"Kısa Drama"}');
+            } else {
+              query = query.neq('content_type', 'kisa_drama').neq('content_type', 'short');
+              if (typeFilter !== 'ALL') {
+                query = query.eq('content_type', typeFilter);
+              }
             }
             if (countryFilter !== 'ALL') {
               query = query.eq('country_code', countryFilter);
@@ -375,7 +390,12 @@ function DiscoverContent() {
 
             try {
               let cQuery = supabase.from('media').select('*', { count: 'exact', head: true });
-              if (typeFilter !== 'ALL') cQuery = cQuery.eq('content_type', typeFilter);
+              if (typeFilter === 'kisa_drama') {
+                cQuery = cQuery.or('content_type.eq.kisa_drama,content_type.eq.short,categories.cs.{"Kısa Drama"}');
+              } else {
+                cQuery = cQuery.neq('content_type', 'kisa_drama').neq('content_type', 'short');
+                if (typeFilter !== 'ALL') cQuery = cQuery.eq('content_type', typeFilter);
+              }
               if (countryFilter !== 'ALL') cQuery = cQuery.eq('country_code', countryFilter);
               if (selectedGenres.length > 0) cQuery = cQuery.contains('categories', selectedGenres);
               cQuery = applyYearFilter(cQuery, selectedYears);
@@ -659,6 +679,16 @@ function DiscoverContent() {
           <p className="text-base text-white/70">
             Seçtiğiniz filtrelere uygun yapım bulunamadı.
           </p>
+        </div>
+      ) : typeFilter === 'kisa_drama' ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5 sm:gap-4.5 pt-2.5 pb-6 transition-opacity duration-200">
+          {items.map((item, idx) => (
+            <ShortsCard
+              key={item.id}
+              item={item}
+              priority={idx < 6}
+            />
+          ))}
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3.5 sm:gap-4 pt-2.5 pb-6 transition-opacity duration-200">

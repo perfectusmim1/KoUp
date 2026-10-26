@@ -34,6 +34,7 @@ import {
   ExternalLink,
   Cast as CastIcon,
   FastForward,
+  Settings,
 } from 'lucide-react';
 import {
   MediaItem,
@@ -92,7 +93,7 @@ function NetflixRewind10Icon({
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      {/* 10 numeral centered */}
+      {/* 5 numeral centered */}
       <text
         x="32"
         y="39.5"
@@ -103,11 +104,13 @@ function NetflixRewind10Icon({
         fontFamily="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Plus Jakarta Sans', sans-serif"
         letterSpacing="-0.5"
       >
-        10
+        5
       </text>
     </svg>
   );
 }
+
+const NetflixRewind5Icon = NetflixRewind10Icon;
 
 function NetflixForward10Icon({
   className = 'w-14 h-14',
@@ -145,7 +148,7 @@ function NetflixForward10Icon({
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      {/* 10 numeral centered */}
+      {/* 5 numeral centered */}
       <text
         x="32"
         y="39.5"
@@ -156,11 +159,13 @@ function NetflixForward10Icon({
         fontFamily="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Plus Jakarta Sans', sans-serif"
         letterSpacing="-0.5"
       >
-        10
+        5
       </text>
     </svg>
   );
 }
+
+const NetflixForward5Icon = NetflixForward10Icon;
 
 function NetflixPauseBarsIcon({ className = 'w-16 h-16' }: { className?: string }) {
   return (
@@ -462,9 +467,12 @@ export interface NetflixPlayerProps {
   trailerYoutubeId?: string | null;
   onCloseTrailer?: () => void;
   hasRail?: boolean;
+  variant?: 'default' | 'vertical' | string;
+  onNextEpisode?: () => void;
+  onPrevEpisode?: () => void;
 }
 
-type ActivePanel = 'episodes' | 'speed' | 'sources' | 'audio_subtitles' | 'quality' | null;
+type ActivePanel = 'episodes' | 'speed' | 'sources' | 'audio_subtitles' | 'quality' | 'playback_settings' | null;
 
 // Module-level persistent cache for episode video preview frame snapshots
 // Key: `${mediaId}_s${seasonNumber}_e${episodeNumber}` -> Data URL string
@@ -978,7 +986,12 @@ export default function NetflixPlayer({
 
   // Prevent background body scroll when mobile bottom sheet modal is open
   useEffect(() => {
-    if (isMobileInline && (activePanel === 'speed' || activePanel === 'audio_subtitles')) {
+    if (
+      isMobileInline &&
+      (activePanel === 'speed' ||
+        activePanel === 'audio_subtitles' ||
+        activePanel === 'playback_settings')
+    ) {
       const origOverflow = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
       return () => {
@@ -1171,7 +1184,49 @@ export default function NetflixPlayer({
 
   const autoNextEnabled =
     propAutoNextEnabled !== undefined ? propAutoNextEnabled : internalAutoNext;
+
+  const toggleAutoNext = useCallback(() => {
+    if (propOnToggleAutoNext) {
+      propOnToggleAutoNext();
+      return;
+    }
+    setInternalAutoNext((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('koup_auto_next', String(next));
+      } catch {}
+      triggerHudToast(next ? 'Otomatik Sonraki Bölüm: Açık' : 'Otomatik Sonraki Bölüm: Kapalı');
+      return next;
+    });
+  }, [propOnToggleAutoNext, triggerHudToast]);
+
+  const [autoSkipIntro, setAutoSkipIntro] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const saved = localStorage.getItem('koup_auto_skip_intro');
+      return saved === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleAutoSkipIntro = useCallback(() => {
+    setAutoSkipIntro((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('koup_auto_skip_intro', String(next));
+      } catch {}
+      triggerHudToast(next ? 'Otomatik İntro Atlama: Açık' : 'Otomatik İntro Atlama: Kapalı');
+      return next;
+    });
+  }, [triggerHudToast]);
+
   const [nextCountdown, setNextCountdown] = useState<number | null>(null);
+  const [cancelledAutoNextForEp, setCancelledAutoNextForEp] = useState(false);
+  const [countdownRemaining, setCountdownRemaining] = useState<number>(3);
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoSkippedIntroEpRef = useRef<string | null>(null);
+  const hasTriggeredNextRef = useRef(false);
 
   const selectSubtitleDirect = useCallback(async (label: string, subList: SubtitleTrack[]) => {
     setSelectedSubtitle(label);
@@ -2720,10 +2775,10 @@ export default function NetflixPlayer({
 
   const triggerMobileSeek = useCallback(
     (dir: 'left' | 'right') => {
-      const delta = dir === 'left' ? -10 : 10;
+      const delta = dir === 'left' ? -5 : 5;
       seekBy(delta, false, false);
       setMobileSeekRipple((prev) => {
-        const accumulated = prev && prev.dir === dir ? prev.amount + 10 : 10;
+        const accumulated = prev && prev.dir === dir ? prev.amount + 5 : 5;
         return { dir, amount: accumulated, key: Date.now() };
       });
       if (mobileSeekTimerRef.current) clearTimeout(mobileSeekTimerRef.current);
@@ -2777,6 +2832,104 @@ export default function NetflixPlayer({
       handleNextEpisode();
     }
   }, [isMovie, nextEp, triggerHudToast, handleNextEpisode]);
+
+  const handleNextEpisodeRef = useRef(handleNextEpisode);
+  handleNextEpisodeRef.current = handleNextEpisode;
+
+  // Auto-skip intro effect (per episode 1-time auto skip, prevents infinite loops)
+  useEffect(() => {
+    if (!autoSkipIntro || !isInsideIntro || isTrailerMode) return;
+    const epKey = `${media.id}_s${currentSeason}_e${currentEpisode}`;
+    if (autoSkippedIntroEpRef.current === epKey) return;
+    autoSkippedIntroEpRef.current = epKey;
+    handleSkipIntro();
+    triggerHudToast('İntro Otomatik Atlandı');
+  }, [
+    autoSkipIntro,
+    isInsideIntro,
+    isTrailerMode,
+    media.id,
+    currentSeason,
+    currentEpisode,
+    handleSkipIntro,
+    triggerHudToast,
+  ]);
+
+  // Reset auto-next episode state on episode change
+  useEffect(() => {
+    setCancelledAutoNextForEp(false);
+    setCountdownRemaining(3);
+    hasTriggeredNextRef.current = false;
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+  }, [media.id, currentSeason, currentEpisode]);
+
+  // Outro auto-next 3s countdown trigger
+  const effectiveTotalDuration =
+    duration > 0
+      ? duration
+      : (currentEpObj as any)?.duration
+      ? Number((currentEpObj as any).duration)
+      : 0;
+
+  const shouldShowCountdown =
+    !isMovie &&
+    !isTrailerMode &&
+    Boolean(nextEp) &&
+    autoNextEnabled &&
+    !cancelledAutoNextForEp &&
+    (isInsideOutro ||
+      (!hasOutro &&
+        effectiveTotalDuration > 20 &&
+        currentTime >= effectiveTotalDuration - 5 &&
+        currentTime < effectiveTotalDuration));
+
+  useEffect(() => {
+    if (shouldShowCountdown && isPlaying) {
+      if (!countdownTimerRef.current && !hasTriggeredNextRef.current) {
+        setCountdownRemaining(3);
+        countdownTimerRef.current = setInterval(() => {
+          setCountdownRemaining((prev) => {
+            if (prev <= 1) {
+              if (countdownTimerRef.current) {
+                clearInterval(countdownTimerRef.current);
+                countdownTimerRef.current = null;
+              }
+              if (!hasTriggeredNextRef.current) {
+                hasTriggeredNextRef.current = true;
+                handleNextEpisodeRef.current();
+              }
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      }
+    } else {
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+      }
+    }
+
+    return () => {
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+      }
+    };
+  }, [shouldShowCountdown, isPlaying]);
+
+  useEffect(() => {
+    return () => {
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const adjustVolume = useCallback(
     (delta: number) => {
@@ -2909,10 +3062,10 @@ export default function NetflixPlayer({
           togglePlayPause();
         } else if (key === 'arrowright') {
           e.preventDefault();
-          seekBy(10);
+          seekBy(5);
         } else if (key === 'arrowleft' || key === 'j') {
           e.preventDefault();
-          seekBy(-10);
+          seekBy(-5);
         } else if (key === 'arrowup') {
           e.preventDefault();
           adjustVolume(0.1);
@@ -3972,15 +4125,15 @@ export default function NetflixPlayer({
                     <div
                       className="flex items-center justify-center gap-6 sm:gap-16 md:gap-24 pointer-events-none select-none"
                     >
-                      {/* Rewind 10s Button */}
+                      {/* Rewind 5s Button */}
                       <button
                         type="button"
                         data-netflix-control="true"
                         onClick={(e) => {
                           e.stopPropagation();
-                          seekBy(-10, true);
+                          seekBy(-5, true);
                         }}
-                        aria-label="10 Saniye Geri Sar"
+                        aria-label="5 Saniye Geri Sar"
                         className={`text-white hover:scale-110 active:scale-90 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] hover:drop-shadow-[0_0_20px_rgba(255,255,255,0.45)] cursor-pointer p-1 sm:p-2 focus:outline-none ${
                           showOverlay
                             ? 'opacity-100 pointer-events-auto'
@@ -4018,15 +4171,15 @@ export default function NetflixPlayer({
                         </div>
                       </button>
 
-                      {/* Forward 10s Button */}
+                      {/* Forward 5s Button */}
                       <button
                         type="button"
                         data-netflix-control="true"
                         onClick={(e) => {
                           e.stopPropagation();
-                          seekBy(10, true);
+                          seekBy(5, true);
                         }}
-                        aria-label="10 Saniye İleri Sar"
+                        aria-label="5 Saniye İleri Sar"
                         className={`text-white hover:scale-110 active:scale-90 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] hover:drop-shadow-[0_0_20px_rgba(255,255,255,0.45)] cursor-pointer p-1 sm:p-2 focus:outline-none ${
                           showOverlay
                             ? 'opacity-100 pointer-events-auto'
@@ -4174,46 +4327,6 @@ export default function NetflixPlayer({
                     showOverlay ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
                   }`}
                 >
-                  {/* Floating Skip Intro & Outro & Auto-Next Buttons right above scrubber */}
-                  {(isInsideIntro || isInsideOutro || (!isMovie && nextCountdown !== null && nextEp)) && (
-                    <div className="flex items-center justify-end gap-2.5">
-                      {isInsideIntro && (
-                        <button
-                          type="button"
-                          onClick={handleSkipIntro}
-                          className="px-3 sm:px-4 py-1 sm:py-1.5 rounded bg-white hover:bg-white/90 text-black font-bold text-xs sm:text-sm tracking-wide shadow-2xl transition-transform active:scale-95 cursor-pointer flex items-center gap-1.5"
-                        >
-                          <FastForward className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-500 fill-amber-500" />
-                          <span>İntroyu Atla</span>
-                          <span className="text-[10px] text-black/60 hidden sm:inline">(S)</span>
-                        </button>
-                      )}
-
-                      {isInsideOutro && !isMovie && nextEp && (
-                        <button
-                          type="button"
-                          onClick={handleSkipOutro}
-                          className="px-3 sm:px-4 py-1 sm:py-1.5 rounded bg-cyan-400 hover:bg-cyan-300 text-black font-bold text-xs sm:text-sm tracking-wide shadow-2xl transition-transform active:scale-95 cursor-pointer flex items-center gap-1.5"
-                        >
-                          <NetflixNextEpIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                          <span>Sonraki Bölüme Geç</span>
-                          <span className="text-[10px] text-black/60 hidden sm:inline">(N)</span>
-                        </button>
-                      )}
-
-                      {!isMovie && !isInsideOutro && nextCountdown !== null && nextEp && (
-                        <button
-                          type="button"
-                          onClick={handleNextEpisode}
-                          className="px-3 sm:px-4 py-1 sm:py-1.5 rounded bg-white hover:bg-white/90 text-black font-bold text-xs sm:text-sm tracking-wide shadow-2xl transition-transform active:scale-95 cursor-pointer flex items-center gap-1.5"
-                        >
-                          <NetflixNextEpIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                          <span>Sonraki Bölüm ({nextCountdown} sn)</span>
-                        </button>
-                      )}
-                    </div>
-                  )}
-
                   {/* RED TIMELINE SCRUBBER + RIGHT TIMESTAMP */}
                   <div className="flex items-center gap-2.5 sm:gap-4">
                     <div
@@ -4482,6 +4595,111 @@ export default function NetflixPlayer({
                               <span>Sonraki</span>
                             </button>
                           )}
+
+                          {/* Oynatma Ayarları Butonu (Mobile) */}
+                          <div className="relative flex items-center shrink-0">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setActivePanel((prev) =>
+                                  prev === 'playback_settings' ? null : 'playback_settings'
+                                )
+                              }
+                              aria-label="Oynatma Tercihleri"
+                              className={`flex items-center gap-1 py-1 text-xs font-medium cursor-pointer shrink-0 transition-colors ${
+                                activePanel === 'playback_settings'
+                                  ? 'text-[#E50914] font-bold'
+                                  : 'text-white/90 hover:text-white'
+                              }`}
+                            >
+                              <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                              <span className="hidden xs:inline">Ayarlar</span>
+                            </button>
+
+                            {/* Fullscreen Mobile Popover */}
+                            <AnimatePresence>
+                              {isFullscreen && activePanel === 'playback_settings' && (
+                                <motion.div
+                                  key="panel-settings-mobile"
+                                  initial={{ opacity: 0, scale: 0.94, y: 10 }}
+                                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                                  exit={{ opacity: 0, scale: 0.94, y: 10 }}
+                                  transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                                  data-netflix-control="true"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="absolute bottom-full mb-3 right-0 z-50 w-72 p-3 rounded-2xl bg-[#141414]/98 backdrop-blur-xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-2 select-none"
+                                >
+                                  <div className="flex items-center justify-between border-b border-white/10 pb-2 px-1">
+                                    <span className="text-white/80 font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
+                                      <Settings className="w-3.5 h-3.5 text-[#E50914]" />
+                                      Oynatma Tercihleri
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setActivePanel(null)}
+                                      className="text-white/50 hover:text-white p-0.5 rounded cursor-pointer"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+
+                                  <div
+                                    onClick={toggleAutoSkipIntro}
+                                    className="w-full px-2 py-1.5 rounded-xl text-left flex items-center justify-between gap-2 hover:bg-white/5 cursor-pointer transition-colors"
+                                  >
+                                    <div className="min-w-0 pr-1">
+                                      <div className="text-xs font-semibold text-white flex items-center gap-1.5">
+                                        <FastForward className="w-3.5 h-3.5 text-amber-400" />
+                                        <span>Otomatik İntro Atla</span>
+                                      </div>
+                                      <div className="text-[10px] text-zinc-400 mt-0.5">
+                                        İntro başladığında doğrudan atlar
+                                      </div>
+                                    </div>
+                                    <div
+                                      className={`w-9 h-5 rounded-full p-0.5 transition-colors shrink-0 flex items-center ${
+                                        autoSkipIntro ? 'bg-[#E50914]' : 'bg-zinc-700'
+                                      }`}
+                                    >
+                                      <div
+                                        className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${
+                                          autoSkipIntro ? 'translate-x-4' : 'translate-x-0'
+                                        }`}
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {!isMovie && (
+                                    <div
+                                      onClick={toggleAutoNext}
+                                      className="w-full px-2 py-1.5 rounded-xl text-left flex items-center justify-between gap-2 hover:bg-white/5 cursor-pointer transition-colors"
+                                    >
+                                      <div className="min-w-0 pr-1">
+                                        <div className="text-xs font-semibold text-white flex items-center gap-1.5">
+                                          <NetflixNextEpIcon className="w-3.5 h-3.5 text-cyan-400" />
+                                          <span>Otomatik Sonraki Bölüm</span>
+                                        </div>
+                                        <div className="text-[10px] text-zinc-400 mt-0.5">
+                                          Outroda 3sn geri sayıp geçer
+                                        </div>
+                                      </div>
+                                      <div
+                                        className={`w-9 h-5 rounded-full p-0.5 transition-colors shrink-0 flex items-center ${
+                                          autoNextEnabled ? 'bg-[#E50914]' : 'bg-zinc-700'
+                                        }`}
+                                      >
+                                        <div
+                                          className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${
+                                            autoNextEnabled ? 'translate-x-4' : 'translate-x-0'
+                                          }`}
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
 
                           {/* Tam Ekran Butonu */}
                           <button
@@ -4861,6 +5079,115 @@ export default function NetflixPlayer({
                                   </AnimatePresence>
                                 </div>
                             )}
+
+                            {/* Oynatma Ayarları Popover (PC) */}
+                            <div className="relative flex items-center shrink-0">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setActivePanel((prev) =>
+                                    prev === 'playback_settings' ? null : 'playback_settings'
+                                  )
+                                }
+                                aria-label="Oynatma Tercihleri"
+                                className={`flex items-center gap-1.5 py-1 text-sm font-medium transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap ${
+                                  activePanel === 'playback_settings'
+                                    ? 'text-[#E50914] font-bold'
+                                    : 'text-white/90 hover:text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]'
+                                }`}
+                              >
+                                <Settings className="w-4 h-4 shrink-0" />
+                                <span className="hidden lg:inline">Ayarlar</span>
+                                <ChevronDown
+                                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                                    activePanel === 'playback_settings' ? 'rotate-180 text-white' : 'text-white/60'
+                                  }`}
+                                />
+                              </button>
+
+                              <AnimatePresence>
+                                {activePanel === 'playback_settings' && (
+                                  <motion.div
+                                    key="panel-settings-pc"
+                                    initial={{ opacity: 0, scale: 0.94, y: 10 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.94, y: 10 }}
+                                    transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                                    data-netflix-control="true"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-50 w-76 p-3 rounded-2xl bg-[#141414]/98 backdrop-blur-xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-2 select-none"
+                                  >
+                                    <div className="flex items-center justify-between border-b border-white/10 pb-2 px-1">
+                                      <span className="text-white/80 font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
+                                        <Settings className="w-3.5 h-3.5 text-[#E50914]" />
+                                        Oynatma Tercihleri
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setActivePanel(null)}
+                                        className="text-white/50 hover:text-white p-0.5 rounded cursor-pointer"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+
+                                    <div
+                                      onClick={toggleAutoSkipIntro}
+                                      className="w-full px-2.5 py-2 rounded-xl text-left flex items-center justify-between gap-3 hover:bg-white/5 cursor-pointer transition-colors"
+                                    >
+                                      <div className="min-w-0 pr-1">
+                                        <div className="text-xs font-semibold text-white flex items-center gap-1.5">
+                                          <FastForward className="w-3.5 h-3.5 text-amber-400" />
+                                          <span>Otomatik İntro Atla</span>
+                                        </div>
+                                        <div className="text-[10px] text-zinc-400 mt-0.5">
+                                          İntro başladığında doğrudan atlar
+                                        </div>
+                                      </div>
+                                      <div
+                                        className={`w-9 h-5 rounded-full p-0.5 transition-colors shrink-0 flex items-center ${
+                                          autoSkipIntro ? 'bg-[#E50914]' : 'bg-zinc-700'
+                                        }`}
+                                      >
+                                        <div
+                                          className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${
+                                            autoSkipIntro ? 'translate-x-4' : 'translate-x-0'
+                                          }`}
+                                        />
+                                      </div>
+                                    </div>
+
+                                    {!isMovie && (
+                                      <div
+                                        onClick={toggleAutoNext}
+                                        className="w-full px-2.5 py-2 rounded-xl text-left flex items-center justify-between gap-3 hover:bg-white/5 cursor-pointer transition-colors"
+                                      >
+                                        <div className="min-w-0 pr-1">
+                                          <div className="text-xs font-semibold text-white flex items-center gap-1.5">
+                                            <NetflixNextEpIcon className="w-3.5 h-3.5 text-cyan-400" />
+                                            <span>Otomatik Sonraki Bölüm</span>
+                                          </div>
+                                          <div className="text-[10px] text-zinc-400 mt-0.5">
+                                            Outroda 3sn geri sayıp geçer
+                                          </div>
+                                        </div>
+                                        <div
+                                          className={`w-9 h-5 rounded-full p-0.5 transition-colors shrink-0 flex items-center ${
+                                            autoNextEnabled ? 'bg-[#E50914]' : 'bg-zinc-700'
+                                          }`}
+                                        >
+                                          <div
+                                            className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${
+                                              autoNextEnabled ? 'translate-x-4' : 'translate-x-0'
+                                            }`}
+                                          />
+                                        </div>
+                                      </div>
+                                    )}
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
                           </>
                         )}
 
@@ -4900,6 +5227,209 @@ export default function NetflixPlayer({
                 </div>
               </div>
             )}
+
+            {/* ================================================================
+               FLOATING ACTION LAYER: Skip Intro & Next Episode (Countdown Card / Skip Outro)
+               Positioned independently from showOverlay so it ALWAYS stays 100% visible
+               Smoothly transitions between bottom-24 (HUD open) and bottom-8 (HUD hidden)
+               ================================================================ */}
+            {!isScreenLocked &&
+              !isTrailerMode &&
+              (isInsideIntro ||
+                shouldShowCountdown ||
+                (isInsideOutro && !isMovie && Boolean(nextEp))) && (
+                <div
+                  data-netflix-control="true"
+                  onClick={(e) => e.stopPropagation()}
+                  className={`absolute z-40 pointer-events-auto transition-all duration-300 ease-out select-none ${
+                    showOverlay
+                      ? 'bottom-24 sm:bottom-28 right-4 sm:right-8'
+                      : 'bottom-8 sm:bottom-10 right-6 sm:right-8'
+                  }`}
+                >
+                  {/* 1. Skip Intro Floating Buttons */}
+                  {isInsideIntro && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSkipIntro}
+                        className="px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-white hover:bg-white/90 text-black font-bold text-xs sm:text-sm tracking-wide shadow-2xl transition-all active:scale-95 cursor-pointer flex items-center gap-2 border border-white/40 hover:shadow-[0_0_20px_rgba(255,255,255,0.4)]"
+                      >
+                        <FastForward className="w-4 h-4 text-amber-500 fill-amber-500 shrink-0" />
+                        <span>İntroyu Atla</span>
+                        <span className="text-[10px] text-black/60 hidden sm:inline font-mono">
+                          (S)
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={toggleAutoSkipIntro}
+                        title={
+                          autoSkipIntro
+                            ? 'Otomatik İntro Atlama: Açık (Kapatmak için tıkla)'
+                            : 'Otomatik İntro Atlama: Kapalı (Açmak için tıkla)'
+                        }
+                        className={`px-2.5 py-1.5 sm:py-2 rounded-xl text-xs font-semibold tracking-wide shadow-xl transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 border backdrop-blur-md ${
+                          autoSkipIntro
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40 hover:bg-emerald-500/30'
+                            : 'bg-black/70 text-white/75 border-white/20 hover:text-white hover:bg-black/90'
+                        }`}
+                      >
+                        <Sparkles
+                          className={`w-3.5 h-3.5 ${
+                            autoSkipIntro ? 'text-emerald-400' : 'text-zinc-400'
+                          }`}
+                        />
+                        <span className="hidden sm:inline">Otomatik:</span>
+                        <span>{autoSkipIntro ? 'Açık' : 'Kapalı'}</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* 2. Next Episode Countdown Card */}
+                  {!isInsideIntro && shouldShowCountdown && nextEp && (() => {
+                    const nextEpKey = `${media.id}_s${nextEp.season_number || currentSeason}_e${nextEp.episode_number}`;
+                    const cachedThumb = episodePreviewCache.get(nextEpKey);
+                    const rawThumb =
+                      cachedThumb ||
+                      (nextEp as any).still_path ||
+                      (nextEp as any).thumbnail ||
+                      (nextEp as any).still_url ||
+                      fallbackBackdropUrl ||
+                      media.backdrop_image ||
+                      media.cover_image ||
+                      (media as any).poster_image;
+                    const nextEpThumbnail = rawThumb
+                      ? rawThumb.startsWith('data:')
+                        ? rawThumb
+                        : getProxiedImageUrl(rawThumb, media.title)
+                      : '';
+
+                    return (
+                      <div className="w-80 sm:w-96 max-w-[calc(100vw-2rem)] rounded-2xl bg-zinc-950/95 backdrop-blur-xl border border-white/15 p-3.5 shadow-2xl space-y-3 animate-in fade-in zoom-in-95 duration-200">
+                        <div className="flex items-center gap-3">
+                          {/* Thumbnail */}
+                          <div className="relative w-24 sm:w-28 aspect-video rounded-xl overflow-hidden shrink-0 bg-zinc-900 border border-white/10 shadow-inner">
+                            {nextEpThumbnail ? (
+                              <img
+                                src={nextEpThumbnail}
+                                alt={`Bölüm ${nextEp.episode_number}`}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-zinc-800 text-white/40">
+                                <Film className="w-6 h-6" />
+                              </div>
+                            )}
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                              <div className="w-7 h-7 rounded-full bg-white/25 backdrop-blur-sm border border-white/40 flex items-center justify-center shadow-lg">
+                                <Play className="w-3.5 h-3.5 fill-white text-white ml-0.5" />
+                              </div>
+                            </div>
+                            <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/75 backdrop-blur-sm text-[9px] font-bold text-white/90">
+                              {nextEp.episode_number}. Bölüm
+                            </div>
+                          </div>
+
+                          {/* Title & Countdown Progress */}
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-[#E50914] flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#E50914] animate-ping" />
+                              <span>SIRADAKİ BÖLÜM</span>
+                            </div>
+                            <div className="text-xs sm:text-sm font-bold text-white truncate mt-0.5">
+                              {nextEp.season_number && nextEp.season_number > 1
+                                ? `${nextEp.season_number}. Sezon `
+                                : ''}
+                              {nextEp.episode_number}. Bölüm
+                              {nextEp.episode_name &&
+                              !/^\d+$/.test(nextEp.episode_name.trim())
+                                ? ` • ${cleanEpisodeName(nextEp.episode_name)}`
+                                : ''}
+                            </div>
+                            <div className="text-[11px] text-zinc-300 flex items-center gap-1.5 mt-1">
+                              <Clock className="w-3 h-3 text-red-500 animate-pulse shrink-0" />
+                              <span>
+                                <strong className="text-white font-bold">
+                                  {countdownRemaining}
+                                </strong>{' '}
+                                saniye içinde başlıyor...
+                              </span>
+                            </div>
+                            <div className="w-full h-1 bg-white/15 rounded-full overflow-hidden mt-1.5">
+                              <div
+                                className="h-full bg-gradient-to-r from-red-600 via-[#E50914] to-red-400 rounded-full transition-all duration-1000 ease-linear"
+                                style={{
+                                  width: `${Math.min(
+                                    100,
+                                    Math.max(0, ((3 - countdownRemaining) / 3) * 100)
+                                  )}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="flex items-center gap-2 pt-2 border-t border-white/10">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (countdownTimerRef.current) {
+                                clearInterval(countdownTimerRef.current);
+                                countdownTimerRef.current = null;
+                              }
+                              if (!hasTriggeredNextRef.current) {
+                                hasTriggeredNextRef.current = true;
+                                handleNextEpisodeRef.current();
+                              }
+                            }}
+                            className="flex-1 py-1.5 px-3 rounded-xl bg-white hover:bg-white/90 active:scale-95 text-black font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer"
+                          >
+                            <NetflixNextEpIcon className="w-3.5 h-3.5" />
+                            <span>Hemen Geç</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (countdownTimerRef.current) {
+                                clearInterval(countdownTimerRef.current);
+                                countdownTimerRef.current = null;
+                              }
+                              setCancelledAutoNextForEp(true);
+                              triggerHudToast('Otomatik geçiş iptal edildi');
+                            }}
+                            className="py-1.5 px-3 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white/90 hover:text-white font-medium text-xs flex items-center justify-center gap-1 transition-all border border-white/10 cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            <span>İptal</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* 3. Manual Skip Outro Button (when countdown is cancelled or autoNext is disabled) */}
+                  {!isInsideIntro &&
+                    !shouldShowCountdown &&
+                    isInsideOutro &&
+                    !isMovie &&
+                    nextEp && (
+                      <button
+                        type="button"
+                        onClick={handleSkipOutro}
+                        className="px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-black font-bold text-xs sm:text-sm tracking-wide shadow-2xl transition-all active:scale-95 cursor-pointer flex items-center gap-2 border border-cyan-300/40 hover:shadow-[0_0_20px_rgba(34,211,238,0.4)]"
+                      >
+                        <NetflixNextEpIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                        <span>Sonraki Bölüme Geç</span>
+                        <span className="text-[10px] text-black/60 hidden sm:inline font-mono">
+                          (N)
+                        </span>
+                      </button>
+                    )}
+                </div>
+              )}
 
             {/* ================================================================
                IN-PLAYER NETFLIX POPOVERS (Speed, Floating Episodes, Sources)
@@ -5504,7 +6034,9 @@ export default function NetflixPlayer({
          ================================================================ */}
       {isMounted && isMobileInline && typeof document !== 'undefined' && createPortal(
         <AnimatePresence>
-          {(activePanel === 'speed' || activePanel === 'audio_subtitles') && (
+          {(activePanel === 'speed' ||
+            activePanel === 'audio_subtitles' ||
+            activePanel === 'playback_settings') && (
             <>
               {/* Semi-transparent Dimmed Backdrop */}
               <motion.div
@@ -5544,6 +6076,12 @@ export default function NetflixPlayer({
                       <>
                         <NetflixAudioSubtitleIcon className="w-4 h-4 text-[#E50914]" />
                         <span>Ses ve Altyazı</span>
+                      </>
+                    )}
+                    {activePanel === 'playback_settings' && (
+                      <>
+                        <Settings className="w-4 h-4 text-[#E50914]" />
+                        <span>Oynatma Tercihleri</span>
                       </>
                     )}
                   </div>
@@ -5683,6 +6221,65 @@ export default function NetflixPlayer({
                         )}
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {/* Panel 3: Playback Settings */}
+                {activePanel === 'playback_settings' && (
+                  <div className="space-y-2.5 py-1">
+                    <div
+                      onClick={toggleAutoSkipIntro}
+                      className="w-full p-3.5 rounded-2xl bg-white/5 flex items-center justify-between gap-3 cursor-pointer hover:bg-white/10 active:bg-white/15 transition-colors"
+                    >
+                      <div className="min-w-0 pr-2">
+                        <div className="text-sm font-semibold text-white flex items-center gap-2">
+                          <FastForward className="w-4 h-4 text-amber-400 shrink-0" />
+                          <span>Otomatik İntro Atla</span>
+                        </div>
+                        <div className="text-xs text-zinc-400 mt-0.5">
+                          İntro başladığında doğrudan atlar
+                        </div>
+                      </div>
+                      <div
+                        className={`w-11 h-6 rounded-full p-0.5 transition-colors shrink-0 flex items-center ${
+                          autoSkipIntro ? 'bg-[#E50914]' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <div
+                          className={`w-5 h-5 rounded-full bg-white shadow-md transform transition-transform ${
+                            autoSkipIntro ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    {!isMovie && (
+                      <div
+                        onClick={toggleAutoNext}
+                        className="w-full p-3.5 rounded-2xl bg-white/5 flex items-center justify-between gap-3 cursor-pointer hover:bg-white/10 active:bg-white/15 transition-colors"
+                      >
+                        <div className="min-w-0 pr-2">
+                          <div className="text-sm font-semibold text-white flex items-center gap-2">
+                            <NetflixNextEpIcon className="w-4 h-4 text-cyan-400 shrink-0" />
+                            <span>Otomatik Sonraki Bölüm</span>
+                          </div>
+                          <div className="text-xs text-zinc-400 mt-0.5">
+                            Outroda 3sn geri sayıp sonrakine geçer
+                          </div>
+                        </div>
+                        <div
+                          className={`w-11 h-6 rounded-full p-0.5 transition-colors shrink-0 flex items-center ${
+                            autoNextEnabled ? 'bg-[#E50914]' : 'bg-zinc-700'
+                          }`}
+                        >
+                          <div
+                            className={`w-5 h-5 rounded-full bg-white shadow-md transform transition-transform ${
+                              autoNextEnabled ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </motion.div>

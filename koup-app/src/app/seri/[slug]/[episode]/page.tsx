@@ -51,6 +51,19 @@ import NetflixPlayer from '@/components/NetflixPlayer';
 import CountryFlag from '@/components/CountryFlag';
 import CustomSelect from '@/components/CustomSelect';
 import EpisodeRail from '@/components/EpisodeRail';
+import { isShortDrama } from '@/components/shorts/ShortsCard';
+
+const ShortsWatchClient = dynamic(
+  () => import('@/components/shorts/ShortsWatchClient'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full min-h-[100dvh] bg-[#070709] flex items-center justify-center">
+        <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin" />
+      </div>
+    ),
+  }
+);
 
 const RichCommentSection = dynamic(
   () => import('@/components/RichCommentSection'),
@@ -1003,6 +1016,25 @@ export default function EpisodeWatchPage({
 
 
 
+
+  if (isShortDrama(media)) {
+    return (
+      <ShortsWatchClient
+        media={media}
+        episodes={episodes}
+        currentEpisode={activeEpNum}
+        currentSeason={currentSeason}
+        initialSourceIdx={selectedSourceIdx}
+        onSelectEpisode={handleSelectEpisode}
+        onSelectSourceIdx={handleSelectSourceIdx}
+        onSourceDead={handleSourceDead}
+        ambientLightingEnabled={ambientLightingEnabled}
+        onToggleAmbientLighting={handleToggleAmbientLighting}
+        autoNextEnabled={autoNextEnabled}
+        onToggleAutoNext={handleToggleAutoNext}
+      />
+    );
+  }
 
   const cinemaStageStyle: React.CSSProperties = {
     maxWidth: isFilm ? '1020px' : '1440px',

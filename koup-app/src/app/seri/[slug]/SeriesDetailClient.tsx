@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, use, useRef, useCallback } from 'react';
+import React, { useState, useEffect, use, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -231,6 +231,36 @@ export default function SeriesDetailClient({
     next_episode_number?: number | null;
     next_episode_at?: string | null;
   } | null>(null);
+
+  // Compute actual highest episode number available on this series in real time
+  const effectiveMaxEpisode = useMemo(() => {
+    const fromEpList = (episodes || []).reduce(
+      (max, ep) => Math.max(max, Number(ep.episode_number) || 0),
+      0
+    );
+    const fromMediaAvail = Number((media as any)?.episodes_available || 0);
+    const fromMediaCount = Number((media as any)?.episode_count || 0);
+    return Math.max(fromEpList, fromMediaAvail, fromMediaCount);
+  }, [episodes, media]);
+
+  // Reactive Next Episode Label: Always strictly > effectiveMaxEpisode
+  const effectiveNextEpisodeLabel = useMemo(() => {
+    if (!seriesSchedule?.supported) return '';
+    const rawLabel = seriesSchedule.next_episode_label || '';
+    const rawNum = seriesSchedule.next_episode_number;
+
+    // Check if rawLabel or rawNum is behind or equal to current episodes
+    const match = rawLabel.match(/(\d+)\s*\.?\s*Bölüm/i);
+    const parsedFromLabel = match ? parseInt(match[1], 10) : null;
+    const epNumToCheck = rawNum || parsedFromLabel;
+
+    if (effectiveMaxEpisode > 0 && epNumToCheck && epNumToCheck <= effectiveMaxEpisode) {
+      return `${effectiveMaxEpisode + 1}. Bölüm`;
+    }
+    if (rawLabel) return rawLabel;
+    if (effectiveMaxEpisode > 0) return `${effectiveMaxEpisode + 1}. Bölüm`;
+    return 'Yeni Bölüm';
+  }, [seriesSchedule, effectiveMaxEpisode]);
 
   // Issue report rate-limit cooldown tracker
   useEffect(() => {
@@ -806,7 +836,9 @@ export default function SeriesDetailClient({
                 ? 'Yarın (1 Gün Sonra)'
                 : `${minDelta} Gün Sonra`,
             next_episode_label:
-              (media as any).next_episode_number
+              effectiveMaxEpisode > 0
+                ? `${effectiveMaxEpisode + 1}. Bölüm`
+                : (media as any).next_episode_number
                 ? `${(media as any).next_episode_number}. Bölüm`
                 : 'Yeni Bölüm',
           }
@@ -828,6 +860,14 @@ export default function SeriesDetailClient({
       .then((res) => {
         if (cancelled) return;
         if (res?.supported) {
+          if (
+            effectiveMaxEpisode > 0 &&
+            res.next_episode_number &&
+            res.next_episode_number <= effectiveMaxEpisode
+          ) {
+            res.next_episode_number = effectiveMaxEpisode + 1;
+            res.next_episode_label = `${effectiveMaxEpisode + 1}. Bölüm`;
+          }
           setSeriesSchedule(res);
         } else {
           setSeriesSchedule(null);
@@ -1087,10 +1127,12 @@ export default function SeriesDetailClient({
     try {
       // 1. Invalidate local memory and persistent storage caches
       invalidateCache(`episodes_${media.id}`);
+      invalidateCache(`series_schedule_${media.id}`);
       if (typeof window !== 'undefined') {
         try {
           localStorage.removeItem(`koup_cache_v5_episodes_${media.id}`);
           localStorage.removeItem(`koup_cache_episodes_${media.id}`);
+          localStorage.removeItem(`koup_cache_v5_series_schedule_${media.id}`);
         } catch {}
       }
 
@@ -1102,7 +1144,20 @@ export default function SeriesDetailClient({
         const payload = await res.json();
         if (payload?.episodes && Array.isArray(payload.episodes) && payload.episodes.length > 0) {
           setEpisodes(payload.episodes as unknown as EpisodeData[]);
-          setMedia((prev) => (prev ? { ...prev, episode_count: payload.episodes.length } : prev));
+          setMedia((prev) => (prev ? { ...prev, episode_count: payload.episodes.length, episodes_available: payload.episodes.length } : prev));
+          const newMax = Math.max(
+            0,
+            ...payload.episodes.map((e: any) => Number(e.episode_number) || 0),
+            payload.episodes.length
+          );
+          setSeriesSchedule((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              next_episode_number: newMax + 1,
+              next_episode_label: `${newMax + 1}. Bölüm`,
+            };
+          });
           setCache(`episodes_${media.id}`, payload.episodes, 300_000);
           pushNotification(
             'Bölümler Güncellendi',
@@ -2057,9 +2112,9 @@ export default function SeriesDetailClient({
                     <span className="text-sm sm:text-base font-extrabold text-white tracking-tight">
                       Yayın Takvimi & Sıradaki Bölüm
                     </span>
-                    {seriesSchedule.next_episode_label && (
+                    {effectiveNextEpisodeLabel && (
                       <span className="px-2.5 py-0.5 rounded-full bg-white/10 border border-white/15 text-[11px] font-mono font-bold text-sky-300">
-                        Sıradaki: {seriesSchedule.next_episode_label}
+                        Sıradaki: {effectiveNextEpisodeLabel}
                       </span>
                     )}
                   </div>

@@ -48,6 +48,7 @@ import {
   ToastNotification,
   compareNotifications,
   dedupeAndSortNotifications,
+  isMaintenanceOrErrorNotification,
 } from '@/lib/notifications';
 
 export type { ToastNotification } from '@/lib/notifications';
@@ -546,6 +547,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
                   const t = (n.title || '').toLowerCase();
                   const b = (n.body || '').toLowerCase();
                   const isJunk =
+                    isMaintenanceOrErrorNotification(n.title, n.body, n.type) ||
                     t.includes('yorumun yayınlandı') ||
                     t.includes('yanıtınız gönderildi') ||
                     t.includes('yanıtın gönderildi') ||
@@ -562,7 +564,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
 
                 // Deterministically sort so consecutive episode notifications are ordered highest-to-lowest
                 // and order never shifts randomly across F5 refreshes
-                const merged = result.sort(compareNotifications).slice(0, 500);
+                const merged = dedupeAndSortNotifications(result).slice(0, 500);
                 try {
                   localStorage.setItem('koup_notifs_v1', JSON.stringify(merged));
                 } catch {}
@@ -764,9 +766,10 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           if (savedNotifs) {
             const parsedN = JSON.parse(savedNotifs);
             if (Array.isArray(parsedN)) {
-              // Permanently filter out any legacy dummy notifications or unwanted spam
+              // Permanently filter out any legacy dummy notifications, maintenance/error toasts or unwanted spam
               const cleaned = parsedN.filter((n: any) => {
                 if (!n || !n.title) return false;
+                if (isMaintenanceOrErrorNotification(n.title, n.body, n.type)) return false;
                 const t = (n.title || '').toLowerCase();
                 const b = (n.body || '').toLowerCase();
                 if (
@@ -789,7 +792,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
                 }
                 return ['episode', 'actor', 'reply', 'system'].includes(n.type);
               });
-              const sortedCleaned = cleaned.sort(compareNotifications).slice(0, 500);
+              const sortedCleaned = dedupeAndSortNotifications(cleaned).slice(0, 500);
               setNotifications(sortedCleaned);
               try {
                 localStorage.setItem('koup_notifs_v1', JSON.stringify(sortedCleaned));
@@ -953,6 +956,10 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           else if (row.type === 'new_episode' || row.type === 'episode') mappedType = 'episode';
           else if (row.type === 'actor_update' || row.type === 'actor') mappedType = 'actor';
 
+          if (isMaintenanceOrErrorNotification(row.title, row.body, mappedType)) {
+            return;
+          }
+
           const item: ToastNotification = {
             id: String(row.id),
             title: row.title || 'Bildirim',
@@ -1053,15 +1060,22 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // 3. Transient UI Toasts ('info', 'success'):
-      // General feedback ("Ayarlar Kaydedildi", "Kaynak Eklendi") shows as activeToast for feedback,
-      // but does NOT pollute the user's permanent notifications inbox.
-      if (type === 'info' || type === 'success') {
+      // 3. Transient UI Toasts ('info', 'success', 'error', 'warning') or maintenance/error content:
+      // Transient feedback shows as activeToast for instant user feedback,
+      // but does NOT pollute the user's permanent notifications inbox or Supabase DB table.
+      const isTransient =
+        type === 'info' ||
+        type === 'success' ||
+        type === 'error' ||
+        (type as string) === 'warning' ||
+        isMaintenanceOrErrorNotification(title, body, type);
+
+      if (isTransient) {
         const toastItem: ToastNotification = {
           id: `toast-${Date.now()}`,
           title,
           body,
-          type: 'system',
+          type: (type as ToastNotification['type']) || 'info',
           linkUrl,
           createdAt: 'Şimdi',
           isRead: true,

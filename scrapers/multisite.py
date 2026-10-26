@@ -16,17 +16,77 @@ try:
 except ImportError:
     from scrapers.clean_fansub import clean_fansub_name, clean_source_name
 
+_WAL_INITIALIZED_CONNS = set()
+
+def _ensure_wal(conn):
+    if not conn:
+        return
+    conn_id = id(conn)
+    if conn_id in _WAL_INITIALIZED_CONNS:
+        return
+    try:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+        conn.execute("PRAGMA busy_timeout=120000;")
+        _WAL_INITIALIZED_CONNS.add(conn_id)
+    except Exception:
+        pass
+
 def _retry(fn, *a, **k):
     import random
-    for i in range(60):
+    for i in range(120):
         try:
             return fn(*a, **k)
         except sqlite3.OperationalError as e:
-            if 'locked' not in str(e) or i == 59:
+            if 'locked' not in str(e) or i == 119:
                 raise
-            time.sleep(1 + i * 0.5 + random.random() * 2)
+            time.sleep(0.05 + min(i * 0.1, 1.0) + random.random() * 0.2)
 
 TR = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
+
+TURKISH_MONTHS = r'(?:ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık|subat|mayis|agustos|eylul|kasim)'
+DATE_REGEX = re.compile(rf'\s*\b(\d{{1,2}})\s+{TURKISH_MONTHS}(?:\s+(\d{{4}}))?\b', re.IGNORECASE)
+NUM_DATE_REGEX = re.compile(r'\s*\b(\d{{1,2}})[./-](\d{{1,2}})[./-](\d{{2,4}})\b')
+
+KNOWN_DAILY_SHOWS = {
+    'müge anlı': 'Müge Anlı ile Tatlı Sert',
+    'muge anli': 'Müge Anlı ile Tatlı Sert',
+    'esra erol': "Esra Erol'da",
+    'gelinim mutfakta': 'Gelinim Mutfakta',
+    'zuhal topal': "Zuhal Topal'la Yemekteyiz",
+    'didem arslan': "Didem Arslan Yılmaz'la Vazgeçme",
+}
+
+def extract_date_and_clean_title(raw_title: str) -> tuple[str, str | None]:
+    """
+    Strips Turkish dates from program titles (e.g. 'Müge Anlı 26 Ekim 2026' -> ('Müge Anlı ile Tatlı Sert', '26 Ekim 2026')).
+    Returns (cleaned_title, extracted_date_str).
+    """
+    if not raw_title:
+        return "", None
+
+    t = str(raw_title).strip()
+    date_str = None
+
+    # Match named date (e.g. 26 Ekim 2026)
+    m = DATE_REGEX.search(t)
+    if m:
+        date_str = m.group(0).strip()
+        t = (t[:m.start()] + ' ' + t[m.end():]).strip()
+    else:
+        m2 = NUM_DATE_REGEX.search(t)
+        if m2:
+            date_str = m2.group(0).strip()
+            t = (t[:m2.start()] + ' ' + t[m2.end():]).strip()
+
+    t = re.sub(r'[\s\-_:|•]+$', '', t).strip()
+    t_lower = t.lower()
+    for prefix, canonical in KNOWN_DAILY_SHOWS.items():
+        if t_lower == prefix or t_lower.startswith(prefix + ' '):
+            t = canonical
+            break
+
+    return t, date_str
 
 def norm_title(s):
     if not s:
@@ -34,6 +94,14 @@ def norm_title(s):
     s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode()
     s = s.translate(TR).lower()
     s = re.sub(r'\(.*?\)|\[.*?\]', '', s)
+    # Strip dates like 26 ekim 2026, 26.10.2026
+    s = re.sub(r'\b\d{1,2}\s+(?:ocak|subat|mart|nisan|mayis|haziran|temmuz|agustos|eylul|ekim|kasim|aralik)(?:\s+\d{4})?\b', '', s, flags=re.I)
+    s = re.sub(r'\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b', '', s)
+    # Normalize season variations so "3. sezon", "season 3", "3rd season" become "season3"
+    s = re.sub(r'(\d+)\s*\.?\s*sezon\b', r'season\1', s, flags=re.I)
+    s = re.sub(r'sezon\s*(\d+)\b', r'season\1', s, flags=re.I)
+    s = re.sub(r'(\d+)(?:st|nd|rd|th)\s*season\b', r'season\1', s, flags=re.I)
+    s = re.sub(r'season\s*(\d+)\b', r'season\1', s, flags=re.I)
     return re.sub(r'[^a-z0-9]', '', s)
 
 def clean_scraped_slug(raw_slug: str) -> str:
@@ -58,6 +126,12 @@ def clean_scraped_slug(raw_slug: str) -> str:
     # Remove characters that aren't lowercase alphanumeric or hyphens
     slug = re.sub(r"[^a-z0-9\-]", "", slug)
     slug = re.sub(r"-+", "-", slug).strip("-")
+
+    # Strip Turkish dates from slug
+    slug = re.sub(r"-?\d{1,2}-(?:ocak|subat|mart|nisan|mayis|haziran|temmuz|agustos|eylul|ekim|kasim|aralik)(?:-\d{4})?", "", slug, flags=re.I)
+    slug = re.sub(r"-?\d{1,2}-\d{1,2}-\d{2,4}", "", slug)
+    # Normalize season in slug: e.g. -3-sezon -> -season-3
+    slug = re.sub(r"-(\d+)-sezon", r"-season-\1", slug)
 
     # Patterns to strip from the tail iteratively
     strip_patterns = [
@@ -125,8 +199,18 @@ def clean_episode_title(name: str, season: int = 1, number: int = 1, drama_title
         d_clean = drama_title.strip()
         s = re.sub(re.escape(d_clean), ' ', s, flags=re.I).strip()
 
-    # Strip play symbols, bullets, arrows and button residue (e.g. '▶', '►', '▸', '▶️', '▷', '⏯', '⏵', '•', '·')
-    s = re.sub(r'[\u25b6\u25ba\u25b8\u25c0\u25c4\u25bc\u25b2\u25b7\u25bd\u25c1\u25c5\u27a4\u25e6\u2022\u00b7\ufe0f]+', ' ', s).strip()
+    # Strip all symbols, icons, control and private-use characters BEFORE regex loops
+    KNOWN_PLAY_SYMBOLS = set(
+        '\u25b6\u25ba\u25b8\u25c0\u25c4\u25bc\u25b2\u25b7\u25bd\u25c1\u25c5\u27a4\u25e6\u2022\u00b7\ufe0f'
+        '\u23f5\u23f8\u23f9\u23fa\u23ed\u23ee\u23ef\u23f4\u23f6\u23f7\u23e9\u23ea\u23eb\u23ec\uf04b▶►▸▷⏵⏯'
+    )
+    cleaned_chars = []
+    for ch in s:
+        if ch in KNOWN_PLAY_SYMBOLS or unicodedata.category(ch) in ('So', 'Sk', 'Cs', 'Co', 'Cf') or (0xE000 <= ord(ch) <= 0xF8FF):
+            cleaned_chars.append(' ')
+        else:
+            cleaned_chars.append(ch)
+    s = re.sub(r'\s+', ' ', ''.join(cleaned_chars)).strip()
 
     # Remove Turkish/English dates
     s = re.sub(r'\s*\d{1,2}\s+(?:Ocak|Şubat|Mart|Nisan|Mayıs|Haziran|Temmuz|Ağustos|Eylül|Ekim|Kasım|Aralık|Oca|Şub|Mar|Nis|May|Haz|Tem|Ağu|Eyl|Eki|Kas|Ara|Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b(?:\s+\d{4})?', '', s, flags=re.I)
@@ -358,7 +442,20 @@ def find_in_index(idx, title, year=None, slug=None, content_type=None, mdl_url=N
                 for did, y, _m, _a, _ct in cands:
                     if _years_compatible(y, year):
                         return did
-                return cands[0][0]
+                try:
+                    from scrapers.matching import score_series_match, enqueue_match_review
+                    first_cand = cands[0]
+                    did, y, _m, _a, _ct = first_cand
+                    local_mock = {"id": did, "title": title, "release_year": y, "content_type": _ct}
+                    remote_mock = {"title": title, "release_year": year, "content_type": target_ct, "slug": slug}
+                    score, reasons = score_series_match(local_mock, remote_mock)
+                    if score >= 0.80:
+                        return did
+                    elif 0.55 <= score < 0.80:
+                        enqueue_match_review("multisite", remote_mock, local_mock, score, reasons)
+                except Exception:
+                    pass
+                return None
             return cands[0][0]
 
     if slug:
@@ -381,6 +478,7 @@ def find_in_index(idx, title, year=None, slug=None, content_type=None, mdl_url=N
 
 _RECENT_ADDED_EPISODES = []
 _RECENT_ADDED_SOURCES = []
+_RECENT_UPDATED_SOURCES = []
 _DRAMA_META_CACHE = {}
 
 def get_drama_meta(cur, drama_id):
@@ -410,7 +508,14 @@ def pop_recent_added_sources():
     _RECENT_ADDED_SOURCES = []
     return items
 
+def pop_recent_updated_sources():
+    global _RECENT_UPDATED_SOURCES
+    items = list(_RECENT_UPDATED_SOURCES)
+    _RECENT_UPDATED_SOURCES = []
+    return items
+
 def match_or_create_episode(cur, drama_id, season, number, name, url):
+    _ensure_wal(getattr(cur, "connection", None))
     season = max(1, int(season or 1))
     number = max(1, int(number or 1))
     d_title, d_slug, d_cover = get_drama_meta(cur, drama_id)
@@ -429,11 +534,15 @@ def match_or_create_episode(cur, drama_id, season, number, name, url):
                 or "sezon" in old_name.lower()
             ):
                 cur.execute("UPDATE episodes SET episode_name=? WHERE id=?", (clean_name, r[0]))
+                if hasattr(cur, "connection") and cur.connection:
+                    cur.connection.commit()
             return r[0], False
         try:
             cur.execute("""INSERT INTO episodes (drama_id, season_number, episode_number, episode_name, episode_url, sources_scraped)
                 VALUES (?, ?, ?, ?, ?, 1)""", (drama_id, season, number, clean_name, url))
             new_ep_id = cur.lastrowid
+            if hasattr(cur, "connection") and cur.connection:
+                cur.connection.commit()
             _RECENT_ADDED_EPISODES.append({
                 "id": new_ep_id,
                 "drama_id": drama_id,
@@ -448,7 +557,7 @@ def match_or_create_episode(cur, drama_id, season, number, name, url):
             })
             return new_ep_id, True
         except sqlite3.IntegrityError:
-            # Ayni URL baska drama/numarada kayitli (toplu bolum vb.): mevcut satiri kullan veya guncelle.
+            # 1. Ayni URL baska drama/numarada kayitli (toplu bolum vb.): mevcut satiri kullan veya guncelle.
             cur.execute("SELECT id, drama_id FROM episodes WHERE episode_url=?", (url,))
             r = cur.fetchone()
             if r:
@@ -463,13 +572,28 @@ def match_or_create_episode(cur, drama_id, season, number, name, url):
                             source_status=NULL, pending_since=NULL, last_source_check=NULL, source_check_attempts=0
                         WHERE id=?
                     """, (drama_id, season, number, clean_name, existing_ep_id))
+                    if hasattr(cur, "connection") and cur.connection:
+                        cur.connection.commit()
                     return existing_ep_id, True
+                return existing_ep_id, False
+
+            # 2. Cakisma (drama_id, season_number, episode_number) kısıtından kaynaklaniyorsa:
+            cur.execute("SELECT id, drama_id, episode_name FROM episodes WHERE drama_id=? AND season_number=? AND episode_number=?",
+                        (drama_id, season, number))
+            r2 = cur.fetchone()
+            if r2:
+                existing_ep_id, existing_drama_id, old_ep_name = r2
+                cur.execute("UPDATE episodes SET episode_url=COALESCE(?, episode_url), episode_name=? WHERE id=?",
+                            (url, clean_name, existing_ep_id))
+                if hasattr(cur, "connection") and cur.connection:
+                    cur.connection.commit()
                 return existing_ep_id, False
             raise
     return _retry(_op)
 
 def add_source(cur, episode_id, source_name, direct_url, provider, site, fansub=None, embed_id=None):
     """Ayni URL varsa site ekle; ayni provider farkli isimse numaralandir (VK, VK2)."""
+    _ensure_wal(getattr(cur, "connection", None))
     if not direct_url:
         return False
 
@@ -518,6 +642,8 @@ def add_source(cur, episode_id, source_name, direct_url, provider, site, fansub=
             if site not in sites:
                 sites.append(site)
                 cur.execute("UPDATE episode_sources SET site=? WHERE id=?", (','.join(sites), r[0]))
+                if hasattr(cur, "connection") and cur.connection:
+                    cur.connection.commit()
             return False
         cur.execute("SELECT source_name FROM episode_sources WHERE episode_id=? AND provider=?",
                     (episode_id, provider))
@@ -536,21 +662,28 @@ def add_source(cur, episode_id, source_name, direct_url, provider, site, fansub=
                 name = cand
         import hashlib
         eid = embed_id or f"{site[:2]}_{hashlib.md5(direct_url.encode()).hexdigest()[:10]}"
+        cur.execute("SELECT id FROM episode_sources WHERE episode_id=? AND (embed_id=? OR direct_url=?)",
+                    (episode_id, eid, direct_url))
+        existing_src = cur.fetchone()
+        is_new = (existing_src is None)
+
         cur.execute("""INSERT INTO episode_sources (episode_id, source_name, embed_id, direct_url, provider, site, fansub)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(episode_id, embed_id) DO UPDATE SET
                 direct_url=excluded.direct_url, provider=excluded.provider,
                 source_name=excluded.source_name, fansub=COALESCE(excluded.fansub, episode_sources.fansub)""",
             (episode_id, name, eid, direct_url, provider, site, fansub))
-        new_src_id = cur.lastrowid
+        source_row_id = cur.lastrowid if is_new else existing_src[0]
+        if hasattr(cur, "connection") and cur.connection:
+            cur.connection.commit()
         try:
             cur.execute("SELECT drama_id, season_number, episode_number, episode_name FROM episodes WHERE id=?", (episode_id,))
             ep_row = cur.fetchone()
             if ep_row:
                 d_id, s_num, ep_num, ep_name = ep_row
                 d_title, d_slug, d_cover = get_drama_meta(cur, d_id)
-                _RECENT_ADDED_SOURCES.append({
-                    "id": new_src_id,
+                record_item = {
+                    "id": source_row_id,
                     "episode_id": episode_id,
                     "drama_id": d_id,
                     "drama_title": d_title,
@@ -564,13 +697,18 @@ def add_source(cur, episode_id, source_name, direct_url, provider, site, fansub=
                     "direct_url": direct_url,
                     "fansub": fansub,
                     "added_at": datetime.now().isoformat(),
-                })
+                }
+                if is_new:
+                    _RECENT_ADDED_SOURCES.append(record_item)
+                else:
+                    _RECENT_UPDATED_SOURCES.append(record_item)
         except Exception:
             pass
-        return True
+        return is_new
     return _retry(_op)
 
 def tag_site(cur, drama_id, site):
+    _ensure_wal(getattr(cur, "connection", None))
     cur.execute("SELECT alt_sites, source_url FROM dramas WHERE id=?", (drama_id,))
     r = cur.fetchone()
     try:
@@ -579,12 +717,17 @@ def tag_site(cur, drama_id, site):
         sites = []
     if site not in sites:
         sites.append(site)
-        _retry(cur.execute, "UPDATE dramas SET alt_sites=? WHERE id=?", (json.dumps(sites), drama_id))
+        def _op():
+            cur.execute("UPDATE dramas SET alt_sites=? WHERE id=?", (json.dumps(sites), drama_id))
+            if hasattr(cur, "connection") and cur.connection:
+                cur.connection.commit()
+        _retry(_op)
     if r and r[1]:
         mark_done(cur, site, r[1])
 
-def safe_commit(conn, tries=60):
+def safe_commit(conn, tries=120):
     import random
+    _ensure_wal(conn)
     for i in range(tries):
         try:
             conn.commit()
@@ -592,7 +735,7 @@ def safe_commit(conn, tries=60):
         except sqlite3.OperationalError as e:
             if 'locked' not in str(e) or i == tries - 1:
                 raise
-            time.sleep(1 + i * 0.5 + random.random() * 2)
+            time.sleep(0.05 + min(i * 0.1, 1.0) + random.random() * 0.2)
 
 import os as _os
 
@@ -610,7 +753,12 @@ def done_urls(cur, site):
         return set()
 
 def mark_done(cur, site, url):
-    _retry(cur.execute, "INSERT OR IGNORE INTO site_done (site, url) VALUES (?, ?)", (site, url))
+    _ensure_wal(getattr(cur, "connection", None))
+    def _op():
+        cur.execute("INSERT OR IGNORE INTO site_done (site, url) VALUES (?, ?)", (site, url))
+        if hasattr(cur, "connection") and cur.connection:
+            cur.connection.commit()
+    _retry(_op)
 
 def unique_slug(cur, base):
     """Copismeyen slug uret: baz, baz-2, baz-3..."""

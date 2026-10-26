@@ -67,27 +67,49 @@ def classify_stream_type(provider: str, direct_url: str) -> str:
         return "hls"
     return "locked_iframe"
 
-def get_provider_priority(provider: str, direct_url: str, content_type: str) -> float:
-    p = (provider or "").lower()
-    u = (direct_url or "").lower()
+def get_provider_priority(provider: str, direct_url: str, content_type: str = "") -> float:
+    p = (provider or "").lower().strip()
+    u = (direct_url or "").lower().strip()
 
-    if p in ("tau-video", "morencius", "ev") or "tau-video" in u or "morencius" in u:
-        return 0
-    if p in ("diziyou-hls",) or "storage.diziyou" in u:
-        return 0.5
-    if p in ("rapidrame",) or "rplayer" in u:
-        return 1
-    if p in ("hdfilm-close", "dizikorea", "dizibox", "dbx", "dizilla", "asyawatch") or "pichive" in u or "dplayer" in u or "molystream" in u:
-        return 2
-    if p in ("vidmoly", "uqload") or "vidmoly" in u or "uqload" in u:
-        return 3
-    if p in ("ok.ru", "odnoklassniki", "mail.ru", "mail", "vk", "dailymotion"):
-        return 4
-    if ".m3u8" in u:
-        return 5
-    if p in ("mp4upload", "voe", "filemoon"):
-        return 6
-    return 8
+    # Tier 0 (En yüksek): pilavyer, diziizle, tau-video, morencius, ev
+    if (
+        p in ("pilavyer", "diziizle", "tau-video", "morencius", "ev")
+        or "tau-video" in u
+        or "morencius" in u
+        or "pilavyer" in u
+        or "diziizle" in u
+    ):
+        return 0.0
+
+    # Tier 1: wdt, dtpasn, dramavadisi, shortizle, rapidrame, diziyou-hls, animelvl
+    if (
+        p in ("wdt", "dtpasn", "dramavadisi", "shortizle", "rapidrame", "diziyou-hls", "animelvl", "diziyou")
+        or any(k in u for k in ("wdt", "dtpasn", "dramavadisi", "shortizle", "rapidrame", "storage.diziyou", "diziyou", "animelvl"))
+    ):
+        return 1.0
+
+    # Tier 2: hdfilm-close, dizikorea, dizibox, dbx, dizilla, asyawatch, mailru, vk, okru, dramabox
+    if (
+        p in ("hdfilm-close", "dizikorea", "dizibox", "dbx", "dizilla", "asyawatch", "mailru", "mail.ru", "mail", "vk", "okru", "ok.ru", "odnoklassniki", "dramabox")
+        or any(k in u for k in ("pichive", "dplayer", "molystream", "mail.ru", "vk.com", "ok.ru", "dramabox"))
+    ):
+        return 2.0
+
+    # Tier 3: vidmoly, filemoon, byse, uqload, .m3u8
+    if (
+        p in ("vidmoly", "filemoon", "byse", "uqload")
+        or any(k in u for k in ("vidmoly", "filemoon", "bysesukior", "bysedikamoum", "byse.", "uqload", ".m3u8"))
+    ):
+        return 3.0
+
+    # Tier 9 (En düşük): turnstile_iframe, dplayer, pixel_turnstile, youtube
+    if (
+        p in ("turnstile_iframe", "dplayer", "pixel_turnstile", "youtube")
+        or any(k in u for k in ("youtube.com", "youtu.be", "turnstile", "pixel_turnstile"))
+    ):
+        return 9.0
+
+    return 5.0
 
 def export_all(drama_id: int = None):
     if not DB_PATH.exists():
@@ -266,6 +288,18 @@ def export_all(drama_id: int = None):
                 })
 
             processed.sort(key=lambda x: x["_prio"])
+
+            # YouTube rule: If there is at least 1 playable non-youtube source, filter out (hide) youtube!
+            # If YouTube is the ONLY source for this episode, keep it so user can click "YouTube'da Aç".
+            non_yt = [
+                s for s in processed
+                if (s.get("provider") or "").lower() != "youtube"
+                and "youtube.com" not in (s.get("direct_url") or "").lower()
+                and "youtu.be" not in (s.get("direct_url") or "").lower()
+            ]
+            if non_yt:
+                processed = non_yt
+
             processed = processed[:18]
 
             # Apply clean numbering per base name (e.g. "Tau Video", "Tau Video 2")

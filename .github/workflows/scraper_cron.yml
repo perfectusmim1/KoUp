@@ -65,6 +65,8 @@ jobs:
           CF_R2_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
           CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
           CF_R2_BUCKET: ${{ secrets.CF_R2_BUCKET }}
+          KOREDIZI_EMAIL: ${{ secrets.KOREDIZI_EMAIL }}
+          KOREDIZI_PASSWORD: ${{ secrets.KOREDIZI_PASSWORD }}
           TARGET_SITE: ${{ github.event.inputs.target_site }}
           PENDING_LIMIT: ${{ github.event.inputs.pending_limit }}
           BATCH_DRAMAS: ${{ github.event.inputs.batch_dramas }}

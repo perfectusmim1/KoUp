@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { verifyAdminAuth, resolvePythonBinary } from '@/lib/adminAuth';
+import { hasLocalPython, dispatchCloudScraperJob } from '@/lib/server/scraperDispatch';
 import { supabaseAdmin } from '@/lib/supabase';
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { cleanSourceName } from '@/lib/cleanFansub';
@@ -314,17 +315,32 @@ async function runDirectAnimecixSync(
   }
 
   const publishedCount = bundle.episodes.filter((e: any) => !e.pending && (e.sources || []).length > 0).length;
+  const maxEpInBundle = Math.max(0, ...bundle.episodes.map((e: any) => Number(e.episode_number) || 0));
+  const newTotalEpisodes = Math.max(publishedCount, maxEpInBundle);
+  const nextEpisodeNumber = newTotalEpisodes + 1;
+
   const mediaPatch: Record<string, any> = {
     episode_count: bundle.episodes.length,
-    episodes_available: publishedCount,
+    episodes_available: newTotalEpisodes,
+    next_episode_number: nextEpisodeNumber,
     updated_at: nowIso,
   };
   if (newlyPublished) {
-    mediaPatch.last_published_episode = Math.max(...bundle.episodes.map((e: any) => e.episode_number || 1));
+    mediaPatch.last_published_episode = maxEpInBundle || 1;
     mediaPatch.last_published_at = nowIso;
   }
   await supabaseAdmin.from('media').update(mediaPatch).eq('id', dramaId);
-  log(`[Supabase] media & episodes güncellendi.`);
+
+  // Keep calendar_schedules synchronized with the updated next_episode_number
+  await supabaseAdmin
+    .from('calendar_schedules')
+    .update({
+      next_episode_number: nextEpisodeNumber,
+      episode_label: `${nextEpisodeNumber}. Bölüm`,
+    })
+    .or(`media_id.eq.${dramaId},slug.eq.${bundle.slug || ''}`);
+
+  log(`[Supabase] media, episodes & calendar_schedules güncellendi (Sıradaki Bölüm: ${nextEpisodeNumber}).`);
 
   return { episodesAdded, sourcesAdded };
 }
@@ -494,7 +510,7 @@ export async function POST(req: NextRequest) {
     }
 
     const scriptPath = path.resolve(process.cwd(), '..', 'scrapers', 'sync_target_drama.py');
-    const isLocalPython = !process.env.VERCEL && fs.existsSync(scriptPath);
+    const isLocalPython = hasLocalPython() && fs.existsSync(scriptPath);
 
     const encoder = new TextEncoder();
     const nowStr = () => new Date().toTimeString().split(' ')[0];
@@ -766,7 +782,7 @@ export async function POST(req: NextRequest) {
     // =========================================================================
     // LOCALHOST / DEVELOPMENT: RUN LOCAL PYTHON SCRIPT DIRECTLY
     // =========================================================================
-    const pythonBin = getPythonPath();
+    const pythonBin = resolvePythonBinary();
     const args = [
       '-u',
       path.resolve(process.cwd(), '..', 'scripts', 'sync_single_series_runner.py'),
@@ -888,6 +904,41 @@ export async function POST(req: NextRequest) {
           }
 
           const isSuccess = code === 0;
+
+          if (isSuccess) {
+            try {
+              // Ensure media.episodes_available, next_episode_number and calendar_schedules are up-to-date
+              const { data: epRows } = await supabaseAdmin
+                .from('episodes')
+                .select('episode_number')
+                .eq('media_id', dramaId)
+                .order('episode_number', { ascending: false });
+
+              const maxEp = epRows && epRows.length > 0 ? Number(epRows[0].episode_number || 0) : 0;
+              const epCount = epRows?.length || 0;
+              const actualMax = Math.max(maxEp, epCount);
+              if (actualMax > 0) {
+                const nextNum = actualMax + 1;
+                await supabaseAdmin
+                  .from('media')
+                  .update({
+                    episodes_available: actualMax,
+                    next_episode_number: nextNum,
+                  })
+                  .eq('id', dramaId);
+
+                await supabaseAdmin
+                  .from('calendar_schedules')
+                  .update({
+                    next_episode_number: nextNum,
+                    episode_label: `${nextNum}. Bölüm`,
+                  })
+                  .eq('media_id', dramaId);
+              }
+            } catch (syncSchedErr) {
+              console.error('[SYNC_SCHEDULE_UPDATE_ERROR]', syncSchedErr);
+            }
+          }
 
           if (!resultPayload) {
             resultPayload = {

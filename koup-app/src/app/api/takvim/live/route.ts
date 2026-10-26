@@ -349,6 +349,18 @@ export async function GET(req: Request) {
         return NextResponse.json({ supported: false, schedules: [] });
       }
 
+      // Check the true max episode from episodes table to never fall behind published content
+      const { data: epMaxRow } = await supabase
+        .from('episodes')
+        .select('episode_number')
+        .eq('media_id', mediaRow.id)
+        .order('episode_number', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const maxEpFromDb = Number(epMaxRow?.episode_number || 0);
+      const actualMaxEp = Math.max(Number(mediaRow.episodes_available || 0), maxEpFromDb);
+
       const normStatus = (mediaRow.status_broadcast || '').trim();
       if (normStatus === 'Final' || normStatus === 'Canceled') {
         return NextResponse.json({ supported: false, schedules: [] });
@@ -420,19 +432,80 @@ export async function GET(req: Request) {
         return NextResponse.json({ supported: false, schedules: [] });
       }
 
-      const countdown = computeCountdownInfo(finalAirDays, nextEpAt);
-      const effectiveAirDays =
-        finalAirDays.length > 0 ? finalAirDays : [countdown.nextAirDayOfWeek];
-      const airDayNames = effectiveAirDays.map((d) => DAY_MAP[d] || 'Pazartesi');
+      // Enforce: "Next Episode" MUST always be strictly greater than actual published episodes
+      if (actualMaxEp > 0) {
+        const epMatch = (epLabel || '').match(/(\d+)\s*\.?\s*Bölüm/i);
+        const labelEpNum = epMatch ? parseInt(epMatch[1], 10) : 0;
+        if (!nextEpNum || nextEpNum <= actualMaxEp || (labelEpNum > 0 && labelEpNum <= actualMaxEp)) {
+          nextEpNum = actualMaxEp + 1;
+          epLabel = `${nextEpNum}. Bölüm`;
+        }
+      }
 
       if (!epLabel) {
         if (nextEpNum) {
           epLabel = `${nextEpNum}. Bölüm`;
-        } else if (mediaRow.episodes_available > 0) {
-          epLabel = `${Number(mediaRow.episodes_available) + 1}. Bölüm`;
+        } else if (actualMaxEp > 0) {
+          epLabel = `${actualMaxEp + 1}. Bölüm`;
         } else {
           epLabel = 'Yeni Bölüm';
         }
+      }
+
+      let countdown = computeCountdownInfo(finalAirDays, nextEpAt);
+
+      // If countdown says "Bugün Yayınlanıyor" (daysUntil === 0) but that episode is ALREADY available on the site,
+      // advance countdown to the next weekly air date so it does not stay stuck on today's already-uploaded episode!
+      if (countdown.daysUntil === 0 && actualMaxEp >= (nextEpNum ? nextEpNum - 1 : 1)) {
+        const nextWeekDays = finalAirDays.length > 0 ? finalAirDays : [countdown.nextAirDayOfWeek];
+        let minAdvance = 7;
+        let nextDow = nextWeekDays[0];
+        const trNow = getTurkeyNow();
+        for (const d of nextWeekDays) {
+          const delta = (d - trNow.dayOfWeek + 7) % 7;
+          const effectiveDelta = delta === 0 ? 7 : delta;
+          if (effectiveDelta < minAdvance) {
+            minAdvance = effectiveDelta;
+            nextDow = d;
+          }
+        }
+        const nextAirDayName = DAY_MAP[nextDow] || 'Pazartesi';
+        const nextDateMs = trNow.timestampMs + minAdvance * 86_400_000;
+        countdown = {
+          daysUntil: minAdvance,
+          hoursUntil: minAdvance * 24,
+          nextAirDayOfWeek: nextDow,
+          nextAirDayName,
+          countdownLabel: minAdvance === 1 ? 'Yarın (1 Gün Sonra)' : `${minAdvance} Gün Sonra`,
+          nextAirDateIso: new Date(nextDateMs).toISOString(),
+        };
+      }
+
+      const effectiveAirDays =
+        finalAirDays.length > 0 ? finalAirDays : [countdown.nextAirDayOfWeek];
+      const airDayNames = effectiveAirDays.map((d) => DAY_MAP[d] || 'Pazartesi');
+
+      // Sync updated next_episode_number and schedule back to media & calendar_schedules in background
+      if (nextEpNum && (mediaRow.next_episode_number !== nextEpNum || mediaRow.episodes_available !== actualMaxEp)) {
+        supabaseAdmin
+          .from('media')
+          .update({
+            episodes_available: actualMaxEp,
+            next_episode_number: nextEpNum,
+            ...(countdown.nextAirDateIso ? { next_episode_at: countdown.nextAirDateIso } : {}),
+          })
+          .eq('id', mediaRow.id)
+          .then(() => {});
+
+        supabaseAdmin
+          .from('calendar_schedules')
+          .update({
+            next_episode_number: nextEpNum,
+            episode_label: epLabel,
+            ...(countdown.nextAirDateIso ? { next_episode_at: countdown.nextAirDateIso } : {}),
+          })
+          .or(`media_id.eq.${mediaRow.id},slug.eq.${mediaRow.slug}`)
+          .then(() => {});
       }
 
       return NextResponse.json(
@@ -563,8 +636,25 @@ export async function GET(req: Request) {
         s.next_episode_at || s.media?.next_episode_at
       );
 
+      const avail = Math.max(
+        Number(s.media?.episodes_available || 0),
+        Number(s.media?.episode_count || 0)
+      );
+      let sNextEp = s.next_episode_number || s.media?.next_episode_number || null;
+      let sEpLabel = s.episode_label;
+      if (avail > 0) {
+        const epMatch = (sEpLabel || '').match(/(\d+)\s*\.?\s*Bölüm/i);
+        const labelEp = epMatch ? parseInt(epMatch[1], 10) : 0;
+        if (!sNextEp || sNextEp <= avail || (labelEp > 0 && labelEp <= avail)) {
+          sNextEp = avail + 1;
+          sEpLabel = `${sNextEp}. Bölüm`;
+        }
+      }
+
       return {
         ...s,
+        next_episode_number: sNextEp,
+        episode_label: sEpLabel,
         cover_image: bestCover,
         category: cleanCategory(s.category),
         date_label:

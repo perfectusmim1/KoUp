@@ -14,7 +14,7 @@ import urllib.request
 import urllib.error
 from datetime import datetime, timezone
 
-from scrapers.multisite import find_in_index, norm_title, tag_site, unique_slug, clean_episode_title, clean_scraped_slug
+from scrapers.multisite import find_in_index, norm_title, tag_site, unique_slug, clean_episode_title, clean_scraped_slug, extract_date_and_clean_title
 from scrapers.clean_fansub import clean_source_name
 from scrapers.translator import (
     COUNTRY_CODE_TO_NAME,
@@ -205,6 +205,50 @@ def pop_recent_added_dramas():
     _RECENT_ADDED_DRAMAS = []
     return items
 
+def fetch_clean_anilist_details(anilist_id: int) -> dict:
+    """Fetches countryOfOrigin, clean genres (max 5) and filtered tags (rank >= 70, non-spoiler, max 7) from AniList."""
+    if not anilist_id:
+        return {}
+    gql = """
+    query ($id: Int) {
+      Media(id: $id) {
+        countryOfOrigin
+        genres
+        tags {
+          name
+          rank
+          isMediaSpoiler
+          isGeneralSpoiler
+        }
+      }
+    }
+    """
+    try:
+        data = json.dumps({"query": gql, "variables": {"id": int(anilist_id)}}).encode("utf-8")
+        req = urllib.request.Request(
+            "https://graphql.anilist.co",
+            data=data,
+            headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
+        )
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            res = json.loads(resp.read().decode("utf-8")).get("data", {}).get("Media") or {}
+            origin = (res.get("countryOfOrigin") or "JP").upper()
+            c_code = origin if origin in ("JP", "CN", "KR") else "JP"
+            genres = (res.get("genres") or [])[:5]
+            raw_tags = res.get("tags") or []
+            clean_tags = [
+                t["name"] for t in raw_tags
+                if isinstance(t, dict) and t.get("name") and (t.get("rank") or 0) >= 70
+                and not t.get("isMediaSpoiler") and not t.get("isGeneralSpoiler")
+            ][:7]
+            return {
+                "country_code": c_code,
+                "categories": genres,
+                "tags": clean_tags
+            }
+    except Exception:
+        return {}
+
 def match_or_create_enriched_drama(
     conn,
     cur,
@@ -233,6 +277,13 @@ def match_or_create_enriched_drama(
     if not clean_t:
         clean_t = (slug_cand or "yapim").replace("-", " ").title()
 
+    # 0. Strip Turkish/numerical dates from daily TV program titles (e.g. 'Müge Anlı 26 Ekim 2026' -> 'Müge Anlı ile Tatlı Sert')
+    clean_t, extracted_date = extract_date_and_clean_title(clean_t)
+    if extracted_date or site_tag == "ddizi":
+        country_hint = "TR"
+        if not content_type or content_type in ("dizi", "film"):
+            content_type = "program"
+
     clean_s_cand = clean_scraped_slug(slug_cand) if slug_cand else ""
     if site_tag == "ddizi":
         country_hint = "TR"
@@ -248,13 +299,19 @@ def match_or_create_enriched_drama(
                     break
 
     if not did and (clean_s_cand or slug_cand):
-        cur.execute(
-            "SELECT id, title, slug, cover_image FROM dramas WHERE slug = ? OR slug = ? OR slug = ?",
-            (clean_s_cand, (slug_cand or "").lower(), (slug_cand or "").lower().replace("-izle", "")),
-        )
-        row = cur.fetchone()
-        if row:
-            did = row[0]
+        slugs_to_check = {clean_s_cand, (slug_cand or "").lower(), (slug_cand or "").lower().replace("-izle", "")}
+        if clean_s_cand:
+            slugs_to_check.add(re.sub(r"-(\d+)-sezon", r"-season-\1", clean_s_cand))
+            slugs_to_check.add(re.sub(r"-season-(\d+)", r"-\1-sezon", clean_s_cand))
+        for cand_s in [s for s in slugs_to_check if s]:
+            cur.execute(
+                "SELECT id, title, slug, cover_image FROM dramas WHERE slug = ?",
+                (cand_s,),
+            )
+            row = cur.fetchone()
+            if row:
+                did = row[0]
+                break
 
     if did:
         cur.execute("SELECT id, title, slug, cover_image, backdrop_image, tmdb_id FROM dramas WHERE id = ?", (did,))
@@ -279,10 +336,14 @@ def match_or_create_enriched_drama(
             return row[0], row[1], row[2], cover or "/logo-dark.png"
 
     # 2. Not found by string -> Resolve TMDB / AniList metadata first so we can check external IDs in DB!
+    # Convert Turkish season expression ("3.Sezon") to English "Season 3" for AniList & TMDb queries
+    ani_search_title = re.sub(r'(\d+)\s*\.?\s*sezon\b', r'Season \1', clean_t, flags=re.I)
+    ani_search_title = re.sub(r'sezon\s*(\d+)\b', r'Season \1', ani_search_title, flags=re.I)
+
     meta = None
     if content_type == "anime":
-        ani = resolve_anilist_metadata(clean_t, year=year_hint)
-        tmdb = resolve_tmdb_metadata(clean_t, year=year_hint, country_hint="JP", content_type="anime")
+        ani = resolve_anilist_metadata(ani_search_title, year=year_hint)
+        tmdb = resolve_tmdb_metadata(ani_search_title, year=year_hint, country_hint="JP", content_type="anime")
         meta = tmdb or {}
         if ani:
             meta.setdefault("anilist_id", ani.get("anilist_id"))
@@ -292,6 +353,16 @@ def match_or_create_enriched_drama(
             meta.setdefault("cover_image", ani.get("cover_image"))
             meta.setdefault("backdrop_image", ani.get("backdrop_image"))
             meta.setdefault("overview", ani.get("overview"))
+            # Fetch clean country, genres and tags from AniList
+            ani_details = fetch_clean_anilist_details(ani.get("anilist_id"))
+            c_code = ani_details.get("country_code") or "JP"
+            meta["country_code"] = c_code
+            meta["country_name"] = COUNTRY_CODE_TO_NAME.get(c_code, "Japonya")
+            if ani_details.get("categories"):
+                meta["categories"] = ani_details["categories"]
+            if ani_details.get("tags"):
+                meta["tags"] = ani_details["tags"]
+        else:
             meta["country_code"] = "JP"
             meta["country_name"] = "Japonya"
     else:
@@ -300,7 +371,7 @@ def match_or_create_enriched_drama(
             clean_t, year=year_hint, country_hint=hint_c, content_type=content_type
         )
         if content_type != "film":
-            ani = resolve_anilist_metadata(clean_t, year=year_hint)
+            ani = resolve_anilist_metadata(ani_search_title, year=year_hint)
             if ani and ani.get("anilist_id"):
                 meta = meta or {}
                 meta["anilist_id"] = ani.get("anilist_id")
@@ -309,6 +380,14 @@ def match_or_create_enriched_drama(
                 meta.setdefault("cover_image", ani.get("cover_image"))
                 meta.setdefault("backdrop_image", ani.get("backdrop_image"))
                 meta.setdefault("overview", ani.get("overview"))
+                ani_details = fetch_clean_anilist_details(ani.get("anilist_id"))
+                if ani_details.get("country_code"):
+                    meta["country_code"] = ani_details["country_code"]
+                    meta["country_name"] = COUNTRY_CODE_TO_NAME.get(ani_details["country_code"], "Japonya")
+                if ani_details.get("categories"):
+                    meta["categories"] = ani_details["categories"]
+                if ani_details.get("tags"):
+                    meta["tags"] = ani_details["tags"]
 
     # 3. Check if resolved tmdb_id, imdb_id, or anilist_id already exists in SQLite dramas!
     if meta:
@@ -363,6 +442,10 @@ def match_or_create_enriched_drama(
     c_ani_id = meta.get("anilist_id") if meta else None
     c_ani_url = meta.get("anilist_url") if meta else None
 
+    # Sanitize categories and tags to prevent explosion (max 5 genres, max 7 tags)
+    clean_cats = (meta.get("categories") or meta.get("genres") or [])[:5] if meta else []
+    clean_tags = (meta.get("tags") or [])[:7] if meta else []
+
     type_label = "animesi" if content_type == "anime" else ("filmi" if content_type == "film" else "dizisi")
     c_overview = (meta.get("overview") if meta else None) or (
         f"{clean_t} ({c_year}), {c_name} yapımı {type_label} Türkçe altyazılı ve HD kalitesiyle KoUp arşivinde."
@@ -378,9 +461,9 @@ def match_or_create_enriched_drama(
             title, native_title, slug, content_type, country, country_name,
             release_year, status_broadcast, cover_image, backdrop_image,
             overview, source_url, tmdb_id, imdb_id, anilist_id, anilist_url,
-            episode_count, sources_count
+            episode_count, sources_count, categories, tags
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)
         """,
         (
             clean_t,
@@ -399,6 +482,8 @@ def match_or_create_enriched_drama(
             c_imdb,
             c_ani_id,
             c_ani_url,
+            json.dumps(clean_cats, ensure_ascii=False) if clean_cats else None,
+            json.dumps(clean_tags, ensure_ascii=False) if clean_tags else None,
         ),
     )
     did = cur.lastrowid
@@ -438,6 +523,8 @@ def match_or_create_enriched_drama(
         "imdb_rating": meta.get("imdb_rating") if meta else None,
         "anilist_id": c_ani_id,
         "anilist_url": c_ani_url,
+        "categories": clean_cats,
+        "tags": clean_tags,
         "created_at": now_iso,
         "updated_at": now_iso,
     }
@@ -918,7 +1005,7 @@ def ensure_media_synced(conn, cur, drama_id: int):
         return False
 
 
-def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
+def sync_drama_bundle_and_counts(conn, cur, drama_id: int, include_short_drama: bool = False) -> bool:
     """Updates SQLite episode_count/sources_count, uploads R2 bundle, and syncs Supabase media & episodes."""
     try:
         ensure_media_synced(conn, cur, drama_id)
@@ -937,10 +1024,17 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
         )
         conn.commit()
 
-        cur.execute("SELECT id, title, slug, content_type FROM dramas WHERE id = ?", (drama_id,))
+        cur.execute("SELECT id, title, slug, content_type, genres FROM dramas WHERE id = ?", (drama_id,))
         d_row = cur.fetchone()
         if not d_row:
-            return
+            return False
+
+        ctype = (d_row[3] or "").lower()
+        genres_val = str(d_row[4] or "").lower()
+        is_short = ctype in ("kisa_drama", "short", "short_drama") or "kısa drama" in genres_val or "kisa drama" in genres_val
+        skip_supabase_episodes = is_short and not include_short_drama
+        if skip_supabase_episodes:
+            print(f"[SHORT_DRAMA_SKIP_EPISODES] Drama #{drama_id} ({d_row[1]}) kısa drama: Supabase episodes tablosuna yazma atlandı (R2 bundle & public.media güncellendi).", flush=True)
 
         cur.execute(
             """
@@ -1127,7 +1221,7 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
             )
 
             sb_episodes = list(sb_episodes_map.values())
-            if sb_episodes:
+            if not skip_supabase_episodes and sb_episodes:
                 for i in range(0, len(sb_episodes), 50):
                     chunk = sb_episodes[i : i + 50]
                     res = sb_request(
@@ -1139,24 +1233,31 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int):
                     # If check constraint doesn't allow 'pending_source' yet, fall back to 'published'
                     if isinstance(res, dict) and res.get("_error"):
                         err_msg = str(res.get("message", ""))
-                        print(f"[SUPABASE_UPSERT_FALLBACK] Upsert with pending_source status failed ({err_msg[:120]}), falling back to published...", flush=True)
+                        status_code = res.get("status")
+                        print(f"[SUPABASE_UPSERT_FALLBACK] Upsert with pending_source status failed (status: {status_code}, err: {err_msg[:120]}), falling back to published...", flush=True)
                         fallback_chunk = []
                         for ep_item in chunk:
                             item_copy = dict(ep_item)
                             if item_copy.get("status") == "pending_source":
                                 item_copy["status"] = "published"
                             fallback_chunk.append(item_copy)
-                        sb_request(
+                        fb_res = sb_request(
                             "POST",
                             "/rest/v1/episodes?on_conflict=media_id,season_number,episode_number",
                             body=fallback_chunk,
                             prefer="resolution=merge-duplicates,return=minimal",
                         )
+                        if isinstance(fb_res, dict) and fb_res.get("_error"):
+                            fb_code = fb_res.get("status")
+                            fb_err = fb_res.get("message", "")
+                            print(f"[SUPABASE HATA] Fallback episodes upsert failed (status: {fb_code}): {fb_err}", flush=True)
 
         # Checkpoint SQLite WAL non-blocking so changes flush into webdrama_archive.db
         try:
             cur.execute("PRAGMA wal_checkpoint(PASSIVE);")
         except Exception:
             pass
+        return True
     except Exception as e:
         print(f"[SYNC_DRAMA_BUNDLE_ERROR] {drama_id}: {e}", flush=True)
+        return False

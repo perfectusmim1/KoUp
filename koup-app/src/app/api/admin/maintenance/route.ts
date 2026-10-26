@@ -9,6 +9,7 @@ import {
   checkAdminRateLimit,
   resolvePythonBinary,
 } from '@/lib/adminAuth';
+import { hasLocalPython, dispatchCloudScraperJob } from '@/lib/server/scraperDispatch';
 
 export const dynamic = 'force-dynamic';
 
@@ -390,31 +391,63 @@ export async function POST(req: NextRequest) {
 
   // Check if local environment is available
   const firstScriptPath = path.join(rootDir, steps[0].scriptRelPath);
-  if (!fs.existsSync(firstScriptPath) || !fs.existsSync(dbPath)) {
-    // Cloud fallback via GitHub Actions if token exists
-    const githubPat = process.env.GITHUB_TOKEN || process.env.GITHUB_PAT || process.env.GH_PAT;
-    const githubRepo = process.env.GITHUB_REPO || 'perfectusmim1/KoUp';
-    if (githubPat) {
-      try {
-        await fetch(`https://api.github.com/repos/${githubRepo}/actions/workflows/scraper_cron.yml/dispatches`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${githubPat}`,
-            Accept: 'application/vnd.github+json',
-          },
-          body: JSON.stringify({ ref: 'main' }),
+  if (!hasLocalPython() || !fs.existsSync(firstScriptPath) || !fs.existsSync(dbPath)) {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const sendEvent = (obj: any) => {
+          try {
+            controller.enqueue(encoder.encode(JSON.stringify(obj) + '\n'));
+          } catch (_) {}
+        };
+
+        const nowStr = () => new Date().toTimeString().split(' ')[0];
+        sendEvent({
+          type: 'log',
+          message: `[${nowStr()}] [Bulut] Vercel ortamı algılandı -> '${jobTitle}' görevi için GitHub Actions işçisi tetikleniyor...`,
         });
-      } catch {
-        // Ignore
-      }
-    }
-    return NextResponse.json(
-      {
-        error:
-          'Bu bakım aracı yerel SQLite veritabanı (webdrama_archive.db) ve Python motoru gerektirir. Localhost üzerinde çalıştırın veya GitHub Actions iş akışını tetikleyin.',
+
+        const firstStep = steps[0];
+        const scriptRel = firstStep.scriptRelPath.replace(/\\/g, '/');
+
+        const dispatchRes = await dispatchCloudScraperJob({
+          target: tool,
+          script: scriptRel,
+          workflowFile: 'admin_job.yml',
+          args: firstStep.args,
+          sendEvent: (ev) => {
+            if (ev.type === 'log') {
+              sendEvent({ type: 'log', message: ev.line });
+            } else {
+              sendEvent(ev);
+            }
+          },
+          streamLogs: true,
+        });
+
+        sendEvent({
+          type: 'result',
+          ok: dispatchRes.ok,
+          cloud: true,
+          tool,
+          message: dispatchRes.ok
+            ? `[BAŞLATILDI] Bulut (Vercel) ortamında GitHub Actions işçisi tetiklendi (Run ID: ${dispatchRes.runId}).`
+            : dispatchRes.error,
+          error: dispatchRes.error,
+        });
+
+        try {
+          controller.close();
+        } catch (_) {}
       },
-      { status: 400 }
-    );
+    });
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'application/x-ndjson; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+      },
+    });
   }
 
   activeMaintenanceJob = tool;

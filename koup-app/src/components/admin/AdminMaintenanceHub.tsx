@@ -213,7 +213,7 @@ export default function AdminMaintenanceHub({
               pushNotification(
                 ev.ok ? 'Bakım Tamamlandı' : 'Bakım Uyarısı',
                 `${title} ${ev.ok ? 'başarıyla tamamlandı.' : 'hata ile sonlandı.'}`,
-                ev.ok ? 'info' : 'system'
+                ev.ok ? 'info' : 'warning'
               );
             }
           } catch {
@@ -226,7 +226,7 @@ export default function AdminMaintenanceHub({
     } catch (err) {
       const msg = (err as Error).message;
       setConsoleLogs((prev) => [...prev, `[KRİTİK HATA] ${msg}`]);
-      pushNotification('Bakım Hatası', msg, 'system');
+      pushNotification('Bakım Hatası', msg, 'error');
     } finally {
       setRunningTool(null);
     }
@@ -262,7 +262,7 @@ export default function AdminMaintenanceHub({
       onRefreshDashboard?.();
     } catch (err) {
       setConsoleLogs((prev) => [...prev, `[HATA] ${(err as Error).message}`]);
-      pushNotification('Hata', (err as Error).message, 'system');
+      pushNotification('Hata', (err as Error).message, 'error');
     } finally {
       setRunningTool(null);
     }
@@ -301,7 +301,7 @@ export default function AdminMaintenanceHub({
       onRefreshDashboard?.();
     } catch (err) {
       setConsoleLogs((prev) => [...prev, `[HATA] ${(err as Error).message}`]);
-      pushNotification('Hata', (err as Error).message, 'system');
+      pushNotification('Hata', (err as Error).message, 'error');
     } finally {
       setRunningTool(null);
     }
@@ -572,6 +572,17 @@ export default function AdminMaintenanceHub({
                   size="sm"
                   options={[
                     { value: 'all', label: 'Tüm Siteler (Çapraz)' },
+                    { value: 'shortizle', label: 'Shortİzle (Kısa Drama)' },
+                    { value: 'dramavadisi', label: 'DramaVadisi (Kısa Drama)' },
+                    { value: 'koredizi', label: 'KoreDizi (K-Drama & Shorts)' },
+                    { value: 'dramabox', label: 'DramaBox (Orijinal Shorts)' },
+                    { value: 'diziizle', label: 'Diziİzle (Yabancı Dizi)' },
+                    { value: 'webdramaturkey2', label: 'WebDramaTurkey2 (WDT)' },
+                    { value: 'animelvl', label: 'AnimeLVL (Anime)' },
+                    { value: 'sezonlukdizi', label: 'SezonlukDizi (VIP)' },
+                    { value: 'dizipal', label: 'Dizipal (Dinamik Domain)' },
+                    { value: 'fullhdfilmizlesene', label: 'FullHDFilmİzlesene' },
+                    { value: 'tranimaci', label: 'TrAnimaci (Anime)' },
                     { value: 'asyawatch', label: 'AsyaWatch' },
                     { value: 'dizikorea', label: 'DiziKorea' },
                     { value: 'dizifon', label: 'DiziFon' },

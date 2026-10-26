@@ -83,6 +83,20 @@ export interface LiveSearchResult {
 }
 
 const ALL_SUPPORTED_SITES = [
+  // Kısa Drama Siteleri
+  { id: 'shortizle', name: 'Shortİzle', badge: 'Shorts 1080p', color: 'from-amber-500/20 to-rose-600/20 text-amber-300 border-amber-500/30' },
+  { id: 'dramavadisi', name: 'DramaVadisi', badge: 'Kısa HLS', color: 'from-orange-500/20 to-red-600/20 text-orange-300 border-orange-500/30' },
+  { id: 'koredizi', name: 'KoreDizi', badge: 'Asya Shorts', color: 'from-emerald-500/20 to-sky-600/20 text-emerald-300 border-emerald-500/30' },
+  { id: 'dramabox', name: 'DramaBox', badge: 'Orijinal Mini', color: 'from-red-500/20 to-rose-600/20 text-red-300 border-red-500/30' },
+  // Dizi & Film Siteleri
+  { id: 'diziizle', name: 'Diziİzle', badge: 'Takvim + HLS', color: 'from-blue-500/20 to-cyan-600/20 text-blue-300 border-blue-500/30' },
+  { id: 'webdramaturkey2', name: 'WebDramaTurkey2', badge: 'WDT Fansub', color: 'from-pink-500/20 to-purple-600/20 text-pink-300 border-pink-500/30' },
+  { id: 'animelvl', name: 'AnimeLVL', badge: 'Tau + Takvim', color: 'from-violet-500/20 to-indigo-600/20 text-violet-300 border-violet-500/30' },
+  { id: 'sezonlukdizi', name: 'SezonlukDizi', badge: 'VIP 1080p', color: 'from-teal-500/20 to-emerald-600/20 text-teal-300 border-teal-500/30' },
+  { id: 'dizipal', name: 'Dizipal', badge: 'Dinamik Domain', color: 'from-cyan-500/20 to-blue-600/20 text-cyan-300 border-cyan-500/30' },
+  { id: 'fullhdfilmizlesene', name: 'FullHDFilmİzlesene', badge: 'Dual 1080p', color: 'from-amber-600/20 to-orange-600/20 text-amber-300 border-amber-500/30' },
+  { id: 'tranimaci', name: 'TrAnimaci', badge: 'Anime Fansub', color: 'from-purple-500/20 to-pink-600/20 text-purple-300 border-purple-500/30' },
+  // Klasik Siteler
   { id: 'asyawatch', name: 'AsyaWatch', badge: '1080p HLS', color: 'from-sky-500/20 to-blue-600/20 text-sky-300 border-sky-500/30' },
   { id: 'dizikorea', name: 'DiziKorea', badge: 'PlayerDKorea', color: 'from-amber-500/20 to-orange-600/20 text-amber-300 border-amber-500/30' },
   { id: 'dizifon', name: 'DiziFon', badge: 'OK.ru / Vidmoly', color: 'from-violet-500/20 to-purple-600/20 text-violet-300 border-violet-500/30' },

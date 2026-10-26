@@ -2,7 +2,7 @@
 
 import React, { memo } from 'react';
 import Link from 'next/link';
-import { Star, Eye } from 'lucide-react';
+import { Star, Eye, Sparkles } from 'lucide-react';
 import {
   MediaItem,
   getProxiedImageUrl,
@@ -12,6 +12,7 @@ import {
   formatBroadcastStatus,
 } from '@/lib/supabase';
 import CountryFlag from '@/components/CountryFlag';
+import { isShortDrama } from '@/components/shorts/ShortsCard';
 
 interface DirectMediaCardProps {
   item: MediaItem;
@@ -139,9 +140,16 @@ function DirectMediaCardComponent({
               <CountryFlag code={countryCode} size="md" className="rounded-[3px]" />
             </span>
           )}
-          <span className="px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-bold tracking-wider uppercase bg-black/75 border border-white/15 text-white/90">
-            {formatContentTypeTR(item.content_type, countryCode)}
-          </span>
+          {isShortDrama(item) ? (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-black tracking-wider uppercase bg-gradient-to-r from-amber-500/90 to-rose-500/90 text-white border border-white/20 shadow-[0_2px_8px_rgba(245,158,11,0.4)]">
+              <Sparkles className="w-2.5 h-2.5 text-amber-200 fill-amber-200" />
+              <span>KISA DRAMA</span>
+            </span>
+          ) : (
+            <span className="px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-bold tracking-wider uppercase bg-black/75 border border-white/15 text-white/90">
+              {formatContentTypeTR(item.content_type, countryCode)}
+            </span>
+          )}
         </div>
 
         {ratingInfo && (

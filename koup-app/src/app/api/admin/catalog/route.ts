@@ -9,6 +9,7 @@ import {
   checkAdminRateLimit,
   resolvePythonBinary,
 } from '@/lib/adminAuth';
+import { hasLocalPython, dispatchCloudScraperJob } from '@/lib/server/scraperDispatch';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,8 +64,27 @@ async function runLocalCatalogPatch(
   const scriptPath = path.join(rootDir, 'scripts', 'admin_apply_catalog_patch.py');
   const dbPath = path.join(rootDir, 'webdrama_archive.db');
 
-  if (!fs.existsSync(scriptPath) || !fs.existsSync(dbPath)) {
-    return { ok: true, syncedLocalDb: false };
+  if (!hasLocalPython() || !fs.existsSync(scriptPath) || !fs.existsSync(dbPath)) {
+    const extraArgs = [
+      '--action',
+      action,
+      '--payload-json',
+      JSON.stringify(payload),
+    ];
+    if (backupR2) extraArgs.push('--backup-r2');
+
+    try {
+      const res = await dispatchCloudScraperJob({
+        target: 'catalog_patch',
+        script: 'scripts/admin_apply_catalog_patch.py',
+        workflowFile: 'admin_job.yml',
+        args: extraArgs,
+        streamLogs: false,
+      });
+      return { ok: res.ok, syncedLocalDb: false, output: res.ok ? 'Cloud patch queued via GitHub Actions' : res.error };
+    } catch (e: any) {
+      return { ok: false, syncedLocalDb: false, output: e.message };
+    }
   }
 
   const pythonBin = resolvePythonBinary(rootDir);

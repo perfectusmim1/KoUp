@@ -45,6 +45,7 @@ import {
 import { useKoUpSelector } from '@/context/KoUpContext';
 import AccordionMediaCard, { requestAccordionHover, preloadMediaImages } from '@/components/AccordionMediaCard';
 import DirectMediaCard from '@/components/DirectMediaCard';
+import ShortsCard, { isShortDrama } from '@/components/shorts/ShortsCard';
 import Top10Numeral from '@/components/Top10Numeral';
 import { cachedQuery, getCache, registerMediaItems } from '@/lib/cache';
 import {
@@ -85,6 +86,7 @@ interface HomeDataBundle {
   top10Movies?: MediaItem[];
   recentEpsProcessed?: any[];
   recentMedia?: MediaItem[];
+  shortDramas?: MediaItem[];
 }
 
 const COUNTRY_OPTIONS: SelectOption[] = [
@@ -196,6 +198,7 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
 
   const [top10SeriesItems, setTop10SeriesItems] = useState<MediaItem[]>(initialBundle?.top10Series?.slice(0, 10) || []);
   const [top10MoviesItems, setTop10MoviesItems] = useState<MediaItem[]>(initialBundle?.top10Movies?.slice(0, 10) || []);
+  const [shortDramaItems, setShortDramaItems] = useState<MediaItem[]>(initialBundle?.shortDramas || []);
   const [kdramaItems, setKdramaItems] = useState<MediaItem[]>(initialBundle?.kds || []);
   const [cdramaItems, setCdramaItems] = useState<MediaItem[]>(initialBundle?.cds || []);
   const [animeItems, setAnimeItems] = useState<MediaItem[]>(initialBundle?.ans || []);
@@ -211,6 +214,7 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
 
   const top10SeriesScrollRef = useDragScroll<HTMLDivElement>();
   const top10MoviesScrollRef = useDragScroll<HTMLDivElement>();
+  const shortDramasScrollRef = useDragScroll<HTMLDivElement>();
   const recentEpisodesScrollRef = useDragScroll<HTMLDivElement>();
   const recentMediaScrollRef = useDragScroll<HTMLDivElement>();
   const heroThumbnailsRef = useDragScroll<HTMLDivElement>();
@@ -234,6 +238,9 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
     } = bundle;
     if (feats?.length || kds?.length) {
       setHeroItems(feats && feats.length > 0 ? feats.slice(0, 6) : (kds || []).slice(0, 6));
+    }
+    if (bundle.shortDramas && bundle.shortDramas.length > 0) {
+      setShortDramaItems(bundle.shortDramas);
     }
     if (top10Series && top10Series.length > 0) {
       setTop10SeriesItems(top10Series.slice(0, 10));
@@ -1138,6 +1145,7 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
   const recentEpisodesOrder = runningOrder++;
   const recentMediaOrder = runningOrder++;
   const top10SeriesOrder = runningOrder++;
+  const shortDramasOrder = runningOrder++;
   const top10MoviesOrder = runningOrder++;
   const personalizedOrder = runningOrder++;
   const topPeopleOrder = runningOrder++;
@@ -1882,6 +1890,80 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
                     </div>
                   </div>
                 </Link>
+              ))}
+            </div>
+          </DeferredSection>
+        )}
+
+        {/* =====================================================================
+            3C. SHORTS · KISA DRAMALAR (Vertical 9:16 Scrollable Row)
+        ===================================================================== */}
+        {shortDramaItems.length > 0 && (
+          <DeferredSection
+            order={shortDramasOrder}
+            className="w-full px-4 sm:px-6 md:px-14 max-w-full my-6 sm:my-8"
+            header={
+              <div className="flex items-center justify-between mb-4 sm:mb-6">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-500/90 to-rose-500/90 text-white border border-white/20 shadow-[0_0_12px_rgba(245,158,11,0.35)]">
+                      <Sparkles className="w-2.5 h-2.5 text-amber-200 fill-amber-200" />
+                      <span>SHORTS</span>
+                    </span>
+                    <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase text-amber-400/80">
+                      Hızlı ve Sürükleyici
+                    </span>
+                  </div>
+                  <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white mt-1">
+                    Kısa Dramalar
+                  </h2>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Link
+                    href="/kesfet?type=kisa_drama"
+                    className="text-xs sm:text-sm font-semibold text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>Tümünü Keşfet</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </Link>
+                  <div className="hidden sm:flex items-center gap-1.5">
+                    <button
+                      onClick={() =>
+                        shortDramasScrollRef.current?.scrollBy({ left: -320, behavior: 'smooth' })
+                      }
+                      aria-label="Geri"
+                      className="w-8 h-8 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() =>
+                        shortDramasScrollRef.current?.scrollBy({ left: 320, behavior: 'smooth' })
+                      }
+                      aria-label="İleri"
+                      className="w-8 h-8 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            }
+            placeholder={
+              <div className="w-full h-[260px] sm:h-[340px] my-3" />
+            }
+          >
+            <div
+              ref={shortDramasScrollRef}
+              className="flex items-center gap-3.5 sm:gap-4.5 overflow-x-auto overflow-y-hidden overscroll-x-contain pb-4 no-scrollbar [-webkit-overflow-scrolling:touch] max-w-full"
+            >
+              {shortDramaItems.map((item, idx) => (
+                <div
+                  key={`short-row-${item.id}`}
+                  className="w-36 sm:w-44 md:w-48 shrink-0 snap-start"
+                >
+                  <ShortsCard item={item} priority={idx < 4} />
+                </div>
               ))}
             </div>
           </DeferredSection>

@@ -66,6 +66,7 @@ import AdminSeriesSync from '@/components/AdminSeriesSync';
 import AdminMaintenanceHub, { SystemHealthData, AdminJobRow } from '@/components/admin/AdminMaintenanceHub';
 import AdminSettingsAndAudit, { AuditLogRow } from '@/components/admin/AdminSettingsAndAudit';
 import AdminSeriesRequests from '@/components/admin/AdminSeriesRequests';
+import AdminMatchQueue from '@/components/admin/AdminMatchQueue';
 import { usePillDragTracking } from '@/hooks/usePillDragTracking';
 
 type AdminTab =
@@ -73,6 +74,7 @@ type AdminTab =
   | 'users'
   | 'series'
   | 'series_automation'
+  | 'match_queue'
   | 'episodes'
   | 'requests'
   | 'comments'
@@ -445,6 +447,116 @@ const SCRAPER_BRAND_INFO: Record<
     category: 'Asya, Çin & K-Drama HD (3500+ Dizi)',
     protocol: 'OK.ru HD + Vidmoly + YouTube HD Akış Çözücü',
   },
+  shortizle: {
+    logoText: 'Shortİzle',
+    domain: 'https://shortizle.com',
+    tag: 'Dikey Shorts HD',
+    bgGradient: 'from-amber-600/25 via-rose-700/20 to-amber-950/40',
+    borderGlow: 'border-amber-500/40 group-hover:border-amber-400/80',
+    textColor: 'text-amber-300',
+    category: 'Dikey Kısa Drama & Reels',
+    protocol: '1080p Doğrudan HLS & MP4 Dikey Akış',
+  },
+  dramavadisi: {
+    logoText: 'DramaVadisi',
+    domain: 'https://dramavadisi.net',
+    tag: 'Kısa HLS',
+    bgGradient: 'from-orange-600/25 via-red-700/20 to-orange-950/40',
+    borderGlow: 'border-orange-500/40 group-hover:border-orange-400/80',
+    textColor: 'text-orange-300',
+    category: 'Kısa Drama & Mini Dizi',
+    protocol: 'HLS / MP4 Stream Akışları',
+  },
+  koredizi: {
+    logoText: 'KoreDizi',
+    domain: 'https://koredizi.biz',
+    tag: 'Asya Shorts',
+    bgGradient: 'from-emerald-600/25 via-sky-700/20 to-emerald-950/40',
+    borderGlow: 'border-emerald-500/40 group-hover:border-emerald-400/80',
+    textColor: 'text-emerald-300',
+    category: 'K-Drama & Kısa Drama',
+    protocol: 'PlayerDKorea / Pichive 1080p',
+  },
+  dramabox: {
+    logoText: 'DramaBox',
+    domain: 'https://dramabox.com',
+    tag: 'Orijinal Mini',
+    bgGradient: 'from-red-600/25 via-rose-700/20 to-red-950/40',
+    borderGlow: 'border-red-500/40 group-hover:border-red-400/80',
+    textColor: 'text-red-300',
+    category: 'DramaBox Orijinal Kısa Yapımlar',
+    protocol: 'Resmi API & MP4 Akışları',
+  },
+  diziizle: {
+    logoText: 'Diziİzle',
+    domain: 'https://diziizle.net',
+    tag: 'Takvim + HLS',
+    bgGradient: 'from-blue-600/25 via-cyan-700/20 to-blue-950/40',
+    borderGlow: 'border-blue-500/40 group-hover:border-blue-400/80',
+    textColor: 'text-blue-300',
+    category: 'Yabancı & Asya Dizi + Canlı Takvim',
+    protocol: 'HLS / MP4 + Yayın Takvimi Eşitlemesi',
+  },
+  webdramaturkey2: {
+    logoText: 'WebDramaTurkey2',
+    domain: 'https://webdramaturkey.net',
+    tag: 'WDT Fansub',
+    bgGradient: 'from-pink-600/25 via-purple-700/20 to-pink-950/40',
+    borderGlow: 'border-pink-500/40 group-hover:border-pink-400/80',
+    textColor: 'text-pink-300',
+    category: 'Asya & K-Drama Fansub (WDT)',
+    protocol: 'Pichive & HLS Hızlı Akış',
+  },
+  animelvl: {
+    logoText: 'AnimeLVL',
+    domain: 'https://animelvl.com',
+    tag: 'Tau + Takvim',
+    bgGradient: 'from-violet-600/25 via-indigo-700/20 to-violet-950/40',
+    borderGlow: 'border-violet-500/40 group-hover:border-violet-400/80',
+    textColor: 'text-violet-300',
+    category: 'Anime & Fansub + Yayın Takvimi',
+    protocol: 'Tau-Video & HLS Doğrudan Akış',
+  },
+  sezonlukdizi: {
+    logoText: 'SezonlukDizi',
+    domain: 'https://sezonlukdizi.vip',
+    tag: 'VIP 1080p',
+    bgGradient: 'from-teal-600/25 via-emerald-700/20 to-teal-950/40',
+    borderGlow: 'border-teal-500/40 group-hover:border-teal-400/80',
+    textColor: 'text-teal-300',
+    category: 'Yabancı & Mini Dizi Arşivi',
+    protocol: 'Sezonluk VIP HLS 1080p',
+  },
+  dizipal: {
+    logoText: 'Dizipal',
+    domain: 'https://dizipal.com',
+    tag: 'Dinamik Domain',
+    bgGradient: 'from-cyan-600/25 via-blue-700/20 to-cyan-950/40',
+    borderGlow: 'border-cyan-500/40 group-hover:border-cyan-400/80',
+    textColor: 'text-cyan-300',
+    category: 'Popüler Dizi & Sinema',
+    protocol: 'Dinamik Domain Çözücü + HLS',
+  },
+  fullhdfilmizlesene: {
+    logoText: 'FullHDFilmİzlesene',
+    domain: 'https://www.fullhdfilmizlesene.de',
+    tag: 'Dual 1080p',
+    bgGradient: 'from-amber-600/25 via-orange-700/20 to-amber-950/40',
+    borderGlow: 'border-amber-500/40 group-hover:border-amber-400/80',
+    textColor: 'text-amber-300',
+    category: 'Yerli & Yabancı Sinema 4K/1080p',
+    protocol: 'Rapidrame & Close Dual HLS',
+  },
+  tranimaci: {
+    logoText: 'TrAnimaci',
+    domain: 'https://tranimaci.com',
+    tag: 'Anime Fansub',
+    bgGradient: 'from-purple-600/25 via-pink-700/20 to-purple-950/40',
+    borderGlow: 'border-purple-500/40 group-hover:border-purple-400/80',
+    textColor: 'text-purple-300',
+    category: 'Anime & Çizgi Dizi Fansub',
+    protocol: 'Mail.ru & MP4/HLS Akışları',
+  },
 };
 
 function ScraperLogoBadge({ siteKey, name }: { siteKey: string; name: string }) {
@@ -518,6 +630,7 @@ export default function AdminDashboardPage() {
       'users',
       'series',
       'series_automation',
+      'match_queue',
       'episodes',
       'requests',
       'comments',
@@ -2907,6 +3020,7 @@ export default function AdminDashboardPage() {
           { id: 'users', label: 'Kullanıcılar', icon: Users, badge: stats.totalUsers, glow: 'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40' },
           { id: 'series', label: 'Seri & Medya', icon: Film, badge: stats.totalMedia, adminOnly: true, glow: 'bg-gradient-to-r from-blue-500 to-indigo-600 shadow-[0_0_18px_rgba(99,102,241,0.45)] border border-indigo-400/40' },
           { id: 'series_automation', label: 'Seri Otomasyonu', icon: Workflow, adminOnly: true, glow: 'bg-gradient-to-r from-purple-500 to-pink-600 shadow-[0_0_18px_rgba(168,85,247,0.45)] border border-purple-400/40' },
+          { id: 'match_queue', label: 'Eşleşme & Domainler', icon: CheckCircle2, adminOnly: true, glow: 'bg-gradient-to-r from-violet-500 to-indigo-600 shadow-[0_0_18px_rgba(139,92,246,0.45)] border border-violet-400/40' },
           { id: 'episodes', label: 'Bölümler & Kaynaklar', icon: Tv, adminOnly: true, glow: 'bg-gradient-to-r from-cyan-500 to-blue-600 shadow-[0_0_18px_rgba(6,182,212,0.45)] border border-cyan-400/40' },
           { id: 'requests', label: 'Seri İstekleri', icon: Sparkles, badge: pendingSeriesRequestsCount, glow: 'bg-gradient-to-r from-pink-500 to-rose-600 shadow-[0_0_18px_rgba(236,72,153,0.45)] border border-pink-400/40' },
           { id: 'comments', label: 'Yorum Moderasyonu', icon: MessageSquare, badge: stats.totalComments, glow: 'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(160,185,129,0.45)] border border-emerald-400/40' },
@@ -3808,6 +3922,11 @@ export default function AdminDashboardPage() {
       {/* ================= TAB: SERİ OTOMASYONU (SERIES AUTOMATION) ================= */}
       {activeTab === 'series_automation' && (
         <AdminSeriesAutomation />
+      )}
+
+      {/* ================= TAB: EŞLEŞME KUYRUĞU & DOMAİNLER ================= */}
+      {activeTab === 'match_queue' && (
+        <AdminMatchQueue />
       )}
 
       {/* ================= TAB 4: BÖLÜMLER & KAYNAKLAR (EPISODES) ================= */}
@@ -6442,6 +6561,7 @@ export default function AdminDashboardPage() {
                   { id: 'episodes', label: 'Bölümler & Video Kaynakları', desc: 'Kaynak ekle/sırala, canlı URL probe testi yap', tab: 'episodes' as AdminTab, adminOnly: true },
                   { id: 'requests', label: 'Seri İstekleri', desc: 'Kullanıcıların AniList, TMDB, MDL ve IMDb seri isteklerini onayla/reddet', tab: 'requests' as AdminTab, adminOnly: false },
                   { id: 'series_automation', label: 'Seri Otomasyonu', desc: 'Çoklu kaynak eşleştirme ve otomatik bölüm takibi', tab: 'series_automation' as AdminTab, adminOnly: true },
+                  { id: 'match_queue', label: 'Eşleşme & Domain Yönetimi', desc: 'Onay bekleyen scraper eşleşmeleri ve dinamik domainler', tab: 'match_queue' as AdminTab, adminOnly: true },
                   { id: 'scrapers', label: 'Scraper Botları & Cron Merkezi', desc: 'Botları çalıştır, gerçek başarı oranlarını incele', tab: 'scrapers' as AdminTab, adminOnly: true },
                   { id: 'maintenance', label: 'Bakım & Tam Senkron Merkezi', desc: 'Auto-heal, mükerrer birleştirme, R2 & Supabase senkron', tab: 'maintenance' as AdminTab, adminOnly: true },
                   { id: 'comments', label: 'Yorum Moderasyonu', desc: 'Kelime filtreli toplu yorum denetimi', tab: 'comments' as AdminTab, adminOnly: false },

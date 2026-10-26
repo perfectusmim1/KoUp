@@ -6,6 +6,7 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { supabase } from '@/lib/supabase';
 import { verifyAdminAuth, resolvePythonBinary, checkAdminRateLimit } from '@/lib/adminAuth';
+import { hasLocalPython, dispatchCloudScraperJob } from '@/lib/server/scraperDispatch';
 
 const execFileAsync = promisify(execFile);
 const activeScraperRuns = new Set<string>();
@@ -102,6 +103,126 @@ const SCRAPER_METAS: Record<string, ScraperMeta> = {
     description: '3500+ Asya, Kore, Çin ve Hint dizisi. vdo-src üzerinden doğrudan OK.ru ve Vidmoly 1080p akışları.',
     targetCategory: 'Asya & K-Drama',
   },
+  diziizle: {
+    id: 'diziizle',
+    name: 'Diziİzle (Türk Dizileri & Pilavyer HD)',
+    domain: 'https://diziizle.wiki',
+    logoText: 'Diziİzle',
+    badgeColor: 'from-blue-500 to-cyan-600',
+    protocol: 'Pilavyer 1080p HLS + Takvim Senkronizasyonu',
+    description: 'Yerli Türk dizileri, haftalık yayın takvimi ve doğrudan Pilavyer 1080p HLS akışları.',
+    targetCategory: 'Yerli Dizi & Takvim',
+  },
+  webdramaturkey2: {
+    id: 'webdramaturkey2',
+    name: 'WebDramaTurkey2 (Asya & BL Dizi Arşivi)',
+    domain: 'https://webdramaturkey2.com',
+    logoText: 'WDT2',
+    badgeColor: 'from-fuchsia-600 to-pink-600',
+    protocol: 'WDT Custom Player + MP4/HLS Akışları',
+    description: 'Asya, Kore, Tayland ve Çin web dramaları, BL serileri ve film arşivi.',
+    targetCategory: 'Asya Web Drama',
+  },
+  koredizi: {
+    id: 'koredizi',
+    name: 'KoreDizi (Short Drama & Dikey Mini Dizi)',
+    domain: 'https://koredizi.biz',
+    logoText: 'KoreDizi',
+    badgeColor: 'from-rose-500 to-pink-500',
+    protocol: 'Direct MP4 CDN + Fast Ingest',
+    description: 'Dikey formatta popüler Kore ve Asya kısa dizi (short drama) arşivi.',
+    targetCategory: 'Short Drama',
+  },
+  shortizle: {
+    id: 'shortizle',
+    name: 'Shortİzle (Mikro Dizi & Mobil Akış)',
+    domain: 'https://shortizle.com',
+    logoText: 'Shortİzle',
+    badgeColor: 'from-red-500 to-amber-500',
+    protocol: 'Direct MP4 Stream Çözücü',
+    description: 'Türkçe altyazılı ve dublajlı dikey kısa dizi arşivi.',
+    targetCategory: 'Short Drama',
+  },
+  dramavadisi: {
+    id: 'dramavadisi',
+    name: 'DramaVadisi (Short Drama & Mini Dizi)',
+    domain: 'https://dramavadisi.com',
+    logoText: 'DramaVadisi',
+    badgeColor: 'from-emerald-600 to-teal-500',
+    protocol: 'Open Stream + HLS Çözücü',
+    description: 'Kısa formatlı Asya dizileri ve dikey video arşivleme motoru.',
+    targetCategory: 'Short Drama',
+  },
+  dramabox: {
+    id: 'dramabox',
+    name: 'DramaBox (Short Drama Katalog Eşleştirici)',
+    domain: 'https://dramabox.com',
+    logoText: 'DramaBox',
+    badgeColor: 'from-violet-600 to-purple-500',
+    protocol: 'Metadata Resolution & Catalog Match',
+    description: 'Short drama içeriklerini global DramaBox kütüphanesiyle çapraz eşleştiren motor.',
+    targetCategory: 'Short Drama',
+  },
+  animelvl: {
+    id: 'animelvl',
+    name: 'AnimeLVL (Doğrudan MP4 & Anime Takvimi)',
+    domain: 'https://animelvl.com',
+    logoText: 'AnimeLVL',
+    badgeColor: 'from-indigo-600 to-blue-500',
+    protocol: '/api/stream.mp4 Doğrudan MP4 + Takvim Senkronizasyonu',
+    description: '1470+ anime serisi, doğrudan stream.mp4 akışları ve haftalık anime yayın takvimi.',
+    targetCategory: 'Anime & Takvim',
+  },
+  sezonlukdizi: {
+    id: 'sezonlukdizi',
+    name: 'SezonlukDizi (IMDb Eşleştirme & Çoklu Alternatif)',
+    domain: 'https://sezonlukdizi.cc',
+    logoText: 'SezonlukDizi',
+    badgeColor: 'from-blue-600 to-indigo-800',
+    protocol: 'dataAlternatif22 + Filemoon/Vidmoly/OK.ru Embed Çözücü',
+    description: '6000+ yabancı dizi arşivi, IMDb ID ile eşleştirme, Altyazı ve Dublaj alternatif playerlar.',
+    targetCategory: 'Yabancı Dizi',
+  },
+  dizipal: {
+    id: 'dizipal',
+    name: 'Dizipal (PBKDF2/AES Decrypt + Direct HLS)',
+    domain: 'https://dizipal1592.com',
+    logoText: 'Dizipal',
+    badgeColor: 'from-amber-500 to-orange-700',
+    protocol: 'PBKDF2 SHA-512 + AES-256-CBC Decrypt + Direct master.m3u8',
+    description: 'Kriptolu RSC akışlarını client-side PBKDF2/AES algoritmasıyla çözerek doğrudan 1080p HLS elde eder.',
+    targetCategory: 'Popüler Dizi & Sinema',
+  },
+  fullhdfilmizlesene: {
+    id: 'fullhdfilmizlesene',
+    name: 'FullHDFilmizlesene (1080p Film & Çoklu Player)',
+    domain: 'https://www.fullhdfilmizlesene.now',
+    logoText: 'FullHD',
+    badgeColor: 'from-red-600 to-rose-700',
+    protocol: 'ROT13 + Base64 Decrypt (Atom, Rapidvid, Turbo, Vidmoly)',
+    description: 'Schema.org Movie JSON-LD katalog ve şifreli scx nesnesinden çözülmüş doğrudan film embedleri.',
+    targetCategory: 'Sinema Filmleri',
+  },
+  tranimaci: {
+    id: 'tranimaci',
+    name: 'TRAnimeci (Next.js & Fansub Anime Arşivi)',
+    domain: 'https://tranimaci.com',
+    logoText: 'TRAnimeci',
+    badgeColor: 'from-cyan-600 to-blue-600',
+    protocol: 'TVSeries JSON-LD + Next.js Video Akışları',
+    description: '1370+ anime serisi, fansub kaynakları ve mobil uyumlu doğrudan anime playerları.',
+    targetCategory: 'Anime Arşivi',
+  },
+  anizm: {
+    id: 'anizm',
+    name: 'Anizm (Fansub Çevirmen & OK.ru/GDrive)',
+    domain: 'https://anizm.net',
+    logoText: 'Anizm',
+    badgeColor: 'from-purple-600 to-pink-700',
+    protocol: '/cevirmen -> /video -> /player (Odnoklassniki & Aincrad)',
+    description: 'Güncel anime bölümleri, çoklu çevirmen fansub alternatifleri ve açık Odnoklassniki akışları.',
+    targetCategory: 'Anime & Fansub',
+  },
 };
 
 let archiveDb: DatabaseSync | null = null;
@@ -133,8 +254,12 @@ export async function GET(req: NextRequest) {
 
     const db = getArchiveDb();
 
-    // 1. Fetch scraper configs from Supabase (active 8)
-    const activeIds = ['ddizi', 'animecix', 'dizibox', 'dizikorea', 'hdfilm', 'asyawatch', 'dizilla', 'dizifon'];
+    // 1. Fetch scraper configs from Supabase (all 20 bots)
+    const activeIds = [
+      'ddizi', 'animecix', 'dizibox', 'dizikorea', 'hdfilm', 'asyawatch', 'dizilla', 'dizifon',
+      'diziizle', 'webdramaturkey2', 'koredizi', 'shortizle', 'dramavadisi', 'dramabox',
+      'animelvl', 'sezonlukdizi', 'dizipal', 'fullhdfilmizlesene', 'tranimaci', 'anizm',
+    ];
     let query = supabase.from('scraper_configs').select('*').in('id', activeIds);
     if (scraperId) {
       query = query.eq('id', scraperId);
@@ -407,69 +532,76 @@ export async function POST(req: NextRequest) {
 
     const meta = SCRAPER_METAS[scraperId];
     const scriptPath = path.resolve(process.cwd(), '..', 'scrapers', 'live_scanner.py');
-    const isLocalPython = !process.env.VERCEL && fs.existsSync(scriptPath);
+    const scanLimit =
+      typeof limit === 'number' && Number.isFinite(limit)
+        ? Math.min(Math.max(Math.floor(limit), 1), 200)
+        : 30;
+    const cleanTarget =
+      typeof targetSeries === 'string'
+        ? targetSeries.replace(/[\r\n\0]/g, '').trim().slice(0, 120)
+        : '';
+    const isLocalPython = hasLocalPython() && fs.existsSync(scriptPath);
     const encoder = new TextEncoder();
 
     if (!isLocalPython) {
-      const githubToken = process.env.GITHUB_TOKEN;
-      if (!githubToken) {
-        return NextResponse.json(
-          { error: 'Bulut tarama için GITHUB_TOKEN ortam değişkeni tanımlı değil.' },
-          { status: 500 }
-        );
-      }
-      const ghRes = await fetch(
-        'https://api.github.com/repos/perfectusmim1/KoUp/actions/workflows/scraper_cron.yml/dispatches',
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${githubToken}`,
-            Accept: 'application/vnd.github.v3+json',
-            'User-Agent': 'KoUp-App',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            ref: 'main',
-            inputs: { target: scraperId },
-          }),
-        }
-      );
-      if (!ghRes.ok) {
-        return NextResponse.json(
-          { error: `GitHub Actions tetiklenemedi (HTTP ${ghRes.status})` },
-          { status: 500 }
-        );
-      }
       const stream = new ReadableStream({
-        start(controller) {
-          const nowStr = new Date().toTimeString().split(' ')[0];
-          controller.enqueue(
-            encoder.encode(
-              JSON.stringify({
-                type: 'log',
-                line: `[${nowStr}] [Bulut] ${meta.name} için GitHub Actions bulut taraması başlatıldı.`,
-              }) + '\n'
-            )
-          );
-          controller.enqueue(
-            encoder.encode(
-              JSON.stringify({
-                type: 'result',
-                ok: true,
-                cloud: true,
-                scraperId,
-                name: meta.name,
-                syncedDelta: 0,
-                newTotal: 0,
-                logs: [`[${nowStr}] [Bulut] GitHub Actions kuyruğa alındı.`],
-                newlySyncedItems: [],
-                timestamp: new Date().toISOString(),
-              }) + '\n'
-            )
-          );
-          controller.close();
+        async start(controller) {
+          const logs: string[] = [];
+          let closed = false;
+
+          const sendEvent = (obj: any) => {
+            if (closed) return;
+            try {
+              controller.enqueue(encoder.encode(JSON.stringify(obj) + '\n'));
+            } catch (_) {}
+          };
+
+          const nowStr = () => new Date().toTimeString().split(' ')[0];
+          sendEvent({
+            type: 'log',
+            line: `[${nowStr()}] [Bulut] Vercel ortamı algılandı -> ${meta.name} için GitHub Actions bulut işçisi tetikleniyor...`,
+          });
+
+          const extraArgs = ['--provider', scraperId, '--limit', scanLimit.toString()];
+          if (cleanTarget) {
+            extraArgs.push('--target', cleanTarget);
+          }
+
+          const dispatchRes = await dispatchCloudScraperJob({
+            target: scraperId,
+            script: 'scrapers/live_scanner.py',
+            workflowFile: 'admin_job.yml',
+            args: extraArgs,
+            inputs: {
+              target_site: scraperId,
+            },
+            sendEvent,
+            streamLogs: true,
+          });
+
+          sendEvent({
+            type: 'result',
+            ok: dispatchRes.ok,
+            cloud: true,
+            scraperId,
+            name: meta.name,
+            syncedDelta: 0,
+            newTotal: 0,
+            logs,
+            newlySyncedItems: [],
+            message: dispatchRes.ok
+              ? `[BAŞLATILDI] Bulut (Vercel) ortamında GitHub Actions işçisi tetiklendi (Run ID: ${dispatchRes.runId}).`
+              : dispatchRes.error,
+            timestamp: new Date().toISOString(),
+          });
+
+          closed = true;
+          try {
+            controller.close();
+          } catch (_) {}
         },
       });
+
       return new Response(stream, {
         headers: {
           'Content-Type': 'application/x-ndjson; charset=utf-8',
@@ -478,15 +610,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const scanLimit =
-      typeof limit === 'number' && Number.isFinite(limit)
-        ? Math.min(Math.max(Math.floor(limit), 1), 200)
-        : 30;
     const args = ['-u', scriptPath, '--provider', scraperId, '--limit', scanLimit.toString()];
-    const cleanTarget =
-      typeof targetSeries === 'string'
-        ? targetSeries.replace(/[\r\n\0]/g, '').trim().slice(0, 120)
-        : '';
     if (cleanTarget.length > 0) {
       args.push('--target', cleanTarget);
     }

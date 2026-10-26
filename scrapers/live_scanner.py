@@ -62,6 +62,7 @@ from scrapers.multisite import (
     parse_season_and_episode,
     clean_episode_title,
     clean_scraped_slug,
+    extract_date_and_clean_title,
 )
 from scrapers.clean_fansub import clean_fansub_name, clean_source_name
 from scrapers.sync_hdfilm_target import resolve_hdfilm_streams
@@ -87,6 +88,19 @@ def log(tag: str, msg: str):
     now = datetime.now().strftime("%H:%M:%S")
     line = f"[{now}] [{tag}] {msg}"
     print(line, flush=True)
+
+def extract_anchor_text(a) -> str:
+    """Extracts clean text from <a> after removing svg, icon, play, button and arrow elements."""
+    if not a:
+        return ""
+    try:
+        for tag in a.find_all(['svg', 'i', 'span', 'em', 'button'], class_=lambda c: c and any(k in str(c).lower() for k in ('icon', 'play', 'arrow', 'svg'))):
+            tag.decompose()
+        for tag in a.find_all(['svg', 'i']):
+            tag.decompose()
+    except Exception:
+        pass
+    return a.get_text(strip=True)
 
 
 def _decode_response_content(content: bytes, text: str, url: str = "") -> str:
@@ -132,7 +146,7 @@ def fetch_url(url: str, headers: dict = None, timeout: int = 12) -> str:
 # =========================================================================
 # SCANNER: DIZIBOX
 # =========================================================================
-def scan_dizibox(conn, cur, idx, limit=30, target=None):
+def scan_dizibox(conn, cur, idx, limit=30, target=None, stop_after_known: int = 5, max_items: int = 120):
     log("BAŞLATILDI", "DiziBox canlı tarama motoru devrede (https://www.dizibox.live)...")
     headers = {'Referer': 'https://www.dizibox.live/'}
 
@@ -152,7 +166,7 @@ def scan_dizibox(conn, cur, idx, limit=30, target=None):
                     for ea in d_soup.find_all('a', href=True):
                         eh = ea['href']
                         if '-sezon-' in eh and '-bolum' in eh:
-                            ep_links.append((ea.get_text(strip=True), eh))
+                            ep_links.append((extract_anchor_text(ea), eh))
                     break
         except Exception as e:
             log("UYARI", f"Arama hatası: {e}")
@@ -161,12 +175,13 @@ def scan_dizibox(conn, cur, idx, limit=30, target=None):
             home_html = fetch_url("https://www.dizibox.live/", headers=headers)
             soup = BeautifulSoup(home_html, 'html.parser')
             seen = set()
+            effective_limit = max(limit, max_items)
             for a in soup.find_all('a', href=True):
                 h = a['href']
                 if '-sezon-' in h and '-bolum' in h and h not in seen:
                     seen.add(h)
-                    ep_links.append((a.get_text(strip=True), h))
-                    if len(ep_links) >= limit:
+                    ep_links.append((extract_anchor_text(a), h))
+                    if len(ep_links) >= effective_limit:
                         break
         except Exception as e:
             log("HATA", f"Ana sayfa alınamadı: {e}")
@@ -175,8 +190,11 @@ def scan_dizibox(conn, cur, idx, limit=30, target=None):
     log("KAYIT", f"{len(ep_links)} adet güncel bölüm bağlantısı ayrıştırıldı.")
     synced_items = []
     touched_dramas = set()
+    consecutive_known = 0
+    items_checked = 0
 
     for txt, ep_url in ep_links:
+        items_checked += 1
         try:
             m = re.search(r'/([^/]+)-(\d+)-sezon-(\d+)-bolum', ep_url)
             if not m:
@@ -196,6 +214,7 @@ def scan_dizibox(conn, cur, idx, limit=30, target=None):
             if not target and not is_new_ep:
                 has_dbx = cur.execute("SELECT 1 FROM episode_sources WHERE episode_id=? AND provider='dbx' LIMIT 1", (ep_id,)).fetchone()
                 if has_dbx:
+                    consecutive_known += 1
                     item_obj = {
                         'id': f"dizibox-{did}-{season}-{ep_num}",
                         'title': drama_title,
@@ -209,6 +228,9 @@ def scan_dizibox(conn, cur, idx, limit=30, target=None):
                     log("DOĞRULANDI", f'"{drama_title}" -> {season}. Sezon {ep_num}. Bölüm kaynağı güncel.')
                     emit_live_item(item_obj)
                     synced_items.append(item_obj)
+                    if not target and consecutive_known >= stop_after_known and items_checked >= 15:
+                        log("AKILLI DURDURMA", f"Art arda {consecutive_known} bilinen kayıt görüldü, tarama tamamlandı.")
+                        break
                     continue
 
             ep_html = fetch_url(ep_url, headers=headers)
@@ -238,7 +260,10 @@ def scan_dizibox(conn, cur, idx, limit=30, target=None):
 
             is_pending = reconcile_episode(cur, ep_id, is_placeholder=is_ph)
             if added or is_new_ep:
+                consecutive_known = 0
                 touched_dramas.add(did)
+            else:
+                consecutive_known += 1
             safe_commit(conn)
 
             status_text = 'Canlı Çözüldü' if added else ('Kaynak Bekleniyor (Yakında)' if is_pending else 'Doğrulandı')
@@ -260,6 +285,10 @@ def scan_dizibox(conn, cur, idx, limit=30, target=None):
                 log("DOĞRULANDI", f'"{drama_title}" -> {season}. Sezon {ep_num}. Bölüm kaynağı güncel.')
             emit_live_item(item_obj)
             synced_items.append(item_obj)
+
+            if not target and consecutive_known >= stop_after_known and items_checked >= 15:
+                log("AKILLI DURDURMA", f"Art arda {consecutive_known} bilinen kayıt görüldü, tarama tamamlandı.")
+                break
         except Exception as err:
             log("HATA", f"{ep_url} çözümlenirken hata: {err}")
 
@@ -272,7 +301,7 @@ def scan_dizibox(conn, cur, idx, limit=30, target=None):
 # =========================================================================
 # SCANNER: DIZIKOREA
 # =========================================================================
-def scan_dizikorea(conn, cur, idx, limit=30, target=None):
+def scan_dizikorea(conn, cur, idx, limit=30, target=None, stop_after_known: int = 5, max_items: int = 120):
     log("BAŞLATILDI", "DiziKorea canlı tarama motoru devrede (https://dizikorea3.com)...")
     headers = {'Referer': 'https://dizikorea3.com/'}
     series_links = []
@@ -286,7 +315,7 @@ def scan_dizikorea(conn, cur, idx, limit=30, target=None):
             for a in soup.find_all('a', href=True):
                 h = a['href']
                 if '/dizi/' in h and ('-izle' in h or '-dq' in h):
-                    t_name = a.get_text(strip=True)
+                    t_name = extract_anchor_text(a)
                     s_core = re.sub(r'[^a-z0-9]', '', h.split('/dizi/')[-1].split('/')[0].lower())
                     q_core = re.sub(r'[^a-z0-9]', '', target.lower())
                     if q_core in s_core or s_core in q_core or norm_title(target) in norm_title(t_name) or norm_title(t_name) in norm_title(target):
@@ -298,12 +327,13 @@ def scan_dizikorea(conn, cur, idx, limit=30, target=None):
             home_html = fetch_url("https://dizikorea3.com/", headers=headers)
             soup = BeautifulSoup(home_html, 'html.parser')
             seen = set()
+            effective_limit = max(limit, max_items)
             for a in soup.find_all('a', href=True):
                 h = a['href']
                 if '/dizi/' in h and ('-izle' in h or '-dq' in h) and h not in seen:
                     seen.add(h)
-                    series_links.append((a.get_text(strip=True), h))
-                    if len(series_links) >= limit:
+                    series_links.append((extract_anchor_text(a), h))
+                    if len(series_links) >= effective_limit:
                         break
         except Exception as e:
             log("HATA", f"Ana sayfa alınamadı: {e}")
@@ -312,8 +342,13 @@ def scan_dizikorea(conn, cur, idx, limit=30, target=None):
     log("KAYIT", f"{len(series_links)} adet Kore/Asya dizisi akışı tespit edildi.")
     synced_items = []
     touched_dramas = set()
+    consecutive_known = 0
+    items_checked = 0
+    stop_scan = False
 
     for raw_title, s_url in series_links:
+        if stop_scan:
+            break
         try:
             s_html = fetch_url(s_url, headers=headers)
             soup = BeautifulSoup(s_html, 'html.parser')
@@ -332,17 +367,19 @@ def scan_dizikorea(conn, cur, idx, limit=30, target=None):
             ep_anchors = []
             for a in soup.find_all('a', href=True):
                 h = a['href']
-                if ('bolum' in h or 'bölüm' in a.get_text(strip=True).lower()) and s_url in h:
-                    ep_anchors.append((a.get_text(strip=True), h))
+                t_txt = extract_anchor_text(a)
+                if ('bolum' in h or 'bölüm' in t_txt.lower()) and s_url in h:
+                    ep_anchors.append((t_txt, h))
 
             if not ep_anchors:
                 ep_anchors = [("1. Bölüm", s_url)]
 
             anchors_to_scan = ep_anchors if target else ep_anchors[:5]
             for ep_txt, ep_url in anchors_to_scan:
+                items_checked += 1
                 season_num, ep_num = parse_season_and_episode(ep_url, ep_txt)
                 clean_name = clean_episode_title(ep_txt or f"{season_num}. Sezon {ep_num}. Bölüm", season_num, ep_num, drama_title=drama_title)
-                ep_id, _ = match_or_create_episode(cur, did, season_num, ep_num, clean_name, ep_url)
+                ep_id, is_new_ep = match_or_create_episode(cur, did, season_num, ep_num, clean_name, ep_url)
                 ep_html = fetch_url(ep_url, headers=headers)
                 is_ph = page_is_placeholder(ep_html)
 
@@ -356,9 +393,11 @@ def scan_dizikorea(conn, cur, idx, limit=30, target=None):
                 for u in set(vm_matches):
                     sources_found.append(('vidmoly', 'Vidmoly', u))
 
+                any_added = False
                 for prov, sname, direct_u in sources_found:
                     added = add_source(cur, ep_id, sname, direct_u, prov, "dizikorea")
                     if added:
+                        any_added = True
                         touched_dramas.add(did)
                     item_obj = {
                         'id': f"dizikorea-{did}-{season_num}-{ep_num}-{prov}",
@@ -381,6 +420,11 @@ def scan_dizikorea(conn, cur, idx, limit=30, target=None):
                 is_pending = reconcile_episode(cur, ep_id, is_placeholder=is_ph)
                 safe_commit(conn)
 
+                if any_added or is_new_ep:
+                    consecutive_known = 0
+                else:
+                    consecutive_known += 1
+
                 if not sources_found:
                     item_obj = {
                         'id': f"dizikorea-{did}-{season_num}-{ep_num}",
@@ -395,6 +439,11 @@ def scan_dizikorea(conn, cur, idx, limit=30, target=None):
                     log("BEKLEMEDE", f'"{drama_title}" -> {season_num}. Sezon {ep_num}. Bölüm kaynak bekleniyor (yakında).')
                     emit_live_item(item_obj)
                     synced_items.append(item_obj)
+
+                if not target and consecutive_known >= stop_after_known and items_checked >= 15:
+                    log("AKILLI DURDURMA", f"Art arda {consecutive_known} bilinen kayıt görüldü, tarama tamamlandı.")
+                    stop_scan = True
+                    break
         except Exception as err:
             log("HATA", f"{s_url} işlenirken hata: {err}")
 
@@ -407,7 +456,7 @@ def scan_dizikorea(conn, cur, idx, limit=30, target=None):
 # =========================================================================
 # SCANNER: DDIZI
 # =========================================================================
-def scan_ddizi(conn, cur, idx, limit=30, target=None):
+def scan_ddizi(conn, cur, idx, limit=30, target=None, stop_after_known: int = 5, max_items: int = 120):
     log("BAŞLATILDI", "DDizi canlı tarama motoru devrede (https://www.ddizi.tel)...")
     headers = {'Referer': 'https://www.ddizi.tel/'}
 
@@ -439,14 +488,15 @@ def scan_ddizi(conn, cur, idx, limit=30, target=None):
         html = fetch_url("https://www.ddizi.tel/yeni-eklenenler8", headers=headers)
         soup = BeautifulSoup(html, 'html.parser')
         seen = set()
+        effective_limit = max(limit, max_items)
         for a in soup.find_all('a', href=True):
             h = a['href']
-            t = a.get_text(strip=True)
+            t = extract_anchor_text(a)
             if '/izle/' in h and h not in seen:
                 seen.add(h)
                 full_h = h if h.startswith('http') else f"https://www.ddizi.tel{h}"
                 ep_links.append((t, full_h))
-                if len(ep_links) >= limit:
+                if len(ep_links) >= effective_limit:
                     break
     except Exception as e:
         log("HATA", f"DDizi akışı alınamadı: {e}")
@@ -455,8 +505,11 @@ def scan_ddizi(conn, cur, idx, limit=30, target=None):
     log("KAYIT", f"{len(ep_links)} adet yerli dizi bölümü tespit edildi.")
     synced_items = []
     touched_dramas = set()
+    consecutive_known = 0
+    items_checked = 0
 
     for txt, ep_url in ep_links:
+        items_checked += 1
         try:
             season_num, ep_num = parse_season_and_episode(ep_url, txt)
 
@@ -601,6 +654,10 @@ def scan_ddizi(conn, cur, idx, limit=30, target=None):
                 synced_items.append(item_obj)
 
             is_pending = reconcile_episode(cur, ep_id, is_placeholder=is_ph)
+            if added:
+                consecutive_known = 0
+            else:
+                consecutive_known += 1
             safe_commit(conn)
             if not source_obj:
                 item_obj = {
@@ -616,6 +673,10 @@ def scan_ddizi(conn, cur, idx, limit=30, target=None):
                 log("BEKLEMEDE", f'"{clean_title}" -> {season_num}. Sezon {ep_num}. Bölüm kaynak bekleniyor (yakında).')
                 emit_live_item(item_obj)
                 synced_items.append(item_obj)
+
+            if not target and consecutive_known >= stop_after_known and items_checked >= 15:
+                log("AKILLI DURDURMA", f"Art arda {consecutive_known} bilinen kayıt görüldü, tarama tamamlandı.")
+                break
         except Exception as err:
             log("HATA", f"{ep_url} işlenirken hata: {err}")
 
@@ -771,7 +832,7 @@ def fetch_animecix_json(endpoint: str, qs: str, retries: int = 2):
     log("UYARI", f"AnimeciX API isteği başarısız ({endpoint}): {last_err}")
     return None
 
-def scan_animecix(conn, cur, idx, limit=30, target=None):
+def scan_animecix(conn, cur, idx, limit=30, target=None, stop_after_known: int = 5, max_items: int = 120):
     log("BAŞLATILDI", "AnimeciX canlı tarama motoru devrede...")
     synced_items = []
     touched_dramas = set()
@@ -827,6 +888,11 @@ def scan_animecix(conn, cur, idx, limit=30, target=None):
                     prov = clean_animecix_provider(v.get('name'), v_url)
                     s_num = v.get('season_num') or 1
                     e_num = v.get('episode_num') or 1
+                    # Guard single-season series like Dragon Ball (did 6997 / title 84) against rogue multi-season tags
+                    if did == 6997 or title_id == 84 or drama_slug == 'dragon-ball':
+                        s_num = 1
+                        if e_num > 153:
+                            continue
                     ep_url = f"https://animecix.tv/titles/{title_id}/season/{s_num}/episode/{e_num}"
 
                     ep_id, _ = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_url)
@@ -865,18 +931,27 @@ def scan_animecix(conn, cur, idx, limit=30, target=None):
     # 2. Live Latest Episodes Feed from AnimeciX API
     if not target and ANIMECIX_AES:
         try:
-            log("TARAMA", f"AnimeciX son eklenen bölümler çekiliyor (limit: {limit})...")
-            latest_data = fetch_animecix_json("last-episodes", f"page=1&perPage={min(max(limit, 15), 35)}")
+            effective_limit = max(limit, max_items)
+            log("TARAMA", f"AnimeciX son eklenen bölümler çekiliyor (limit: {effective_limit})...")
+            latest_data = fetch_animecix_json("last-episodes", f"page=1&perPage={min(max(effective_limit, 15), 100)}")
             ep_items = latest_data.get('data', []) if isinstance(latest_data, dict) else []
-            for ep_item in ep_items[:limit]:
+            consecutive_known = 0
+            items_checked = 0
+            for ep_item in ep_items[:effective_limit]:
+                items_checked += 1
                 title_id = ep_item.get('title_id')
                 raw_name = (ep_item.get('title_name') or '').strip()
                 if not title_id or not raw_name:
                     continue
                 clean_title = re.sub(r'[\-_]?(anime|izle|\d{1,4})+$', '', raw_name, flags=re.I).strip()
+                clean_title, _extracted_d = extract_date_and_clean_title(clean_title)
                 slug_cand = re.sub(r'[^a-z0-9]+', '-', clean_title.lower()).strip('-')
                 s_num = ep_item.get('season_number') or 1
                 e_num = ep_item.get('episode_number') or 1
+                if title_id == 84 or slug_cand == 'dragon-ball':
+                    s_num = 1
+                    if e_num > 153:
+                        continue
                 videos = ep_item.get('videos') or []
                 if not videos:
                     continue
@@ -914,10 +989,17 @@ def scan_animecix(conn, cur, idx, limit=30, target=None):
                     'status': 'Tau-Video Canlı Eklendi' if ep_added else 'Doğrulandı',
                     'sourceName': 'Tau-Video',
                 }
-                if not ep_added:
+                if ep_added:
+                    consecutive_known = 0
+                else:
+                    consecutive_known += 1
                     log("DOĞRULANDI", f'"{clean_title}" -> {s_num}. Sezon {e_num}. Bölüm (Tau-Video) güncel.')
                 emit_live_item(item_obj)
                 synced_items.append(item_obj)
+
+                if not target and consecutive_known >= stop_after_known and items_checked >= 15:
+                    log("AKILLI DURDURMA", f"Art arda {consecutive_known} bilinen kayıt görüldü, tarama tamamlandı.")
+                    break
 
             if touched_dramas:
                 safe_commit(conn)
@@ -963,7 +1045,7 @@ def scan_animecix(conn, cur, idx, limit=30, target=None):
 # =========================================================================
 # SCANNER: HDFILM (Direct Inner HLS Only)
 # =========================================================================
-def scan_hdfilm(conn, cur, idx, limit=30, target=None):
+def scan_hdfilm(conn, cur, idx, limit=30, target=None, stop_after_known: int = 5, max_items: int = 120):
     log("BAŞLATILDI", "HDFilmcehennemi canlı tarama motoru devrede (Doğrudan HLS Çözücü)...")
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -1103,17 +1185,21 @@ def scan_hdfilm(conn, cur, idx, limit=30, target=None):
             soup = BeautifulSoup(dizi_html, 'html.parser')
             ep_candidates = []
             seen = set()
+            effective_limit = max(limit, max_items)
             for a in soup.find_all('a', href=True):
                 h = a['href']
                 if '/dizi/' in h and ('/sezon-' in h and '/bolum-' in h) and h not in seen:
                     seen.add(h)
-                    t = a.get_text(strip=True)
+                    t = extract_anchor_text(a)
                     ep_candidates.append((t, h))
-                    if len(ep_candidates) >= limit:
+                    if len(ep_candidates) >= effective_limit:
                         break
 
             log("KAYIT", f"{len(ep_candidates)} adet güncel yabancı dizi bölümü bulundu.")
+            consecutive_known = 0
+            items_checked = 0
             for ep_title, ep_url in ep_candidates:
+                items_checked += 1
                 try:
                     m = re.search(r'/dizi/([^/]+)/sezon-(\d+)/bolum-(\d+)', ep_url)
                     if not m:
@@ -1136,9 +1222,12 @@ def scan_hdfilm(conn, cur, idx, limit=30, target=None):
                     ep_html = fetch_url(ep_url, headers=headers)
                     is_ph = page_is_placeholder(ep_html)
                     streams = resolve_hdfilm_streams(ep_url, ep_html)
-                    ep_id, _ = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_url)
+                    ep_id, is_new_ep = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_url)
+                    any_added = False
                     for sname, surl, sprov, ssite in streams:
                         added = add_source(cur, ep_id, sname, surl, sprov, ssite)
+                        if added:
+                            any_added = True
                         item_obj = {
                             'id': f"hdfilm-{did}-{s_num}-{e_num}-{sprov}",
                             'title': clean_title,
@@ -1158,6 +1247,15 @@ def scan_hdfilm(conn, cur, idx, limit=30, target=None):
                         synced_items.append(item_obj)
                     reconcile_episode(cur, ep_id, is_placeholder=is_ph)
                     safe_commit(conn)
+
+                    if any_added or is_new_ep:
+                        consecutive_known = 0
+                    else:
+                        consecutive_known += 1
+
+                    if not target and consecutive_known >= stop_after_known and items_checked >= 15:
+                        log("AKILLI DURDURMA", f"Art arda {consecutive_known} bilinen kayıt görüldü, tarama tamamlandı.")
+                        break
                 except Exception as err:
                     log("HATA", f"{ep_url} çözümlenirken hata: {err}")
 
@@ -1174,7 +1272,7 @@ def scan_hdfilm(conn, cur, idx, limit=30, target=None):
 # =========================================================================
 # SCANNER: ASYAWATCH
 # =========================================================================
-def scan_asyawatch(conn, cur, idx, limit=30, target=None):
+def scan_asyawatch(conn, cur, idx, limit=30, target=None, stop_after_known: int = 5, max_items: int = 120):
     log("BAŞLATILDI", "AsyaWatch canlı tarama motoru devrede (https://asyawatch.com)...")
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -1273,14 +1371,18 @@ def scan_asyawatch(conn, cur, idx, limit=30, target=None):
             idx_parsed = json.loads(base64.b64decode(idx_sec).decode('utf-8')) if idx_sec else {}
             feed_eps = (idx_parsed.get('getEpisodesOnBrandAll') or []) + (idx_parsed.get('getEpisodesOnNewSeries') or [])
             seen_ep_slugs = set()
+            effective_limit = max(limit, max_items)
+            consecutive_known = 0
+            items_checked = 0
             for ep in feed_eps:
-                if len(synced_items) >= min(limit, 12):
+                if len(synced_items) >= effective_limit:
                     break
                 ep_slug = ep.get('episode_used_slug') or ep.get('used_slug')
                 raw_title = (ep.get('original_title') or ep.get('culture_title') or '').strip()
                 if not ep_slug or not raw_title or ep_slug in seen_ep_slugs:
                     continue
                 seen_ep_slugs.add(ep_slug)
+                items_checked += 1
                 s_num = ep.get('season_no') or 1
                 e_num = ep.get('episode_no') or 1
                 m_s = re.search(r'dizi/([^/]+)', ep_slug)
@@ -1297,7 +1399,7 @@ def scan_asyawatch(conn, cur, idx, limit=30, target=None):
                         content_type='dizi', country_hint='KR', site_tag='asyawatch',
                         source_url=f"https://asyawatch.com/dizi/{s_slug}", log_fn=log
                     )
-                    ep_id, _ = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", f"https://asyawatch.com/{ep_slug}")
+                    ep_id, is_new_ep = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", f"https://asyawatch.com/{ep_slug}")
                     any_added = False
                     for s in esources:
                         s_content = s.get('source_content', '')
@@ -1322,10 +1424,17 @@ def scan_asyawatch(conn, cur, idx, limit=30, target=None):
                         'status': '1080p HLS Bağlandı' if any_added else 'Doğrulandı',
                         'sourceName': 'Asyawatch',
                     }
-                    if not any_added:
+                    if any_added or is_new_ep:
+                        consecutive_known = 0
+                    else:
+                        consecutive_known += 1
                         log("DOĞRULANDI", f'"{clean_title}" -> S{s_num}B{e_num} Asyawatch (1080p) güncel.')
                     emit_live_item(item_obj)
                     synced_items.append(item_obj)
+
+                    if not target and consecutive_known >= stop_after_known and items_checked >= 15:
+                        log("AKILLI DURDURMA", f"Art arda {consecutive_known} bilinen kayıt görüldü, tarama tamamlandı.")
+                        break
                 except Exception:
                     continue
         except Exception as e:
@@ -1365,7 +1474,7 @@ def scan_asyawatch(conn, cur, idx, limit=30, target=None):
 # =========================================================================
 # SCANNER: DIZILLA
 # =========================================================================
-def scan_dizilla(conn, cur, idx, limit=30, target=None):
+def scan_dizilla(conn, cur, idx, limit=30, target=None, stop_after_known: int = 5, max_items: int = 120):
     log("BAŞLATILDI", "Dizilla canlı tarama motoru devrede (https://dizilla.now)...")
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -1480,14 +1589,18 @@ def scan_dizilla(conn, cur, idx, limit=30, target=None):
             idx_parsed = json.loads(decrypted[:-decrypted[-1]].decode('utf-8'))
             feed_eps = (idx_parsed.get('getEpisodesOnBrandAll') or []) + (idx_parsed.get('getEpisodesOnNewSeries') or [])
             seen_ep_slugs = set()
+            effective_limit = max(limit, max_items)
+            consecutive_known = 0
+            items_checked = 0
             for ep in feed_eps:
-                if len(synced_items) >= min(limit, 12):
+                if len(synced_items) >= effective_limit:
                     break
                 ep_slug = ep.get('episode_used_slug') or ep.get('used_slug')
                 raw_title = (ep.get('original_title') or ep.get('culture_title') or '').strip()
                 if not ep_slug or not raw_title or ep_slug in seen_ep_slugs:
                     continue
                 seen_ep_slugs.add(ep_slug)
+                items_checked += 1
                 s_num = ep.get('season_no') or 1
                 e_num = ep.get('episode_no') or 1
                 s_slug = re.sub(r'-\d+-sezon-\d+-bolum.*$', '', ep_slug.replace('dizi/', '').strip('/'))
@@ -1506,7 +1619,7 @@ def scan_dizilla(conn, cur, idx, limit=30, target=None):
                         content_type='dizi', country_hint='US', site_tag='dizilla',
                         source_url=f"https://dizilla.now/dizi/{s_slug}", log_fn=log
                     )
-                    ep_id, _ = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", f"https://dizilla.now/{ep_slug}")
+                    ep_id, is_new_ep = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", f"https://dizilla.now/{ep_slug}")
                     any_added = False
                     for s in esources:
                         s_content = s.get('source_content', '')
@@ -1531,10 +1644,17 @@ def scan_dizilla(conn, cur, idx, limit=30, target=None):
                         'status': '1080p HLS Bağlandı' if any_added else 'Doğrulandı',
                         'sourceName': 'Dizilla',
                     }
-                    if not any_added:
+                    if any_added or is_new_ep:
+                        consecutive_known = 0
+                    else:
+                        consecutive_known += 1
                         log("DOĞRULANDI", f'"{clean_title}" -> S{s_num}B{e_num} Dizilla (1080p) güncel.')
                     emit_live_item(item_obj)
                     synced_items.append(item_obj)
+
+                    if not target and consecutive_known >= stop_after_known and items_checked >= 15:
+                        log("AKILLI DURDURMA", f"Art arda {consecutive_known} bilinen kayıt görüldü, tarama tamamlandı.")
+                        break
                 except Exception:
                     continue
         except Exception as e:
@@ -1574,7 +1694,7 @@ def scan_dizilla(conn, cur, idx, limit=30, target=None):
 # =========================================================================
 # SCANNER: DIZIFON (Asya, Kore, Çin & Hint Arşivi)
 # =========================================================================
-def scan_dizifon(conn, cur, idx, limit=30, target=None):
+def scan_dizifon(conn, cur, idx, limit=30, target=None, stop_after_known: int = 5, max_items: int = 120):
     log("BAŞLATILDI", "DiziFon canlı tarama motoru devrede (https://www.dizifon.cc)...")
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -1689,18 +1809,22 @@ def scan_dizifon(conn, cur, idx, limit=30, target=None):
             soup = BeautifulSoup(home_html, 'html.parser')
             seen = set()
             ep_links = []
+            effective_limit = max(limit, max_items)
             for a in soup.find_all('a', href=True):
                 h = a['href']
                 if '/bolum/' in h and h not in seen and '#comment' not in h:
                     seen.add(h)
-                    txt = a.get_text(strip=True)
+                    txt = extract_anchor_text(a)
                     if txt:
                         ep_links.append((txt, h))
-                        if len(ep_links) >= limit:
+                        if len(ep_links) >= effective_limit:
                             break
 
             log("KAYIT", f"{len(ep_links)} adet son eklenen DiziFon bölümü tespit edildi.")
+            consecutive_known = 0
+            items_checked = 0
             for txt, ep_url in ep_links:
+                items_checked += 1
                 try:
                     m_s = re.search(r'(\d+)-sezon', ep_url)
                     m_e = re.search(r'(\d+)-bolum', ep_url)
@@ -1720,7 +1844,8 @@ def scan_dizifon(conn, cur, idx, limit=30, target=None):
                     )
                     touched_dramas.add(did)
 
-                    ep_id, _ = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_url)
+                    clean_name = clean_episode_title(txt or f"{s_num}. Sezon {e_num}. Bölüm", s_num, e_num, drama_title=drama_title)
+                    ep_id, is_new_ep = match_or_create_episode(cur, did, s_num, e_num, clean_name, ep_url)
                     ep_html = fetch_url(ep_url, headers=headers)
                     is_ph = page_is_placeholder(ep_html)
                     added = False
@@ -1759,6 +1884,15 @@ def scan_dizifon(conn, cur, idx, limit=30, target=None):
                         log("DOĞRULANDI", f'"{drama_title}" -> S{s_num}B{e_num} kaynak güncel.')
                     emit_live_item(item_obj)
                     synced_items.append(item_obj)
+
+                    if added or is_new_ep:
+                        consecutive_known = 0
+                    else:
+                        consecutive_known += 1
+
+                    if not target and consecutive_known >= stop_after_known and items_checked >= 15:
+                        log("AKILLI DURDURMA", f"Art arda {consecutive_known} bilinen kayıt görüldü, tarama tamamlandı.")
+                        break
                 except Exception as err:
                     log("UYARI", f"{ep_url} DiziFon hatası: {err}")
         except Exception as e:
@@ -1772,11 +1906,316 @@ def scan_dizifon(conn, cur, idx, limit=30, target=None):
 
 
 # =========================================================================
+# NEW PROVIDERS: DIZIIZLE, WDT2, SHORT DRAMAS & PHASE 4 SITES
+# =========================================================================
+
+def scan_diziizle(conn, cur, idx, limit=30, target=None):
+    log("BAŞLATILDI", "Diziİzle canlı tarama motoru devrede...")
+    from scrapers.sites.diziizle import crawl_diziizle_recent
+    res_list = crawl_diziizle_recent(cur=cur, conn=conn, idx=idx, limit=max(1, limit // 3), target_urls=[target] if target and target.startswith("http") else None)
+    synced_items = []
+    delta = 0
+    for r in (res_list or []):
+        delta += r.get("sources_added", 0)
+        item_obj = {
+            'id': f"diziizle-{r.get('drama_id')}",
+            'title': r.get('title', 'Diziİzle Seri'),
+            'subtitle': f"{r.get('sources_added', 0)} yeni kaynak eklendi (Diziİzle)",
+            'image': '/logo-dark.png',
+            'link': f"/seri/{r.get('slug', '')}",
+            'date': datetime.now().isoformat(),
+            'status': 'Canlı Çözüldü' if r.get('sources_added', 0) > 0 else 'Doğrulandı',
+            'sourceName': 'Diziİzle',
+        }
+        emit_live_item(item_obj)
+        synced_items.append(item_obj)
+    return delta, synced_items
+
+
+def scan_webdramaturkey2(conn, cur, idx, limit=30, target=None):
+    log("BAŞLATILDI", "WebDramaTurkey2 canlı tarama motoru devrede...")
+    from scrapers.sites.webdramaturkey import crawl_webdramaturkey_recent
+    res_list = crawl_webdramaturkey_recent(cur=cur, conn=conn, idx=idx, limit=max(1, limit // 3))
+    synced_items = []
+    delta = 0
+    for r in (res_list or []):
+        delta += r.get("sources_added", 0)
+        item_obj = {
+            'id': f"wdt2-{r.get('drama_id')}",
+            'title': r.get('title', 'WebDramaTurkey2'),
+            'subtitle': f"{r.get('sources_added', 0)} yeni kaynak (WDT2)",
+            'image': '/logo-dark.png',
+            'link': f"/seri/{r.get('slug', '')}",
+            'date': datetime.now().isoformat(),
+            'status': 'Canlı Çözüldü' if r.get('sources_added', 0) > 0 else 'Doğrulandı',
+            'sourceName': 'WebDramaTurkey2',
+        }
+        emit_live_item(item_obj)
+        synced_items.append(item_obj)
+    return delta, synced_items
+
+
+def scan_koredizi(conn, cur, idx, limit=30, target=None):
+    log("BAŞLATILDI", "KoreDizi Short Drama motoru devrede...")
+    from scrapers.shortdrama.koredizi import KoreDiziScraper
+    cnt = int(KoreDiziScraper().run(limit=limit, resume=True, sync_cloud=True) or 0)
+    item_obj = {
+        'id': f"koredizi-{int(time.time())}",
+        'title': 'KoreDizi Short Dramas',
+        'subtitle': f"+{cnt} yeni kısa dizi/bölüm eklendi",
+        'image': '/logo-dark.png',
+        'link': '/kesfet',
+        'date': datetime.now().isoformat(),
+        'status': 'Canlı Çözüldü' if cnt > 0 else 'Doğrulandı',
+        'sourceName': 'KoreDizi',
+    }
+    emit_live_item(item_obj)
+    return cnt, [item_obj]
+
+
+def scan_shortizle(conn, cur, idx, limit=30, target=None):
+    log("BAŞLATILDI", "Shortİzle Short Drama motoru devrede...")
+    from scrapers.shortdrama.shortizle import ShortizleScraper
+    cnt = int(ShortizleScraper().run(limit=limit, resume=True, sync_cloud=True) or 0)
+    item_obj = {
+        'id': f"shortizle-{int(time.time())}",
+        'title': 'Shortİzle Short Dramas',
+        'subtitle': f"+{cnt} yeni kısa dizi/bölüm eklendi",
+        'image': '/logo-dark.png',
+        'link': '/kesfet',
+        'date': datetime.now().isoformat(),
+        'status': 'Canlı Çözüldü' if cnt > 0 else 'Doğrulandı',
+        'sourceName': 'Shortİzle',
+    }
+    emit_live_item(item_obj)
+    return cnt, [item_obj]
+
+
+def scan_dramavadisi(conn, cur, idx, limit=30, target=None):
+    log("BAŞLATILDI", "DramaVadisi Short Drama motoru devrede...")
+    from scrapers.shortdrama.dramavadisi import DramaVadisiScraper
+    cnt = int(DramaVadisiScraper().run(limit=limit, resume=True, sync_cloud=True) or 0)
+    item_obj = {
+        'id': f"dramavadisi-{int(time.time())}",
+        'title': 'DramaVadisi Short Dramas',
+        'subtitle': f"+{cnt} yeni kısa dizi/bölüm eklendi",
+        'image': '/logo-dark.png',
+        'link': '/kesfet',
+        'date': datetime.now().isoformat(),
+        'status': 'Canlı Çözüldü' if cnt > 0 else 'Doğrulandı',
+        'sourceName': 'DramaVadisi',
+    }
+    emit_live_item(item_obj)
+    return cnt, [item_obj]
+
+
+def scan_dramabox(conn, cur, idx, limit=30, target=None):
+    log("BAŞLATILDI", "DramaBox Match motoru devrede...")
+    from scrapers.shortdrama.dramabox import DramaBoxScraper
+    cnt = int(DramaBoxScraper().run(limit=limit, resume=True, sync_cloud=True) or 0)
+    item_obj = {
+        'id': f"dramabox-{int(time.time())}",
+        'title': 'DramaBox Matches',
+        'subtitle': f"+{cnt} yeni eşleşme sağlandı",
+        'image': '/logo-dark.png',
+        'link': '/kesfet',
+        'date': datetime.now().isoformat(),
+        'status': 'Doğrulandı',
+        'sourceName': 'DramaBox',
+    }
+    emit_live_item(item_obj)
+    return cnt, [item_obj]
+
+
+def scan_animelvl(conn, cur, idx, limit=30, target=None):
+    log("BAŞLATILDI", "AnimeLVL canlı tarama motoru devrede...")
+    from scrapers.sites import animelvl
+    session = animelvl._get_session()
+    urls = animelvl.get_sitemap_urls(session)
+    synced_items = []
+    delta = 0
+    for u in urls[:limit]:
+        try:
+            added = animelvl.scrape_anime_page(conn, cur, idx, session, u)
+            delta += added
+            item_obj = {
+                'id': f"animelvl-{clean_scraped_slug(u)}",
+                'title': u.split('/')[-1].replace('-', ' ').title(),
+                'subtitle': f"+{added} kaynak eklendi",
+                'image': '/logo-dark.png',
+                'link': u,
+                'date': datetime.now().isoformat(),
+                'status': 'Canlı Çözüldü' if added > 0 else 'Doğrulandı',
+                'sourceName': 'AnimeLVL',
+            }
+            emit_live_item(item_obj)
+            synced_items.append(item_obj)
+        except Exception as e:
+            log("UYARI", f"{u} hatası: {e}")
+    return delta, synced_items
+
+
+def scan_sezonlukdizi(conn, cur, idx, limit=30, target=None):
+    log("BAŞLATILDI", "SezonlukDizi canlı tarama motoru devrede...")
+    from scrapers.sites import sezonlukdizi
+    session = sezonlukdizi._get_session()
+    urls = sezonlukdizi.get_series_sitemap_urls(session, max_pages=1)
+    synced_items = []
+    delta = 0
+    for u in urls[:limit]:
+        try:
+            added = sezonlukdizi.scrape_series(conn, cur, idx, session, u)
+            delta += added
+            item_obj = {
+                'id': f"sezonlukdizi-{clean_scraped_slug(u)}",
+                'title': u.split('/')[-1].replace('.html', '').replace('-', ' ').title(),
+                'subtitle': f"+{added} kaynak eklendi",
+                'image': '/logo-dark.png',
+                'link': u,
+                'date': datetime.now().isoformat(),
+                'status': 'Canlı Çözüldü' if added > 0 else 'Doğrulandı',
+                'sourceName': 'SezonlukDizi',
+            }
+            emit_live_item(item_obj)
+            synced_items.append(item_obj)
+        except Exception as e:
+            log("UYARI", f"{u} hatası: {e}")
+    return delta, synced_items
+
+
+def scan_dizipal(conn, cur, idx, limit=30, target=None):
+    log("BAŞLATILDI", "Dizipal canlı tarama motoru devrede...")
+    from scrapers.sites import dizipal
+    session = dizipal._get_session()
+    base_url = dizipal.resolve_current_domain(session)
+    synced_items = []
+    delta = 0
+    try:
+        r = session.get(f"{base_url}/yeni-eklenen-dizi-bolumler", timeout=10)
+        series_links = re.findall(r'href=["\'](/series/[^"\']+|/bolum/[^"\']+)["\']', r.text)
+        unique_urls = [f"{base_url}{l}" for l in dict.fromkeys(series_links)]
+        for u in unique_urls[:limit]:
+            if "/series/" in u:
+                added = dizipal.scrape_series(conn, cur, idx, session, u, base_url)
+            else:
+                added = dizipal.scrape_episode_and_save(conn, cur, idx, session, u, base_url)
+            delta += added
+            item_obj = {
+                'id': f"dizipal-{clean_scraped_slug(u)}",
+                'title': u.split('/')[-1].replace('-', ' ').title(),
+                'subtitle': f"+{added} kaynak (Dizipal HLS)",
+                'image': '/logo-dark.png',
+                'link': u,
+                'date': datetime.now().isoformat(),
+                'status': 'Canlı Çözüldü' if added > 0 else 'Doğrulandı',
+                'sourceName': 'Dizipal',
+            }
+            emit_live_item(item_obj)
+            synced_items.append(item_obj)
+    except Exception as e:
+        log("HATA", f"Dizipal tarama hatası: {e}")
+    return delta, synced_items
+
+
+def scan_fullhdfilmizlesene(conn, cur, idx, limit=30, target=None):
+    log("BAŞLATILDI", "FullHDFilmizlesene canlı tarama motoru devrede...")
+    from scrapers.sites import fullhdfilmizlesene
+    session = fullhdfilmizlesene._get_session()
+    base_url = fullhdfilmizlesene.resolve_base_url(session)
+    urls = fullhdfilmizlesene.get_catalog_urls(session, base_url=base_url, max_pages=1)
+    synced_items = []
+    delta = 0
+    for u in urls[:limit]:
+        try:
+            added = fullhdfilmizlesene.scrape_movie(conn, cur, idx, session, u)
+            delta += added
+            item_obj = {
+                'id': f"fhf-{clean_scraped_slug(u)}",
+                'title': u.strip('/').split('/')[-1].replace('-', ' ').title(),
+                'subtitle': f"+{added} kaynak (FullHD)",
+                'image': '/logo-dark.png',
+                'link': u,
+                'date': datetime.now().isoformat(),
+                'status': 'Canlı Çözüldü' if added > 0 else 'Doğrulandı',
+                'sourceName': 'FullHDFilmizlesene',
+            }
+            emit_live_item(item_obj)
+            synced_items.append(item_obj)
+        except Exception as e:
+            log("UYARI", f"{u} hatası: {e}")
+    return delta, synced_items
+
+
+def scan_tranimaci(conn, cur, idx, limit=30, target=None):
+    log("BAŞLATILDI", "TRAnimeci canlı tarama motoru devrede...")
+    from scrapers.sites import tranimaci_anizm
+    session = tranimaci_anizm._get_session("tranimaci")
+    urls = tranimaci_anizm.get_tranimaci_sitemap_urls(session)
+    synced_items = []
+    delta = 0
+    for u in urls[:limit]:
+        try:
+            added = tranimaci_anizm.scrape_tranimaci_anime(conn, cur, idx, session, u)
+            delta += added
+            item_obj = {
+                'id': f"tranimaci-{clean_scraped_slug(u)}",
+                'title': u.split('/')[-1].replace('-', ' ').title(),
+                'subtitle': f"+{added} kaynak (TRAnimeci)",
+                'image': '/logo-dark.png',
+                'link': u,
+                'date': datetime.now().isoformat(),
+                'status': 'Canlı Çözüldü' if added > 0 else 'Doğrulandı',
+                'sourceName': 'TRAnimeci',
+            }
+            emit_live_item(item_obj)
+            synced_items.append(item_obj)
+        except Exception as e:
+            log("UYARI", f"{u} hatası: {e}")
+    return delta, synced_items
+
+
+def scan_anizm(conn, cur, idx, limit=30, target=None):
+    log("BAŞLATILDI", "Anizm canlı tarama motoru devrede...")
+    from scrapers.sites import tranimaci_anizm
+    session = tranimaci_anizm._get_session("anizm")
+    urls = tranimaci_anizm.get_anizm_catalog_urls(session, max_pages=1)
+    synced_items = []
+    delta = 0
+    for u in urls[:limit]:
+        try:
+            added = tranimaci_anizm.scrape_anizm_episode(conn, cur, idx, session, u)
+            delta += added
+            item_obj = {
+                'id': f"anizm-{clean_scraped_slug(u)}",
+                'title': u.split('/')[-1].replace('-', ' ').title(),
+                'subtitle': f"+{added} kaynak (Anizm)",
+                'image': '/logo-dark.png',
+                'link': u,
+                'date': datetime.now().isoformat(),
+                'status': 'Canlı Çözüldü' if added > 0 else 'Doğrulandı',
+                'sourceName': 'Anizm',
+            }
+            emit_live_item(item_obj)
+            synced_items.append(item_obj)
+        except Exception as e:
+            log("UYARI", f"{u} hatası: {e}")
+    return delta, synced_items
+
+
+# =========================================================================
 # MAIN ENTRY
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(description="KoUp Live Scraper Engine")
-    parser.add_argument("--provider", required=True, choices=["dizibox", "dizikorea", "ddizi", "animecix", "hdfilm", "asyawatch", "dizilla", "dizifon"])
+    parser.add_argument(
+        "--provider",
+        required=True,
+        choices=[
+            "dizibox", "dizikorea", "ddizi", "animecix", "hdfilm", "asyawatch", "dizilla", "dizifon",
+            "diziizle", "webdramaturkey2", "koredizi", "shortizle", "dramavadisi", "dramabox",
+            "animelvl", "sezonlukdizi", "dizipal", "fullhdfilmizlesene", "tranimaci", "anizm"
+        ],
+    )
     parser.add_argument("--limit", type=int, default=30)
     parser.add_argument("--target", type=str, default=None)
     args = parser.parse_args()
@@ -1807,6 +2246,30 @@ def main():
         delta, items = scan_dizilla(conn, cur, idx, limit=args.limit, target=args.target)
     elif args.provider == "dizifon":
         delta, items = scan_dizifon(conn, cur, idx, limit=args.limit, target=args.target)
+    elif args.provider == "diziizle":
+        delta, items = scan_diziizle(conn, cur, idx, limit=args.limit, target=args.target)
+    elif args.provider == "webdramaturkey2":
+        delta, items = scan_webdramaturkey2(conn, cur, idx, limit=args.limit, target=args.target)
+    elif args.provider == "koredizi":
+        delta, items = scan_koredizi(conn, cur, idx, limit=args.limit, target=args.target)
+    elif args.provider == "shortizle":
+        delta, items = scan_shortizle(conn, cur, idx, limit=args.limit, target=args.target)
+    elif args.provider == "dramavadisi":
+        delta, items = scan_dramavadisi(conn, cur, idx, limit=args.limit, target=args.target)
+    elif args.provider == "dramabox":
+        delta, items = scan_dramabox(conn, cur, idx, limit=args.limit, target=args.target)
+    elif args.provider == "animelvl":
+        delta, items = scan_animelvl(conn, cur, idx, limit=args.limit, target=args.target)
+    elif args.provider == "sezonlukdizi":
+        delta, items = scan_sezonlukdizi(conn, cur, idx, limit=args.limit, target=args.target)
+    elif args.provider == "dizipal":
+        delta, items = scan_dizipal(conn, cur, idx, limit=args.limit, target=args.target)
+    elif args.provider == "fullhdfilmizlesene":
+        delta, items = scan_fullhdfilmizlesene(conn, cur, idx, limit=args.limit, target=args.target)
+    elif args.provider == "tranimaci":
+        delta, items = scan_tranimaci(conn, cur, idx, limit=args.limit, target=args.target)
+    elif args.provider == "anizm":
+        delta, items = scan_anizm(conn, cur, idx, limit=args.limit, target=args.target)
 
     # Get updated total
     if args.provider == "hdfilm":
@@ -1817,6 +2280,8 @@ def main():
         cur.execute("SELECT COUNT(*) FROM episode_sources WHERE site LIKE '%dizilla%' OR provider LIKE '%dizilla%'")
     elif args.provider == "dizifon":
         cur.execute("SELECT COUNT(*) FROM episode_sources WHERE site LIKE '%dizifon%' OR provider LIKE '%dizifon%'")
+    elif args.provider in ("diziizle", "webdramaturkey2", "koredizi", "shortizle", "dramavadisi", "dramabox", "animelvl", "sezonlukdizi", "dizipal", "fullhdfilmizlesene", "tranimaci", "anizm"):
+        cur.execute("SELECT COUNT(*) FROM episode_sources WHERE site LIKE ? OR provider LIKE ?", (f"%{args.provider}%", f"%{args.provider}%"))
     else:
         cur.execute("SELECT COUNT(*) FROM episode_sources WHERE site=? OR provider=?", (args.provider, args.provider))
     new_total = cur.fetchone()[0]

@@ -200,15 +200,15 @@ def sync_asyamag(limit: int = 15) -> int:
     return 0
 
 
-def sync_dizibox_latest(limit: int = 30) -> int:
-    print(f"[DiziBox] Canlı tarayıcı başlatılıyor (limit: {limit})...", flush=True)
+def sync_dizibox_latest(limit: int = 30, stop_after_known: int = 5, max_items: int = 120) -> int:
+    print(f"[DiziBox] Canlı tarayıcı başlatılıyor (limit: {limit}, stop_after_known: {stop_after_known}, max_items: {max_items})...", flush=True)
     try:
         from scrapers.live_scanner import scan_dizibox, build_drama_index
         conn = get_connection()
         cur = conn.cursor()
         try:
             idx = build_drama_index(cur)
-            delta, _ = scan_dizibox(conn, cur, idx, limit=limit)
+            delta, _ = scan_dizibox(conn, cur, idx, limit=limit, stop_after_known=stop_after_known, max_items=max_items)
             print(f"[DiziBox] {delta} yeni/güncel bölüm kaynağı işlendi.", flush=True)
             return delta
         finally:
@@ -218,15 +218,15 @@ def sync_dizibox_latest(limit: int = 30) -> int:
         return 0
 
 
-def sync_dizikorea_latest(limit: int = 30) -> int:
-    print(f"[DiziKorea] Canlı tarayıcı başlatılıyor (limit: {limit})...", flush=True)
+def sync_dizikorea_latest(limit: int = 30, stop_after_known: int = 5, max_items: int = 120) -> int:
+    print(f"[DiziKorea] Canlı tarayıcı başlatılıyor (limit: {limit}, stop_after_known: {stop_after_known}, max_items: {max_items})...", flush=True)
     try:
         from scrapers.live_scanner import scan_dizikorea, build_drama_index
         conn = get_connection()
         cur = conn.cursor()
         try:
             idx = build_drama_index(cur)
-            delta, _ = scan_dizikorea(conn, cur, idx, limit=limit)
+            delta, _ = scan_dizikorea(conn, cur, idx, limit=limit, stop_after_known=stop_after_known, max_items=max_items)
             print(f"[DiziKorea] {delta} yeni/güncel bölüm kaynağı işlendi.", flush=True)
             return delta
         finally:
@@ -236,15 +236,15 @@ def sync_dizikorea_latest(limit: int = 30) -> int:
         return 0
 
 
-def sync_dizifon_latest(limit: int = 30) -> int:
-    print(f"[DiziFon] Canlı tarayıcı başlatılıyor (limit: {limit})...", flush=True)
+def sync_dizifon_latest(limit: int = 30, stop_after_known: int = 5, max_items: int = 120) -> int:
+    print(f"[DiziFon] Canlı tarayıcı başlatılıyor (limit: {limit}, stop_after_known: {stop_after_known}, max_items: {max_items})...", flush=True)
     try:
         from scrapers.live_scanner import scan_dizifon, build_drama_index
         conn = get_connection()
         cur = conn.cursor()
         try:
             idx = build_drama_index(cur)
-            delta, _ = scan_dizifon(conn, cur, idx, limit=limit)
+            delta, _ = scan_dizifon(conn, cur, idx, limit=limit, stop_after_known=stop_after_known, max_items=max_items)
             print(f"[DiziFon] {delta} yeni/güncel bölüm kaynağı işlendi.", flush=True)
             return delta
         finally:
@@ -254,15 +254,15 @@ def sync_dizifon_latest(limit: int = 30) -> int:
         return 0
 
 
-def sync_animecix_latest(limit: int = 30) -> int:
-    print(f"[AnimeciX] Canlı tarayıcı başlatılıyor (limit: {limit})...", flush=True)
+def sync_animecix_latest(limit: int = 30, stop_after_known: int = 5, max_items: int = 120) -> int:
+    print(f"[AnimeciX] Canlı tarayıcı başlatılıyor (limit: {limit}, stop_after_known: {stop_after_known}, max_items: {max_items})...", flush=True)
     try:
         from scrapers.live_scanner import scan_animecix, build_drama_index
         conn = get_connection()
         cur = conn.cursor()
         try:
             idx = build_drama_index(cur)
-            delta, _ = scan_animecix(conn, cur, idx, limit=limit)
+            delta, _ = scan_animecix(conn, cur, idx, limit=limit, stop_after_known=stop_after_known, max_items=max_items)
             print(f"[AnimeciX] {delta} yeni/güncel anime bölümü işlendi.", flush=True)
             return delta
         finally:
@@ -272,15 +272,15 @@ def sync_animecix_latest(limit: int = 30) -> int:
         return 0
 
 
-def sync_hdfilm_latest(limit: int = 30) -> int:
-    print(f"[HDFilm] Canlı film tarayıcısı başlatılıyor (limit: {limit})...", flush=True)
+def sync_hdfilm_latest(limit: int = 30, stop_after_known: int = 5, max_items: int = 120) -> int:
+    print(f"[HDFilm] Canlı film tarayıcısı başlatılıyor (limit: {limit}, stop_after_known: {stop_after_known}, max_items: {max_items})...", flush=True)
     try:
         from scrapers.live_scanner import scan_hdfilm, build_drama_index
         conn = get_connection()
         cur = conn.cursor()
         try:
             idx = build_drama_index(cur)
-            delta, _ = scan_hdfilm(conn, cur, idx, limit=limit)
+            delta, _ = scan_hdfilm(conn, cur, idx, limit=limit, stop_after_known=stop_after_known, max_items=max_items)
             print(f"[HDFilm] {delta} yeni/güncel film kaynağı işlendi.", flush=True)
             return delta
         finally:
@@ -290,15 +290,15 @@ def sync_hdfilm_latest(limit: int = 30) -> int:
         return 0
 
 
-def sync_ddizi_latest(limit: int = 30) -> int:
-    print(f"[DDizi] Canlı yerli dizi tarayıcısı başlatılıyor (limit: {limit})...", flush=True)
+def sync_ddizi_latest(limit: int = 30, stop_after_known: int = 5, max_items: int = 120) -> int:
+    print(f"[DDizi] Canlı yerli dizi tarayıcısı başlatılıyor (limit: {limit}, stop_after_known: {stop_after_known}, max_items: {max_items})...", flush=True)
     try:
         from scrapers.live_scanner import scan_ddizi, build_drama_index
         conn = get_connection()
         cur = conn.cursor()
         try:
             idx = build_drama_index(cur)
-            delta, _ = scan_ddizi(conn, cur, idx, limit=limit)
+            delta, _ = scan_ddizi(conn, cur, idx, limit=limit, stop_after_known=stop_after_known, max_items=max_items)
             print(f"[DDizi] {delta} yeni/güncel yerli dizi bölümü işlendi.", flush=True)
             return delta
         finally:
@@ -308,15 +308,15 @@ def sync_ddizi_latest(limit: int = 30) -> int:
         return 0
 
 
-def sync_dizilla_latest(limit: int = 30) -> int:
-    print(f"[Dizilla] Canlı tarayıcı başlatılıyor (limit: {limit})...", flush=True)
+def sync_dizilla_latest(limit: int = 30, stop_after_known: int = 5, max_items: int = 120) -> int:
+    print(f"[Dizilla] Canlı tarayıcı başlatılıyor (limit: {limit}, stop_after_known: {stop_after_known}, max_items: {max_items})...", flush=True)
     try:
         from scrapers.live_scanner import scan_dizilla, build_drama_index
         conn = get_connection()
         cur = conn.cursor()
         try:
             idx = build_drama_index(cur)
-            delta, _ = scan_dizilla(conn, cur, idx, limit=limit)
+            delta, _ = scan_dizilla(conn, cur, idx, limit=limit, stop_after_known=stop_after_known, max_items=max_items)
             print(f"[Dizilla] {delta} yeni/güncel bölüm kaynağı işlendi.", flush=True)
             return delta
         finally:
@@ -326,15 +326,15 @@ def sync_dizilla_latest(limit: int = 30) -> int:
         return 0
 
 
-def sync_asyawatch_latest(limit: int = 30) -> int:
-    print(f"[AsyaWatch] Canlı tarayıcı başlatılıyor (limit: {limit})...", flush=True)
+def sync_asyawatch_latest(limit: int = 30, stop_after_known: int = 5, max_items: int = 120) -> int:
+    print(f"[AsyaWatch] Canlı tarayıcı başlatılıyor (limit: {limit}, stop_after_known: {stop_after_known}, max_items: {max_items})...", flush=True)
     try:
         from scrapers.live_scanner import scan_asyawatch, build_drama_index
         conn = get_connection()
         cur = conn.cursor()
         try:
             idx = build_drama_index(cur)
-            delta, _ = scan_asyawatch(conn, cur, idx, limit=limit)
+            delta, _ = scan_asyawatch(conn, cur, idx, limit=limit, stop_after_known=stop_after_known, max_items=max_items)
             print(f"[AsyaWatch] {delta} yeni/güncel bölüm kaynağı işlendi.", flush=True)
             return delta
         finally:
@@ -354,6 +354,83 @@ def run_pending_resolver(limit: int = 100, batch_dramas: int = 25) -> dict:
     except Exception as e:
         print(f"[Pending Resolver] Hata: {e}", flush=True)
         return {}
+
+
+def verify_recent_additions(added_sources: list, record_log_fn=print):
+    """
+    Read-Back Doğrulaması:
+    Eklenen her kaynak için SQLite ve r2_bundles/sources/{drama_id}.json doğruluğunu teyit eder.
+    Eksik varsa [DOĞRULAMA HATASI] basar ve bundle senkronizasyonunu yeniden tetikler.
+    """
+    if not added_sources:
+        return
+    record_log_fn(f"[Read-Back Doğrulama] {len(added_sources)} yeni eklenen kaynak denetleniyor...")
+    conn = get_connection()
+    cur = conn.cursor()
+    from scrapers.supabase_sync_helper import sync_drama_bundle_and_counts
+    dramas_to_resync = set()
+
+    for item in added_sources:
+        ep_id = item.get("episode_id")
+        src_id = item.get("id")
+        drama_id = item.get("drama_id")
+        d_title = item.get("drama_title") or f"Drama #{drama_id}"
+        s_num = item.get("season_number") or 1
+        e_num = item.get("episode_number") or 1
+        provider = item.get("provider") or "source"
+        d_url = item.get("direct_url")
+
+        # 1. SQLite check
+        cur.execute("SELECT id FROM episodes WHERE id=?", (ep_id,))
+        ep_exists = cur.fetchone() is not None
+
+        cur.execute("SELECT id FROM episode_sources WHERE (id=? OR (episode_id=? AND direct_url=?))",
+                    (src_id, ep_id, d_url))
+        src_exists = cur.fetchone() is not None
+
+        if not (ep_exists and src_exists):
+            record_log_fn(f"[DOĞRULAMA HATASI] {d_title} S{s_num}E{e_num} ({provider}) SQLite'ta eksik! (ep:{ep_exists}, src:{src_exists})")
+            if drama_id:
+                dramas_to_resync.add(drama_id)
+            continue
+
+        # 2. r2_bundles/sources/{drama_id}.json check
+        bundle_path = os.path.join(_ROOT, "r2_bundles", "sources", f"{drama_id}.json")
+        bundle_verified = False
+        if os.path.exists(bundle_path):
+            try:
+                with open(bundle_path, "r", encoding="utf-8") as f:
+                    b_data = json.load(f)
+                for ep in b_data.get("episodes", []):
+                    if ep.get("season_number") == s_num and ep.get("episode_number") == e_num:
+                        for s in ep.get("sources", []):
+                            if s.get("provider") == provider or (d_url and s.get("direct_url") == d_url):
+                                bundle_verified = True
+                                break
+                    if bundle_verified:
+                        break
+            except Exception:
+                bundle_verified = False
+
+        if bundle_verified:
+            record_log_fn(f"[DOĞRULANDI] {d_title} S{s_num}E{e_num} ({provider}) arşiv ve bundle içinde teyit edildi")
+        else:
+            record_log_fn(f"[DOĞRULAMA HATASI] {d_title} S{s_num}E{e_num} ({provider}) bundle dosyasında bulunamadı! Yeniden senkronize ediliyor...")
+            if drama_id:
+                dramas_to_resync.add(drama_id)
+
+    # Re-sync any failed bundles
+    for did in dramas_to_resync:
+        try:
+            ok = sync_drama_bundle_and_counts(conn, cur, did)
+            if ok:
+                record_log_fn(f"[DOĞRULAMA ONARILDI] Drama #{did} bundle ve Supabase senkronizasyonu yeniden yapıldı.")
+            else:
+                record_log_fn(f"[DOĞRULAMA ONARIM HATASI] Drama #{did} senkronizasyon başarısız.")
+        except Exception as e:
+            record_log_fn(f"[DOĞRULAMA ONARIM HATASI] Drama #{did} senkronizasyon hatası: {e}")
+
+    conn.close()
 
 
 def run_watchdog_check() -> int:
@@ -696,6 +773,68 @@ def main():
         if target in ("all", "asyawatch"):
             run_scraper_step("asyawatch", "AsyaWatch", sync_asyawatch_latest, 30)
 
+        if target in ("all", "diziizle"):
+            def _sync_diziizle():
+                from scrapers.sites.diziizle import crawl_diziizle_recent
+                conn_d = get_connection(); cur_d = conn_d.cursor()
+                try:
+                    res = crawl_diziizle_recent(cur=cur_d, conn=conn_d, limit=10)
+                    return sum(r.get("sources_added", 0) for r in (res or []))
+                finally:
+                    conn_d.close()
+            run_scraper_step("diziizle", "Diziİzle", _sync_diziizle)
+
+        if target in ("all", "webdramaturkey", "webdramaturkey2"):
+            def _sync_wdt():
+                from scrapers.sites.webdramaturkey import crawl_webdramaturkey_recent
+                conn_w = get_connection(); cur_w = conn_w.cursor()
+                try:
+                    res = crawl_webdramaturkey_recent(cur=cur_w, conn=conn_w, limit=10)
+                    return sum(r.get("sources_added", 0) for r in (res or []))
+                finally:
+                    conn_w.close()
+            run_scraper_step("webdramaturkey2", "WebDramaTurkey2", _sync_wdt)
+
+        if target in ("all", "koredizi"):
+            from scrapers.shortdrama.koredizi import KoreDiziScraper
+            run_scraper_step("koredizi", "KoreDizi Short", lambda: KoreDiziScraper().run(limit=10, sync_cloud=True))
+
+        if target in ("all", "shortizle"):
+            from scrapers.shortdrama.shortizle import ShortizleScraper
+            run_scraper_step("shortizle", "Shortİzle", lambda: ShortizleScraper().run(limit=10, sync_cloud=True))
+
+        if target in ("all", "dramavadisi"):
+            from scrapers.shortdrama.dramavadisi import DramaVadisiScraper
+            run_scraper_step("dramavadisi", "DramaVadisi", lambda: DramaVadisiScraper().run(limit=10, sync_cloud=True))
+
+        if target in ("all", "dramabox"):
+            from scrapers.shortdrama.dramabox import DramaBoxScraper
+            run_scraper_step("dramabox", "DramaBox Match", lambda: DramaBoxScraper().run(limit=10, sync_cloud=True))
+
+        if target in ("all", "animelvl"):
+            from scripts.backfill_phase4 import run_animelvl
+            run_scraper_step("animelvl", "AnimeLVL", lambda: run_animelvl(limit=10, resume=True))
+
+        if target in ("all", "sezonlukdizi"):
+            from scripts.backfill_phase4 import run_sezonlukdizi
+            run_scraper_step("sezonlukdizi", "SezonlukDizi", lambda: run_sezonlukdizi(limit=10, resume=True))
+
+        if target in ("all", "dizipal"):
+            from scripts.backfill_phase4 import run_dizipal
+            run_scraper_step("dizipal", "Dizipal", lambda: run_dizipal(limit=10, resume=True))
+
+        if target in ("all", "fullhdfilmizlesene"):
+            from scripts.backfill_phase4 import run_fullhdfilmizlesene
+            run_scraper_step("fullhdfilmizlesene", "FullHDFilmizlesene", lambda: run_fullhdfilmizlesene(limit=10, resume=True))
+
+        if target in ("all", "tranimaci"):
+            from scripts.backfill_phase4 import run_tranimaci
+            run_scraper_step("tranimaci", "TRAnimeci", lambda: run_tranimaci(limit=10, resume=True))
+
+        if target in ("all", "anizm"):
+            from scripts.backfill_phase4 import run_anizm
+            run_scraper_step("anizm", "Anizm", lambda: run_anizm(limit=10, resume=True))
+
         if target in ("all", "pending_resolver", "pending"):
             run_scraper_step("pending_resolver", "Bekleyen Kaynak Çözücü", run_pending_resolver, limit=args.pending_limit, batch_dramas=args.batch_dramas)
 
@@ -731,7 +870,22 @@ def main():
                 sync_anilist_airing_schedule()
                 sync_tmdb_ongoing_series()
                 cleanup_stale_calendar_entries()
-                record_log("[Takvim] Güncel yayın takvimi (DiziKorea, DiziBox, AnimeciX, AsyaAnimeleri, AniList, TMDB) başarıyla eşitlendi.")
+                try:
+                    from scrapers.sites.diziizle import sync_diziizle_calendar
+                    conn_cal = get_connection()
+                    cur_cal = conn_cal.cursor()
+                    try:
+                        sync_diziizle_calendar(conn=conn_cal, cur=cur_cal)
+                    finally:
+                        conn_cal.close()
+                except Exception as e_cal1:
+                    record_log(f"[Takvim Diziİzle] Hata: {e_cal1}")
+                try:
+                    from scrapers.sites.animelvl import sync_animelvl_calendar
+                    sync_animelvl_calendar()
+                except Exception as e_cal2:
+                    record_log(f"[Takvim AnimeLVL] Hata: {e_cal2}")
+                record_log("[Takvim] Güncel yayın takvimi (DiziKorea, DiziBox, AnimeciX, AsyaAnimeleri, AniList, TMDB, Diziİzle, AnimeLVL) başarıyla eşitlendi.")
             except Exception as e:
                 record_log(f"[Takvim] Hata: {e}")
 
@@ -795,6 +949,13 @@ def main():
             conn_sa.close()
         except Exception as e:
             record_log(f"[Seri Otomasyonu] Final temizleme uyarısı: {e}")
+
+        # Read-Back Doğrulaması: Eklenen bölümlerin arşiv ve bundle teyidi
+        try:
+            if all_sources:
+                verify_recent_additions(all_sources, record_log)
+        except Exception as e:
+            record_log(f"[Read-Back Doğrulama] Uyarı: {e}")
 
         # Database Checkpoint & R2 Backup
         try:

@@ -2,7 +2,7 @@ export interface ToastNotification {
   id: string;
   title: string;
   body: string;
-  type: 'episode' | 'actor' | 'reply' | 'system' | 'info' | 'success' | 'error';
+  type: 'episode' | 'actor' | 'reply' | 'system' | 'info' | 'success' | 'error' | 'warning';
   linkUrl?: string;
   imageUrl?: string;
   createdAt: string;
@@ -135,8 +135,39 @@ export function compareNotifications(
 }
 
 /**
+ * Helper to identify maintenance, transient error or scrapers/internal log messages
+ * so they NEVER pollute the permanent inbox/notification center.
+ */
+export function isMaintenanceOrErrorNotification(title?: string, body?: string, type?: string): boolean {
+  if (type === 'error' || type === 'warning' || type === 'info' || type === 'success') {
+    return true;
+  }
+  const t = (title || '').toLowerCase();
+  const b = (body || '').toLowerCase();
+  return (
+    t.includes('bakım hatası') ||
+    t.includes('bakım uyarısı') ||
+    t.includes('bakım tamamlandı') ||
+    t.includes('bakım') ||
+    t.includes('hata') ||
+    t.includes('error') ||
+    t.includes('sqlite') ||
+    t.includes('webdrama_archive') ||
+    t.includes('python motoru') ||
+    t.includes('senkronizasyon hatası') ||
+    b.includes('bakım hatası') ||
+    b.includes('bakım uyarısı') ||
+    b.includes('sqlite') ||
+    b.includes('webdrama_archive') ||
+    b.includes('python motoru') ||
+    b.includes('senkronizasyon hatası')
+  );
+}
+
+/**
  * Deduplicates and sorts notifications deterministically.
  * Preserves `isRead = true` if any duplicate instance was read.
+ * Strips out any dirty maintenance or transient errors from the permanent inbox.
  */
 export function dedupeAndSortNotifications(
   notifications: ToastNotification[]
@@ -144,8 +175,13 @@ export function dedupeAndSortNotifications(
   const seenIds = new Set<string>();
   const seenFps = new Map<string, ToastNotification>();
 
+  // Filter out any maintenance or error messages
+  const cleanList = (notifications || []).filter(
+    (n) => n && n.id && !isMaintenanceOrErrorNotification(n.title, n.body, n.type)
+  );
+
   // Sort deterministically first
-  const sorted = [...notifications].sort(compareNotifications);
+  const sorted = [...cleanList].sort(compareNotifications);
 
   for (const n of sorted) {
     if (!n || !n.id) continue;

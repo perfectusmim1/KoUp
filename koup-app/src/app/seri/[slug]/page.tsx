@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import { notFound, permanentRedirect } from 'next/navigation';
 import { getSeriesDataServer } from '@/lib/server/seriesData';
 import SeriesDetailClient from './SeriesDetailClient';
+import { ShortsDetailClient } from '@/components/shorts/ShortsWatchClient';
+import { isShortDrama } from '@/components/shorts/ShortsCard';
 import { cleanMediaTitle, cleanOverviewText, getProxiedImageUrl } from '@/lib/supabase';
 
 // Incremental Static Regeneration (ISR): Cache rendered series page for 1 hour
@@ -153,19 +155,28 @@ export default async function SeriesDetailPage({
     }));
   }
 
+  const isShort = isShortDrama(media);
+
   return (
     <>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <SeriesDetailClient
-        slug={slug}
-        initialMedia={media}
-        initialEpisodes={episodes}
-        initialCast={cast}
-        initialFranchise={franchise}
-      />
+      {isShort ? (
+        <ShortsDetailClient
+          media={media}
+          episodes={episodes}
+        />
+      ) : (
+        <SeriesDetailClient
+          slug={slug}
+          initialMedia={media}
+          initialEpisodes={episodes}
+          initialCast={cast}
+          initialFranchise={franchise}
+        />
+      )}
     </>
   );
 }

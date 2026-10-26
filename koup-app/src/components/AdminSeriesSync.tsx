@@ -160,6 +160,116 @@ const SYNC_OPTIONS: SelectOption[] = [
     ),
   },
   {
+    value: 'shortizle',
+    label: 'Shortİzle Kısa Drama',
+    description: 'Dikey Shorts / Reels 1080p MP4 & HLS akışları',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-amber-950/40 border border-amber-500/30 flex items-center justify-center flex-shrink-0 text-amber-300 shadow-sm shadow-amber-500/10">
+        <span className="text-[8px] font-black">SH</span>
+      </div>
+    ),
+  },
+  {
+    value: 'dramavadisi',
+    label: 'DramaVadisi Kısa Drama',
+    description: 'Kısa Drama ve mini dizi HLS akışları',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-orange-950/40 border border-orange-500/30 flex items-center justify-center flex-shrink-0 text-orange-300 shadow-sm shadow-orange-500/10">
+        <span className="text-[8px] font-black">DV</span>
+      </div>
+    ),
+  },
+  {
+    value: 'koredizi',
+    label: 'KoreDizi Asya & Shorts',
+    description: 'PlayerDKorea & Pichive 1080p akışları',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-emerald-950/40 border border-emerald-500/30 flex items-center justify-center flex-shrink-0 text-emerald-300 shadow-sm shadow-emerald-500/10">
+        <span className="text-[8px] font-black">KD</span>
+      </div>
+    ),
+  },
+  {
+    value: 'dramabox',
+    label: 'DramaBox Orijinal Shorts',
+    description: 'DramaBox dikey dizileri ve yedek akışlar',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-red-950/40 border border-red-500/30 flex items-center justify-center flex-shrink-0 text-red-300 shadow-sm shadow-red-500/10">
+        <span className="text-[8px] font-black">DB</span>
+      </div>
+    ),
+  },
+  {
+    value: 'diziizle',
+    label: 'Diziİzle Yabancı & Takvim',
+    description: 'Diziİzle 1080p HLS & Canlı Yayın Takvimi',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-blue-950/40 border border-blue-500/30 flex items-center justify-center flex-shrink-0 text-blue-300 shadow-sm shadow-blue-500/10">
+        <span className="text-[8px] font-black">Dİ</span>
+      </div>
+    ),
+  },
+  {
+    value: 'webdramaturkey2',
+    label: 'WebDramaTurkey2 (WDT)',
+    description: 'WDT Asya Fansub ve K-Drama HLS akışları',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-pink-950/40 border border-pink-500/30 flex items-center justify-center flex-shrink-0 text-pink-300 shadow-sm shadow-pink-500/10">
+        <span className="text-[8px] font-black">WDT</span>
+      </div>
+    ),
+  },
+  {
+    value: 'animelvl',
+    label: 'AnimeLVL Anime & Takvim',
+    description: 'Tau-Video doğrudan HLS & Anime Takvimi',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-violet-950/40 border border-violet-500/30 flex items-center justify-center flex-shrink-0 text-violet-300 shadow-sm shadow-violet-500/10">
+        <span className="text-[8px] font-black">LVL</span>
+      </div>
+    ),
+  },
+  {
+    value: 'sezonlukdizi',
+    label: 'SezonlukDizi VIP',
+    description: 'Sezonluk VIP 1080p HLS akışları',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-teal-950/40 border border-teal-500/30 flex items-center justify-center flex-shrink-0 text-teal-300 shadow-sm shadow-teal-500/10">
+        <span className="text-[8px] font-black">SZ</span>
+      </div>
+    ),
+  },
+  {
+    value: 'dizipal',
+    label: 'Dizipal Dinamik Domain',
+    description: 'Otomatik domain tespiti ve 1080p HLS akışları',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-cyan-950/40 border border-cyan-500/30 flex items-center justify-center flex-shrink-0 text-cyan-300 shadow-sm shadow-cyan-500/10">
+        <span className="text-[8px] font-black">DP</span>
+      </div>
+    ),
+  },
+  {
+    value: 'fullhdfilmizlesene',
+    label: 'FullHDFilmİzlesene',
+    description: 'Dual & Rapidrame 1080p Film Akışları',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-amber-950/40 border border-amber-600/30 flex items-center justify-center flex-shrink-0 text-amber-300 shadow-sm shadow-amber-600/10">
+        <span className="text-[8px] font-black">FH</span>
+      </div>
+    ),
+  },
+  {
+    value: 'tranimaci',
+    label: 'TrAnimaci Fansub',
+    description: 'Anime ve animasyon MP4/HLS akışları',
+    icon: (
+      <div className="w-5 h-5 rounded-md bg-purple-950/40 border border-purple-500/30 flex items-center justify-center flex-shrink-0 text-purple-300 shadow-sm shadow-purple-500/10">
+        <span className="text-[8px] font-black">TRA</span>
+      </div>
+    ),
+  },
+  {
     value: '__manual__',
     label: "Özel Dizi URL'si Gir...",
     description: "DiziBOX, HDFilm vb. doğrudan dizi URL'si yapıştırın",

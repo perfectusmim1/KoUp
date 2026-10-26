@@ -5,6 +5,7 @@ import {
   PersonItem,
   MagazinePost,
 } from '@/lib/supabase';
+import { isShortDrama } from '@/components/shorts/ShortsCard';
 
 export interface HomeDataBundle {
   feats: MediaItem[];
@@ -19,6 +20,7 @@ export interface HomeDataBundle {
   top10Movies?: MediaItem[];
   recentEpsProcessed?: any[];
   recentMedia?: MediaItem[];
+  shortDramas?: MediaItem[];
 }
 
 export async function getHomeDataServer(): Promise<HomeDataBundle> {
@@ -37,6 +39,7 @@ export async function getHomeDataServer(): Promise<HomeDataBundle> {
       top10SeriesRes,
       top10MoviesRes,
       recentMediaRes,
+      shortDramasRes,
     ] = await Promise.all([
       client
         .from('media')
@@ -99,7 +102,15 @@ export async function getHomeDataServer(): Promise<HomeDataBundle> {
         .select('*')
         .order('id', { ascending: false })
         .limit(30),
+      client
+        .from('media')
+        .select('*')
+        .or('content_type.eq.kisa_drama,content_type.eq.short')
+        .order('id', { ascending: false })
+        .limit(20),
     ]);
+
+    const isNotShort = (m: MediaItem) => !isShortDrama(m);
 
     // Fallback for top10 series & movies if RPC is empty
     let top10Series = (top10SeriesRes?.data as MediaItem[]) || [];
@@ -128,18 +139,34 @@ export async function getHomeDataServer(): Promise<HomeDataBundle> {
       top10Movies = (fbMovies as MediaItem[]) || [];
     }
 
+    let shortDramas = (shortDramasRes?.data as MediaItem[]) || [];
+    if (shortDramas.length === 0) {
+      try {
+        const { data: catShorts } = await client
+          .from('media')
+          .select('*')
+          .contains('categories', ['Kısa Drama'])
+          .order('id', { ascending: false })
+          .limit(20);
+        if (catShorts && catShorts.length > 0) {
+          shortDramas = catShorts as MediaItem[];
+        }
+      } catch {}
+    }
+
     return {
-      feats: (featRes?.data as MediaItem[]) || [],
-      kds: (kdRes?.data as MediaItem[]) || [],
-      cds: (cdRes?.data as MediaItem[]) || [],
+      feats: ((featRes?.data as MediaItem[]) || []).filter(isNotShort),
+      kds: ((kdRes?.data as MediaItem[]) || []).filter(isNotShort),
+      cds: ((cdRes?.data as MediaItem[]) || []).filter(isNotShort),
       ans: (anRes?.data as MediaItem[]) || [],
-      gls: (glRes?.data as MediaItem[]) || [],
+      gls: ((glRes?.data as MediaItem[]) || []).filter(isNotShort),
       episodes: (epRes?.data as any[]) || [],
       people: (peopRes?.data as PersonItem[]) || [],
       magPosts: (magRes?.data as MagazinePost[]) || [],
-      top10Series,
-      top10Movies,
-      recentMedia: (recentMediaRes?.data as MediaItem[]) || [],
+      top10Series: top10Series.filter(isNotShort),
+      top10Movies: top10Movies.filter(isNotShort),
+      recentMedia: ((recentMediaRes?.data as MediaItem[]) || []).filter(isNotShort),
+      shortDramas,
     };
   } catch (err) {
     console.error('getHomeDataServer error:', err);
@@ -155,6 +182,7 @@ export async function getHomeDataServer(): Promise<HomeDataBundle> {
       top10Series: [],
       top10Movies: [],
       recentMedia: [],
+      shortDramas: [],
     };
   }
 }

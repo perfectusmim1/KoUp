@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { verifyAdminAuth, resolvePythonBinary, checkAdminRateLimit } from '@/lib/adminAuth';
+import { hasLocalPython, dispatchCloudScraperJob } from '@/lib/server/scraperDispatch';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -30,21 +31,13 @@ export async function POST(req: NextRequest) {
     }
 
     const scriptPath = path.resolve(process.cwd(), '..', 'scripts', 'series_automation_runner.py');
-    const isLocalPython = !process.env.VERCEL && fs.existsSync(scriptPath);
+    const isLocalPython = hasLocalPython() && fs.existsSync(scriptPath);
     const encoder = new TextEncoder();
 
     // =========================================================================
     // VERCEL / CLOUD FALLBACK: DISPATCH TO GITHUB ACTIONS
     // =========================================================================
     if (!isLocalPython) {
-      const githubToken = process.env.GITHUB_TOKEN;
-      if (!githubToken) {
-        return NextResponse.json(
-          { error: 'GitHub Actions erişim anahtarı (GITHUB_TOKEN) sunucu ortamında tanımlı değil.' },
-          { status: 500 }
-        );
-      }
-
       const stream = new ReadableStream({
         async start(controller) {
           const sendEvent = (obj: any) => {
@@ -60,47 +53,32 @@ export async function POST(req: NextRequest) {
           });
 
           try {
-            const workflowUrl = dramaId
-              ? 'https://api.github.com/repos/perfectusmim1/KoUp/actions/workflows/sync_single_series.yml/dispatches'
-              : 'https://api.github.com/repos/perfectusmim1/KoUp/actions/workflows/scraper_cron.yml/dispatches';
+            const workflowFile = dramaId ? 'sync_single_series.yml' : 'admin_job.yml';
+            const script = dramaId ? 'scrapers/sync_target_drama.py' : 'scripts/series_automation_runner.py';
+            const args = dramaId ? ['--drama-id', String(dramaId)] : ['--all-active'];
+            const inputs: Record<string, string> = dramaId
+              ? { drama_id: String(dramaId), provider: 'auto', manual_url: '' }
+              : { target_site: 'all' };
 
-            const payload = dramaId
-              ? {
-                  ref: 'main',
-                  inputs: {
-                    drama_id: String(dramaId),
-                    provider: 'auto',
-                    manual_url: '',
-                  },
-                }
-              : {
-                  ref: 'main',
-                  inputs: {
-                    target: 'all',
-                  },
-                };
-
-            const ghRes = await fetch(workflowUrl, {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${githubToken}`,
-                Accept: 'application/vnd.github.v3+json',
-                'User-Agent': 'KoUp-App',
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(payload),
+            const dispatchRes = await dispatchCloudScraperJob({
+              target: dramaId ? `series-${dramaId}` : 'all',
+              script,
+              workflowFile,
+              args,
+              inputs,
+              sendEvent,
+              streamLogs: true,
             });
 
-            if (!ghRes.ok) {
-              const errText = await ghRes.text();
+            if (!dispatchRes.ok) {
               sendEvent({
                 type: 'error',
-                error: `GitHub Actions API hatası (${ghRes.status}): ${errText}`,
+                error: dispatchRes.error || 'GitHub Actions tetiklenemedi',
               });
             } else {
               sendEvent({
                 type: 'log',
-                line: `[${nowStr()}] [BAŞARILI] GitHub Actions seri otomasyon işi kuyruğa alındı!`,
+                line: `[${nowStr()}] [BAŞARILI] GitHub Actions seri otomasyon işi kuyruğa alındı (Run ID: ${dispatchRes.runId})!`,
               });
               sendEvent({
                 type: 'done',

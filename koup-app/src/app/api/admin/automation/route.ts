@@ -3,7 +3,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { supabase } from '@/lib/supabase';
-import { verifyAdminAuth } from '@/lib/adminAuth';
+import { verifyAdminAuth, resolvePythonBinary } from '@/lib/adminAuth';
+import { hasLocalPython, dispatchCloudScraperJob } from '@/lib/server/scraperDispatch';
 
 export const dynamic = 'force-dynamic';
 
@@ -112,7 +113,7 @@ export async function POST(req: NextRequest) {
     if (action === 'trigger_automation') {
       const target = (body.target || 'all').toString().trim();
       const scriptPath = path.resolve(process.cwd(), '..', 'scripts', 'cron_sync_pipeline.py');
-      const isCloudEnv = Boolean(process.env.VERCEL) || !fs.existsSync(scriptPath);
+      const isCloudEnv = !hasLocalPython() || !fs.existsSync(scriptPath);
 
       const encoder = new TextEncoder();
       const stream = new ReadableStream({
@@ -137,44 +138,22 @@ export async function POST(req: NextRequest) {
             const nowStr = new Date().toTimeString().split(' ')[0];
             logMsg(`[${nowStr}] [SİSTEM] Bulut (Vercel) ortamı algılandı. GitHub Actions Otomasyon Motoru devreye sokuluyor...`);
 
-            const ghToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
-            if (!ghToken) {
-              logMsg(`[${nowStr}] [UYARI] GITHUB_TOKEN ortam değişkeni bulunamadı. Vercel ortamında Python doğrudan çalıştırılamadığı için GitHub Actions API çağrısı yapılamadı.`);
-              logMsg(`[${nowStr}] [REHBER] Lütfen Vercel panelinden GITHUB_TOKEN (repo/workflow yetkili Personal Access Token) ekleyin veya otomasyonu yerel/VPS ortamında çalıştırın.`);
-              sendEvent({
-                type: 'result',
-                ok: false,
-                target,
-                logs,
-                error: 'GITHUB_TOKEN ortam değişkeni eksik (Vercel ortamı)',
-              });
-              closed = true;
-              try { controller.close(); } catch (_) {}
-              return;
-            }
-
             try {
-              logMsg(`[${nowStr}] [GITHUB] 'perfectusmim1/KoUp' deposundaki scraper_cron.yml tetikleniyor (Hedef: ${target})...`);
-              const ghResp = await fetch('https://api.github.com/repos/perfectusmim1/KoUp/actions/workflows/scraper_cron.yml/dispatches', {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${ghToken}`,
-                  'Accept': 'application/vnd.github.v3+json',
-                  'Content-Type': 'application/json',
-                  'User-Agent': 'KoUp-Admin-Automation/2.0',
+              const dispatchRes = await dispatchCloudScraperJob({
+                target,
+                script: 'scripts/cron_sync_pipeline.py',
+                workflowFile: 'scraper_cron.yml',
+                inputs: {
+                  target_site: target,
+                  pending_limit: '150',
+                  batch_dramas: '30',
                 },
-                body: JSON.stringify({
-                  ref: 'main',
-                  inputs: {
-                    target_site: target,
-                    pending_limit: '150',
-                    batch_dramas: '30',
-                  },
-                }),
+                sendEvent,
+                streamLogs: true,
               });
 
-              if (ghResp.status === 204 || ghResp.ok) {
-                logMsg(`[${nowStr}] [BAŞARILI] GitHub Actions iş akışı başarıyla tetiklendi!`);
+              if (dispatchRes.ok) {
+                logMsg(`[${nowStr}] [BAŞARILI] GitHub Actions iş akışı başarıyla tetiklendi! (Run ID: ${dispatchRes.runId})`);
                 logMsg(`[${nowStr}] [BİLGİ] Ubuntu runner üzerinde 45 dakika boyunca tüm botlar, seriler ve kaynaklar Cloudflare R2 ile senkronize edilecek.`);
                 logMsg(`[${nowStr}] [CANLI] İlerlemeyi GitHub Actions sekmesinden veya Admin Panelindeki son çalıştırma geçmişinden takip edebilirsiniz.`);
                 sendEvent({
@@ -185,14 +164,13 @@ export async function POST(req: NextRequest) {
                   message: 'GitHub Actions otomasyonu başarıyla başlatıldı.',
                 });
               } else {
-                const errText = await ghResp.text();
-                logMsg(`[${nowStr}] [HATA] GitHub API yanıtı (HTTP ${ghResp.status}): ${errText}`);
+                logMsg(`[${nowStr}] [HATA] ${dispatchRes.error}`);
                 sendEvent({
                   type: 'result',
                   ok: false,
                   target,
                   logs,
-                  error: `GitHub Actions API hatası (HTTP ${ghResp.status})`,
+                  error: dispatchRes.error || 'GitHub Actions tetiklenemedi',
                 });
               }
             } catch (err: any) {
@@ -222,7 +200,8 @@ export async function POST(req: NextRequest) {
             sendEvent({ type: 'log', line });
           };
 
-          const child = spawn('python', args, {
+          const pythonBin = resolvePythonBinary();
+          const child = spawn(pythonBin, args, {
             cwd: path.resolve(process.cwd(), '..'),
             env: {
               ...process.env,

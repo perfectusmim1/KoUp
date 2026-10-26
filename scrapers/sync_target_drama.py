@@ -73,6 +73,19 @@ def log(tag: str, msg: str):
     now = datetime.now().strftime("%H:%M:%S")
     print(f"[{now}] [{tag}] {msg}", flush=True)
 
+def extract_anchor_text(a) -> str:
+    """Extracts text from <a> after removing svg, icon, play and button elements."""
+    if not a:
+        return ""
+    try:
+        for tag in a.find_all(['svg', 'i', 'span', 'em', 'button'], class_=lambda c: c and any(k in str(c).lower() for k in ('icon', 'play', 'arrow', 'svg'))):
+            tag.decompose()
+        for tag in a.find_all(['svg', 'i']):
+            tag.decompose()
+    except Exception:
+        pass
+    return a.get_text(strip=True)
+
 def _decode_response_content(content: bytes, text: str, url: str = "") -> str:
     if not content:
         return ""
@@ -315,6 +328,22 @@ def score_drama_match(drama: dict, cand_title: str, cand_slug: str = "", cand_ye
 
     if best >= 0.80 and d_year and c_year and abs(d_year - c_year) <= 1:
         best = min(1.0, best + 0.05)
+
+    try:
+        from scrapers.matching import score_series_match, enqueue_match_review
+        remote_cand = {
+            "title": cand_title,
+            "slug": cand_slug,
+            "year": c_year,
+            "content_type": cand_type,
+        }
+        match_score, match_reasons = score_series_match(d, remote_cand)
+        if match_score == 0.0 and any("mismatch" in r for r in match_reasons):
+            return 0.0
+        if 0.55 <= best < 0.80:
+            enqueue_match_review("sync_target", remote_cand, d, best, match_reasons or [f"fuzzy_title:{best:.2f}"])
+    except Exception:
+        pass
 
     return best
 
@@ -844,14 +873,15 @@ def sync_dizikorea_target(conn, cur, drama, target_url=None):
         if '-bolum' in h or '/bolum-' in h:
             if h not in seen:
                 seen.add(h)
-                s_num, e_num = parse_season_and_episode(h, a.get_text())
-                ep_links.append((s_num, e_num, h))
+                raw_ep_txt = extract_anchor_text(a)
+                s_num, e_num = parse_season_and_episode(h, raw_ep_txt)
+                ep_links.append((s_num, e_num, h, raw_ep_txt))
 
     ep_links.sort(key=lambda x: (x[0], x[1]))
     log("DiziKorea", f"{len(ep_links)} adet bölüm tespit edildi ({detail_url}).")
 
-    for s_num, e_num, ep_url in ep_links:
-        clean_name = clean_episode_title(f"{s_num}. Sezon {e_num}. Bölüm", s_num, e_num)
+    for s_num, e_num, ep_url, raw_ep_txt in ep_links:
+        clean_name = clean_episode_title(raw_ep_txt or f"{s_num}. Sezon {e_num}. Bölüm", s_num, e_num, drama_title=d.get('title'))
         ep_id, created = match_or_create_episode(cur, d['id'], s_num, e_num, clean_name, ep_url)
         if created:
             episodes_added += 1
