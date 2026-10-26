@@ -205,30 +205,50 @@ class ShortizleScraper:
                 ep1_sources = [("Shortİzle (Türkçe Altyazı)", fallback_u, "shortizle")]
             episodes_data.append((ep1_num, ep1_obj.get("title") or f"{ep1_num}. Bölüm", ep1_url, ep1_sources))
 
-            # Fetch remaining episodes concurrently
-            from concurrent.futures import ThreadPoolExecutor
+            # Check if ep1 uses Shortİzle native resolve_url (/media/shortizle-live-alternate/...)
+            active_resolve_groups = [
+                g for g in ("altyazi", "dublaj")
+                if any(isinstance(it, dict) and it.get("resolve_url") for it in (ep1_ext.get(g) or []))
+            ]
 
-            def _fetch_shortizle_ep(item):
-                ep_idx, ep_obj = item
-                ep_num = ep_obj.get("episode_number") or ep_obj.get("number") or ep_idx
-                ep_url = f"{BASE_URL}/watch/{slug}/1/{ep_num}"
-                ep_resp = safe_request(self.session, "GET", ep_url, delay=0.05)
-                ep_sources = []
-                if ep_resp and ep_resp.status_code == 200:
-                    ep_data = self.extract_inertia_data(ep_resp.text)
-                    if ep_data:
-                        ep_props = ep_data.get("props", {})
-                        ep_ext = ep_props.get("externalSources", {})
-                        ep_sources = self.extract_sources_from_ext(ep_ext, ep_url=ep_url)
-                if not ep_sources:
-                    fallback_u = ep_obj.get("video_url") or f"{BASE_URL}/embed/{slug}/1/{ep_num}"
-                    if fallback_u.startswith("/"):
-                        fallback_u = f"{BASE_URL}{fallback_u}"
-                    ep_sources = [("Shortİzle (Türkçe Altyazı)", fallback_u, "shortizle")]
-                return (ep_num, ep_obj.get("title") or f"{ep_num}. Bölüm", ep_url, ep_sources)
+            if active_resolve_groups:
+                # Deterministic fast-path: no need to hammer 50-100 episode pages per drama;
+                # /api/resolve-stream resolves each episode dynamically via ?watch=/watch/{slug}/1/{ep_num}&kind={g}
+                for ep_idx, ep_obj in enumerate(episodes[1:], 2):
+                    ep_num = ep_obj.get("episode_number") or ep_obj.get("number") or ep_idx
+                    ep_url = f"{BASE_URL}/watch/{slug}/1/{ep_num}"
+                    ep_Watch_path = f"/watch/{slug}/1/{ep_num}"
+                    ep_sources = []
+                    for g in active_resolve_groups:
+                        lbl = "Shortİzle (Türkçe Altyazı)" if g == "altyazi" else "Shortİzle (Türkçe Dublaj)"
+                        s_url = f"{BASE_URL}/media/shortizle-live-alternate/stream?watch={ep_Watch_path}&kind={g}"
+                        ep_sources.append((lbl, s_url, "shortizle"))
+                    episodes_data.append((ep_num, ep_obj.get("title") or f"{ep_num}. Bölüm", ep_url, ep_sources))
+            else:
+                # Fetch remaining episodes concurrently (e.g. when external Vidmoly embeds are used)
+                from concurrent.futures import ThreadPoolExecutor
 
-            with ThreadPoolExecutor(max_workers=8) as executor:
-                episodes_data.extend(list(executor.map(_fetch_shortizle_ep, enumerate(episodes[1:], 2))))
+                def _fetch_shortizle_ep(item):
+                    ep_idx, ep_obj = item
+                    ep_num = ep_obj.get("episode_number") or ep_obj.get("number") or ep_idx
+                    ep_url = f"{BASE_URL}/watch/{slug}/1/{ep_num}"
+                    ep_resp = safe_request(self.session, "GET", ep_url, delay=0.05)
+                    ep_sources = []
+                    if ep_resp and ep_resp.status_code == 200:
+                        ep_data = self.extract_inertia_data(ep_resp.text)
+                        if ep_data:
+                            ep_props = ep_data.get("props", {})
+                            ep_ext = ep_props.get("externalSources", {})
+                            ep_sources = self.extract_sources_from_ext(ep_ext, ep_url=ep_url)
+                    if not ep_sources:
+                        fallback_u = ep_obj.get("video_url") or f"{BASE_URL}/embed/{slug}/1/{ep_num}"
+                        if fallback_u.startswith("/"):
+                            fallback_u = f"{BASE_URL}{fallback_u}"
+                        ep_sources = [("Shortİzle (Türkçe Altyazı)", fallback_u, "shortizle")]
+                    return (ep_num, ep_obj.get("title") or f"{ep_num}. Bölüm", ep_url, ep_sources)
+
+                with ThreadPoolExecutor(max_workers=8) as executor:
+                    episodes_data.extend(list(executor.map(_fetch_shortizle_ep, enumerate(episodes[1:], 2))))
 
         # 2. Fast atomic database transaction phase with retry
         did = None
