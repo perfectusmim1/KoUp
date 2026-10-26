@@ -31,9 +31,6 @@ function DirectMediaCardComponent({
 
   const epLabel = (() => {
     if (isFilm) return null;
-    if (totalEps > 0 && availEps > 0 && totalEps > availEps) {
-      return `${availEps} / ${totalEps} Bölüm`;
-    }
     const count = availEps || totalEps;
     return count > 0 ? `${count} Bölüm` : null;
   })();

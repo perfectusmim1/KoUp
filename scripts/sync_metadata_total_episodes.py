@@ -19,8 +19,31 @@ from scrapers.translator import _load_tmdb_key
 
 TMDB_API_KEY = _load_tmdb_key()
 
+def sync_actual_episode_counts(conn, cur):
+    print("🚀 [SQLite] dramas tablosundaki episode_count ve episodes_available gerçek bölüm sayılarıyla senkronize ediliyor...")
+    cur.execute("""
+        UPDATE dramas
+        SET 
+            episode_count = CAST((
+                SELECT COUNT(*) 
+                FROM episodes 
+                WHERE episodes.drama_id = dramas.id
+            ) AS TEXT),
+            episodes_available = (
+                SELECT COUNT(*) 
+                FROM episodes 
+                WHERE episodes.drama_id = dramas.id 
+                  AND COALESCE(episodes.source_status, 'published') != 'pending_source'
+            )
+        WHERE id IN (SELECT DISTINCT drama_id FROM episodes)
+          AND content_type != 'film';
+    """)
+    conn.commit()
+    print("✅ [SQLite] dramas tablosundaki gerçek bölüm sayıları senkronize edildi.")
+
+
 def sync_anilist_episodes(conn, cur):
-    print("🚀 [AniList] Animelerin resmi toplam bölüm sayıları GraphQL ile çekiliyor...")
+    print("🚀 [AniList] Animelerin resmi yayın durumları (status_broadcast) GraphQL ile çekiliyor...")
     cur.execute("""
         SELECT id, anilist_id, episode_count, episodes_available 
         FROM dramas 
@@ -64,15 +87,14 @@ def sync_anilist_episodes(conn, cur):
                     for r in chunk:
                         did, aid, old_cnt, avail_cnt = r
                         m = m_map.get(aid)
-                        if m and m.get("episodes"):
-                            canon_eps = m["episodes"]
+                        if m and m.get("status"):
                             raw_st = m.get("status")
                             st_tr = "Tamamlandı" if raw_st == "FINISHED" else ("Devam Ediyor" if raw_st == "RELEASING" else "Yakında")
                             cur.execute("""
                                 UPDATE dramas 
-                                SET episode_count = ?, status_broadcast = ?
+                                SET status_broadcast = ?
                                 WHERE id = ?
-                            """, (str(canon_eps), st_tr, did))
+                            """, (st_tr, did))
                             updated_count += 1
                     conn.commit()
                     break
@@ -86,12 +108,12 @@ def sync_anilist_episodes(conn, cur):
         if (i // chunk_size + 1) % 10 == 0:
             print(f"  ⚡ AniList İlerleme: {i + len(chunk)}/{len(rows)} anime tarandı (Güncellenen: {updated_count}).")
 
-    print(f"✅ [AniList] Toplam {updated_count} animenin resmi bölüm sayısı ve yayın durumu güncellendi.")
+    print(f"✅ [AniList] Toplam {updated_count} animenin yayın durumu güncellendi.")
 
 
 def sync_tmdb_episodes(conn, cur, limit=2000):
-    print(f"🚀 [TMDB] Dizilerin resmi toplam bölüm sayıları çekiliyor (Limit: {limit})...")
-    # Öncelikli olarak TMDB ID'si olan ve henüz kanon bölüm sayısı teyit edilmemiş veya dizi türündeki yapımlar
+    print(f"🚀 [TMDB] Dizilerin resmi yayın durumları (status_broadcast) çekiliyor (Limit: {limit})...")
+    # Öncelikli olarak TMDB ID'si olan yapımlar
     cur.execute("""
         SELECT id, tmdb_id, title, episode_count, episodes_available 
         FROM dramas 
@@ -110,30 +132,29 @@ def sync_tmdb_episodes(conn, cur, limit=2000):
             res = requests.get(url, timeout=8)
             if res.status_code == 200:
                 d = res.json()
-                num_eps = d.get("number_of_episodes")
                 st = d.get("status")
                 # Durumu Türkçeleştir
                 st_tr = "Tamamlandı" if st == "Ended" else ("Devam Ediyor" if st == "Returning Series" else ("Yakında" if st in ("In Production", "Planned") else st))
-                return did, num_eps, st_tr
+                return did, st_tr
         except Exception:
             pass
-        return did, None, None
+        return did, None
 
     updated_count = 0
     with ThreadPoolExecutor(max_workers=15) as executor:
-        for did, num_eps, st_tr in executor.map(fetch_tmdb_details, rows):
-            if num_eps and num_eps > 0:
+        for did, st_tr in executor.map(fetch_tmdb_details, rows):
+            if st_tr:
                 cur.execute("""
                     UPDATE dramas 
-                    SET episode_count = ?, status_broadcast = COALESCE(?, status_broadcast)
+                    SET status_broadcast = COALESCE(?, status_broadcast)
                     WHERE id = ?
-                """, (str(num_eps), st_tr, did))
+                """, (st_tr, did))
                 updated_count += 1
                 if updated_count % 100 == 0:
                     conn.commit()
 
     conn.commit()
-    print(f"✅ [TMDB] Toplam {updated_count} dizinin resmi bölüm sayısı ve yayın durumu güncellendi.")
+    print(f"✅ [TMDB] Toplam {updated_count} dizinin yayın durumu güncellendi.")
 
 
 def main():
@@ -141,11 +162,17 @@ def main():
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
 
-    # 1. AniList
+    # 1. Gerçek bölüm sayılarını episodes tablosundan senkronize et
+    sync_actual_episode_counts(conn, cur)
+
+    # 2. AniList yayın durumu
     sync_anilist_episodes(conn, cur)
 
-    # 2. TMDB (Öncelikli son eklenen ve popüler diziler)
+    # 3. TMDB yayın durumu
     sync_tmdb_episodes(conn, cur, limit=5000)
+
+    # 4. Son kontrol: episode_count ve episodes_available her zaman episodes tablosuyla eşleşmeli
+    sync_actual_episode_counts(conn, cur)
 
     conn.close()
 
