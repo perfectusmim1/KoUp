@@ -51,7 +51,6 @@ import { useKoUp, useKoUpSelector } from '@/context/KoUpContext';
 import { cleanSourceName } from '@/lib/cleanFansub';
 import NetflixEpisodePopover from '@/components/NetflixEpisodePopover';
 import { buildCleanTrailerEmbedUrl, watchYouTubeIframe } from '@/lib/youtubeTrailer';
-import { useAnime4K, Anime4KMode, Anime4KTargetResolution } from '@/hooks/useAnime4K';
 
 /* ============================================================================
    CUSTOM NETFLIX AUTHENTIC SVG ICONS (Matched to Reference Screenshots)
@@ -464,62 +463,7 @@ export interface NetflixPlayerProps {
   hasRail?: boolean;
 }
 
-type ActivePanel = 'episodes' | 'speed' | 'sources' | 'audio_subtitles' | 'quality' | 'anime4k' | null;
-
-const ANIME4K_OPTIONS: Array<{
-  id: Anime4KMode;
-  label: string;
-  badge?: string;
-  description: string;
-}> = [
-  {
-    id: 'off',
-    label: 'Kapalı',
-    description: 'Orijinal yayın akışı. Ek GPU işleme uygulanmaz.',
-  },
-  {
-    id: 'fast',
-    label: 'Hızlı (Fast)',
-    badge: 'Önerilen',
-    description: 'Hafif kenar netleştirme & adaptif kontrast (Mobil & iGPU dostu)',
-  },
-  {
-    id: 'ultra',
-    label: 'Ultra (Full)',
-    badge: 'Yüksek Kalite',
-    description: 'Çizgi restorasyonu & jilet keskinliğinde detaylar (Masaüstü GPU)',
-  },
-];
-
-const ANIME4K_RESOLUTION_OPTIONS: Array<{
-  id: Anime4KTargetResolution;
-  label: string;
-  badge?: string;
-  description: string;
-}> = [
-  {
-    id: 'auto',
-    label: 'Otomatik',
-    badge: 'DPR Uyumlu',
-    description: 'Ekran çözünürlüğüne göre en uygun ölçekleme.',
-  },
-  {
-    id: '1080p',
-    label: '1080p (FHD)',
-    description: '1080p hedef buffer (16:9 için 1920x1080, 4:3 için 1440x1080).',
-  },
-  {
-    id: '1440p',
-    label: '1440p (2K)',
-    description: '1440p hedef buffer (16:9 için 2560x1440, 4:3 için 1920x1440).',
-  },
-  {
-    id: '4k',
-    label: '4K (UHD)',
-    badge: 'Maksimum',
-    description: '2160p hedef buffer (16:9 için 3840x2160, 4:3 için 2880x2160).',
-  },
-];
+type ActivePanel = 'episodes' | 'speed' | 'sources' | 'audio_subtitles' | 'quality' | null;
 
 // Module-level persistent cache for episode video preview frame snapshots
 // Key: `${mediaId}_s${seasonNumber}_e${episodeNumber}` -> Data URL string
@@ -559,7 +503,6 @@ export default function NetflixPlayer({
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const anime4kCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const previewSeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -671,96 +614,6 @@ export default function NetflixPlayer({
   const hasRefreshedStreamRef = useRef(false);
   const [internalTrailerYtId, setInternalTrailerYtId] = useState<string | null>(
     propTrailerYoutubeId || null
-  );
-
-  // Anime4K WebGPU / WebGL 2.0 AI Video Upscaler Hook
-  const isNativeStream = resolvedMode === 'native_hls' || resolvedMode === 'native_mp4';
-
-  const {
-    mode: anime4kMode,
-    setMode: setAnime4kMode,
-    resolution: anime4kResolution,
-    setResolution: setAnime4kResolution,
-    isSupported: isAnime4kSupported,
-    isSourceSupported: isAnime4kSourceSupported,
-    stats: anime4kStats,
-    isUpscaling: isAnime4kActive,
-    isRenderingSuccessfully: isAnime4kRenderingSuccessfully,
-  } = useAnime4K({
-    videoRef,
-    canvasRef: anime4kCanvasRef,
-    enabled: isNativeStream,
-    streamUrl,
-    onFpsWarning: () => {
-      pushNotification(
-        'AI Upscale Uyarısı',
-        'Düşük performans tespit edildi (<23 FPS). Akıcı izleme için AI Upscale düşürüldü.',
-        'warning' as any
-      );
-    },
-    onResolutionDowngrade: (_fromRes, toRes) => {
-      pushNotification(
-        'Çözünürlük Uyarlandı',
-        `Performans optimizasyonu için hedef çözünürlük ${toRes.toUpperCase()} seviyesine ayarlandı.`,
-        'info' as any
-      );
-    },
-    onFallback: () => {
-      // Desteklenmeyen kaynakta sessiz kal (kullanıcı kuralı: hata toast'ı GÖSTERME)
-    },
-  });
-
-  const isMobileDevice = useMemo(() => {
-    if (typeof window === 'undefined') return false;
-    return (
-      window.matchMedia('(pointer: coarse)').matches ||
-      (typeof navigator !== 'undefined' &&
-        'deviceMemory' in navigator &&
-        Number((navigator as any).deviceMemory) < 4)
-    );
-  }, []);
-
-  const visibleResolutionOptions = useMemo(() => {
-    if (isMobileDevice) {
-      return ANIME4K_RESOLUTION_OPTIONS.filter((opt) => opt.id !== '4k');
-    }
-    return ANIME4K_RESOLUTION_OPTIONS;
-  }, [isMobileDevice]);
-
-  const handleSelectAnime4KMode = useCallback(
-    (newMode: Anime4KMode) => {
-      setAnime4kMode(newMode);
-      const titles: Record<Anime4KMode, string> = {
-        off: 'AI Upscale Devre Dışı',
-        fast: 'Anime4K Hızlı Mod Aktif',
-        ultra: 'Anime4K Ultra Mod Aktif',
-      };
-      const descs: Record<Anime4KMode, string> = {
-        off: 'Orijinal video akışına dönüldü.',
-        fast: 'Hafif kenar netleştirme ve adaptif kontrast devrede.',
-        ultra: 'Restoratif çizgi keskinleştirme ve AI upscale devrede.',
-      };
-      pushNotification(titles[newMode], descs[newMode], 'info');
-    },
-    [setAnime4kMode, pushNotification]
-  );
-
-  const handleSelectAnime4KResolution = useCallback(
-    (newRes: Anime4KTargetResolution) => {
-      setAnime4kResolution(newRes);
-      const labels: Record<Anime4KTargetResolution, string> = {
-        auto: 'Otomatik',
-        '1080p': '1080p (FHD)',
-        '1440p': '1440p (2K)',
-        '4k': '4K (UHD)',
-      };
-      pushNotification(
-        'Hedef Çözünürlük Seçildi',
-        `Anime4K hedef çözünürlük: ${labels[newRes]}`,
-        'info'
-      );
-    },
-    [setAnime4kResolution, pushNotification]
   );
 
   // HUD Toast feedback
@@ -3544,8 +3397,7 @@ export default function NetflixPlayer({
                 />
               </div>
             ) : (
-              <>
-                <video
+              <video
                 ref={videoRef}
                 playsInline
                 preload="auto"
@@ -3705,35 +3557,11 @@ export default function NetflixPlayer({
                   setResolvedMode('error');
                 }
               }}
-              className={`block w-full h-full object-contain pointer-events-none transition-opacity duration-300 ${
-                isAnime4kActive && isAnime4kRenderingSuccessfully
-                  ? 'opacity-0'
-                  : isResumeReady || targetResumeRef.current <= 3
-                  ? 'opacity-100'
-                  : 'opacity-0'
+              className={`w-full h-full object-contain pointer-events-none transition-opacity duration-300 ${
+                isResumeReady || targetResumeRef.current <= 3 ? 'opacity-100' : 'opacity-0'
               }`}
             />
-            {isNativeStream && isAnime4kSupported && isAnime4kSourceSupported && (
-              <canvas
-                ref={anime4kCanvasRef}
-                style={{
-                  ...(brightness !== 100 ? { filter: `brightness(${brightness}%)` } : {}),
-                  ...(isFullscreen && videoZoomScale !== 1
-                    ? { transform: `scale(${videoZoomScale})` }
-                    : {}),
-                  transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), opacity 300ms ease',
-                }}
-                className={`absolute inset-0 w-full h-full object-contain pointer-events-none transition-opacity duration-300 ${
-                  isAnime4kActive &&
-                  isAnime4kRenderingSuccessfully &&
-                  (isResumeReady || targetResumeRef.current <= 3)
-                    ? 'opacity-100'
-                    : 'opacity-0'
-                }`}
-              />
-            )}
-          </>
-        )}
+          )}
 
             {/* NETFLIX BUFFERING RING (Suppressed when HUD controls are visible so it never collides with center play/pause button) */}
             {!showOverlay && (isBuffering || isResolving || (!isResumeReady && targetResumeRef.current > 3)) && (
@@ -4522,160 +4350,6 @@ export default function NetflixPlayer({
                             </div>
                           )}
 
-                          {/* Anime4K AI Upscale Butonu & Popover (Mobil) */}
-                          {isNativeStream && !isTrailerMode && isAnime4kSupported && isAnime4kSourceSupported && (
-                            <div className="relative flex items-center shrink-0">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setActivePanel((prev) =>
-                                    prev === 'anime4k' ? null : 'anime4k'
-                                  )
-                                }
-                                aria-label={`Anime4K AI Upscale (${
-                                  anime4kMode === 'off'
-                                    ? 'Kapalı'
-                                    : anime4kMode === 'fast'
-                                    ? 'Hızlı'
-                                    : 'Ultra'
-                                })`}
-                                className={`flex items-center gap-1 py-1 text-xs font-medium cursor-pointer shrink-0 [text-shadow:0_1px_2px_rgba(0,0,0,0.8)] ${
-                                  activePanel === 'anime4k'
-                                    ? 'text-amber-400 font-bold [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]'
-                                    : isAnime4kActive
-                                    ? 'text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)] font-semibold'
-                                    : 'text-white/90 hover:text-white'
-                                }`}
-                              >
-                                <Sparkles
-                                  className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 transition-transform ${
-                                    isAnime4kActive ? 'scale-110' : ''
-                                  }`}
-                                />
-                                <span>AI {isAnime4kActive ? anime4kMode.toUpperCase() : ''}</span>
-                              </button>
-
-                              <AnimatePresence>
-                                {activePanel === 'anime4k' && (
-                                  <motion.div
-                                    key="panel-anime4k-mobile"
-                                    initial={{ opacity: 0, scale: 0.94, y: 10 }}
-                                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                                    exit={{ opacity: 0, scale: 0.94, y: 10 }}
-                                    transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-                                    data-netflix-control="true"
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-50 min-w-[260px] max-w-[310px] p-2.5 rounded-xl bg-[#181818]/98 backdrop-blur-md border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-2 select-none"
-                                  >
-                                    <div className="border-b border-white/10 pb-1.5 mb-1 px-1">
-                                      <div className="flex items-center gap-1.5">
-                                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                                        <span className="text-white font-bold text-xs tracking-wide">
-                                          AI Upscale (Anime4K)
-                                        </span>
-                                        {isAnime4kActive && (
-                                          <span className="ml-auto text-[9px] font-semibold uppercase tracking-wider px-1 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                                            Aktif
-                                          </span>
-                                        )}
-                                      </div>
-                                      <p className="text-white/40 text-[9px] mt-0.5 font-medium">
-                                        {anime4kStats?.backend === 'webgpu' ? 'WebGPU' : 'WebGL 2.0'} Donanım Hızlandırma
-                                      </p>
-                                    </div>
-
-                                    <div className="space-y-1">
-                                      {ANIME4K_OPTIONS.map((opt) => {
-                                        const isSelected = anime4kMode === opt.id;
-                                        return (
-                                          <button
-                                            key={opt.id}
-                                            type="button"
-                                            onClick={() => handleSelectAnime4KMode(opt.id)}
-                                            className={`w-full p-2 rounded-lg text-left transition-all cursor-pointer group flex flex-col gap-0.5 ${
-                                              isSelected
-                                                ? 'bg-amber-500/15 border border-amber-500/30 text-white'
-                                                : 'bg-white/[0.03] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-transparent'
-                                            }`}
-                                          >
-                                            <div className="flex items-center justify-between gap-1.5">
-                                              <div className="flex items-center gap-1 font-semibold text-xs">
-                                                <span className={isSelected ? 'text-amber-300' : 'text-zinc-200'}>
-                                                  {opt.label}
-                                                </span>
-                                                {opt.badge && (
-                                                  <span
-                                                    className={`text-[8px] px-1 py-0.2 rounded-full font-medium ${
-                                                      isSelected
-                                                        ? 'bg-amber-400/20 text-amber-300'
-                                                        : 'bg-white/10 text-white/60'
-                                                    }`}
-                                                  >
-                                                    {opt.badge}
-                                                  </span>
-                                                )}
-                                              </div>
-                                              {isSelected && (
-                                                <Check className="w-3.5 h-3.5 text-amber-400 stroke-[2.5] shrink-0" />
-                                              )}
-                                            </div>
-                                            <p className="text-[9px] text-zinc-400 leading-tight">
-                                              {opt.description}
-                                            </p>
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-
-                                    {/* Hedef Çözünürlük Seçici (Mobil) */}
-                                    <div className="pt-1.5 border-t border-white/10">
-                                      <p className="text-[10px] font-semibold text-zinc-300 mb-1 px-0.5">
-                                        Hedef Çözünürlük
-                                      </p>
-                                      <div className="grid grid-cols-2 gap-1">
-                                        {visibleResolutionOptions.map((resOpt) => {
-                                          const isResSelected = anime4kResolution === resOpt.id;
-                                          return (
-                                            <button
-                                              key={resOpt.id}
-                                              type="button"
-                                              onClick={() => handleSelectAnime4KResolution(resOpt.id)}
-                                              className={`p-1.5 rounded-lg text-left transition-all cursor-pointer flex flex-col gap-0.5 ${
-                                                isResSelected
-                                                  ? 'bg-amber-500/15 border border-amber-500/30 text-white'
-                                                  : 'bg-white/[0.03] hover:bg-white/[0.08] text-zinc-400 hover:text-white border border-transparent'
-                                              }`}
-                                            >
-                                              <div className="flex items-center justify-between">
-                                                <span className={`text-[10px] font-semibold ${isResSelected ? 'text-amber-300' : 'text-zinc-200'}`}>
-                                                  {resOpt.label}
-                                                </span>
-                                                {isResSelected && (
-                                                  <Check className="w-3 h-3 text-amber-400 stroke-[2.5]" />
-                                                )}
-                                              </div>
-                                            </button>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-
-                                    {isAnime4kActive && anime4kStats && (
-                                      <div className="pt-1.5 mt-1 border-t border-white/10 px-1 flex items-center justify-between text-[9px] text-zinc-400">
-                                        <span className="flex items-center gap-1">
-                                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                          <span>{anime4kStats.fps} FPS</span>
-                                        </span>
-                                        <span>{anime4kStats.targetWidth}x{anime4kStats.targetHeight}</span>
-                                        <span>{anime4kStats.renderTimeMs.toFixed(1)} ms</span>
-                                      </div>
-                                    )}
-                                  </motion.div>
-                                )}
-                              </AnimatePresence>
-                            </div>
-                          )}
-
                           {(audioTracks.length > 1 || subtitles.length > 0) && (
                             <button
                               type="button"
@@ -5085,202 +4759,6 @@ export default function NetflixPlayer({
                                     )}
                                   </AnimatePresence>
                                 </div>
-                            )}
-
-                            {/* Anime4K AI Upscale Butonu & Popover (Masaüstü) */}
-                            {isNativeStream && !isTrailerMode && isAnime4kSupported && isAnime4kSourceSupported && (
-                              <div className="relative flex items-center shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setActivePanel((prev) =>
-                                      prev === 'anime4k' ? null : 'anime4k'
-                                    )
-                                  }
-                                  aria-label={`AI Upscale: ${
-                                    anime4kMode === 'off'
-                                      ? 'Kapalı'
-                                      : anime4kMode === 'fast'
-                                      ? 'Hızlı'
-                                      : 'Ultra'
-                                  }`}
-                                  title={`Anime4K AI Upscale: ${
-                                    anime4kMode === 'off'
-                                      ? 'Kapalı'
-                                      : anime4kMode === 'fast'
-                                      ? 'Hızlı'
-                                      : 'Ultra'
-                                  }`}
-                                  className={`flex items-center gap-1.5 py-1 text-sm font-medium transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap ${
-                                    activePanel === 'anime4k'
-                                      ? 'text-amber-400 font-bold'
-                                      : isAnime4kActive
-                                      ? 'text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)] font-semibold'
-                                      : 'text-white/90 hover:text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]'
-                                  }`}
-                                >
-                                  <Sparkles
-                                    className={`w-4 h-4 shrink-0 transition-transform duration-200 ${
-                                      isAnime4kActive ? 'scale-110' : ''
-                                    }`}
-                                  />
-                                  <span className="hidden sm:inline">AI Upscale</span>
-                                  {isAnime4kActive && (
-                                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30 uppercase">
-                                      {anime4kMode}
-                                    </span>
-                                  )}
-                                  <ChevronDown
-                                    className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                                      activePanel === 'anime4k'
-                                        ? 'rotate-180 text-white'
-                                        : 'text-white/60'
-                                    }`}
-                                  />
-                                </button>
-
-                                <AnimatePresence>
-                                  {activePanel === 'anime4k' && (
-                                    <motion.div
-                                      key="panel-anime4k-pc"
-                                      initial={{ opacity: 0, scale: 0.94, y: 10 }}
-                                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                                      exit={{ opacity: 0, scale: 0.94, y: 10 }}
-                                      transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-                                      data-netflix-control="true"
-                                      onClick={(e) => e.stopPropagation()}
-                                      className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-50 min-w-[300px] max-w-[360px] p-3 rounded-xl bg-[#181818]/98 backdrop-blur-md border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-2 select-none"
-                                    >
-                                      <div className="border-b border-white/10 pb-2 mb-2 px-1">
-                                        <div className="flex items-center gap-2">
-                                          <Sparkles className="w-4 h-4 text-amber-400" />
-                                          <span className="text-white font-bold text-xs tracking-wide">
-                                            AI Upscale (Anime4K)
-                                          </span>
-                                          {isAnime4kActive && (
-                                            <span className="ml-auto text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                                              Aktif
-                                            </span>
-                                          )}
-                                        </div>
-                                        <p className="text-white/40 text-[10px] mt-0.5 font-medium">
-                                          {anime4kStats?.backend === 'webgpu' ? 'WebGPU' : 'WebGL 2.0'} Donanım Hızlandırma
-                                        </p>
-                                      </div>
-
-                                      <div className="space-y-1">
-                                        {ANIME4K_OPTIONS.map((opt) => {
-                                          const isSelected = anime4kMode === opt.id;
-                                          return (
-                                            <button
-                                              key={opt.id}
-                                              type="button"
-                                              onClick={() => handleSelectAnime4KMode(opt.id)}
-                                              className={`w-full p-2.5 rounded-lg text-left transition-all cursor-pointer group flex flex-col gap-0.5 ${
-                                                isSelected
-                                                  ? 'bg-amber-500/15 border border-amber-500/30 text-white shadow-sm shadow-amber-500/10'
-                                                  : 'bg-white/[0.03] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-transparent'
-                                              }`}
-                                            >
-                                              <div className="flex items-center justify-between gap-2">
-                                                <div className="flex items-center gap-1.5 font-semibold text-xs">
-                                                  <span
-                                                    className={
-                                                      isSelected ? 'text-amber-300' : 'text-zinc-200'
-                                                    }
-                                                  >
-                                                    {opt.label}
-                                                  </span>
-                                                  {opt.badge && (
-                                                    <span
-                                                      className={`text-[9px] px-1.5 py-0.2 rounded-full font-medium ${
-                                                        isSelected
-                                                          ? 'bg-amber-400/20 text-amber-300'
-                                                          : 'bg-white/10 text-white/60'
-                                                      }`}
-                                                    >
-                                                      {opt.badge}
-                                                    </span>
-                                                  )}
-                                                </div>
-                                                {isSelected && (
-                                                  <Check className="w-4 h-4 text-amber-400 stroke-[2.5] shrink-0" />
-                                                )}
-                                              </div>
-                                              <p className="text-[10px] text-zinc-400 leading-tight">
-                                                {opt.description}
-                                              </p>
-                                            </button>
-                                          );
-                                        })}
-                                      </div>
-
-                                      {/* Hedef Çözünürlük Seçici (Masaüstü) */}
-                                      <div className="pt-2 border-t border-white/10 space-y-1.5">
-                                        <div className="flex items-center justify-between px-1">
-                                          <span className="text-[11px] font-semibold text-zinc-300">
-                                            Hedef Çözünürlük
-                                          </span>
-                                          <span className="text-[10px] text-amber-400 font-mono font-medium">
-                                            {anime4kResolution.toUpperCase()}
-                                          </span>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-1.5">
-                                          {visibleResolutionOptions.map((resOpt) => {
-                                            const isResSelected = anime4kResolution === resOpt.id;
-                                            return (
-                                              <button
-                                                key={resOpt.id}
-                                                type="button"
-                                                onClick={() => handleSelectAnime4KResolution(resOpt.id)}
-                                                className={`p-2 rounded-lg text-left transition-all cursor-pointer flex flex-col gap-0.5 ${
-                                                  isResSelected
-                                                    ? 'bg-amber-500/15 border border-amber-500/30 text-white shadow-sm shadow-amber-500/10'
-                                                    : 'bg-white/[0.03] hover:bg-white/[0.08] text-zinc-400 hover:text-white border border-transparent'
-                                                }`}
-                                              >
-                                                <div className="flex items-center justify-between gap-1">
-                                                  <span
-                                                    className={`text-xs font-semibold ${
-                                                      isResSelected ? 'text-amber-300' : 'text-zinc-200'
-                                                    }`}
-                                                  >
-                                                    {resOpt.label}
-                                                  </span>
-                                                  {isResSelected && (
-                                                    <Check className="w-3.5 h-3.5 text-amber-400 stroke-[2.5] shrink-0" />
-                                                  )}
-                                                </div>
-                                                <span className="text-[9px] text-zinc-400 truncate">
-                                                  {resOpt.description}
-                                                </span>
-                                              </button>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-
-                                      {isAnime4kActive && anime4kStats && (
-                                        <div className="pt-2 mt-2 border-t border-white/10 px-1 flex items-center justify-between text-[10px] text-zinc-400">
-                                          <span className="flex items-center gap-1.5">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                            <span>{anime4kStats.fps} FPS</span>
-                                          </span>
-                                          <span className="font-mono text-zinc-300">
-                                            {anime4kStats.targetWidth}x{anime4kStats.targetHeight}
-                                          </span>
-                                          <span>{anime4kStats.renderTimeMs.toFixed(1)} ms</span>
-                                          {anime4kStats.droppedFrames > 0 && (
-                                            <span className="text-zinc-500">
-                                              {anime4kStats.droppedFrames} düşen
-                                            </span>
-                                          )}
-                                        </div>
-                                      )}
-                                    </motion.div>
-                                  )}
-                                </AnimatePresence>
-                              </div>
                             )}
                           </>
                         )}
