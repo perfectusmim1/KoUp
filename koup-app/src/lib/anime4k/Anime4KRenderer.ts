@@ -119,6 +119,9 @@ export class Anime4KRenderer {
   }
 
   constructor(canvas: HTMLCanvasElement, options?: Anime4KOptions) {
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+      throw new Error('Anime4KRenderer requires browser environment');
+    }
     this.canvas = canvas;
     this.options = {
       initialMode: options?.initialMode ?? 'off',

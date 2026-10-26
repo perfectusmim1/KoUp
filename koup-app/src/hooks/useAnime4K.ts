@@ -147,7 +147,9 @@ export function useAnime4K({
       setIsRenderingSuccessfully(false);
     }
     try {
-      localStorage.setItem(MODE_STORAGE_KEY, newMode);
+      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+        localStorage.setItem(MODE_STORAGE_KEY, newMode);
+      }
     } catch {}
     if (rendererRef.current) {
       rendererRef.current.setMode(newMode);
@@ -159,7 +161,9 @@ export function useAnime4K({
     resolutionRef.current = newRes;
     setResolutionState(newRes);
     try {
-      localStorage.setItem(RESOLUTION_STORAGE_KEY, newRes);
+      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+        localStorage.setItem(RESOLUTION_STORAGE_KEY, newRes);
+      }
     } catch {}
     if (rendererRef.current) {
       rendererRef.current.setResolution(newRes);
@@ -275,7 +279,9 @@ export function useAnime4K({
                 setIsRenderingSuccessfully(false);
               }
               try {
-                localStorage.setItem(MODE_STORAGE_KEY, downgradedMode);
+                if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+                  localStorage.setItem(MODE_STORAGE_KEY, downgradedMode);
+                }
               } catch {}
               onFpsWarningRef.current?.(droppedFps, downgradedMode);
             },
@@ -283,7 +289,9 @@ export function useAnime4K({
               resolutionRef.current = toRes;
               setResolutionState(toRes);
               try {
-                localStorage.setItem(RESOLUTION_STORAGE_KEY, toRes);
+                if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+                  localStorage.setItem(RESOLUTION_STORAGE_KEY, toRes);
+                }
               } catch {}
               onResolutionDowngradeRef.current?.(fromRes, toRes);
             },
@@ -295,7 +303,9 @@ export function useAnime4K({
               setModeState('off');
               setIsRenderingSuccessfully(false);
               try {
-                localStorage.setItem(MODE_STORAGE_KEY, 'off');
+                if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+                  localStorage.setItem(MODE_STORAGE_KEY, 'off');
+                }
               } catch {}
               onFallbackRef.current?.(err);
             },
