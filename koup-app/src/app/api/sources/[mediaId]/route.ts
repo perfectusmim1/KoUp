@@ -80,6 +80,12 @@ function classifyStreamType(
     p === 'vidhide' ||
     p === 'streamruby' ||
     p === 'dzen' ||
+    p === 'shortizle' ||
+    p === 'wdt' ||
+    p === 'dtpasn' ||
+    p === 'pilavyer' ||
+    p === 'diziizle' ||
+    u.includes('shortizle.com') ||
     u.includes('morencius') ||
     u.includes('filemoon') ||
     u.includes('bysesukior') ||
@@ -666,7 +672,6 @@ export async function GET(
            AND direct_url NOT LIKE '%rpmplay%'
             AND direct_url NOT LIKE '%uns.bio%'
             AND direct_url NOT LIKE '%video.diziasya.com%'
-            AND direct_url NOT LIKE '%vidmoly.me%'
             AND direct_url NOT LIKE '%upns.one%'
             AND direct_url NOT LIKE '%upns.live%'
             AND direct_url NOT LIKE '%embed-7fm0wb9yzf4m.html%'`

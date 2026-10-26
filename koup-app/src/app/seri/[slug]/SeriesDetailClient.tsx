@@ -352,7 +352,6 @@ export default function SeriesDetailClient({
           !s.direct_url.includes('embed-7fm0wb9yzf4m.html') &&
           !s.direct_url.includes('playerdkorea.xyz') &&
           !s.direct_url.includes('asyaanim.upns.one') &&
-          !s.direct_url.includes('vidmoly.me') &&
           s.provider !== 'dead' &&
           s.provider !== 'sibnet' &&
           s.provider !== 'sendvid' &&

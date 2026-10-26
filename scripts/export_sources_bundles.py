@@ -23,7 +23,8 @@ def classify_stream_type(provider: str, direct_url: str) -> str:
     p = (provider or "").lower()
     u = (direct_url or "").lower()
     if (
-        p in ("diziyou-hls", "hdfilm-hls", "hdfilm-close", "close", "rapidrame", "asyawatch", "dizilla", "dbx", "dizibox", "morencius", "ev", "filemoon", "byse", "gdriveplayer", "gdplayer", "upns", "streamwish", "vidhide", "streamruby", "dzen")
+        p in ("diziyou-hls", "hdfilm-hls", "hdfilm-close", "close", "rapidrame", "asyawatch", "dizilla", "dbx", "dizibox", "morencius", "ev", "filemoon", "byse", "gdriveplayer", "gdplayer", "upns", "streamwish", "vidhide", "streamruby", "dzen", "shortizle", "wdt", "dtpasn", "pilavyer", "diziizle")
+        or "shortizle.com" in u
         or "pichive" in u
         or "dplayer" in u
         or "hotlinger" in u
@@ -172,7 +173,6 @@ def export_all(drama_id: int = None):
           AND direct_url NOT LIKE '%asyaanim.upns.one%'
           AND direct_url NOT LIKE '%upns.one%'
           AND direct_url NOT LIKE '%upns.live%'
-          AND direct_url NOT LIKE '%vidmoly.me%'
           AND direct_url NOT LIKE '%embed-7fm0wb9yzf4m.html%'
           AND direct_url NOT LIKE 'javascript:%'
           AND direct_url NOT LIKE '%void(0)%'

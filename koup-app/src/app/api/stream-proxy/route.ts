@@ -62,6 +62,7 @@ export async function GET(req: NextRequest) {
   const customRef = searchParams.get('ref');
   const embedUrl = searchParams.get('embed');
   const requestedQuality = searchParams.get('q') || 'hd';
+  const shzCookie = searchParams.get('shz_cookie') || '';
 
   if (targetUrl && !targetUrl.startsWith('http')) {
     if (targetUrl.startsWith('//')) {
@@ -231,11 +232,23 @@ export async function GET(req: NextRequest) {
       upstreamHeaders['Range'] = rangeHeader;
     }
 
+    if (targetUrl.includes('shortizle.com')) {
+      upstreamHeaders['Referer'] = 'https://shortizle.com/';
+      upstreamHeaders['Origin'] = 'https://shortizle.com';
+      upstreamHeaders['Sec-Fetch-Site'] = 'same-site';
+      upstreamHeaders['Sec-Fetch-Mode'] = 'cors';
+      upstreamHeaders['Sec-Fetch-Dest'] = 'empty';
+      if (shzCookie && /^[a-f0-9]+$/i.test(shzCookie)) {
+        upstreamHeaders['Cookie'] = `__Host-shortizle_media=${shzCookie}`;
+      }
+    }
+
     const isMediaChunk =
       targetUrl.includes('.ts') ||
       targetUrl.includes('.mp4') ||
       targetUrl.includes('.m4s') ||
       targetUrl.includes('.webm') ||
+      targetUrl.includes('stream.shortizle.com/v1/') ||
       targetUrl.includes('okcdn.ru') ||
       targetUrl.includes('mycdn.me') ||
       (targetUrl.includes('.jpg') && (targetUrl.includes('/f/') || targetUrl.includes('/o/a/') || targetUrl.includes('/m/a/') || targetUrl.includes('/dual')));
@@ -486,7 +499,12 @@ function rewritePlaylist(
 ): NextResponse {
   const host = req.headers.get('host') || 'localhost:3000';
   const proto = req.headers.get('x-forwarded-proto') || 'http';
-  const refSuffix = referer ? `&ref=${encodeURIComponent(referer)}` : '';
+  const shzCookie = new URL(req.url).searchParams.get('shz_cookie') || '';
+  const shzSuffix =
+    shzCookie && /^[a-f0-9]+$/i.test(shzCookie)
+      ? `&shz_cookie=${encodeURIComponent(shzCookie)}`
+      : '';
+  const refSuffix = `${referer ? `&ref=${encodeURIComponent(referer)}` : ''}${shzSuffix}`;
   const proxyBase = `${proto}://${host}/api/stream-proxy?url=`;
 
   const lines = content.split('\n');

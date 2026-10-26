@@ -912,6 +912,196 @@ export async function GET(req: NextRequest) {
   }
 
   // =========================================================================
+  // 0-D2. Shortİzle (shortizle.com) HLS Stream Resolver
+  // =========================================================================
+  if (
+    provider === 'shortizle' ||
+    lowerUrl.includes('shortizle.com/media/') ||
+    lowerUrl.includes('shortizle.com/watch/') ||
+    lowerUrl.includes('shortizle.com/embed/')
+  ) {
+    try {
+      const parsed = new URL(url);
+      const watchParam = parsed.searchParams.get('watch') || '';
+      const kindParam = (parsed.searchParams.get('kind') || '').toLowerCase();
+      const mediaIdMatch = parsed.pathname.match(/\/media\/[^/]+\/(\d+)/i);
+      const targetSourceId = mediaIdMatch?.[1] ? Number(mediaIdMatch[1]) : null;
+
+      let watchUrl = '';
+      if (watchParam) {
+        watchUrl = watchParam.startsWith('http')
+          ? watchParam
+          : `https://shortizle.com${watchParam.startsWith('/') ? '' : '/'}${watchParam}`;
+      } else if (parsed.pathname.startsWith('/watch/')) {
+        watchUrl = `https://shortizle.com${parsed.pathname}`;
+      } else if (parsed.pathname.startsWith('/embed/')) {
+        watchUrl = `https://shortizle.com${parsed.pathname.replace(/^\/embed\//i, '/watch/')}`;
+      }
+
+      if (watchUrl) {
+        const watchResp = await fetch(watchUrl, {
+          headers: {
+            'User-Agent': commonUA,
+            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            Referer: 'https://shortizle.com/',
+          },
+          signal: AbortSignal.timeout(7000),
+        });
+
+        if (watchResp.ok) {
+          const rawCookies =
+            typeof (watchResp.headers as any).getSetCookie === 'function'
+              ? ((watchResp.headers as any).getSetCookie() as string[])
+              : (watchResp.headers.get('set-cookie') || '').split(/,(?=\s*[a-zA-Z0-9_-]+=)/);
+          const cookiePairs = rawCookies
+            .map((c) => c.split(';')[0]?.trim())
+            .filter(Boolean)
+            .join('; ');
+
+          const watchHtml = await watchResp.text();
+          let inertiaProps: any = null;
+
+          // 1. Check inline script containing externalSources
+          const scriptMatches = watchHtml.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi);
+          for (const sm of scriptMatches) {
+            const body = (sm[1] || '').trim();
+            if (body.startsWith('{') && body.includes('"externalSources"')) {
+              try {
+                inertiaProps = JSON.parse(body)?.props;
+                if (inertiaProps) break;
+              } catch {}
+            }
+          }
+
+          // 2. Fallback to data-page attribute
+          if (!inertiaProps) {
+            const dpMatch = watchHtml.match(/data-page="([^"]+)"/i);
+            if (dpMatch?.[1]) {
+              try {
+                const unescaped = dpMatch[1]
+                  .replace(/&quot;/g, '"')
+                  .replace(/&amp;/g, '&')
+                  .replace(/&#039;/g, "'")
+                  .replace(/&lt;/g, '<')
+                  .replace(/&gt;/g, '>');
+                inertiaProps = JSON.parse(unescaped)?.props;
+              } catch {}
+            }
+          }
+
+          const extSources = inertiaProps?.externalSources || {};
+          const candidates: any[] = [];
+          const order = kindParam === 'dublaj' ? ['dublaj', 'altyazi'] : ['altyazi', 'dublaj'];
+          for (const k of order) {
+            if (Array.isArray(extSources[k])) {
+              candidates.push(...extSources[k]);
+            }
+          }
+
+          const chosen =
+            (targetSourceId && candidates.find((c) => Number(c?.id) === targetSourceId)) ||
+            candidates[0] ||
+            null;
+
+          if (chosen?.resolve_url) {
+            const resolveFullUrl = chosen.resolve_url.startsWith('http')
+              ? chosen.resolve_url
+              : `https://shortizle.com${chosen.resolve_url}`;
+
+            const resResp = await fetch(resolveFullUrl, {
+              headers: {
+                'User-Agent': commonUA,
+                Accept: 'application/json',
+                Referer: watchUrl,
+                Cookie: cookiePairs,
+                'X-Storage-Pilot': '1',
+                'X-Protected-Storage': '1',
+                'Sec-Fetch-Site': 'same-origin',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Dest': 'empty',
+              },
+              signal: AbortSignal.timeout(6000),
+            });
+
+            if (resResp.ok) {
+              const resJson = await resResp.json();
+              let finalM3u8: string | null = null;
+              let shzMediaCookie = '';
+
+              if (resJson?.gateway_bootstrap?.url && resJson?.gateway_bootstrap?.token) {
+                const authResp = await fetch(resJson.gateway_bootstrap.url, {
+                  method: 'POST',
+                  headers: {
+                    'User-Agent': commonUA,
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    Origin: 'https://shortizle.com',
+                    Referer: 'https://shortizle.com/',
+                    'Sec-Fetch-Site': 'same-site',
+                    'Sec-Fetch-Mode': 'cors',
+                    'Sec-Fetch-Dest': 'empty',
+                  },
+                  body: JSON.stringify({ token: resJson.gateway_bootstrap.token }),
+                  signal: AbortSignal.timeout(6000),
+                });
+
+                if (authResp.ok) {
+                  const authCookies =
+                    typeof (authResp.headers as any).getSetCookie === 'function'
+                      ? ((authResp.headers as any).getSetCookie() as string[])
+                      : [authResp.headers.get('set-cookie') || ''];
+                  for (const ac of authCookies) {
+                    const m = ac.match(/__Host-shortizle_media=([a-f0-9]+)/i);
+                    if (m?.[1]) {
+                      shzMediaCookie = m[1];
+                      break;
+                    }
+                  }
+                  const authJson = await authResp.json();
+                  if (authJson?.url) {
+                    finalM3u8 = authJson.url;
+                  }
+                }
+              } else if (resJson?.url) {
+                finalM3u8 = resJson.url.startsWith('/')
+                  ? `https://shortizle.com${resJson.url}`
+                  : resJson.url;
+              }
+
+              if (finalM3u8) {
+                const cookieParam = shzMediaCookie
+                  ? `&shz_cookie=${encodeURIComponent(shzMediaCookie)}`
+                  : '';
+                const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(finalM3u8)}&ref=${encodeURIComponent('https://shortizle.com/')}${cookieParam}`;
+                const result = {
+                  mode: 'native_hls' as const,
+                  streamType: 'hls' as const,
+                  streamUrl: proxiedStream,
+                  directUrl: finalM3u8,
+                  qualities: [{ label: '1080p (Full HD)', url: proxiedStream }],
+                  fallbackIframe: watchUrl,
+                };
+                setCachedStream(url, result, 30 * 60 * 1000);
+                return NextResponse.json(result, { headers: CACHE_HEADERS });
+              }
+            }
+          }
+        }
+      }
+
+      return NextResponse.json(
+        { error: 'Shortİzle video kaynağı çözümlenemedi', isDead: true },
+        { status: 410, headers: CACHE_HEADERS }
+      );
+    } catch {
+      return NextResponse.json(
+        { error: 'Shortİzle sunucusuna erişilemedi', isDead: true },
+        { status: 410, headers: CACHE_HEADERS }
+      );
+    }
+  }
+
+  // =========================================================================
   // 0-E. AnimeLVL Direct MP4 Stream Resolver
   // =========================================================================
   if (provider === 'animelvl' || lowerUrl.includes('animelvl.com')) {

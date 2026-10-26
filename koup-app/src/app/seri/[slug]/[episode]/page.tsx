@@ -40,6 +40,7 @@ import {
   getEpisodeProgress,
   cleanScrapedSlug,
   formatViewCount,
+  isShortDrama,
 } from '@/lib/supabase';
 import { trackMediaView } from '@/lib/viewTracker';
 import { cachedQuery, getCache, setCache, getMediaFromCache, registerMediaItem, updateCachedMedia } from '@/lib/cache';
@@ -51,7 +52,6 @@ import NetflixPlayer from '@/components/NetflixPlayer';
 import CountryFlag from '@/components/CountryFlag';
 import CustomSelect from '@/components/CustomSelect';
 import EpisodeRail from '@/components/EpisodeRail';
-import { isShortDrama } from '@/components/shorts/ShortsCard';
 
 const ShortsWatchClient = dynamic(
   () => import('@/components/shorts/ShortsWatchClient'),
@@ -378,7 +378,6 @@ export default function EpisodeWatchPage({
           !s.direct_url.includes('embed-7fm0wb9yzf4m.html') &&
           !s.direct_url.includes('playerdkorea.xyz') &&
           !s.direct_url.includes('asyaanim.upns.one') &&
-          !s.direct_url.includes('vidmoly.me') &&
           !s.direct_url.includes('/rplayer/') &&
           s.provider !== 'rapidrame' &&
           s.provider !== 'dead' &&
