@@ -329,6 +329,36 @@ export default function PersonDetailPage({
               }
             }
 
+            // Compact token / dash-insensitive fallback (e.g. xu-ruo-han-5130 -> xu-ruohan)
+            if (!pData && cleanSlug) {
+              const firstToken = cleanSlug.split('-')[0]?.toLowerCase();
+              const targetCompact = cleanSlug.toLowerCase().replace(/[^a-z0-9]/g, '');
+              if (firstToken && firstToken.length >= 2 && targetCompact.length >= 3) {
+                const { data: candidates } = await supabase
+                  .from('people')
+                  .select('*')
+                  .ilike('slug', `${firstToken}%`)
+                  .order('drama_count', { ascending: false })
+                  .limit(200);
+
+                if (candidates && candidates.length > 0) {
+                  const matched = candidates.find((row) => {
+                    const rowSlugCompact = (row.slug || '')
+                      .toLowerCase()
+                      .replace(/-\d+$/, '')
+                      .replace(/[^a-z0-9]/g, '');
+                    const rowNameCompact = (row.name || '')
+                      .toLowerCase()
+                      .replace(/[^a-z0-9]/g, '');
+                    return rowSlugCompact === targetCompact || rowNameCompact === targetCompact;
+                  });
+                  if (matched) {
+                    pData = matched;
+                  }
+                }
+              }
+            }
+
             if (!pData) {
               return { person: null, credits: [], coStars: [] };
             }

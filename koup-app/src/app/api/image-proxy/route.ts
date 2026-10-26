@@ -31,7 +31,8 @@ const SCRAPER_BLOCK_HOSTS = [
   'tranimeci',
 ];
 
-const KNOWN_GOOD_CDN_REGEX = /s4\.anilist\.co|anilistcdn|image\.tmdb\.org|mydramalist\.com|i\.mydramalist\.com|r2\.dev/i;
+const KNOWN_GOOD_CDN_REGEX =
+  /s4\.anilist\.co|anilistcdn|image\.tmdb\.org|mydramalist\.com|i\.mydramalist\.com|r2\.dev|dramavadisi\.com|shortizle\.com|dramaboxdb\.com|dramabox\.com|koredizi\.com|netshort\.com/i;
 const TECH_NOISE_BRACKET_REGEX = /\s*[\(\[](?:[^\)\]]*(?:1080p|720p|480p|4k|hd|uhd|web-dl|bluray|dual|dublaj|altyaz[ıi]l[ıi]|altyaz[ıi]|türkçe|turkce|izle|full|final|tv|ova|ona|movie|film|dizi|19\d\d|20\d\d)[^\)\]]*)[\)\]]/gi;
 const TOXIC_POSTER_SUBSTRINGS = ['3j7Dqo0Zp2P7hO0HmiUu4Dtwzv8'];
 
@@ -66,9 +67,12 @@ function persistEnrichedCoverToSupabase(
   mediaId?: string | number | null,
   posterUrl?: string | null,
   tmdbId?: string | number | null,
-  existingCover?: string | null
+  existingCover?: string | null,
+  contentType?: string | null
 ) {
   if (!mediaId || !posterUrl) return;
+  // Never overwrite short dramas with generic movie/tv posters
+  if (contentType === 'kisa_drama') return;
   // Toxic poster block: "Almost Funny, Season 3"
   if (TOXIC_POSTER_SUBSTRINGS.some((s) => posterUrl.includes(s))) return;
   if (!posterUrl.startsWith('https://')) return;
@@ -76,12 +80,14 @@ function persistEnrichedCoverToSupabase(
   const mId = typeof mediaId === 'number' ? mediaId : parseInt(String(mediaId), 10);
   if (isNaN(mId) || mId <= 0) return;
 
-  // Protect AniList cover: if existing cover is AniList, never overwrite with TMDB
-  if (
-    existingCover &&
-    (existingCover.includes('s4.anilist.co') || existingCover.includes('anilistcdn')) &&
-    posterUrl.includes('image.tmdb.org')
-  ) {
+  // Protect AniList and short drama cover hosts: never overwrite with TMDB
+  const isProtectedCover = (url?: string | null) =>
+    !!url &&
+    (url.includes('s4.anilist.co') ||
+      url.includes('anilistcdn') ||
+      /dramavadisi\.com|shortizle\.com|dramaboxdb\.com|dramabox\.com|koredizi\.com|netshort\.com/i.test(url));
+
+  if (existingCover && isProtectedCover(existingCover) && posterUrl.includes('image.tmdb.org')) {
     return;
   }
 
@@ -98,12 +104,13 @@ function persistEnrichedCoverToSupabase(
     void Promise.resolve(
       supabaseAdmin
         .from('media')
-        .select('cover_image')
+        .select('cover_image, content_type')
         .eq('id', mId)
         .maybeSingle()
     ).then((res) => {
+      if (res.data?.content_type === 'kisa_drama') return;
       const current = res.data?.cover_image;
-      if (current && (current.includes('s4.anilist.co') || current.includes('anilistcdn'))) {
+      if (isProtectedCover(current)) {
         return;
       }
       return supabaseAdmin.from('media').update(payload).eq('id', mId);
@@ -206,6 +213,50 @@ const ALLOWED_CONTENT_TYPES = new Set([
   'image/gif',
   'image/svg+xml',
 ]);
+
+function detectImageMimeFromBytes(buf: Uint8Array): string | null {
+  if (buf.length < 4) return null;
+  // JPEG: 0xFF 0xD8 0xFF
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  // PNG: 0x89 0x50 0x4E 0x47
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
+    return 'image/png';
+  }
+  // GIF: GIF8 (0x47 0x49 0x46 0x38)
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) {
+    return 'image/gif';
+  }
+  // WEBP: RIFF (bytes 0..3) ... WEBP (bytes 8..11)
+  if (
+    buf.length >= 12 &&
+    buf[0] === 0x52 &&
+    buf[1] === 0x49 &&
+    buf[2] === 0x46 &&
+    buf[3] === 0x46 &&
+    buf[8] === 0x57 &&
+    buf[9] === 0x45 &&
+    buf[10] === 0x42 &&
+    buf[11] === 0x50
+  ) {
+    return 'image/webp';
+  }
+  // AVIF / HEIC: bytes 4..7 === 'ftyp' and 8..11 contains avif, avis, mif1, heic
+  if (
+    buf.length >= 12 &&
+    buf[4] === 0x66 &&
+    buf[5] === 0x74 &&
+    buf[6] === 0x79 &&
+    buf[7] === 0x70
+  ) {
+    const brand = String.fromCharCode(buf[8], buf[9], buf[10], buf[11]).toLowerCase();
+    if (['avif', 'avis', 'mif1', 'heic'].includes(brand)) {
+      return 'image/avif';
+    }
+  }
+  return null;
+}
 
 function escapeXml(unsafe: string): string {
   return unsafe
@@ -917,19 +968,29 @@ async function fetchAndStreamImage(resolvedUrl: string, sizeParam?: string | nul
     });
 
     if (posterResp.ok) {
-      const rawContentType = posterResp.headers.get('content-type') || 'image/jpeg';
+      const rawContentType = (posterResp.headers.get('content-type') || '').toLowerCase().split(';')[0].trim();
       const rawBuf = await posterResp.arrayBuffer();
-      if (rawBuf.byteLength > 100) {
-        const { buf, contentType } = await processImageBuffer(rawBuf, rawContentType, sizeParam);
-        return new NextResponse(buf, {
-          status: 200,
-          headers: {
-            'Content-Type': contentType,
-            'Cache-Control': 'public, max-age=2592000, stale-while-revalidate=86400, immutable',
-            'X-Content-Type-Options': 'nosniff',
-            'Access-Control-Allow-Origin': '*',
-          },
-        });
+      if (rawBuf.byteLength > 100 && rawBuf.byteLength <= MAX_IMAGE_SIZE_BYTES) {
+        let effectiveContentType =
+          ALLOWED_CONTENT_TYPES.has(rawContentType) || rawContentType.startsWith('image/')
+            ? rawContentType
+            : null;
+        if (!effectiveContentType) {
+          const magicMime = detectImageMimeFromBytes(new Uint8Array(rawBuf));
+          if (magicMime) effectiveContentType = magicMime;
+        }
+        if (effectiveContentType) {
+          const { buf, contentType } = await processImageBuffer(rawBuf, effectiveContentType, sizeParam);
+          return new NextResponse(buf, {
+            status: 200,
+            headers: {
+              'Content-Type': contentType,
+              'Cache-Control': 'public, max-age=2592000, stale-while-revalidate=86400, immutable',
+              'X-Content-Type-Options': 'nosniff',
+              'Access-Control-Allow-Origin': '*',
+            },
+          });
+        }
       }
     }
   } catch {}
@@ -1007,14 +1068,23 @@ export async function GET(req: NextRequest) {
           if (contentLength > MAX_IMAGE_SIZE_BYTES) continue;
         }
 
-        const rawContentType = (resp.headers.get('content-type') || '').toLowerCase().split(';')[0].trim();
-        const isAllowedType = ALLOWED_CONTENT_TYPES.has(rawContentType) || rawContentType.startsWith('image/');
-        if (!isAllowedType) continue;
-
         const rawBuf = await resp.arrayBuffer();
         if (rawBuf.byteLength < 100 || rawBuf.byteLength > MAX_IMAGE_SIZE_BYTES) continue;
 
-        const { buf, contentType } = await processImageBuffer(rawBuf, rawContentType, sizeParam);
+        const rawContentType = (resp.headers.get('content-type') || '').toLowerCase().split(';')[0].trim();
+        let effectiveContentType =
+          ALLOWED_CONTENT_TYPES.has(rawContentType) || rawContentType.startsWith('image/')
+            ? rawContentType
+            : null;
+
+        if (!effectiveContentType) {
+          const magicMime = detectImageMimeFromBytes(new Uint8Array(rawBuf));
+          if (magicMime) effectiveContentType = magicMime;
+        }
+
+        if (!effectiveContentType) continue;
+
+        const { buf, contentType } = await processImageBuffer(rawBuf, effectiveContentType, sizeParam);
 
         const headers: Record<string, string> = {
           'Content-Type': contentType,
@@ -1123,16 +1193,17 @@ export async function GET(req: NextRequest) {
       backdrop_image?: string | null;
     } | null = null;
 
+    const targetMediaId = mediaIdParam ? parseInt(mediaIdParam, 10) : null;
+    if (targetMediaId && !isNaN(targetMediaId) && targetMediaId > 0) {
+      const { data } = await supabaseAdmin
+        .from('media')
+        .select('id, tmdb_id, anilist_id, content_type, title, original_title, poster_url, cover_image, backdrop_image')
+        .eq('id', targetMediaId)
+        .maybeSingle();
+      if (data) mediaRecord = data;
+    }
+
     if (!resolvedTmdbId) {
-      const targetMediaId = mediaIdParam ? parseInt(mediaIdParam, 10) : null;
-      if (targetMediaId && !isNaN(targetMediaId) && targetMediaId > 0) {
-        const { data } = await supabaseAdmin
-          .from('media')
-          .select('id, tmdb_id, anilist_id, content_type, title, original_title, poster_url, cover_image, backdrop_image')
-          .eq('id', targetMediaId)
-          .maybeSingle();
-        if (data) mediaRecord = data;
-      }
       if (!mediaRecord && cleanSearchTitle) {
         const { data } = await supabaseAdmin
           .from('media')
@@ -1174,7 +1245,7 @@ export async function GET(req: NextRequest) {
           });
           if (aniImg) {
             if (!isBanner) {
-              persistEnrichedCoverToSupabase(mediaRecord.id, aniImg, null, mediaRecord.cover_image);
+              persistEnrichedCoverToSupabase(mediaRecord.id, aniImg, null, mediaRecord.cover_image, mediaRecord.content_type);
             }
             const streamed = await fetchAndStreamImage(aniImg, sizeParam);
             if (streamed) return streamed;
@@ -1187,19 +1258,21 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    if (resolvedTmdbId) {
+    const isKisaDrama = mediaRecord?.content_type === 'kisa_drama';
+
+    if (resolvedTmdbId && !isKisaDrama) {
       const isBanner = typeParam === 'banner' || typeParam === 'backdrop';
       const tmdbPoster = await fetchTmdbPosterById(resolvedTmdbId, mediaTypeParam, cleanSearchTitle || titleParam, isBanner);
       if (tmdbPoster) {
         if (!isBanner) {
-          persistEnrichedCoverToSupabase(mediaIdParam, tmdbPoster, resolvedTmdbId, mediaRecord?.cover_image);
+          persistEnrichedCoverToSupabase(mediaIdParam, tmdbPoster, resolvedTmdbId, mediaRecord?.cover_image, mediaRecord?.content_type);
         }
         const streamed = await fetchAndStreamImage(tmdbPoster, sizeParam);
         if (streamed) return streamed;
       }
     }
 
-    if (cleanSearchTitle || titleParam || targetUrl) {
+    if ((cleanSearchTitle || titleParam || targetUrl) && !isKisaDrama) {
       const posterUrl = await fetchTmdbPosterForTitle(
         cleanSearchTitle || titleParam || '',
         targetUrl || fallbackUrl,
@@ -1209,7 +1282,7 @@ export async function GET(req: NextRequest) {
         mediaRecord?.content_type === 'anime'
       );
       if (posterUrl) {
-        persistEnrichedCoverToSupabase(mediaIdParam, posterUrl, undefined, mediaRecord?.cover_image);
+        persistEnrichedCoverToSupabase(mediaIdParam, posterUrl, undefined, mediaRecord?.cover_image, mediaRecord?.content_type);
         const streamed = await fetchAndStreamImage(posterUrl, sizeParam);
         if (streamed) return streamed;
       }

@@ -27,6 +27,7 @@ import {
   getProxiedImageUrl,
   formatViewCount,
   getEpisodeProgress,
+  cleanOverviewText,
 } from '@/lib/supabase';
 import { useKoUpSelector } from '@/context/KoUpContext';
 import NetflixPlayer from '@/components/NetflixPlayer';
@@ -222,9 +223,11 @@ export default function ShortsWatchClient({
     'banner'
   );
 
+  const cleanDesc = cleanOverviewText(media.overview);
+
   return (
     <div
-      className="relative w-full min-h-[100dvh] bg-[#070709] text-white flex flex-col justify-between overflow-x-hidden select-none"
+      className="relative w-full min-h-[100dvh] bg-[#070709] text-white flex flex-col justify-between overflow-x-hidden select-none pt-[72px] sm:pt-[92px] pb-3"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
@@ -243,30 +246,24 @@ export default function ShortsWatchClient({
       )}
       <div className="fixed inset-0 bg-gradient-to-b from-black/80 via-black/85 to-[#070709] pointer-events-none z-0" />
 
-      {/* TOP COMPACT HEADER / NAVIGATION */}
-      <header className="relative z-30 w-full px-4 sm:px-6 py-3 flex items-center justify-between border-b border-white/[0.08] backdrop-blur-xl bg-black/40">
-        <div className="flex items-center gap-3">
+      {/* TOP COMPACT HEADER / NAVIGATION (Mobile Only - Under Navbar) */}
+      <header className="relative z-30 w-full px-3 py-1.5 flex lg:hidden items-center justify-between border-b-0 bg-transparent backdrop-blur-none">
+        <div className="flex items-center gap-2 min-w-0">
           <Link
             href={`/seri/${media.slug}`}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/90 text-xs font-semibold transition-all cursor-pointer min-h-[44px] min-w-[44px] justify-center"
-            aria-label="Seri Detayına Dön"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/90 text-xs font-semibold transition-all cursor-pointer min-h-[44px] min-w-[44px] justify-center shrink-0"
+            aria-label="Dizi Detayına Dön"
           >
             <ChevronLeft className="w-4 h-4" />
-            <span className="hidden sm:inline">Dizi Detayı</span>
+            <span className="hidden xs:inline">Detay</span>
           </Link>
 
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-500/90 to-rose-500/90 text-white border border-white/20 shadow-[0_0_12px_rgba(245,158,11,0.3)]">
-              <Sparkles className="w-2.5 h-2.5 text-amber-200 fill-amber-200" />
-              <span>KISA DRAMA</span>
-            </span>
-            <h1 className="text-xs sm:text-sm font-bold text-white/90 truncate max-w-[200px] sm:max-w-md">
-              {displayTitle}
-            </h1>
-          </div>
+          <h1 className="text-xs sm:text-sm font-bold text-white/90 truncate max-w-[200px]">
+            {displayTitle}
+          </h1>
         </div>
 
-        <div className="flex items-center gap-2 font-mono text-xs text-white/70">
+        <div className="flex items-center gap-1.5 font-mono text-xs text-white/70 shrink-0">
           <span className="px-2.5 py-1 rounded-full bg-white/10 border border-white/10 font-bold text-white">
             {activeEpNum}. Bölüm
           </span>
@@ -314,7 +311,7 @@ export default function ShortsWatchClient({
 
         {/* CENTER: 9:16 VERTICAL NETFLIX PLAYER */}
         <section className="relative w-full max-w-[390px] sm:max-w-[420px] lg:max-w-[440px] flex flex-col items-center justify-center shrink-0">
-          <div className="relative w-full aspect-[9/16] max-h-[82dvh] lg:max-h-[86dvh] rounded-2xl sm:rounded-3xl overflow-hidden bg-black shadow-[0_20px_60px_rgba(0,0,0,0.9)] border border-white/15">
+          <div className="relative w-full aspect-[9/16] max-h-[calc(100dvh-196px)] lg:max-h-[calc(100dvh-116px)] rounded-2xl sm:rounded-3xl overflow-hidden bg-black shadow-[0_20px_60px_rgba(0,0,0,0.9)] border border-white/15">
             <NetflixPlayer
               variant="vertical"
               media={media}
@@ -337,64 +334,83 @@ export default function ShortsWatchClient({
               onToggleAutoNext={onToggleAutoNext}
               hasRail={false}
             />
+          </div>
 
-            {/* MOBILE ONLY: Right-Side Floating Action Column (Episodes, Sources, Next/Prev) */}
-            <div className="lg:hidden absolute right-3 bottom-24 z-30 flex flex-col items-center gap-3">
-              {/* Episodes bottom sheet trigger */}
+          {/* MOBILE ONLY: Bottom Glass Quick Bar (Eliminates video overlay & subtitle collisions!) */}
+          <div className="lg:hidden w-full max-w-[390px] mt-2.5 px-1 flex items-center justify-between gap-1.5 bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl p-1.5 shadow-xl">
+            {/* Prev Ep */}
+            <button
+              type="button"
+              onClick={goToPrev}
+              disabled={!prevEp}
+              aria-label="Önceki Bölüm"
+              className={`h-11 px-3 rounded-xl flex items-center justify-center gap-1 font-mono text-xs font-bold transition-all min-h-[44px] min-w-[44px] cursor-pointer ${
+                prevEp
+                  ? 'bg-white/10 hover:bg-white/20 text-white active:scale-95 border border-white/10'
+                  : 'bg-white/[0.03] text-white/20 border border-white/5 cursor-not-allowed'
+              }`}
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span className="hidden xs:inline">Önceki</span>
+            </button>
+
+            {/* Episodes bottom sheet trigger */}
+            <button
+              type="button"
+              onClick={() => setShowMobileEpisodesSheet(true)}
+              aria-label="Bölümler Listesi"
+              className="flex-1 h-11 px-3 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 border border-white/10 text-white flex items-center justify-center gap-1.5 font-mono text-xs font-bold transition-all min-h-[44px] cursor-pointer"
+            >
+              <List className="w-4 h-4 text-amber-300" />
+              <span>Bölüm: {activeEpNum}/{sortedEpisodes.length || 1}</span>
+            </button>
+
+            {/* Sources sheet trigger */}
+            {availableSources.length > 1 && (
               <button
                 type="button"
-                onClick={() => setShowMobileEpisodesSheet(true)}
-                aria-label="Bölümler Listesi"
-                className="w-11 h-11 rounded-full bg-black/60 backdrop-blur-xl border border-white/20 text-white flex flex-col items-center justify-center shadow-lg active:scale-90 transition-transform cursor-pointer"
+                onClick={() => setShowMobileSourcesSheet(true)}
+                aria-label="Kaynak Seçimi"
+                className="h-11 px-3 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 border border-white/10 text-white flex items-center justify-center gap-1.5 font-mono text-xs font-bold transition-all min-h-[44px] min-w-[44px] cursor-pointer"
               >
-                <List className="w-4 h-4 text-amber-300" />
-                <span className="text-[8px] font-mono font-bold mt-0.5">Bölüm</span>
+                <Layers className="w-4 h-4 text-sky-400" />
+                <span className="hidden xs:inline">Kaynak</span>
               </button>
+            )}
 
-              {/* Sources sheet trigger */}
-              {availableSources.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => setShowMobileSourcesSheet(true)}
-                  aria-label="Kaynak Seçimi"
-                  className="w-11 h-11 rounded-full bg-black/60 backdrop-blur-xl border border-white/20 text-white flex flex-col items-center justify-center shadow-lg active:scale-90 transition-transform cursor-pointer"
-                >
-                  <Layers className="w-4 h-4 text-sky-400" />
-                  <span className="text-[8px] font-mono font-bold mt-0.5">Kaynak</span>
-                </button>
-              )}
-
-              {/* Prev Ep arrow */}
-              {prevEp && (
-                <button
-                  type="button"
-                  onClick={goToPrev}
-                  aria-label="Önceki Bölüm"
-                  className="w-11 h-11 rounded-full bg-black/60 backdrop-blur-xl border border-white/20 text-white flex items-center justify-center shadow-lg active:scale-90 transition-transform cursor-pointer"
-                >
-                  <ChevronUp className="w-5 h-5 text-white/80" />
-                </button>
-              )}
-
-              {/* Next Ep arrow */}
-              {nextEp && (
-                <button
-                  type="button"
-                  onClick={goToNext}
-                  aria-label="Sonraki Bölüm"
-                  className="w-11 h-11 rounded-full bg-gradient-to-tr from-[#E50914] to-rose-600 border border-white/30 text-white flex items-center justify-center shadow-[0_0_15px_rgba(229,9,20,0.6)] active:scale-90 transition-transform cursor-pointer"
-                >
-                  <ChevronDown className="w-5 h-5 text-white" />
-                </button>
-              )}
-            </div>
+            {/* Next Ep */}
+            <button
+              type="button"
+              onClick={goToNext}
+              disabled={!nextEp}
+              aria-label="Sonraki Bölüm"
+              className={`h-11 px-3 rounded-xl flex items-center justify-center gap-1 font-mono text-xs font-bold transition-all min-h-[44px] min-w-[44px] cursor-pointer ${
+                nextEp
+                  ? 'bg-gradient-to-r from-[#E50914] to-rose-600 hover:from-red-600 hover:to-rose-700 text-white active:scale-95 shadow-[0_0_12px_rgba(229,9,20,0.5)] border border-red-500/40'
+                  : 'bg-white/[0.03] text-white/20 border border-white/5 cursor-not-allowed'
+              }`}
+            >
+              <span className="hidden xs:inline">Sonraki</span>
+              <ChevronDown className="w-4 h-4 -rotate-90" />
+            </button>
           </div>
         </section>
 
         {/* DESKTOP RIGHT: Elegant Glass Side Panel (Meta, Sources, 1..N Episode Grid) */}
-        <section className="hidden lg:flex flex-col w-full max-w-sm h-[86dvh] rounded-3xl bg-white/[0.04] backdrop-blur-2xl border border-white/10 p-5 overflow-hidden shadow-2xl">
+        <section className="hidden lg:flex flex-col w-full max-w-sm h-[calc(100dvh-116px)] max-h-[calc(100dvh-116px)] rounded-3xl bg-white/[0.04] backdrop-blur-2xl border border-white/10 p-5 overflow-hidden shadow-2xl">
           {/* Header & Meta */}
           <div className="pb-4 border-b border-white/[0.08]">
+            {/* Desktop Back to Detail Link */}
+            <div className="mb-3">
+              <Link
+                href={`/seri/${media.slug}`}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/15 text-white/80 hover:text-white text-xs font-semibold transition-all border border-white/10 cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                <span>Dizi Detayına Dön</span>
+              </Link>
+            </div>
+
             <div className="flex items-center justify-between gap-2 mb-1.5">
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 border border-amber-400/30 text-amber-300">
                 <Sparkles className="w-2.5 h-2.5" />
@@ -407,7 +423,7 @@ export default function ShortsWatchClient({
             <h2 className="text-base font-extrabold text-white leading-tight mb-1">
               {displayTitle}
             </h2>
-            {media.overview && (
+            {cleanDesc && (
               <p
                 onClick={() => setIsOverviewExpanded((prev) => !prev)}
                 className={`text-xs text-white/60 leading-relaxed cursor-pointer hover:text-white/80 transition-colors ${
@@ -415,7 +431,7 @@ export default function ShortsWatchClient({
                 }`}
                 title="Açmak için tıklayın"
               >
-                {media.overview}
+                {cleanDesc}
               </p>
             )}
           </div>
@@ -742,6 +758,12 @@ export function ShortsDetailClient({
   }, [sortedEpisodes, selectedChunk]);
 
   const displayTitle = cleanMediaTitle(media.title);
+  const cleanDesc = cleanOverviewText(media.overview);
+  const hasDistinctNativeTitle = !!(
+    media.native_title &&
+    cleanMediaTitle(media.native_title).toLowerCase() !== displayTitle.toLowerCase()
+  );
+
   const posterUrl = getProxiedImageUrl(
     media.cover_image,
     media.poster_fallback_url || null,
@@ -763,7 +785,7 @@ export function ShortsDetailClient({
   );
 
   return (
-    <div className="relative min-h-screen bg-[#070709] text-white pt-20 pb-16 overflow-x-hidden">
+    <div className="relative min-h-screen bg-[#070709] text-white pt-24 sm:pt-28 pb-16 overflow-x-hidden">
       {/* Blurred Cinematic Backdrop */}
       {backdropUrl && (
         <div
@@ -782,26 +804,19 @@ export function ShortsDetailClient({
       <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6">
         {/* HERO SECTION */}
         <div className="flex flex-col md:flex-row items-center md:items-start gap-6 md:gap-10 pt-4 pb-8">
-          {/* 9:16 Vertical Poster */}
-          <div className="w-52 sm:w-64 aspect-[9/16] rounded-3xl overflow-hidden bg-black/60 border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.9)] shrink-0 relative group">
+          {/* Responsive Vertical Poster (Single Badge on Meta, none duplicated on poster) */}
+          <div className="w-36 sm:w-52 md:w-60 aspect-[2/3] sm:aspect-[9/16] rounded-2xl sm:rounded-3xl overflow-hidden bg-black/60 border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.9)] shrink-0 relative group">
             <img
               src={posterUrl}
               alt={displayTitle}
               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
             />
-            {/* Top Badge */}
-            <div className="absolute top-3 left-3 z-10">
-              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-500/90 to-rose-500/90 text-white border border-white/25 shadow-lg">
-                <Sparkles className="w-3 h-3 text-amber-200 fill-amber-200" />
-                <span>KISA DRAMA</span>
-              </span>
-            </div>
           </div>
 
           {/* Details & Actions */}
           <div className="flex-1 flex flex-col text-center md:text-left">
-            <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-2">
-              <span className="px-3 py-0.5 rounded-full text-xs font-black uppercase tracking-wider bg-gradient-to-r from-amber-500/80 to-rose-500/80 text-white border border-white/20">
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-2.5">
+              <span className="px-3 py-0.5 rounded-full text-xs font-black uppercase tracking-wider bg-gradient-to-r from-amber-500/80 to-rose-500/80 text-white border border-white/20 shadow-[0_0_12px_rgba(245,158,11,0.25)]">
                 Kısa Drama
               </span>
               {media.country_code && (
@@ -824,15 +839,15 @@ export function ShortsDetailClient({
               {displayTitle}
             </h1>
 
-            {media.native_title && (
+            {hasDistinctNativeTitle && (
               <p className="text-xs sm:text-sm text-white/50 font-medium mb-4">
                 {media.native_title}
               </p>
             )}
 
-            {media.overview && (
-              <p className="text-xs sm:text-sm text-white/75 leading-relaxed max-w-2xl mb-6">
-                {media.overview}
+            {cleanDesc && (
+              <p className="text-xs sm:text-sm text-white/75 leading-relaxed max-w-2xl mb-6 line-clamp-3 hover:line-clamp-none cursor-pointer transition-all" title="Açmak için tıklayın">
+                {cleanDesc}
               </p>
             )}
 
@@ -852,14 +867,14 @@ export function ShortsDetailClient({
         {/* EPISODE GRID SECTION (1..N Compact numbered boxes) */}
         <section className="mt-8 pt-8 border-t border-white/10">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
-            <div>
-              <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
-                <Film className="w-5 h-5 text-amber-400" />
-                <span>Tüm Bölümler</span>
+            <div className="flex items-center gap-2.5">
+              <Film className="w-5 h-5 text-amber-400" />
+              <h2 className="text-lg sm:text-xl font-bold text-white">
+                Bölümler
               </h2>
-              <p className="text-xs text-white/50 font-mono mt-0.5">
-                İzlemek istediğiniz bölümü seçin (1 - {sortedEpisodes.length})
-              </p>
+              <span className="px-2 py-0.5 rounded-full bg-white/10 border border-white/10 text-xs font-mono text-white/70">
+                {sortedEpisodes.length}
+              </span>
             </div>
 
             {/* Range Tabs if > 50 */}
@@ -889,15 +904,14 @@ export function ShortsDetailClient({
           </div>
 
           {/* Compact 1..N Numbered Grid */}
-          <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2.5">
+          <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-9 lg:grid-cols-12 gap-2">
             {displayedEpisodes.map((ep) => (
               <Link
                 key={`detail-ep-${ep.episode_number}`}
                 href={`/seri/${media.slug}/${ep.episode_number}`}
-                className="h-12 rounded-xl bg-white/[0.04] hover:bg-white/15 border border-white/10 hover:border-amber-400/40 text-white font-mono font-bold text-xs flex flex-col items-center justify-center transition-all hover:scale-105 active:scale-95 shadow-sm"
+                className="h-11 rounded-xl bg-white/[0.05] hover:bg-white/15 border border-white/10 hover:border-amber-400/40 text-white font-mono font-bold text-sm flex items-center justify-center transition-all hover:scale-105 active:scale-95 shadow-sm min-h-[44px]"
               >
                 <span>{ep.episode_number}</span>
-                <span className="text-[9px] text-white/40 font-normal">Bölüm</span>
               </Link>
             ))}
           </div>

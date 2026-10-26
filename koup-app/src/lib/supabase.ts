@@ -467,7 +467,8 @@ const SCRAPER_BLOCK_HOSTS = [
   'tranimeci',
 ];
 
-const KNOWN_GOOD_CDN_REGEX = /s4\.anilist\.co|anilistcdn|image\.tmdb\.org|mydramalist\.com|i\.mydramalist\.com|r2\.dev/i;
+const KNOWN_GOOD_CDN_REGEX =
+  /s4\.anilist\.co|anilistcdn|image\.tmdb\.org|mydramalist\.com|i\.mydramalist\.com|r2\.dev|dramavadisi\.com|shortizle\.com|dramaboxdb\.com|dramabox\.com|koredizi\.com|netshort\.com/i;
 const TECH_NOISE_BRACKET_REGEX = /\s*[\(\[](?:[^\)\]]*(?:1080p|720p|480p|4k|hd|uhd|web-dl|bluray|dual|dublaj|altyaz[ıi]l[ıi]|altyaz[ıi]|türkçe|turkce|izle|full|final|tv|ova|ona|movie|film|dizi|19\d\d|20\d\d)[^\)\]]*)[\)\]]/gi;
 
 export function getProxiedImageUrl(
@@ -757,6 +758,9 @@ export function cleanOverviewText(raw?: string | null): string {
         return '';
       }
     });
+
+  // Strip SEO prefixes like "My Siren Husband İzle: Dâhi simyacı...", "Dizi Adı Türkçe Altyazılı İzle : ..."
+  text = text.replace(/^(?:[^:\n]{1,90}?\s+)?(?:full\s+hd\s+|türkçe\s+altyazılı\s+|hd\s+)?izle\s*:\s*/i, '');
 
   // Normalize lines: trim each line, collapse excessive consecutive blank lines
   const lines = text.split('\n').map((l) => l.trim());

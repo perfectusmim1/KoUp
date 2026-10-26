@@ -90,20 +90,13 @@ function ShortsCardComponent({
       {/* Top Gradient for badges readability */}
       <div className="absolute top-0 inset-x-0 h-20 bg-gradient-to-b from-black/85 via-black/40 to-transparent pointer-events-none z-10" />
 
-      {/* Top Badges */}
-      <div className="absolute top-2.5 left-2.5 right-2.5 z-20 flex items-center justify-between gap-1.5 pointer-events-none">
-        {/* Amber / Rose glowing KISA DRAMA pill badge */}
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-500/90 via-orange-500/90 to-rose-500/90 text-white backdrop-blur-md border border-white/25 shadow-[0_2px_12px_rgba(245,158,11,0.4)]">
+      {/* Top Badges (Single sleek pill on top, episode count moved to clean bottom meta) */}
+      <div className="absolute top-2.5 left-2.5 z-20 flex items-center pointer-events-none">
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-500/90 via-orange-500/90 to-rose-500/90 text-white backdrop-blur-md border border-white/25 shadow-[0_2px_12px_rgba(245,158,11,0.4)]">
           <Sparkles className="w-2.5 h-2.5 text-amber-200 fill-amber-200 animate-pulse" />
-          <span>KISA DRAMA</span>
+          <span className="sm:hidden">KISA</span>
+          <span className="hidden sm:inline">KISA DRAMA</span>
         </span>
-
-        {/* Episode count pill */}
-        {totalEps > 0 && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-bold text-white/90 bg-black/65 backdrop-blur-md border border-white/15">
-            {totalEps} Bölüm
-          </span>
-        )}
       </div>
 
       {/* Centered Play Button Micro-Interaction on Hover */}
@@ -117,14 +110,19 @@ function ShortsCardComponent({
       <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none z-10" />
 
       {/* Bottom Content Area */}
-      <div className="absolute bottom-0 inset-x-0 p-3 sm:p-3.5 z-20 flex flex-col justify-end text-left pointer-events-none">
-        <div className="flex items-center gap-2 text-[10px] sm:text-[11px] font-medium text-white/70 mb-1 font-mono">
+      <div className="absolute bottom-0 inset-x-0 p-2.5 sm:p-3.5 z-20 flex flex-col justify-end text-left pointer-events-none">
+        <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] font-medium text-white/75 mb-1 font-mono">
           {countryCode && (
             <span className="inline-flex items-center filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
               <CountryFlag code={countryCode} size="sm" className="rounded-[2px]" />
             </span>
           )}
           {item.release_year && <span>{item.release_year}</span>}
+          {totalEps > 0 && (
+            <span className="text-amber-300/90 font-bold">
+              {totalEps} Bölüm
+            </span>
+          )}
           {views > 0 && (
             <span className="flex items-center gap-1 text-sky-400 font-semibold ml-auto">
               <Eye className="w-3 h-3 text-sky-400" />
