@@ -24,6 +24,8 @@ import {
   syncProgressRecordToSupabase,
   sanitizeProgressDbPayload,
   setCachedAccessToken,
+  markMediaDeletedLocally,
+  clearMediaDeletedLocally,
   LastSyncSnapshot,
   ProgressSyncOptions,
   SIGNIFICANT_DELTA_SEC,
@@ -123,6 +125,7 @@ export interface KoUpContextValue {
   ) => void;
   setMediaScore: (media: MediaItem, score: number | null) => void;
   removeFromLibrary: (mediaId: number) => Promise<void>;
+  removeMultipleFromLibrary: (mediaIds: number[]) => Promise<void>;
   refreshUserLibrary: () => Promise<void>;
   toggleMediaFavorite: (media: MediaItem) => void;
   toggleMediaFollow: (media: MediaItem) => void;
@@ -1370,13 +1373,11 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
 
         const existingStatus = existing.status || null;
         const isFilmMedia = media.content_type === 'film' || media.episode_count === 1;
-        const nextStatus: UserMediaProgress['status'] = isFilmMedia
-          ? (watchedSet.has(1) ? 'completed' : (existingStatus === 'completed' ? null : existingStatus))
-          : (existingStatus
-              ? media.episode_count > 0 && watchedSet.size >= media.episode_count
-                ? 'completed'
-                : existingStatus
-              : null);
+        const nextStatus: UserMediaProgress['status'] = existingStatus
+          ? (isFilmMedia
+              ? (watchedSet.has(1) ? 'completed' : existingStatus)
+              : (media.episode_count > 0 && watchedSet.size >= media.episode_count ? 'completed' : existingStatus))
+          : null;
 
         const updated: UserMediaProgress = {
           ...existing,
@@ -1548,13 +1549,11 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
 
         const existingStatus = existing.status || null;
         const isFilmMedia = media.content_type === 'film' || media.episode_count === 1;
-        const nextStatus: UserMediaProgress['status'] = isFilmMedia
-          ? (watchedSet.has(1) ? 'completed' : (existingStatus === 'completed' ? null : existingStatus))
-          : (existingStatus
-              ? media.episode_count > 0 && watchedSet.size >= media.episode_count
-                ? 'completed'
-                : existingStatus
-              : null);
+        const nextStatus: UserMediaProgress['status'] = existingStatus
+          ? (isFilmMedia
+              ? (watchedSet.has(1) ? 'completed' : existingStatus)
+              : (media.episode_count > 0 && watchedSet.size >= media.episode_count ? 'completed' : existingStatus))
+          : null;
 
         const isNowWatched = watchedSet.has(episodeNum);
         const epKey = `${existing.last_season_num || 1}_${episodeNum}`;
@@ -1623,6 +1622,71 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     [user, isSoftBanned, openAuthModal, pushNotification]
   );
 
+  const removeMultipleFromLibrary = useCallback(
+    async (mediaIds: number[]) => {
+      const validIds = Array.from(new Set(mediaIds.filter((id) => typeof id === 'number' && id > 0)));
+      if (validIds.length === 0) return;
+
+      if (!user) {
+        openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
+        return;
+      }
+
+      markMediaDeletedLocally(validIds);
+      lastLibraryRefreshRef.current = Date.now();
+
+      setProgressMap((prev) => {
+        const next = { ...prev };
+        validIds.forEach((id) => {
+          delete next[id];
+        });
+        try {
+          localStorage.setItem('koup_progress_v1', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      validIds.forEach((id) => {
+        delete lastSyncedProgressRef.current[id];
+      });
+
+      try {
+        const { error } = await supabase
+          .from('user_media_progress')
+          .delete()
+          .eq('user_id', user.id)
+          .in('media_id', validIds);
+
+        if (error) {
+          console.warn('[LIBRARY_DELETE_FALLBACK] update status=null:', error.message);
+          await supabase
+            .from('user_media_progress')
+            .update({ status: null, updated_at: new Date().toISOString() })
+            .eq('user_id', user.id)
+            .in('media_id', validIds);
+        }
+
+        pushNotification(
+          'Kütüphaneden Kaldırıldı',
+          validIds.length === 1
+            ? 'Yapım kütüphanenizden kaldırıldı.'
+            : `${validIds.length} yapım kütüphanenizden kaldırıldı.`,
+          'info'
+        );
+      } catch (err) {
+        console.error('Failed to delete from user_media_progress:', err);
+      }
+    },
+    [user, openAuthModal, pushNotification]
+  );
+
+  const removeFromLibrary = useCallback(
+    async (mediaId: number) => {
+      await removeMultipleFromLibrary([mediaId]);
+    },
+    [removeMultipleFromLibrary]
+  );
+
   const setLibraryStatus = useCallback(
     (media: MediaItem, status: UserMediaProgress['status'], score?: number) => {
       if (!user) {
@@ -1636,6 +1700,18 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
           'info'
         );
         return;
+      }
+
+      if (status) {
+        clearMediaDeletedLocally(media.id);
+      }
+
+      if (status === null) {
+        const existing = progressMap[media.id];
+        if (!existing?.is_favorite && !existing?.user_score) {
+          void removeFromLibrary(media.id);
+          return;
+        }
       }
 
       setProgressMap((prev) => {
@@ -1696,7 +1772,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
     },
-    [user, isSoftBanned, openAuthModal, pushNotification]
+    [user, isSoftBanned, openAuthModal, pushNotification, removeFromLibrary, progressMap]
   );
 
   const setMediaScore = useCallback(
@@ -1738,7 +1814,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
         const updated: UserMediaProgress = {
           user_id: user.id,
           media_id: media.id,
-          status: existing?.status ?? 'watching',
+          status: existing?.status ?? null,
           is_favorite: existing?.is_favorite ?? false,
           user_score: score,
           watched_episodes: existing?.watched_episodes ?? [],
@@ -1787,41 +1863,6 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     [user, isSoftBanned, openAuthModal, pushNotification]
   );
 
-  const removeFromLibrary = useCallback(
-    async (mediaId: number) => {
-      if (!user) {
-        openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
-        return;
-      }
-      setProgressMap((prev) => {
-        const next = { ...prev };
-        delete next[mediaId];
-        try {
-          localStorage.setItem('koup_progress_v1', JSON.stringify(next));
-        } catch {}
-        return next;
-      });
-
-      delete lastSyncedProgressRef.current[mediaId];
-      try {
-        await supabase
-          .from('user_media_progress')
-          .delete()
-          .eq('user_id', user.id)
-          .eq('media_id', mediaId);
-
-        pushNotification(
-          'Kütüphaneden Kaldırıldı',
-          'Yapım kütüphanenizden başarıyla kaldırıldı.',
-          'info'
-        );
-      } catch (err) {
-        console.error('Failed to delete from user_media_progress:', err);
-      }
-    },
-    [user, openAuthModal, pushNotification]
-  );
-
   const toggleMediaFavorite = useCallback((media: MediaItem) => {
     if (!user) {
       openAuthModal('İşlem yapabilmek için lütfen giriş yapın.');
@@ -1842,7 +1883,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       const updated: UserMediaProgress = {
         user_id: user.id,
         media_id: media.id,
-        status: existing?.status ?? 'watching',
+        status: existing?.status ?? null,
         is_favorite: nextFav,
         user_score: existing?.user_score ?? null,
         watched_episodes: existing?.watched_episodes ?? [],
@@ -2656,6 +2697,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       setLibraryStatus,
       setMediaScore,
       removeFromLibrary,
+      removeMultipleFromLibrary,
       refreshUserLibrary,
       toggleMediaFavorite,
       toggleMediaFollow,
@@ -2736,6 +2778,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     setLibraryStatus,
     setMediaScore,
     removeFromLibrary,
+    removeMultipleFromLibrary,
     refreshUserLibrary,
     toggleMediaFavorite,
     toggleMediaFollow,

@@ -1570,6 +1570,15 @@ def sync_animecix_target(conn, cur, drama, target_url=None):
             roman_map = {'II': 2, 'III': 3, 'IV': 4, 'V': 5, 'VI': 6}
             explicit_season = roman_map.get(roman_m.group(1))
 
+    # Also detect explicit_season from target_url or source_url if not in title (e.g. /season/1)
+    if explicit_season is None:
+        for u_cand in (target_url, d.get('source_url')):
+            if u_cand and '/season/' in str(u_cand).lower():
+                sm = re.search(r'/season/(\d+)', str(u_cand), flags=re.I)
+                if sm:
+                    explicit_season = int(sm.group(1))
+                    break
+
     is_movie_drama = (d.get('content_type') == 'film' or 'movie' in title.lower() or 'film' in title.lower())
 
     try:
@@ -1629,6 +1638,10 @@ def sync_animecix_target(conn, cur, drama, target_url=None):
                 for b_ep in (r2_bundle.get("episodes") or []):
                     b_s = int(b_ep.get("season_number") or 1)
                     b_e = int(b_ep.get("episode_number") or 1)
+                    if (d.get('id') == 6997 or anime_id == 84 or str(d.get('slug') or '').lower() == 'dragon-ball'):
+                        if b_e > 153:
+                            continue
+                        b_s = 1
                     b_ep_id, b_created = match_or_create_episode(
                         cur, d['id'], b_s, b_e,
                         b_ep.get("episode_name") or f"Bölüm {b_e}",
@@ -1690,6 +1703,13 @@ def sync_animecix_target(conn, cur, drama, target_url=None):
 
         db_seasons = set(r[1] for r in ep_rows if r[1] and r[1] > 0)
         single_season_in_db = (len(db_seasons) <= 1 and (not db_seasons or 1 in db_seasons))
+
+        is_dragon_ball = (
+            d.get('id') == 6997
+            or anime_id == 84
+            or str(d.get('slug') or '').lower() == 'dragon-ball'
+            or 'dragon-ball' in str(target_url or '').lower()
+        )
 
         # 4. Fetch all videos for this title from AnimeciX (up to 60 pages for long series like One Piece)
         all_videos = []
@@ -1766,7 +1786,14 @@ def sync_animecix_target(conn, cur, drama, target_url=None):
             v_snum = int(raw_snum) if raw_snum else 1
             v_enum = int(raw_enum) if raw_enum else 1
 
-            if explicit_season and single_season_in_db:
+            if is_dragon_ball:
+                if v_enum > 153:
+                    continue
+                target_s = 1
+                target_e = v_enum
+            elif single_season_in_db and not explicit_season and d.get('content_type') == 'anime' and v_snum != 1:
+                continue
+            elif explicit_season and single_season_in_db:
                 if v_snum != explicit_season:
                     continue
                 target_s = 1

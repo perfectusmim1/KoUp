@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Library,
   Sparkles,
@@ -21,6 +21,8 @@ import {
   ArrowUpDown,
   Star,
   ArrowDownAZ,
+  CheckSquare,
+  Check,
 } from 'lucide-react';
 import { useKoUpSelector } from '@/context/KoUpContext';
 import { supabase, MediaItem, cleanMediaTitle } from '@/lib/supabase';
@@ -96,16 +98,26 @@ export default function KutuphanePage() {
   const triggerSound = useKoUpSelector((s) => s.triggerSound);
   const setLibraryStatus = useKoUpSelector((s) => s.setLibraryStatus);
   const removeFromLibrary = useKoUpSelector((s) => s.removeFromLibrary);
+  const removeMultipleFromLibrary = useKoUpSelector((s) => (s as any).removeMultipleFromLibrary);
+  const pushNotification = useKoUpSelector((s) => (s as any).pushNotification);
   const confirmDialog = useKoUpSelector((s) => s.confirmDialog);
 
   const [activeStatus, setActiveStatus] = useState<LibraryStatus>('ALL');
   const [activeType, setActiveType] = useState<ContentTypeFilter>('ALL');
+
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [isDeletingSelected, setIsDeletingSelected] = useState(false);
+
+  const hasLoadedOnceRef = useRef(false);
+  const fetchedMediaCacheRef = useRef<Record<number, MediaItem>>({});
 
   const { containerRef: typeTabsRef, dragProps: typeTabsDragProps } = usePillDragTracking<ContentTypeFilter>({
     activeTab: activeType,
     onTabChange: (newType) => {
       setActiveType(newType);
       setCurrentPage(1);
+      setSelectedIds([]);
     },
     triggerSound,
   });
@@ -120,7 +132,7 @@ export default function KutuphanePage() {
     setCurrentPage(page);
   }, []);
 
-  // Load user's media items from progressMap
+  // Load user's media items from progressMap with smart caching (zero flicker on delete/update)
   useEffect(() => {
     let isMounted = true;
     async function loadLibrary() {
@@ -129,7 +141,15 @@ export default function KutuphanePage() {
         return;
       }
 
-      setIsLoading(true);
+      // Populate cache with any embedded media items in progressMap
+      Object.keys(progressMap).forEach((key) => {
+        const id = Number(key);
+        const p = progressMap[id];
+        if (p?.media && !fetchedMediaCacheRef.current[id]) {
+          fetchedMediaCacheRef.current[id] = p.media as MediaItem;
+        }
+      });
+
       const mediaIds = Object.keys(progressMap)
         .map(Number)
         .filter((n) => !isNaN(n) && n > 0 && progressMap[n]?.status);
@@ -138,23 +158,56 @@ export default function KutuphanePage() {
         if (isMounted) {
           setLibraryMedia([]);
           setIsLoading(false);
+          hasLoadedOnceRef.current = true;
         }
         return;
+      }
+
+      const missingIds = mediaIds.filter((id) => !fetchedMediaCacheRef.current[id]);
+
+      // If all active IDs are already in cache (e.g. deletion, status toggle):
+      // NEVER set isLoading(true), 0ms update, zero flicker!
+      if (missingIds.length === 0) {
+        if (isMounted) {
+          setLibraryMedia(
+            mediaIds.map((id) => fetchedMediaCacheRef.current[id]).filter(Boolean)
+          );
+          if (!hasLoadedOnceRef.current) {
+            hasLoadedOnceRef.current = true;
+            setIsLoading(false);
+          }
+        }
+        return;
+      }
+
+      // Only show skeleton on very first initial load
+      if (!hasLoadedOnceRef.current) {
+        setIsLoading(true);
       }
 
       try {
         const { data, error } = await supabase
           .from('media')
           .select('*')
-          .in('id', mediaIds);
+          .in('id', missingIds);
 
-        if (!error && data && isMounted) {
-          setLibraryMedia(data as MediaItem[]);
+        if (!error && data) {
+          data.forEach((m: MediaItem) => {
+            fetchedMediaCacheRef.current[m.id] = m;
+          });
+          if (isMounted) {
+            setLibraryMedia(
+              mediaIds.map((id) => fetchedMediaCacheRef.current[id]).filter(Boolean)
+            );
+          }
         }
       } catch (err) {
         console.error('Failed to load library media:', err);
       } finally {
-        if (isMounted) setIsLoading(false);
+        if (isMounted) {
+          hasLoadedOnceRef.current = true;
+          setIsLoading(false);
+        }
       }
     }
 
@@ -256,6 +309,69 @@ export default function KutuphanePage() {
     const start = (currentPage - 1) * PAGE_SIZE;
     return filteredMedia.slice(start, start + PAGE_SIZE);
   }, [filteredMedia, currentPage]);
+
+  const toggleSelectItem = useCallback((id: number) => {
+    triggerSound?.('click');
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }, [triggerSound]);
+
+  const handleSelectAll = useCallback(() => {
+    triggerSound?.('click');
+    if (selectedIds.length === filteredMedia.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredMedia.map((m) => m.id));
+    }
+  }, [selectedIds.length, filteredMedia, triggerSound]);
+
+  const handleDeleteSelected = useCallback(async () => {
+    if (selectedIds.length === 0 || isDeletingSelected) return;
+
+    const count = selectedIds.length;
+    const confirmed = await confirmDialog({
+      title: 'Yapımları Kütüphaneden Kaldır',
+      message: `Seçilen ${count} yapımı kütüphanenizden ve izleme geçmişinizden kaldırmak istediğinize emin misiniz?`,
+      confirmText: 'Kaldır',
+      cancelText: 'Vazgeç',
+      isDestructive: true,
+      icon: 'trash',
+    });
+    if (!confirmed) return;
+
+    setIsDeletingSelected(true);
+    triggerSound?.('click');
+
+    const idsToRemove = [...selectedIds];
+
+    // Optimistic immediate state update for 60fps smooth removal
+    setLibraryMedia((prev) => prev.filter((item) => !idsToRemove.includes(item.id)));
+    idsToRemove.forEach((id) => {
+      delete fetchedMediaCacheRef.current[id];
+    });
+    setSelectedIds([]);
+    setIsSelectMode(false);
+
+    try {
+      if (typeof removeMultipleFromLibrary === 'function') {
+        await removeMultipleFromLibrary(idsToRemove);
+      } else {
+        await Promise.all(idsToRemove.map((id) => removeFromLibrary(id)));
+      }
+      triggerSound?.('success');
+      pushNotification?.(
+        'Kütüphaneden Kaldırıldı',
+        `${count} yapım kütüphanenizden başarıyla kaldırıldı.`,
+        'info'
+      );
+    } catch (err) {
+      console.error('Failed to remove selected items:', err);
+      pushNotification?.('Hata', 'Seçilen yapımlar silinirken bir sorun oluştu.', 'error');
+    } finally {
+      setIsDeletingSelected(false);
+    }
+  }, [selectedIds, isDeletingSelected, confirmDialog, triggerSound, removeMultipleFromLibrary, removeFromLibrary, pushNotification]);
 
   // If user is not logged in
   if (!user) {
@@ -366,6 +482,7 @@ export default function KutuphanePage() {
                 triggerSound('click');
                 setActiveStatus(item.id);
                 setCurrentPage(1);
+                setSelectedIds([]);
               }}
               className={`p-4 rounded-3xl border transition-all duration-200 cursor-pointer text-left select-none ${
                 isSelected
@@ -463,6 +580,63 @@ export default function KutuphanePage() {
 
         {/* Sort & Search Controls */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+          {/* Multi-Select Toolbar Actions */}
+          {filteredMedia.length > 0 && (
+            <div className="flex items-center gap-2 shrink-0">
+              {!isSelectMode ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSelectMode(true);
+                    setSelectedIds([]);
+                    triggerSound?.('click');
+                  }}
+                  className="px-3.5 py-1.5 rounded-full glass-pill hover:bg-white/15 text-xs font-semibold text-white/80 hover:text-white transition-colors cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                >
+                  <CheckSquare className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Çoklu Seçim</span>
+                </button>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSelectAll}
+                    className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-colors cursor-pointer"
+                  >
+                    {selectedIds.length === filteredMedia.length
+                      ? 'Seçimi Kaldır'
+                      : `Tümünü Seç (${filteredMedia.length})`}
+                  </button>
+
+                  {selectedIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteSelected}
+                      disabled={isDeletingSelected}
+                      className="px-3.5 py-1.5 rounded-full bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold transition-all shadow-[0_0_20px_rgba(244,63,94,0.35)] cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Seçilenleri Sil ({selectedIds.length})</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSelectMode(false);
+                      setSelectedIds([]);
+                      triggerSound?.('click');
+                    }}
+                    className="px-3 py-1.5 rounded-full text-xs text-white/50 hover:text-white transition-colors cursor-pointer flex items-center gap-1"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Vazgeç</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="w-full sm:w-52 shrink-0">
             <CustomSelect
               value={sortBy}
@@ -546,100 +720,133 @@ export default function KutuphanePage() {
         </div>
       ) : (
         <motion.div
-          key={`kutuphane-grid-${activeType}-${activeStatus}-${searchQuery}-${sortBy}-${currentPage}`}
+          key={`kutuphane-grid-${activeType}-${activeStatus}`}
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
           className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5"
         >
-          {paginatedMedia.map((m, idx) => {
-            const prog = progressMap[m.id];
-            const currentStatus = prog?.status || 'watching';
-            const watchedCount = prog?.watched_episodes?.length || 0;
-            const totalEps = m.episode_count || 0;
-            const isFilm = m.content_type === 'film' || m.content_type === 'movie';
+          <AnimatePresence mode="popLayout">
+            {paginatedMedia.map((m) => {
+              const isSelected = selectedIds.includes(m.id);
+              const prog = progressMap[m.id];
+              const currentStatus = prog?.status || 'watching';
+              const watchedCount = prog?.watched_episodes?.length || 0;
+              const totalEps = m.episode_count || 0;
+              const isFilm = m.content_type === 'film' || m.content_type === 'movie';
 
-            return (
-              <div
-                key={m.id}
-                className="group relative flex flex-col rounded-2xl bg-[#0f0f12] border border-white/10 hover:border-white/25 overflow-hidden transition-[border-color,box-shadow] duration-200 shadow-lg hover:shadow-2xl"
-              >
-                {/* Poster & Direct Play */}
-                <div className="relative aspect-[2/3] w-full overflow-hidden bg-black/60">
-                  <AccordionMediaCard item={m} fluidWidth={true} />
-                </div>
-
-                {/* Library Management Strip */}
-                <div className="p-2.5 bg-[#0a0a0d] border-t border-white/[0.08] flex flex-col gap-1.5">
-                  <div className="flex items-center justify-between gap-1.5">
-                    {/* Status Dropdown */}
-                    <div className="flex-1 min-w-0">
-                      <CustomSelect
-                        value={currentStatus}
-                        allowDeselect={true}
-                        onChange={(val) => {
-                          triggerSound?.('click');
-                          if (!val || val === currentStatus) {
-                            setLibraryStatus(m, null);
-                          } else {
-                            setLibraryStatus(m, val as any);
-                          }
-                        }}
-                        options={CARD_STATUS_OPTIONS}
-                        variant="glass"
-                        size="sm"
-                        portal={true}
-                        searchable={false}
-                        direction="auto"
-                        className="w-full"
-                        triggerClassName="!py-1.5 !px-2.5 !rounded-xl !text-[11px] font-semibold w-full justify-between !bg-white/[0.06] hover:!bg-white/10 !border-white/10"
-                      />
+              return (
+                <motion.div
+                  key={m.id}
+                  layout
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.15 } }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  onClickCapture={(e) => {
+                    if (isSelectMode) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toggleSelectItem(m.id);
+                    }
+                  }}
+                  className={`group relative flex flex-col rounded-2xl bg-[#0f0f12] overflow-hidden transition-all duration-200 shadow-lg hover:shadow-2xl ${
+                    isSelectMode
+                      ? isSelected
+                        ? 'ring-4 ring-sky-400 shadow-[0_0_24px_rgba(56,189,248,0.5)] scale-[0.97] cursor-pointer select-none'
+                        : 'opacity-85 hover:opacity-100 hover:ring-2 hover:ring-white/30 cursor-pointer select-none'
+                      : 'border border-white/10 hover:border-white/25'
+                  }`}
+                >
+                  {/* Poster & Direct Play */}
+                  <div className="relative aspect-[2/3] w-full overflow-hidden bg-black/60">
+                    <div className={isSelectMode ? 'pointer-events-none' : ''}>
+                      <AccordionMediaCard item={m} fluidWidth={true} />
                     </div>
 
-                    {/* Quick Remove from Library Button */}
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        triggerSound?.('click');
-                        const confirmed = await confirmDialog({
-                          title: 'Kütüphaneden Kaldır',
-                          message: `"${cleanMediaTitle(m.title)}" serisini kütüphanenizden ve izleme geçmişinizden kaldırmak istediğinize emin misiniz?`,
-                          confirmText: 'Kaldır',
-                          cancelText: 'Vazgeç',
-                          isDestructive: true,
-                          icon: 'trash',
-                        });
-                        if (confirmed) {
-                          await removeFromLibrary(m.id);
-                        }
-                      }}
-                      className="p-2 rounded-xl bg-white/[0.05] hover:bg-rose-500/20 text-white/40 hover:text-rose-300 border border-white/10 hover:border-rose-400/30 transition-colors cursor-pointer shrink-0"
-                      aria-label="Kütüphaneden Kaldır"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {/* Integrated Selection Overlay & Checkmark */}
+                    {isSelectMode && (
+                      <div className="absolute inset-0 z-30 bg-black/15 flex items-start justify-end p-2.5 pointer-events-none">
+                        <div
+                          className={`w-7 h-7 rounded-full flex items-center justify-center transition-all shadow-xl border ${
+                            isSelected
+                              ? 'bg-sky-500 border-white text-white scale-110 shadow-[0_0_12px_rgba(56,189,248,0.8)]'
+                              : 'bg-black/75 border-white/40 text-transparent group-hover:border-white/80'
+                          }`}
+                        >
+                          <Check className={`w-4 h-4 stroke-[3] ${isSelected ? 'text-white' : 'text-transparent'}`} />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Watched Episode Indicator */}
-                  {isFilm ? (
-                    <div className="flex items-center justify-between text-[10px] font-mono text-white/50 px-0.5">
-                      <span>Tür:</span>
-                      <span className="font-bold text-white/80">
-                        {currentStatus === 'completed' || watchedCount > 0 ? 'İzlendi' : 'Film'}
-                      </span>
+                  {/* Library Management Strip */}
+                  <div className="p-2.5 bg-[#0a0a0d] border-t border-white/[0.08] flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between gap-1.5">
+                      {/* Status Dropdown */}
+                      <div className={`flex-1 min-w-0 ${isSelectMode ? 'pointer-events-none opacity-60' : ''}`}>
+                        <CustomSelect
+                          value={currentStatus}
+                          allowDeselect={true}
+                          onChange={(val) => {
+                            triggerSound?.('click');
+                            if (!val || val === currentStatus) {
+                              setLibraryStatus(m, null);
+                            } else {
+                              setLibraryStatus(m, val as any);
+                            }
+                          }}
+                          options={CARD_STATUS_OPTIONS}
+                          variant="glass"
+                          size="sm"
+                          portal={true}
+                          searchable={false}
+                          direction="auto"
+                          className="w-full"
+                          triggerClassName="!py-1.5 !px-2.5 !rounded-xl !text-[11px] font-semibold w-full justify-between !bg-white/[0.06] hover:!bg-white/10 !border-white/10"
+                        />
+                      </div>
+
+                      {/* Quick Remove from Library Button (Instant optimistic removal) */}
+                      {!isSelectMode && (
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            triggerSound?.('click');
+                            setLibraryMedia((prev) => prev.filter((item) => item.id !== m.id));
+                            delete fetchedMediaCacheRef.current[m.id];
+                            await removeFromLibrary(m.id);
+                          }}
+                          className="p-2 rounded-xl bg-white/[0.05] hover:bg-rose-500/20 text-white/40 hover:text-rose-300 border border-white/10 hover:border-rose-400/30 transition-colors cursor-pointer shrink-0"
+                          aria-label="Kütüphaneden Kaldır"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
-                  ) : totalEps > 0 ? (
-                    <div className="flex items-center justify-between text-[10px] font-mono text-white/50 px-0.5">
-                      <span>İlerleme:</span>
-                      <span className="font-bold text-white/80">
-                        {watchedCount} / {totalEps} Bölüm
-                      </span>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            );
-          })}
+
+                    {/* Watched Episode Indicator */}
+                    {isFilm ? (
+                      <div className="flex items-center justify-between text-[10px] font-mono text-white/50 px-0.5">
+                        <span>Tür:</span>
+                        <span className="font-bold text-white/80">
+                          {currentStatus === 'completed' || watchedCount > 0 ? 'İzlendi' : 'Film'}
+                        </span>
+                      </div>
+                    ) : totalEps > 0 ? (
+                      <div className="flex items-center justify-between text-[10px] font-mono text-white/50 px-0.5">
+                        <span>İlerleme:</span>
+                        <span className="font-bold text-white/80">
+                          {watchedCount} / {totalEps} Bölüm
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
         </motion.div>
       )}
 

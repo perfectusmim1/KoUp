@@ -75,13 +75,13 @@ def run_phase3(site: str = "all", limit: int = 5, resume: bool = False):
 
             targeted_urls = [f"https://diziizle.wiki/dizi/{s}" for s in targeted_slugs]
 
-            # Crawl targeted or recent diziizle series
+            # Crawl targeted or recent diziizle series (0 = full episodes for each series)
             diziizle_results = crawl_diziizle_recent(
                 cur=cur,
                 conn=conn,
                 idx=idx,
                 limit=limit,
-                max_episodes_per_series=25,
+                max_episodes_per_series=0,
                 target_urls=targeted_urls,
             )
             print(f"[FAZ 3 DIZIIZLE] {len(diziizle_results)} yapım işlendi.", flush=True)

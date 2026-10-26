@@ -1,10 +1,9 @@
 """
 DramaVadisi (dramavadisi.com) Scraper
-- Sitemap extraction (sitemap-diziler.xml, 3,912+ short dramas)
+- High-volume sitemap extraction (sitemap-diziler.xml, 3,912+ short dramas)
 - Fast series ID resolution via PJAX
 - Single-request full episode catalog ingestion (/api/series/{id}/watch)
-- Direct HD stream source injection (dramavadisi:{series_id}:{ep_no})
-- High-concurrency safe database writes & R2/Supabase cloud sync
+- Concurrent network I/O with atomic single-thread DB writes & R2/Supabase cloud sync
 """
 
 import json
@@ -12,6 +11,7 @@ import re
 import sqlite3
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from bs4 import BeautifulSoup
 
 from scrapers.multisite import add_source
@@ -36,7 +36,7 @@ class DramaVadisiScraper:
     def get_catalog(self) -> list[str]:
         """Fetches all short drama URLs from DramaVadisi sitemap."""
         sitemap_url = f"{BASE_URL}/sitemap-diziler.xml"
-        resp = safe_request(self.session, "GET", sitemap_url, delay=0.5)
+        resp = safe_request(self.session, "GET", sitemap_url, delay=0.2)
         if not resp or resp.status_code != 200:
             return []
 
@@ -58,7 +58,7 @@ class DramaVadisiScraper:
             self.session,
             "GET",
             ep1_url,
-            delay=0.4,
+            delay=0.05,
             headers={"X-Pjax": "1", "Referer": f"{BASE_URL}/dizi/{slug}"},
         )
         if resp and resp.status_code == 200:
@@ -72,7 +72,7 @@ class DramaVadisiScraper:
                 pass
 
         # Fallback: request HTML and extract data-sid or regex
-        d_resp = safe_request(self.session, "GET", f"{BASE_URL}/dizi/{slug}", delay=0.4)
+        d_resp = safe_request(self.session, "GET", f"{BASE_URL}/dizi/{slug}", delay=0.05)
         if d_resp and d_resp.status_code == 200:
             m = re.search(r'data-sid="(\d+)"', d_resp.text) or re.search(r'/api/series/(\d+)/watch', d_resp.text)
             if m:
@@ -80,14 +80,11 @@ class DramaVadisiScraper:
 
         return None
 
-    def scrape_drama(self, drama_url: str, sync_cloud: bool = True) -> int | None:
-        """Scrapes full drama metadata and all episodes via /api/series/{id}/watch."""
+    def fetch_drama_network_data(self, drama_url: str) -> dict | None:
+        """Fetches drama details and all episodes purely in memory without any DB lock."""
         slug = drama_url.rstrip("/").split("/")[-1]
-
-        # 1. Network I/O phase (No database connection held during network calls)
         series_id = self.resolve_series_id(slug)
         if not series_id:
-            print(f"[DRAMAVADISI_WARN] Could not resolve series ID for {slug}")
             return None
 
         watch_url = f"{BASE_URL}/api/series/{series_id}/watch"
@@ -95,39 +92,53 @@ class DramaVadisiScraper:
             self.session,
             "GET",
             watch_url,
-            delay=0.8,
+            delay=0.1,
             headers={"Referer": drama_url},
         )
         if not w_resp or w_resp.status_code != 200:
-            print(f"[DRAMAVADISI_WARN] Watch API returned {w_resp.status_code if w_resp else 'None'} for {watch_url}")
             return None
 
         try:
             data = w_resp.json()
-        except Exception as e:
-            print(f"[DRAMAVADISI_ERROR] Failed parsing watch API JSON: {e}")
+        except Exception:
             return None
 
         title = data.get("title") or data.get("name") or slug.replace("-", " ").title()
         poster_rel = data.get("poster")
         poster = f"{BASE_URL}{poster_rel}" if poster_rel and not poster_rel.startswith("http") else poster_rel
         platform = data.get("label") or data.get("platform") or "NetShort"
-
         episodes = data.get("episodes", [])
-        ep_count = len(episodes)
 
-        # Fetch overview from HTML page if available
+        # Fetch overview from HTML page
         overview = None
-        d_resp = safe_request(self.session, "GET", drama_url, delay=0.4)
+        d_resp = safe_request(self.session, "GET", drama_url, delay=0.05)
         if d_resp and d_resp.status_code == 200:
             soup = BeautifulSoup(d_resp.text, "html.parser")
             meta_desc = soup.find("meta", attrs={"name": "description"})
             if meta_desc and meta_desc.get("content"):
                 overview = meta_desc["content"]
 
-        # 2. Fast atomic database transaction phase with retry
+        return {
+            "slug": slug,
+            "series_id": series_id,
+            "title": title,
+            "poster": poster,
+            "platform": platform,
+            "overview": overview,
+            "episodes": episodes,
+            "source_url": drama_url,
+        }
+
+    def write_drama_to_db(self, info: dict, sync_cloud: bool = True) -> int | None:
+        """Writes drama and episodes atomically to SQLite on main thread and syncs to cloud."""
         did = None
         sources_added = 0
+        slug = info["slug"]
+        title = info["title"]
+        series_id = info["series_id"]
+        episodes = info["episodes"]
+        ep_count = len(episodes)
+
         for attempt in range(10):
             try:
                 conn = get_db_connection()
@@ -138,12 +149,12 @@ class DramaVadisiScraper:
                     cur=cur,
                     title=title,
                     slug=slug,
-                    cover_image=poster,
-                    overview=overview,
+                    cover_image=info["poster"],
+                    overview=info["overview"],
                     episode_count=ep_count,
-                    genres=["Kısa Drama", platform],
+                    genres=["Kısa Drama", info["platform"]],
                     site_tag="dramavadisi",
-                    source_url=drama_url,
+                    source_url=info["source_url"],
                     country="CN",
                     country_name="Çin",
                 )
@@ -187,14 +198,21 @@ class DramaVadisiScraper:
 
         print(f"[DRAMAVADISI_INGESTED] #{did} {title}: {ep_count} eps, {sources_added} sources.")
 
-        # 3. Cloud sync phase (Cloudflare R2 bundle + Supabase media row)
         if sync_cloud and did:
             sync_short_drama_to_cloud(did)
 
         return did
 
+    def scrape_drama(self, drama_url: str, sync_cloud: bool = True) -> int | None:
+        """Scrapes full drama metadata and all episodes via /api/series/{id}/watch."""
+        info = self.fetch_drama_network_data(drama_url)
+        if not info:
+            print(f"[DRAMAVADISI_WARN] Failed network fetch for {drama_url}")
+            return None
+        return self.write_drama_to_db(info, sync_cloud=sync_cloud)
+
     def run(self, limit: int = None, resume: bool = True, sync_cloud: bool = True):
-        """Runs the DramaVadisi catalog ingestion with checkpointing."""
+        """Runs the DramaVadisi catalog ingestion in high-speed parallel batches."""
         print("[DRAMAVADISI_CATALOG] Fetching sitemap...")
         catalog = self.get_catalog()
         print(f"[DRAMAVADISI_CATALOG] Found {len(catalog)} short drama URLs.")
@@ -208,15 +226,25 @@ class DramaVadisiScraper:
             pending = pending[:limit]
 
         print(f"[DRAMAVADISI_PROGRESS] Processing {len(pending)} dramas (Already processed: {len(done)})...")
-        for idx, drama_url in enumerate(pending, 1):
-            slug = drama_url.split("/")[-1]
-            print(f"[{idx}/{len(pending)}] Scraping DramaVadisi: {slug}...")
-            try:
-                self.scrape_drama(drama_url, sync_cloud=sync_cloud)
-                done.add(slug)
-                save_checkpoint("dramavadisi", done)
-            except Exception as e:
-                print(f"[DRAMAVADISI_ITEM_ERROR] {slug}: {e}", file=sys.stderr)
+
+        # Process in parallel batches of 10 for network fetching
+        batch_size = 10
+        for i in range(0, len(pending), batch_size):
+            batch_urls = pending[i:i + batch_size]
+            with ThreadPoolExecutor(max_workers=batch_size) as executor:
+                fetched_items = list(executor.map(self.fetch_drama_network_data, batch_urls))
+
+            for url, info in zip(batch_urls, fetched_items):
+                slug = url.split("/")[-1]
+                if not info:
+                    print(f"[DRAMAVADISI_SKIP] Could not fetch {slug}")
+                    continue
+                try:
+                    self.write_drama_to_db(info, sync_cloud=sync_cloud)
+                    done.add(slug)
+                    save_checkpoint("dramavadisi", done)
+                except Exception as e:
+                    print(f"[DRAMAVADISI_ITEM_ERROR] {slug}: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":

@@ -1068,7 +1068,6 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int, include_short_drama: 
                   AND direct_url NOT LIKE '%asyaanim.upns.one%'
                   AND direct_url NOT LIKE '%upns.one%'
                   AND direct_url NOT LIKE '%upns.live%'
-                  AND direct_url NOT LIKE '%vidmoly.me%'
                   AND direct_url NOT LIKE '%embed-7fm0wb9yzf4m.html%'
                   AND direct_url NOT LIKE 'javascript:%'
                   AND direct_url NOT LIKE '%void(0)%'
@@ -1096,22 +1095,29 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int, include_short_drama: 
                     "quality_label": "1080p",
                 })
 
+            if any((s.get("provider") or "").lower() not in ("youtube", "youtube_backup") for s in srcs):
+                srcs = [s for s in srcs if (s.get("provider") or "").lower() not in ("youtube", "youtube_backup")]
+
             def _src_priority(s):
                 p = (s.get("provider") or "").lower()
                 n = (s.get("source_name") or "").lower()
                 u = (s.get("direct_url") or "").lower()
+                if "pilavyer" in p or "diziizle" in p or "pilavyer" in u or "diziizle" in u:
+                    return -10
+                if any(x in p or x in u for x in ("wdt", "dtpasn", "koredizi", "dramavadisi", "shortizle", "dramabox", "animelvl", "dizipal")):
+                    return -8
                 if "tau-video" in p or "tau" in n or "tau-video" in u:
+                    return -6
+                if any(x in p or x in u for x in ("morencius", "rapidrame", "diziyou", "dbx", "pichive", "close")) or "ev" in p or n == "ev" or n.startswith("ev "):
                     return -5
-                if "morencius" in p or "ev" in p or n == "ev" or n.startswith("ev ") or "morencius" in u:
-                    return -4.5
-                if "rapidrame" in p or "diziyou" in p:
-                    return -4
-                if "tr-dublaj" in p or "tr-altyazi" in p or "player" in p or "hls" in p:
+                if any(x in p or x in u for x in ("filemoon", "byse", "okru", "ok.ru", "vk")):
                     return -3
                 if "uqload" in p or "uqload" in u:
                     return -2
                 if "vidmoly" in p or "vidmoly" in u:
                     return -1
+                if "youtube" in p or "youtube" in u or "youtube_backup" in p:
+                    return 10
                 return 0
             srcs.sort(key=_src_priority)
             is_pending = (src_status == "pending")

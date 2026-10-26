@@ -373,46 +373,55 @@ def crawl_webdramaturkey_recent(
     cur,
     conn,
     idx: dict = None,
-    limit: int = 5,
+    limit: int = 35,
     category: str = "all",
 ) -> list[dict]:
     """
-    Crawls ONLY New Series (/diziler) and New Movies (/filmler) from webdramaturkey2.com.
+    Crawls ONLY New Series (/diziler?page=1..3) and New Movies (/filmler?page=1..3) from webdramaturkey2.com.
     Adheres strictly to the user requirement: no full archive crawl, only new items.
     """
     base_url = _get_base()
     candidates = []
+    seen = set()
 
-    # 1. New Series (/diziler)
+    # 1. New Series (/diziler pages 1..3)
     if category in ("all", "dizi"):
-        status, html = _rate_limited_fetch(f"{base_url}/diziler")
-        if status == 200 and html:
-            soup = BeautifulSoup(html, "html.parser")
-            for a in soup.find_all("a", href=True):
-                h = a["href"]
-                if "/dizi/" in h and "/sezon" not in h and "/bolum" not in h:
-                    full_u = urljoin(base_url, h)
-                    if full_u not in [c[0] for c in candidates]:
-                        candidates.append((full_u, False))
+        for page in range(1, 4):
+            page_url = f"{base_url}/diziler" if page == 1 else f"{base_url}/diziler?page={page}"
+            status, html = _rate_limited_fetch(page_url)
+            if status == 200 and html:
+                soup = BeautifulSoup(html, "html.parser")
+                for a in soup.find_all("a", href=True):
+                    h = a["href"]
+                    if "/dizi/" in h and "/sezon" not in h and "/bolum" not in h:
+                        full_u = urljoin(base_url, h)
+                        if full_u not in seen:
+                            candidates.append((full_u, False))
+                            seen.add(full_u)
 
-    # 2. New Movies (/filmler)
+    # 2. New Movies (/filmler pages 1..3)
     if category in ("all", "film"):
-        status, html = _rate_limited_fetch(f"{base_url}/filmler")
-        if status == 200 and html:
-            soup = BeautifulSoup(html, "html.parser")
-            for a in soup.find_all("a", href=True):
-                h = a["href"]
-                if "/film/" in h and "/sezon" not in h and "/bolum" not in h:
-                    full_u = urljoin(base_url, h)
-                    if full_u not in [c[0] for c in candidates]:
-                        candidates.append((full_u, True))
+        for page in range(1, 4):
+            page_url = f"{base_url}/filmler" if page == 1 else f"{base_url}/filmler?page={page}"
+            status, html = _rate_limited_fetch(page_url)
+            if status == 200 and html:
+                soup = BeautifulSoup(html, "html.parser")
+                for a in soup.find_all("a", href=True):
+                    h = a["href"]
+                    if "/film/" in h and "/sezon" not in h and "/bolum" not in h:
+                        full_u = urljoin(base_url, h)
+                        if full_u not in seen:
+                            candidates.append((full_u, True))
+                            seen.add(full_u)
 
     if idx is None:
         idx = build_drama_index(cur)
 
+    print(f"[WDT ARCHIVE] Toplam {len(candidates)} yeni yapım adayı keşfedildi (Sayfa 1-3). Hedef limit: {limit}", flush=True)
+
     results = []
-    for item_url, is_film in candidates[:limit]:
-        print(f"[WDT CRAWL] Scraping {'Film' if is_film else 'Dizi'}: {item_url}...", flush=True)
+    for count_idx, (item_url, is_film) in enumerate(candidates[:limit], 1):
+        print(f"[{count_idx}/{min(len(candidates), limit)}] Scraping {'Film' if is_film else 'Dizi'}: {item_url}...", flush=True)
         res = scrape_wdt_series_or_film(
             cur=cur,
             conn=conn,

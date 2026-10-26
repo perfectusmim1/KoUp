@@ -134,7 +134,8 @@ function getR2Client(): S3Client | null {
 async function runDirectAnimecixSync(
   dramaId: number,
   pre: PrefetchedAnimecix,
-  log: (line: string) => void
+  log: (line: string) => void,
+  manualUrl?: string
 ): Promise<{ episodesAdded: number; sourcesAdded: number }> {
   const animeId = Number(pre.animeId);
   if (!Number.isInteger(animeId) || animeId <= 0) return { episodesAdded: 0, sourcesAdded: 0 };
@@ -172,7 +173,7 @@ async function runDirectAnimecixSync(
   }
   const { data: mediaRow } = await supabaseAdmin
     .from('media')
-    .select('id, title, slug, content_type')
+    .select('id, title, slug, content_type, episode_count')
     .eq('id', dramaId)
     .maybeSingle();
   if (!bundle || !Array.isArray(bundle.episodes)) {
@@ -184,6 +185,29 @@ async function runDirectAnimecixSync(
       episodes: [],
     };
   }
+
+  const isDragonBall = dramaId === 6997 || animeId === 84 || mediaRow?.slug === 'dragon-ball';
+  const isAnime = (mediaRow?.content_type || bundle.content_type) === 'anime';
+  const existingSeasons = new Set(bundle.episodes.map((e: any) => Number(e.season_number || 1)));
+  const hasOnlySingleSeason = existingSeasons.size <= 1;
+
+  // Check explicit season in title or manualUrl
+  const parseExplicitSeason = (title?: string, url?: string): number | null => {
+    const uMatch = (url || '').match(/(?:season|sezon)[/-](\d+)/i) || (url || '').match(/[?&]season=(\d+)/i);
+    if (uMatch) {
+      const s = parseInt(uMatch[1], 10);
+      if (!Number.isNaN(s) && s > 0) return s;
+    }
+    const tMatch = (title || '').match(/(\d+)\s*\.\s*sezon/i) ||
+                   (title || '').match(/season\s*(\d+)/i) ||
+                   (title || '').match(/(\d+)(?:st|nd|rd|th)\s*season/i);
+    if (tMatch) {
+      const s = parseInt(tMatch[1], 10);
+      if (!Number.isNaN(s) && s > 0) return s;
+    }
+    return null;
+  };
+  const explicitSeason = parseExplicitSeason(mediaRow?.title || bundle.title, manualUrl);
 
   const epMap = new Map<string, any>();
   for (const ep of bundle.episodes) epMap.set(`${ep.season_number || 1}-${ep.episode_number}`, ep);
@@ -209,8 +233,23 @@ async function runDirectAnimecixSync(
     let eNum: number | null = v?.episode_num != null ? Number(v.episode_num) : null;
     if (eNum == null && v?.episode_id) eNum = eidToNum.get(Number(v.episode_id)) ?? null;
     if (eNum == null && !pre.isMovie) continue;
-    const sNum = Number(v?.season_num || 1);
+    const rawSeasonNum = Number(v?.season_num || 1);
     const eFinal = eNum || 1;
+
+    let sNum = rawSeasonNum;
+    if (isDragonBall) {
+      sNum = 1;
+      if (eFinal > 153) continue;
+    } else if (isAnime && hasOnlySingleSeason) {
+      if (explicitSeason) {
+        if (rawSeasonNum !== explicitSeason) continue;
+        sNum = 1;
+      } else {
+        if (rawSeasonNum !== 1) continue;
+        sNum = 1;
+      }
+    }
+
     const key = `${sNum}-${eFinal}`;
 
     let ep = epMap.get(key);
@@ -320,7 +359,7 @@ async function runDirectAnimecixSync(
   const nextEpisodeNumber = newTotalEpisodes + 1;
 
   const mediaPatch: Record<string, any> = {
-    episode_count: bundle.episodes.length,
+    episode_count: Math.max(bundle.episodes.length, mediaRow?.episode_count || 0),
     episodes_available: newTotalEpisodes,
     next_episode_number: nextEpisodeNumber,
     updated_at: nowIso,
@@ -615,11 +654,16 @@ export async function POST(req: NextRequest) {
               }
               if (pre) {
                 const logs: string[] = [];
-                directAnimecix = await runDirectAnimecixSync(dramaId, pre, (l) => {
-                  const line = `[${nowStr()}] ${l}`;
-                  logs.push(line);
-                  sendEvent({ type: 'log', line });
-                });
+                directAnimecix = await runDirectAnimecixSync(
+                  dramaId,
+                  pre,
+                  (l) => {
+                    const line = `[${nowStr()}] ${l}`;
+                    logs.push(line);
+                    sendEvent({ type: 'log', line });
+                  },
+                  manualUrl
+                );
                 const doneLine = `[${nowStr()}] [TAMAMLANDI] AnimeciX anlık eşitleme: +${directAnimecix.episodesAdded} yeni bölüm, +${directAnimecix.sourcesAdded} yeni kaynak.`;
                 sendEvent({ type: 'log', line: doneLine });
                 if (jobId && !jobId.startsWith('temp-')) {

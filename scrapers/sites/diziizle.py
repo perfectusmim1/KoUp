@@ -6,6 +6,7 @@ Features:
 - Live Calendar (/takvim) parser syncing to public.calendar_schedules & media.air_days
 """
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import re
 import sys
@@ -397,7 +398,7 @@ def scrape_diziizle_series(
         year_hint=year,
     )
 
-    # 3. Find all seasons and episode links (newest seasons first)
+    # 3. Find all seasons and episode links
     season_nums = []
     for a in soup.find_all("a", href=True):
         m_s = re.search(r"[?&]sezon=(\d+)", a["href"])
@@ -409,8 +410,8 @@ def scrape_diziizle_series(
     ep_links = []
     if season_nums:
         season_nums.sort(reverse=True)
-        # Fetch newest seasons first to guarantee active Pilavyer HD streams
-        for s_n in season_nums[:3]:
+        # Fetch all seasons, prioritizing newest first
+        for s_n in season_nums:
             s_url = f"{full_series_url}?sezon={s_n}"
             s_html = _safe_fetch(s_url) if (s_n != 1 or "?sezon=1" in full_series_url) else html
             if s_html:
@@ -420,7 +421,7 @@ def scrape_diziizle_series(
                     if f"/sezon-{s_n}/" in h and "/bolum-" in h and h not in ep_links:
                         ep_links.append(h)
 
-    # Fallback to current page links
+    # Fallback to current page links if no season selector
     if not ep_links:
         for a in soup.find_all("a", href=True):
             h = a["href"]
@@ -435,42 +436,61 @@ def scrape_diziizle_series(
 
     ep_links.sort(key=_ep_sort_key)
     if max_episodes and len(ep_links) > max_episodes:
-        # Prioritize newest episodes if count exceeds max_episodes
         ep_links = ep_links[-max_episodes:]
 
-    episodes_added = 0
-    sources_added = 0
-    sample_sources = []
+    # Check which episodes already have pilavyer sources in SQLite before making network calls
+    cur.execute(
+        """
+        SELECT e.season_number, e.episode_number 
+        FROM episodes e 
+        JOIN episode_sources es ON es.episode_id = e.id 
+        WHERE e.drama_id = ? AND (es.provider = 'pilavyer' OR es.direct_url LIKE '%pilavyerplay%')
+        """,
+        (drama_id,),
+    )
+    existing_pilavyer_eps = {(row[0], row[1]) for row in cur.fetchall()}
 
+    # Prepare pending episodes list
+    pending_ep_jobs = []
     for ep_href in ep_links:
         full_ep_url = urljoin(base_url, ep_href)
         s_m = re.search(r"sezon-(\d+)", ep_href)
         e_m = re.search(r"bolum-(\d+)", ep_href)
         season_num = int(s_m.group(1)) if s_m else 1
         ep_num = int(e_m.group(1)) if e_m else 1
-
         ep_name = f"{season_num}. Sezon {ep_num}. Bölüm"
-        ep_id, is_new = match_or_create_episode(cur, drama_id, season_num, ep_num, ep_name, full_ep_url)
+
+        if (season_num, ep_num) in existing_pilavyer_eps:
+            continue
+
+        pending_ep_jobs.append((full_ep_url, season_num, ep_num, ep_name))
+
+    episodes_added = 0
+    sources_added = 0
+    sample_sources = []
+
+    # Parallel HTTP worker (pure network/parsing, NO SQLite access inside threads)
+    def _fetch_and_verify_worker(job):
+        full_u, s_n, e_n, name = job
+        ep_h = _safe_fetch(full_u)
+        pv = _extract_pv_from_html(ep_h)
+        if not pv:
+            return (full_u, s_n, e_n, name, None, False)
+        valid = verify_pilavyer_stream(pv, base_url)
+        return (full_u, s_n, e_n, name, pv, valid)
+
+    verified_results = []
+    if pending_ep_jobs:
+        with ThreadPoolExecutor(max_workers=16) as executor:
+            verified_results = list(executor.map(_fetch_and_verify_worker, pending_ep_jobs))
+
+    # Single-thread SQLite batch insertion (100% thread safe, 0 database locks)
+    for full_u, season_num, ep_num, ep_name, pv_slug, is_valid in verified_results:
+        ep_id, is_new = match_or_create_episode(cur, drama_id, season_num, ep_num, ep_name, full_u)
         if is_new:
             episodes_added += 1
 
-        # Check if pilavyer source already exists for this episode
-        cur.execute(
-            "SELECT id, direct_url FROM episode_sources WHERE episode_id = ? AND (provider = 'pilavyer' OR direct_url LIKE '%pilavyerplay%')",
-            (ep_id,),
-        )
-        existing_src = cur.fetchone()
-        if existing_src:
-            continue
-
-        # Fetch episode page HTML
-        ep_html = _safe_fetch(full_ep_url)
-        pv_slug = _extract_pv_from_html(ep_html)
-        if not pv_slug:
-            continue
-
-        # Live stream check
-        if verify_pilavyer_stream(pv_slug, base_url):
+        if is_valid and pv_slug:
             pilavyer_url = f"https://play2.pilavyerplay.top/assets/js/s.php?s={pv_slug}"
             added = add_source(
                 cur,
@@ -488,7 +508,8 @@ def scrape_diziizle_series(
                     "UPDATE episode_sources SET provider = 'youtube_backup' WHERE episode_id = ? AND provider = 'youtube'",
                     (ep_id,),
                 )
-                conn.commit()
+
+    conn.commit()
 
     # 4. Sync full bundle, counts, R2 and Supabase
     if episodes_added > 0 or sources_added > 0:
@@ -509,58 +530,75 @@ def crawl_diziizle_recent(
     cur,
     conn,
     idx: dict = None,
-    limit: int = 5,
-    max_episodes_per_series: int = 30,
+    limit: int = 500,
+    max_episodes_per_series: int = 0,
     target_urls: list[str] = None,
 ) -> list[dict]:
     """
-    Crawls recent series from diziizle.wiki homepage and sitemap.
-    Targeting active Turkish dramas and recent uploads.
+    Crawls diziizle.wiki catalog:
+    - Target URLs (e.g. Turkish dramas needing Pilavyer replacement) first
+    - sitemap-series.xml (all 1241 series)
+    - sitemap-anime.xml (all 27 anime)
+    - Homepage recent items
     """
     base_url = _get_base()
     candidates = list(target_urls) if target_urls else []
+    seen = set(candidates)
 
-    # Discover candidate series from homepage
+    # 1. Discover candidate series from homepage
     home_html = _safe_fetch(base_url)
     if home_html:
         soup = BeautifulSoup(home_html, "html.parser")
         for a in soup.find_all("a", href=True):
             href = a["href"]
-            if "/dizi/" in href and "/sezon-" not in href:
+            if ("/dizi/" in href or "/anime/" in href) and "/sezon-" not in href:
                 full_u = urljoin(base_url, href)
-                if full_u not in candidates:
+                if full_u not in seen:
                     candidates.append(full_u)
+                    seen.add(full_u)
 
-    # Discover additional Turkish series from sitemap-series.xml
+    # 2. Discover all series from sitemap-series.xml
     sitemap_html = _safe_fetch(f"{base_url}/sitemap-series.xml")
     if sitemap_html:
-        tr_keywords = [
-            "gonul-dagi", "kizilcik-serbeti", "yali-capkini", "bahar",
-            "tasacak-bu-deniz", "guller-ve-gunahlar", "guldur-guldur-show",
-            "kardesler", "teskilat", "inci-taneleri", "kod-adi-paris"
-        ]
         for line in sitemap_html.splitlines():
             if "<loc>" in line:
                 m = re.search(r"<loc>(https?://[^<]+)</loc>", line)
                 if m:
                     u = m.group(1).strip()
-                    if any(k in u for k in tr_keywords) and u not in candidates:
-                        candidates.insert(0, u)  # Prepend high-priority Turkish series
+                    if ("/dizi/" in u or "/anime/" in u) and u not in seen:
+                        candidates.append(u)
+                        seen.add(u)
+
+    # 3. Discover all anime from sitemap-anime.xml
+    anime_sitemap = _safe_fetch(f"{base_url}/sitemap-anime.xml")
+    if anime_sitemap:
+        for line in anime_sitemap.splitlines():
+            if "<loc>" in line:
+                m = re.search(r"<loc>(https?://[^<]+)</loc>", line)
+                if m:
+                    u = m.group(1).strip()
+                    if u not in seen:
+                        candidates.append(u)
+                        seen.add(u)
 
     if idx is None:
         idx = build_drama_index(cur)
 
+    print(f"[DIZIIZLE ARCHIVE] Toplam {len(candidates)} yapım adayı keşfedildi. Hedef limit: {limit}", flush=True)
+
     results = []
-    for s_url in candidates[:limit]:
-        print(f"[DIZIIZLE CRAWL] Scraping {s_url}...", flush=True)
+    for count_idx, s_url in enumerate(candidates[:limit], 1):
+        is_anime = "/anime/" in s_url
+        print(f"[{count_idx}/{min(len(candidates), limit)}] Scraping {s_url}...", flush=True)
         res = scrape_diziizle_series(
             cur=cur,
             conn=conn,
             series_url=s_url,
             idx=idx,
+            is_anime=is_anime,
             max_episodes=max_episodes_per_series,
         )
         results.append(res)
-        time.sleep(1.0)
+        time.sleep(0.3)
 
     return results

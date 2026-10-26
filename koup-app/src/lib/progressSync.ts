@@ -29,6 +29,65 @@ export interface LastSyncSnapshot {
   syncedAt: number;
 }
 
+// Tombstone tracking for deleted media to prevent stale background reconciliations
+const DELETED_MEDIA_KEY = 'koup_deleted_media_v1';
+const TOMBSTONE_TTL_MS = 600_000; // 10 minutes
+
+export function getDeletedMediaMap(): Record<number, number> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(DELETED_MEDIA_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    const now = Date.now();
+    const valid: Record<number, number> = {};
+    let hasExpired = false;
+    for (const [key, timestamp] of Object.entries(parsed)) {
+      const id = Number(key);
+      const ts = Number(timestamp);
+      if (!Number.isNaN(id) && !Number.isNaN(ts) && now - ts < TOMBSTONE_TTL_MS) {
+        valid[id] = ts;
+      } else {
+        hasExpired = true;
+      }
+    }
+    if (hasExpired) {
+      try {
+        localStorage.setItem(DELETED_MEDIA_KEY, JSON.stringify(valid));
+      } catch {}
+    }
+    return valid;
+  } catch {
+    return {};
+  }
+}
+
+export function markMediaDeletedLocally(mediaIds: number[]): void {
+  if (typeof window === 'undefined' || !Array.isArray(mediaIds) || mediaIds.length === 0) return;
+  try {
+    const current = getDeletedMediaMap();
+    const now = Date.now();
+    for (const id of mediaIds) {
+      if (typeof id === 'number' && !Number.isNaN(id) && id > 0) {
+        current[id] = now;
+      }
+    }
+    localStorage.setItem(DELETED_MEDIA_KEY, JSON.stringify(current));
+  } catch {}
+}
+
+export function clearMediaDeletedLocally(mediaId: number): void {
+  if (typeof window === 'undefined' || !mediaId) return;
+  try {
+    const current = getDeletedMediaMap();
+    if (current[mediaId]) {
+      delete current[mediaId];
+      localStorage.setItem(DELETED_MEDIA_KEY, JSON.stringify(current));
+    }
+  } catch {}
+}
+
 // In-memory token cache for synchronous access during beforeunload/pagehide
 let cachedAccessToken: string | null = null;
 
@@ -345,7 +404,7 @@ export function reconcileProgressMaps(
         dbMap[row.media_id] = {
           user_id: activeUserId,
           media_id: row.media_id,
-          status: row.status,
+          status: row.status || null,
           is_favorite: Boolean(row.is_favorite),
           user_score: row.user_score ?? null,
           watched_episodes: Array.isArray(row.watched_episodes) ? row.watched_episodes : [],
@@ -365,6 +424,8 @@ export function reconcileProgressMaps(
   const mergedMap: Record<number, UserMediaProgress> = {};
   const itemsToSyncToSupabase: any[] = [];
 
+  const deletedMap = getDeletedMediaMap();
+
   const allMediaIds = new Set([
     ...Object.keys(localMap || {}).map(Number),
     ...Object.keys(dbMap).map(Number),
@@ -372,6 +433,7 @@ export function reconcileProgressMaps(
 
   allMediaIds.forEach((id) => {
     if (!id || Number.isNaN(id)) return;
+    if (deletedMap[id]) return; // Silinen kayıtlar asla geri diriltilmez
 
     const local = localMap ? localMap[id] : undefined;
     const db = dbMap[id];
@@ -502,21 +564,6 @@ export function reconcileProgressMaps(
             }
           });
         } catch {}
-      }
-
-      const isFilm =
-        current.media?.content_type === 'film' || current.media?.content_type === 'movie';
-      const pos = current.resume_position_sec || 0;
-      const dur = current.resume_duration_sec || 3600;
-      if (
-        isFilm &&
-        current.status === 'completed' &&
-        pos > 15 &&
-        dur > 0 &&
-        pos / dur < 0.85
-      ) {
-        current.status = 'watching';
-        current.watched_episodes = [];
       }
     }
   });

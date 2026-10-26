@@ -190,7 +190,7 @@ class ShortizleScraper:
                         ep_sources = self.extract_sources_from_ext(ep_ext)
                 return (ep_num, ep_obj.get("title") or f"{ep_num}. Bölüm", ep_url, ep_sources)
 
-            with ThreadPoolExecutor(max_workers=6) as executor:
+            with ThreadPoolExecutor(max_workers=16) as executor:
                 episodes_data.extend(list(executor.map(_fetch_shortizle_ep, enumerate(episodes[1:], 2))))
 
         # 2. Fast atomic database transaction phase with retry
