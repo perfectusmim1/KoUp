@@ -1,0 +1,186 @@
+name: KoUp Admin Dispatcher Job (Cloud Worker)
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Benzersiz Çalıştırma ID (Supabase scraper_runs UUID)'
+        required: false
+        default: ''
+        type: string
+      script:
+        description: 'Çalıştırılacak script yolu'
+        required: true
+        type: choice
+        options:
+          - scrapers/live_scanner.py
+          - scrapers/sync_target_drama.py
+          - scrapers/sync_hdfilm_target.py
+          - scripts/cron_sync_pipeline.py
+          - scripts/series_automation_runner.py
+          - scripts/admin_apply_catalog_patch.py
+          - scripts/sync_real_calendars.py
+          - scripts/backfill_shortdrama.py
+          - scripts/backfill_phase3.py
+          - scripts/backfill_phase4.py
+      target_site:
+        description: 'Hedef sağlayıcı / site adı (Örn: hdfilm, animecix, all)'
+        required: false
+        default: 'all'
+        type: string
+      extra_args:
+        description: 'Ek parametreler (JSON dizi formatında veya düz metin, örn: ["--limit", "30"])'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  run-admin-job:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout KoUp Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4 curl_cffi boto3 cryptography
+
+      - name: Pull Archive DB from Cloudflare R2
+        env:
+          CF_R2_ENDPOINT: ${{ secrets.CF_R2_ENDPOINT }}
+          CF_R2_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+          CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+          CF_R2_BUCKET: ${{ secrets.CF_R2_BUCKET }}
+        run: |
+          python -c "
+          import os, sys
+          try:
+              from scrapers.supabase_sync_helper import download_db_from_r2
+              ok = download_db_from_r2('webdrama_archive.db')
+              print(f'R2 DB download result: {ok}')
+          except Exception as e:
+              print(f'R2 DB download skipped or failed: {e}')
+          "
+
+      - name: Execute Admin Job with Live Logger
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          CF_R2_ENDPOINT: ${{ secrets.CF_R2_ENDPOINT }}
+          CF_R2_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+          CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+          CF_R2_BUCKET: ${{ secrets.CF_R2_BUCKET }}
+          KOREDIZI_EMAIL: ${{ secrets.KOREDIZI_EMAIL }}
+          KOREDIZI_PASSWORD: ${{ secrets.KOREDIZI_PASSWORD }}
+          RUN_ID: ${{ github.event.inputs.run_id }}
+          SCRIPT_PATH: ${{ github.event.inputs.script }}
+          TARGET_SITE: ${{ github.event.inputs.target_site }}
+          EXTRA_ARGS: ${{ github.event.inputs.extra_args }}
+          GH_ACTION_RUN_ID: ${{ github.run_id }}
+        run: |
+          python - << 'EOF'
+          import os
+          import sys
+          import json
+          import subprocess
+
+          run_id = os.getenv("RUN_ID", "").strip()
+          script = os.getenv("SCRIPT_PATH", "").strip()
+          target = os.getenv("TARGET_SITE", "all").strip()
+          extra_args_raw = os.getenv("EXTRA_ARGS", "").strip()
+          gh_run_id = os.getenv("GH_ACTION_RUN_ID", "").strip()
+
+          ALLOWLIST = {
+              "scrapers/live_scanner.py",
+              "scrapers/sync_target_drama.py",
+              "scrapers/sync_hdfilm_target.py",
+              "scripts/cron_sync_pipeline.py",
+              "scripts/series_automation_runner.py",
+              "scripts/admin_apply_catalog_patch.py",
+              "scripts/sync_real_calendars.py",
+              "scripts/backfill_shortdrama.py",
+              "scripts/backfill_phase3.py",
+              "scripts/backfill_phase4.py",
+          }
+
+          if script not in ALLOWLIST:
+              print(f"[HATA] İzin verilmeyen script çalıştırılmak istendi: '{script}'", flush=True)
+              sys.exit(1)
+
+          sub_cmd = [sys.executable, "-u", script]
+
+          if script == "scrapers/live_scanner.py":
+              if target and target != "all":
+                  sub_cmd.extend(["--provider", target])
+          elif script == "scripts/cron_sync_pipeline.py":
+              if target:
+                  sub_cmd.extend(["--target", target])
+          elif script == "scripts/series_automation_runner.py":
+              if target == "all":
+                  sub_cmd.append("--all-active")
+          elif script in ("scripts/backfill_phase4.py", "scripts/backfill_phase3.py", "scripts/backfill_shortdrama.py"):
+              if target:
+                  sub_cmd.extend(["--site", target])
+
+          if extra_args_raw:
+              try:
+                  parsed = json.loads(extra_args_raw)
+                  if isinstance(parsed, list):
+                      sub_cmd.extend([str(x) for x in parsed])
+                  elif isinstance(parsed, dict):
+                      for k, v in parsed.items():
+                          sub_cmd.extend([f"--{k}", str(v)])
+                  else:
+                      sub_cmd.extend(extra_args_raw.split())
+              except Exception:
+                  sub_cmd.extend(extra_args_raw.split())
+
+          if os.path.exists("scripts/run_logger.py"):
+              logger_cmd = [
+                  sys.executable,
+                  "scripts/run_logger.py",
+                  "--target", target,
+                  "--trigger", "admin",
+              ]
+              if run_id:
+                  logger_cmd.extend(["--run-id", run_id])
+              if gh_run_id and gh_run_id.isdigit():
+                  logger_cmd.extend(["--gh-run-id", gh_run_id])
+              logger_cmd.append("--")
+              logger_cmd.extend(sub_cmd)
+              print(f"[RUNNER] Invoking via run_logger: {' '.join(logger_cmd)}", flush=True)
+              ret = subprocess.call(logger_cmd)
+              sys.exit(ret)
+          else:
+              print(f"[RUNNER] Executing directly: {' '.join(sub_cmd)}", flush=True)
+              ret = subprocess.call(sub_cmd)
+              sys.exit(ret)
+          EOF
+
+      - name: Backup Archive DB to Cloudflare R2
+        if: always()
+        env:
+          CF_R2_ENDPOINT: ${{ secrets.CF_R2_ENDPOINT }}
+          CF_R2_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+          CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+          CF_R2_BUCKET: ${{ secrets.CF_R2_BUCKET }}
+        run: |
+          python -c "
+          import os, sys
+          try:
+              from scrapers.supabase_sync_helper import backup_db_to_r2
+              if os.path.exists('webdrama_archive.db'):
+                  ok = backup_db_to_r2('webdrama_archive.db')
+                  print(f'R2 DB backup result: {ok}')
+          except Exception as e:
+              print(f'R2 DB backup skipped or failed: {e}')
+          "

@@ -1326,6 +1326,10 @@ export default function NetflixPlayer({
         ctx.drawImage(v, sx, sy, sw, sh, 0, 0, 320, 180);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
         if (dataUrl && dataUrl.startsWith('data:image/')) {
+          if (episodePreviewCache.size >= 20) {
+            const oldestKey = episodePreviewCache.keys().next().value;
+            if (oldestKey) episodePreviewCache.delete(oldestKey);
+          }
           episodePreviewCache.set(key, dataUrl);
           setCapturedFrameUrl(dataUrl);
         }
@@ -1495,6 +1499,9 @@ export default function NetflixPlayer({
       if (singleClickTimerRef.current) clearTimeout(singleClickTimerRef.current);
       if (seekFeedbackTimerRef.current) clearTimeout(seekFeedbackTimerRef.current);
       if (hudToastTimerRef.current) clearTimeout(hudToastTimerRef.current);
+      if (previewSeekTimerRef.current) clearTimeout(previewSeekTimerRef.current);
+      if (volumeHideTimerRef.current) clearTimeout(volumeHideTimerRef.current);
+      if (mobileSeekTimerRef.current) clearTimeout(mobileSeekTimerRef.current);
     };
   }, []);
 

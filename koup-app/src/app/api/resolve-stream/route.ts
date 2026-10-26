@@ -35,6 +35,38 @@ function setCachedStream(key: string, data: any, ttlMs: number = 2 * 60 * 60 * 1
   streamResolutionCache.set(key, { data, expiresAt: Date.now() + ttlMs });
 }
 
+function isSafeExternalUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return false;
+    }
+    const h = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    if (
+      !h ||
+      h === 'localhost' ||
+      h === '127.0.0.1' ||
+      h === '::1' ||
+      h === '0.0.0.0' ||
+      h.startsWith('127.') ||
+      h.startsWith('10.') ||
+      h.startsWith('192.168.') ||
+      h.startsWith('169.254.') ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(h) ||
+      h.startsWith('fe80:') ||
+      h.includes('::ffff:127.') ||
+      /^(0x[0-9a-f]+|\d+)$/i.test(h) ||
+      h.endsWith('.internal') ||
+      h.endsWith('.local')
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function unpackDeanEdwards(packedJs: string): string {
   const match = packedJs.match(/\}\s*\(\s*['"](.*?)['"]\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*['"](.*?)['"]\.split\(['"]\|['"]\)/s);
   if (!match) return packedJs;
@@ -286,29 +318,8 @@ export async function GET(req: NextRequest) {
     url.startsWith('pilavyer:');
 
   if (!isCustomScheme) {
-    try {
-      const parsed = new URL(url);
-      if (!['http:', 'https:'].includes(parsed.protocol)) {
-        return NextResponse.json({ error: 'Invalid URL protocol' }, { status: 400 });
-      }
-      // SSRF protection: block private/internal loopback addresses
-      const hostname = parsed.hostname.toLowerCase();
-      if (
-        hostname === 'localhost' ||
-        hostname === '127.0.0.1' ||
-        hostname === '::1' ||
-        hostname === '0.0.0.0' ||
-        hostname.startsWith('10.') ||
-        hostname.startsWith('192.168.') ||
-        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname) ||
-        hostname === '169.254.169.254' ||
-        hostname.endsWith('.internal') ||
-        hostname.endsWith('.local')
-      ) {
-        return NextResponse.json({ error: 'Geçersiz hedef adresi (SSRF koruması)' }, { status: 403 });
-      }
-    } catch {
-      return NextResponse.json({ error: 'Malformed URL' }, { status: 400 });
+    if (!isSafeExternalUrl(url)) {
+      return NextResponse.json({ error: 'Geçersiz hedef adresi (SSRF koruması)' }, { status: 403 });
     }
   }
 

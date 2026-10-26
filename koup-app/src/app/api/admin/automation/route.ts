@@ -3,10 +3,12 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { supabase } from '@/lib/supabase';
-import { verifyAdminAuth, resolvePythonBinary } from '@/lib/adminAuth';
+import { verifyAdminAuth, resolvePythonBinary, checkAdminRateLimit } from '@/lib/adminAuth';
 import { hasLocalPython, dispatchCloudScraperJob } from '@/lib/server/scraperDispatch';
 
 export const dynamic = 'force-dynamic';
+
+let isAutomationRunning = false;
 
 export async function GET(req: NextRequest) {
   try {
@@ -68,6 +70,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: authCheck.error }, { status: authCheck.status });
     }
 
+    const rate = checkAdminRateLimit(`automation:${authCheck.userId}`, 6, 60_000);
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: `Çok fazla otomasyon isteği. Lütfen ${rate.retryAfterSec} saniye bekleyin.` },
+        { status: 429 }
+      );
+    }
+
     const body = await req.json();
     const action = body.action || '';
 
@@ -114,6 +124,13 @@ export async function POST(req: NextRequest) {
       const target = (body.target || 'all').toString().trim();
       const scriptPath = path.resolve(process.cwd(), '..', 'scripts', 'cron_sync_pipeline.py');
       const isCloudEnv = !hasLocalPython() || !fs.existsSync(scriptPath);
+
+      if (!isCloudEnv && isAutomationRunning) {
+        return NextResponse.json(
+          { error: 'Zaten çalışan aktif bir otomasyon süreci var. Lütfen tamamlanmasını bekleyin.' },
+          { status: 409 }
+        );
+      }
 
       const encoder = new TextEncoder();
       const stream = new ReadableStream({
@@ -190,6 +207,7 @@ export async function POST(req: NextRequest) {
           }
 
           // 2. Local / VPS Environment: Run Python Script directly with live subprocess streaming
+          isAutomationRunning = true;
           let stdoutBuf = '';
           const args = ['-u', scriptPath, '--target', target, '--trigger', 'admin_trigger'];
 
@@ -236,6 +254,7 @@ export async function POST(req: NextRequest) {
           });
 
           child.on('close', async (exitCode) => {
+            isAutomationRunning = false;
             clearTimeout(killTimer);
             if (stdoutBuf.trim()) {
               processLine(stdoutBuf);
@@ -270,6 +289,7 @@ export async function POST(req: NextRequest) {
           });
 
           child.on('error', (err) => {
+            isAutomationRunning = false;
             clearTimeout(killTimer);
             sendEvent({
               type: 'error',

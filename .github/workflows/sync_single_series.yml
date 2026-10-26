@@ -51,9 +51,13 @@ jobs:
           CF_R2_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
           CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
           CF_R2_BUCKET: ${{ secrets.CF_R2_BUCKET }}
+          DRAMA_ID: ${{ github.event.inputs.drama_id }}
+          PROVIDER: ${{ github.event.inputs.provider }}
+          MANUAL_URL: ${{ github.event.inputs.manual_url }}
+          JOB_ID: ${{ github.event.inputs.job_id }}
         run: |
           python scripts/sync_single_series_runner.py \
-            --drama-id "${{ github.event.inputs.drama_id }}" \
-            --provider "${{ github.event.inputs.provider }}" \
-            --manual-url "${{ github.event.inputs.manual_url }}" \
-            --job-id "${{ github.event.inputs.job_id }}"
+            --drama-id "$DRAMA_ID" \
+            --provider "${PROVIDER:-auto}" \
+            --manual-url "$MANUAL_URL" \
+            --job-id "$JOB_ID"
