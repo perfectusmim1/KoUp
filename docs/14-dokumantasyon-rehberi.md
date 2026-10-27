@@ -15,6 +15,7 @@ KoUp projesinde dokümantasyon bir formalite değil; **kodun ayrılmaz bir parç
    - [3.3. Kesin Gizli Anahtar (Secret) Yasağı](#33-kesin-gizli-anahtar-secret-yasağı)
    - [3.4. Mermaid Diyagram Standartları](#34-mermaid-diyagram-standartları)
    - [3.5. Kod Blokları ve Tip Referansları](#35-kod-blokları-ve-tip-referansları)
+   - [3.6. Kesin Sınır: Ajan İç Kuralları docs/ İçine Yazılamaz](#36-kesin-sınır-ajan-iç-kuralları-docs-içine-yazılamaz)
 4. [Yeni Doküman Dosyası Ekleme Prosedürü](#4-yeni-doküman-dosyası-ekleme-prosedürü)
 5. [Changelog Güncelleme Disiplini](#5-changelog-güncelleme-disiplini)
 6. [İlgili Dokümanlar](#6-ilgili-dokümanlar)
@@ -117,6 +118,13 @@ flowchart LR
 ### 3.5. Kod Blokları ve Tip Referansları
 - Kod örnekleri kısa, amaca yönelik ve vurgulanmak istenen kısmı gösterecek şekilde tutulmalıdır.
 - Hatalı ve doğru yaklaşımlar karşılaştırılırken `// ❌ YANLIŞ` ve `// ✅ DOĞRU` yorum satırları kullanılmalıdır.
+
+### 3.6. Kesin Sınır: Ajan İç Kuralları docs/ İçine Yazılamaz
+- **Kural:** `docs/` klasörü sadece KoUp platformunun kendisine, mimarisine, sayfalarına, bileşenlerine ve geliştirici standartlarına ait yaşayan dokümantasyondur.
+- **Yasak:** Yapay zeka ajanının kendi çalışma disiplini, subagent orkestrasyon kuralları, prompt disiplini (caveman/ponytail), dev server başlatmama talimatı, zombie task temizleme kuralları veya terminal loglama biçimleri **kesinlikle `docs/` klasörüne yazılamaz**.
+- **Ayrım:**
+  - Ajan/Subagent iç kuralları: Sadece `~/.gemini/GEMINI.md` ve kökteki `GEMINI.md` dosyalarında yönetilir.
+  - Site/Proje dokümantasyonu: `docs/` klasöründe tutulur.
 
 ---
 
