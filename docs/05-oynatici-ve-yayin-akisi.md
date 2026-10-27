@@ -314,11 +314,15 @@ Kullanıcı bir bölümde belirli bir kaynağı (örneğin *"EV"* veya *"Dizilla
 
 İntro ve Outro atlama mekanizması tamamen **veritabanı odaklıdır (database-driven)**:
 
-1. **İntro Tespiti:**
+1. **İntro Tespiti ve Sağlam Atlama (Robust Auto-Skip):**
    - Bölüm verisinde `intro_start_sec` ve `intro_end_sec` alanları tanımlıysa `hasIntro = true` olur.
-   - Video süresi `currentTime >= intro_start_sec && currentTime < intro_end_sec` aralığına girdiğinde sağ altta **"İntroyu Atla"** butonu belirir (`S` kısayolu).
-   - Eğer `autoSkipIntro` açıksa intro başladığı anda otomatik olarak `intro_end_sec` saniyesine atlanır (bölüm başına 1 kez tetiklenir).
-2. **Outro ve Sonraki Bölüm Geri Sayımı:**
+   - Video süresi `currentTime >= intro_start_sec && currentTime < intro_end_sec` aralığına girdiğinde sağ altta sade ve estetik **"İntroyu Atla"** butonu belirir (`S` kısayolu).
+   - "Otomatik: Açık" rozeti video görüntüleme alanını kalabalıklaştırmaması için floating alandan kaldırılmıştır; ayar yalnızca Oynatma Tercihleri menüsünden yönetilir.
+   - Eğer `autoSkipIntro` açıksa intro başladığı anda veya video açılışında doğrudan `intro_end_sec + 0.5` saniyesine atlanır. Decoder'ın hazır olmadığı ilk mount anında kilitlenmeyi önlemek için hem `loadedmetadata`/`MANIFEST_PARSED` aşamasında hem de `onTimeUpdate` döngüsünde çift katmanlı güvenli atlama tetikleyicisi çalışır. Bölüm değişiminde veya intro öncesine manuel geri sarıldığında atlama kilidi otomatik sıfırlanır.
+2. **Katmanlama ve Z-Index Hiyerarşisi:**
+   - Ayarlar ("Oynatma Tercihleri"), Kalite, Hız ve Bölümler açılır popup menüleri `z-[60]` seviyesinde çalışır.
+   - Menüler açıkken ana HUD katmanı `z-50` seviyesine yükseltilir, sağ alttaki yüzen eylem katmanı (İntro Atla / Geri Sayım) ise `z-20` seviyesine indirilip gizlenerek (`opacity-0 pointer-events-none`) menü içeriğinin altında kalması veya tıklamaları engellemesi kesin olarak önlenir.
+3. **Outro ve Sonraki Bölüm Geri Sayımı:**
    - Bölüm verisinde `outro_start_sec` varsa veya video bitimine 5 saniye kaldıysa (`currentTime >= duration - 5`) otomatik sonraki bölüm geri sayımı başlar.
    - Sağ alt köşede **3 saniyelik geri sayım sayacı** belirir (`setCountdownRemaining(3)`).
    - Kullanıcı "İptal" butonuna basarak geri sayımı durdurabilir (`cancelledAutoNextForEp`). İptal edilmezse süre dolduğunda `handleNextEpisode()` çağrılır.

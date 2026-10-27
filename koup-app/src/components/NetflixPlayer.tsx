@@ -1231,6 +1231,9 @@ export default function NetflixPlayer({
         localStorage.setItem('koup_auto_skip_intro', String(next));
       } catch {}
       triggerHudToast(next ? 'Otomatik İntro Atlama: Açık' : 'Otomatik İntro Atlama: Kapalı');
+      if (next) {
+        autoSkippedIntroEpRef.current = null;
+      }
       return next;
     });
   }, [triggerHudToast]);
@@ -1977,7 +1980,27 @@ export default function NetflixPlayer({
               } catch {}
               setIsBuffering(false);
               const resumeSec = targetResumeRef.current;
-              if (resumeSec > 3) {
+              const epIntroStart = currentEpObj?.intro_start_sec;
+              const epIntroEnd = currentEpObj?.intro_end_sec;
+              const hasValidIntro =
+                epIntroStart != null && epIntroEnd != null && epIntroEnd > epIntroStart;
+
+              if (
+                autoSkipIntro &&
+                hasValidIntro &&
+                resumeSec <= epIntroStart + 2
+              ) {
+                const epKey = `${media.id}_s${currentSeason}_e${currentEpisode}`;
+                autoSkippedIntroEpRef.current = epKey;
+                const target = epIntroEnd + 0.5;
+                try {
+                  video.currentTime = target;
+                  currentTimeRef.current = Math.floor(target);
+                  setCurrentTime(target);
+                } catch {}
+                setIsResumeReady(true);
+                triggerHudToast('İntro Otomatik Atlandı');
+              } else if (resumeSec > 3) {
                 try {
                   video.currentTime = resumeSec;
                 } catch {}
@@ -2288,7 +2311,29 @@ export default function NetflixPlayer({
         setDuration(video.duration);
       }
       const resumeSec = targetResumeRef.current;
-      if (!seekApplied && resumeSec > 3) {
+      const epIntroStart = currentEpObj?.intro_start_sec;
+      const epIntroEnd = currentEpObj?.intro_end_sec;
+      const hasValidIntro =
+        epIntroStart != null && epIntroEnd != null && epIntroEnd > epIntroStart;
+
+      if (
+        autoSkipIntro &&
+        hasValidIntro &&
+        resumeSec <= epIntroStart + 2 &&
+        !seekApplied
+      ) {
+        seekApplied = true;
+        const epKey = `${media.id}_s${currentSeason}_e${currentEpisode}`;
+        autoSkippedIntroEpRef.current = epKey;
+        const target = epIntroEnd + 0.5;
+        try {
+          video.currentTime = target;
+          currentTimeRef.current = Math.floor(target);
+          setCurrentTime(target);
+        } catch {}
+        setIsResumeReady(true);
+        triggerHudToast('İntro Otomatik Atlandı');
+      } else if (!seekApplied && resumeSec > 3) {
         seekApplied = true;
         try {
           video.currentTime = resumeSec;
@@ -2309,7 +2354,16 @@ export default function NetflixPlayer({
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
       video.removeEventListener('canplay', handleLoadedMetadata);
     };
-  }, [resolvedMode, streamUrl, currentSeason, currentEpisode]);
+  }, [
+    resolvedMode,
+    streamUrl,
+    currentSeason,
+    currentEpisode,
+    autoSkipIntro,
+    currentEpObj?.intro_start_sec,
+    currentEpObj?.intro_end_sec,
+    media.id,
+  ]);
 
   // Iframe seek to targetResume once active source resolves
   useEffect(() => {
@@ -2832,9 +2886,13 @@ export default function NetflixPlayer({
 
   const handleSkipIntro = useCallback(() => {
     if (currentEpObj?.intro_end_sec) {
-      const target = currentEpObj.intro_end_sec;
+      const target = currentEpObj.intro_end_sec + 0.5;
+      const epKey = `${media.id}_s${currentSeason}_e${currentEpisode}`;
+      autoSkippedIntroEpRef.current = epKey;
       if (videoRef.current) {
-        videoRef.current.currentTime = target;
+        try {
+          videoRef.current.currentTime = target;
+        } catch {}
         currentTimeRef.current = Math.floor(target);
         setCurrentTime(target);
       } else if (iframeRef.current) {
@@ -2845,7 +2903,15 @@ export default function NetflixPlayer({
       triggerHudToast('İntro Atlandı');
       revealControls();
     }
-  }, [currentEpObj?.intro_end_sec, sendSeekToIframe, triggerHudToast, revealControls]);
+  }, [
+    currentEpObj?.intro_end_sec,
+    media.id,
+    currentSeason,
+    currentEpisode,
+    sendSeekToIframe,
+    triggerHudToast,
+    revealControls,
+  ]);
 
   const handleSkipOutro = useCallback(() => {
     if (!isMovie && nextEp) {
@@ -2857,22 +2923,44 @@ export default function NetflixPlayer({
   const handleNextEpisodeRef = useRef(handleNextEpisode);
   handleNextEpisodeRef.current = handleNextEpisode;
 
-  // Auto-skip intro effect (per episode 1-time auto skip, prevents infinite loops)
+  // Auto-skip intro effect (per episode 1-time auto skip, waits until video is ready)
   useEffect(() => {
     if (!autoSkipIntro || !isInsideIntro || isTrailerMode) return;
     const epKey = `${media.id}_s${currentSeason}_e${currentEpisode}`;
     if (autoSkippedIntroEpRef.current === epKey) return;
+
+    const v = videoRef.current;
+    if (resolvedMode !== 'iframe') {
+      if (!v || v.readyState < 1 || !v.duration || Number.isNaN(v.duration)) {
+        // Video decoder not ready yet; onLoadedMetadata or onTimeUpdate will handle it once ready
+        return;
+      }
+    }
+
     autoSkippedIntroEpRef.current = epKey;
-    handleSkipIntro();
+    const target = currentEpObj!.intro_end_sec! + 0.5;
+    if (v) {
+      try {
+        v.currentTime = target;
+      } catch {}
+      currentTimeRef.current = Math.floor(target);
+      setCurrentTime(target);
+    } else if (iframeRef.current) {
+      sendSeekToIframe(target);
+      currentTimeRef.current = Math.floor(target);
+      setCurrentTime(target);
+    }
     triggerHudToast('İntro Otomatik Atlandı');
   }, [
     autoSkipIntro,
     isInsideIntro,
     isTrailerMode,
+    resolvedMode,
     media.id,
     currentSeason,
     currentEpisode,
-    handleSkipIntro,
+    currentEpObj,
+    sendSeekToIframe,
     triggerHudToast,
   ]);
 
@@ -2881,6 +2969,7 @@ export default function NetflixPlayer({
     setCancelledAutoNextForEp(false);
     setCountdownRemaining(3);
     hasTriggeredNextRef.current = false;
+    autoSkippedIntroEpRef.current = null;
     if (countdownTimerRef.current) {
       clearInterval(countdownTimerRef.current);
       countdownTimerRef.current = null;
@@ -3717,6 +3806,9 @@ export default function NetflixPlayer({
                     currentTimeRef.current = floorSec;
                     setCurrentTime(actualTime);
                     trackedTimeRef.current = floorSec;
+                    if (currentEpObj?.intro_start_sec != null && actualTime < currentEpObj.intro_start_sec) {
+                      autoSkippedIntroEpRef.current = null;
+                    }
                   }
                 }}
                 onPause={() => {
@@ -3752,6 +3844,29 @@ export default function NetflixPlayer({
                 }
                 if (curSec > 0) {
                   trackedTimeRef.current = curSec;
+                }
+
+                // Auto-skip intro trigger on real playback timeupdate
+                if (
+                  autoSkipIntro &&
+                  !isTrailerMode &&
+                  currentEpObj?.intro_start_sec != null &&
+                  currentEpObj?.intro_end_sec != null &&
+                  currentEpObj.intro_end_sec > currentEpObj.intro_start_sec &&
+                  v.currentTime >= currentEpObj.intro_start_sec &&
+                  v.currentTime < currentEpObj.intro_end_sec
+                ) {
+                  const epKey = `${media.id}_s${currentSeason}_e${currentEpisode}`;
+                  if (autoSkippedIntroEpRef.current !== epKey) {
+                    autoSkippedIntroEpRef.current = epKey;
+                    const target = currentEpObj.intro_end_sec + 0.5;
+                    try {
+                      v.currentTime = target;
+                      currentTimeRef.current = Math.floor(target);
+                      setCurrentTime(target);
+                    } catch {}
+                    triggerHudToast('İntro Otomatik Atlandı');
+                  }
                 }
                 // Auto-capture frame for episode preview cache once playback reaches >= 120s
                 if (curSec >= 120 && curSec <= 126) {
@@ -3959,7 +4074,9 @@ export default function NetflixPlayer({
                  AUTHENTIC NETFLIX FULL HUD OVERLAY (PROPORTIONALLY SIZED FOR MOBILE)
                  ================================================================ */
               <div
-                className={`netflix-hud-layer absolute inset-0 z-30 flex flex-col justify-between h-full overflow-hidden transition-colors duration-200 pointer-events-none will-change-[opacity] ${
+                className={`netflix-hud-layer absolute inset-0 ${
+                  activePanel ? 'z-50' : 'z-30'
+                } flex flex-col justify-between h-full overflow-hidden transition-colors duration-200 pointer-events-none will-change-[opacity] ${
                   showOverlay ? 'bg-black/10' : 'bg-transparent'
                 }`}
               >
@@ -4558,7 +4675,7 @@ export default function NetflixPlayer({
                                     transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
                                     data-netflix-control="true"
                                     onClick={(e) => e.stopPropagation()}
-                                    className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-50 min-w-[170px] max-w-[220px] max-h-[240px] overflow-y-auto no-scrollbar p-2.5 rounded-xl bg-[#181818]/98 backdrop-blur-sm border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1 select-none"
+                                    className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-[60] min-w-[170px] max-w-[220px] max-h-[240px] overflow-y-auto no-scrollbar p-2.5 rounded-xl bg-[#181818]/98 backdrop-blur-sm border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1 select-none"
                                   >
                                     <div className="flex items-center border-b border-white/10 pb-1.5 mb-1 px-1">
                                       <span className="text-white/60 font-semibold text-[11px] uppercase tracking-wider">
@@ -4658,7 +4775,7 @@ export default function NetflixPlayer({
                                   transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
                                   data-netflix-control="true"
                                   onClick={(e) => e.stopPropagation()}
-                                  className="absolute bottom-full mb-3 right-0 z-50 w-72 p-3 rounded-2xl bg-[#141414]/98 backdrop-blur-xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1.5 select-none transform-gpu origin-bottom"
+                                  className="absolute bottom-full mb-3 right-0 z-[60] w-72 p-3 rounded-2xl bg-[#141414]/98 backdrop-blur-xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1.5 select-none transform-gpu origin-bottom"
                                 >
                                   <div className="flex items-center justify-between border-b border-white/10 pb-2 px-1">
                                     <span className="text-white/80 font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
@@ -5003,7 +5120,7 @@ export default function NetflixPlayer({
 
                                 <AnimatePresence>
                                   {activePanel === 'episodes' && (
-                                    <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-50">
+                                    <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-[60]">
                                       <NetflixEpisodePopover
                                         media={media}
                                         episodes={episodes}
@@ -5104,7 +5221,7 @@ export default function NetflixPlayer({
                                       onClick={(e) => e.stopPropagation()}
                                       className={`absolute bottom-full mb-3 ${
                                         isVertical ? 'right-0' : 'left-1/2 -translate-x-1/2'
-                                      } z-50 min-w-[170px] max-w-[220px] max-h-[300px] overflow-y-auto no-scrollbar p-2.5 rounded-xl bg-[#181818]/98 backdrop-blur-sm border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1 select-none`}
+                                      } z-[60] min-w-[170px] max-w-[220px] max-h-[300px] overflow-y-auto no-scrollbar p-2.5 rounded-xl bg-[#181818]/98 backdrop-blur-sm border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1 select-none`}
                                     >
                                       <div className="flex items-center border-b border-white/10 pb-1.5 mb-1 px-1">
                                         <span className="text-white/60 font-semibold text-[11px] uppercase tracking-wider">
@@ -5182,7 +5299,7 @@ export default function NetflixPlayer({
                                     onClick={(e) => e.stopPropagation()}
                                     className={`absolute bottom-full mb-3 ${
                                       isVertical ? 'right-0 w-64' : 'left-1/2 -translate-x-1/2 w-76'
-                                    } p-3 rounded-2xl bg-[#141414]/98 backdrop-blur-xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1.5 select-none transform-gpu origin-bottom`}
+                                    } z-[60] p-3 rounded-2xl bg-[#141414]/98 backdrop-blur-xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1.5 select-none transform-gpu origin-bottom`}
                                   >
                                     <div className="flex items-center justify-between border-b border-white/10 pb-2 px-1">
                                       <span className="text-white/80 font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
@@ -5328,50 +5445,27 @@ export default function NetflixPlayer({
                 <div
                   data-netflix-control="true"
                   onClick={(e) => e.stopPropagation()}
-                  className={`absolute z-40 pointer-events-auto transition-all duration-300 ease-out select-none ${
+                  className={`absolute transition-all duration-300 ease-out select-none ${
+                    activePanel ? 'z-20 opacity-0 pointer-events-none' : 'z-30 opacity-100 pointer-events-auto'
+                  } ${
                     showOverlay
                       ? 'bottom-24 sm:bottom-28 right-4 sm:right-8'
                       : 'bottom-8 sm:bottom-10 right-6 sm:right-8'
                   }`}
                 >
-                  {/* 1. Skip Intro Floating Buttons */}
+                  {/* 1. Skip Intro Floating Button */}
                   {isInsideIntro && (
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleSkipIntro}
-                        className="px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-white hover:bg-white/90 text-black font-bold text-xs sm:text-sm tracking-wide shadow-2xl transition-all active:scale-95 cursor-pointer flex items-center gap-2 border border-white/40 hover:shadow-[0_0_20px_rgba(255,255,255,0.4)]"
-                      >
-                        <FastForward className="w-4 h-4 text-amber-500 fill-amber-500 shrink-0" />
-                        <span>İntroyu Atla</span>
-                        <span className="text-[10px] text-black/60 hidden sm:inline font-mono">
-                          (S)
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={toggleAutoSkipIntro}
-                        title={
-                          autoSkipIntro
-                            ? 'Otomatik İntro Atlama: Açık (Kapatmak için tıkla)'
-                            : 'Otomatik İntro Atlama: Kapalı (Açmak için tıkla)'
-                        }
-                        className={`px-2.5 py-1.5 sm:py-2 rounded-xl text-xs font-semibold tracking-wide shadow-xl transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 border backdrop-blur-md ${
-                          autoSkipIntro
-                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40 hover:bg-emerald-500/30'
-                            : 'bg-black/70 text-white/75 border-white/20 hover:text-white hover:bg-black/90'
-                        }`}
-                      >
-                        <Sparkles
-                          className={`w-3.5 h-3.5 ${
-                            autoSkipIntro ? 'text-emerald-400' : 'text-zinc-400'
-                          }`}
-                        />
-                        <span className="hidden sm:inline">Otomatik:</span>
-                        <span>{autoSkipIntro ? 'Açık' : 'Kapalı'}</span>
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSkipIntro}
+                      className="px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-white hover:bg-white/90 text-black font-bold text-xs sm:text-sm tracking-wide shadow-2xl transition-all active:scale-95 cursor-pointer flex items-center gap-2 border border-white/40 hover:shadow-[0_0_20px_rgba(255,255,255,0.4)]"
+                    >
+                      <FastForward className="w-4 h-4 text-amber-500 fill-amber-500 shrink-0" />
+                      <span>İntroyu Atla</span>
+                      <span className="text-[10px] text-black/60 hidden sm:inline font-mono">
+                        (S)
+                      </span>
+                    </button>
                   )}
 
                   {/* 2. Next Episode Countdown Card */}
@@ -5587,7 +5681,7 @@ export default function NetflixPlayer({
                     onClick={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
                     onPointerUp={(e) => e.stopPropagation()}
-                    className="absolute bottom-16 sm:bottom-20 left-1/2 -translate-x-1/2 sm:left-6 md:left-8 sm:translate-x-0 z-50 w-[90vw] sm:w-[480px] max-w-[500px] p-3.5 sm:p-6 rounded-xl bg-[#222222] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.9)] select-none"
+                    className="absolute bottom-16 sm:bottom-20 left-1/2 -translate-x-1/2 sm:left-6 md:left-8 sm:translate-x-0 z-[60] w-[90vw] sm:w-[480px] max-w-[500px] p-3.5 sm:p-6 rounded-xl bg-[#222222] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.9)] select-none"
                   >
                     {/* Header: Title + Close Button */}
                     <div className="flex items-center justify-between mb-5 sm:mb-8">
@@ -5667,7 +5761,7 @@ export default function NetflixPlayer({
 
               {/* B. AUTHENTIC NETFLIX FLOATING EPISODE POPOVER (Mobile / Touch Viewport Centered) */}
               {isTouchDevice && activePanel === 'episodes' && (
-                <div className="fixed sm:absolute bottom-16 sm:bottom-20 left-1/2 -translate-x-1/2 z-50">
+                <div className="fixed sm:absolute bottom-16 sm:bottom-20 left-1/2 -translate-x-1/2 z-[60]">
                   <NetflixEpisodePopover
                     media={media}
                     episodes={episodes}
@@ -5700,7 +5794,7 @@ export default function NetflixPlayer({
                   transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
                   data-netflix-control="true"
                   onClick={(e) => e.stopPropagation()}
-                  className="absolute bottom-14 sm:bottom-20 left-1/2 -translate-x-1/2 z-50 w-[92vw] max-w-md sm:max-w-xl p-4 sm:p-6 rounded-xl bg-[#181818]/98 backdrop-blur-sm border border-white/10 shadow-[0_24px_60px_rgba(0,0,0,0.95)] max-h-[85%] overflow-y-auto custom-scrollbar select-none"
+                  className="absolute bottom-14 sm:bottom-20 left-1/2 -translate-x-1/2 z-[60] w-[92vw] max-w-md sm:max-w-xl p-4 sm:p-6 rounded-xl bg-[#181818]/98 backdrop-blur-sm border border-white/10 shadow-[0_24px_60px_rgba(0,0,0,0.95)] max-h-[85%] overflow-y-auto custom-scrollbar select-none"
                 >
                   <div className="flex items-center justify-between mb-3 pb-2 border-b border-white/10">
                     <div className="text-white font-bold text-sm sm:text-base tracking-wide">

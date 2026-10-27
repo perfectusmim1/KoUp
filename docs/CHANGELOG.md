@@ -11,6 +11,18 @@ Bu dosya, KoUp platformunda yapılan tüm önemli geliştirmeleri, mimari kararl
 
 ---
 
+## [2026-10-27] — Video Oynatıcı İntro Atlama ve Z-Index Katmanlama Onarımı
+
+### Fixed
+- `NetflixPlayer.tsx`: Otomatik intro atlama açıkken decoder hazır olmadan mount anında tetiklenip kilitlenen `autoSkippedIntroEpRef` yarış durumu giderildi. `handleLoadedMetadata`, HLS `MANIFEST_PARSED` ve `onTimeUpdate` döngüsünde güvenli atlama tetikleyicisi kuruldu; introlar güvenle `intro_end_sec + 0.5` saniyesine atlatıldı. Bölüm değişiminde ve intro öncesine geri sarmada atlama referansı sıfırlandı.
+- `NetflixPlayer.tsx`: Yüzen "İntroyu Atla" butonunun yanındaki kalabalık oluşturan yeşil "Otomatik: Açık" rozeti kaldırıldı; ayarın Oynatma Tercihleri menüsünden yönetilmesi sağlandı.
+- `NetflixPlayer.tsx`: Ayarlar ("Oynatma Tercihleri"), Kalite, Hız ve Bölümler açılır menüleri `z-[60]` seviyesine taşındı. Menü açıkken `netflix-hud-layer` katmanı `z-50` seviyesine yükseltildi, sağ alttaki yüzen aksiyon katmanı `z-20` seviyesine alınıp gizlenerek menülerin altında kalması veya tıklamaları engellemesi engellendi.
+
+### Changed
+- `docs/05-oynatici-ve-yayin-akisi.md`: İntro ve outro atlama mantığı ile z-index katmanlama hiyerarşisi dokümantasyonu güncellendi.
+
+---
+
 ## [2026-10-27] — Admin Scraper Otomasyonu 20+ Siteye Genişletildi
 
 ### Changed
