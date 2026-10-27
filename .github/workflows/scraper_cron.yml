@@ -13,7 +13,9 @@ on:
         type: choice
         options:
           - all
+          - webdramaturkey2
           - series_automation
+          - gap_backfill
           - pending_resolver
           - animecix
           - hdfilm
@@ -24,23 +26,26 @@ on:
           - dizifon
           - asyawatch
           - asyamag
+          - diziizle
+          - koredizi
+          - shortizle
           - calendar
           - watchdog_24h
       pending_limit:
         description: 'Doğrudan kontrol edilecek bekleyen bölüm sayısı'
         required: false
-        default: '150'
+        default: '200'
         type: string
       batch_dramas:
         description: 'Çapraz aranacak dizi sayısı (DiziKorea, DiziFon, AsyaWatch)'
         required: false
-        default: '30'
+        default: '50'
         type: string
 
 jobs:
   scrape-and-resolve-pending:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 240
 
     steps:
       - name: Checkout KoUp Repository

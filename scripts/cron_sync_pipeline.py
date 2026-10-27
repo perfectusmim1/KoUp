@@ -182,7 +182,7 @@ def update_scraper_status(scraper_id: str, status: str, total_count: int = None)
 # SCRAPER HANDLERS
 # =========================================================================
 
-def sync_asyamag(limit: int = 15) -> int:
+def sync_asyamag(limit: int = 50) -> int:
     print(f"[AsyaMag] Son {limit} haber ve dedikodu makalesi kontrol ediliyor...", flush=True)
     try:
         resp = requests.get(
@@ -201,7 +201,7 @@ def sync_asyamag(limit: int = 15) -> int:
     return 0
 
 
-def sync_dizibox_latest(limit: int = 30, stop_after_known: int = 5, max_items: int = 120) -> int:
+def sync_dizibox_latest(limit: int = 50, stop_after_known: int = 10, max_items: int = 200) -> int:
     print(f"[DiziBox] Canlı tarayıcı başlatılıyor (limit: {limit}, stop_after_known: {stop_after_known}, max_items: {max_items})...", flush=True)
     try:
         from scrapers.live_scanner import scan_dizibox, build_drama_index
@@ -219,7 +219,7 @@ def sync_dizibox_latest(limit: int = 30, stop_after_known: int = 5, max_items: i
         return 0
 
 
-def sync_dizikorea_latest(limit: int = 30, stop_after_known: int = 5, max_items: int = 120) -> int:
+def sync_dizikorea_latest(limit: int = 50, stop_after_known: int = 10, max_items: int = 200) -> int:
     print(f"[DiziKorea] Canlı tarayıcı başlatılıyor (limit: {limit}, stop_after_known: {stop_after_known}, max_items: {max_items})...", flush=True)
     try:
         from scrapers.live_scanner import scan_dizikorea, build_drama_index
@@ -237,7 +237,7 @@ def sync_dizikorea_latest(limit: int = 30, stop_after_known: int = 5, max_items:
         return 0
 
 
-def sync_dizifon_latest(limit: int = 30, stop_after_known: int = 5, max_items: int = 120) -> int:
+def sync_dizifon_latest(limit: int = 50, stop_after_known: int = 10, max_items: int = 200) -> int:
     print(f"[DiziFon] Canlı tarayıcı başlatılıyor (limit: {limit}, stop_after_known: {stop_after_known}, max_items: {max_items})...", flush=True)
     try:
         from scrapers.live_scanner import scan_dizifon, build_drama_index
@@ -255,7 +255,7 @@ def sync_dizifon_latest(limit: int = 30, stop_after_known: int = 5, max_items: i
         return 0
 
 
-def sync_animecix_latest(limit: int = 30, stop_after_known: int = 5, max_items: int = 120) -> int:
+def sync_animecix_latest(limit: int = 50, stop_after_known: int = 10, max_items: int = 200) -> int:
     print(f"[AnimeciX] Canlı tarayıcı başlatılıyor (limit: {limit}, stop_after_known: {stop_after_known}, max_items: {max_items})...", flush=True)
     try:
         from scrapers.live_scanner import scan_animecix, build_drama_index
@@ -273,7 +273,7 @@ def sync_animecix_latest(limit: int = 30, stop_after_known: int = 5, max_items: 
         return 0
 
 
-def sync_hdfilm_latest(limit: int = 30, stop_after_known: int = 5, max_items: int = 120) -> int:
+def sync_hdfilm_latest(limit: int = 50, stop_after_known: int = 10, max_items: int = 200) -> int:
     print(f"[HDFilm] Canlı film tarayıcısı başlatılıyor (limit: {limit}, stop_after_known: {stop_after_known}, max_items: {max_items})...", flush=True)
     try:
         from scrapers.live_scanner import scan_hdfilm, build_drama_index
@@ -291,7 +291,7 @@ def sync_hdfilm_latest(limit: int = 30, stop_after_known: int = 5, max_items: in
         return 0
 
 
-def sync_ddizi_latest(limit: int = 30, stop_after_known: int = 5, max_items: int = 120) -> int:
+def sync_ddizi_latest(limit: int = 50, stop_after_known: int = 10, max_items: int = 200) -> int:
     print(f"[DDizi] Canlı yerli dizi tarayıcısı başlatılıyor (limit: {limit}, stop_after_known: {stop_after_known}, max_items: {max_items})...", flush=True)
     try:
         from scrapers.live_scanner import scan_ddizi, build_drama_index
@@ -309,7 +309,7 @@ def sync_ddizi_latest(limit: int = 30, stop_after_known: int = 5, max_items: int
         return 0
 
 
-def sync_dizilla_latest(limit: int = 30, stop_after_known: int = 5, max_items: int = 120) -> int:
+def sync_dizilla_latest(limit: int = 50, stop_after_known: int = 10, max_items: int = 200) -> int:
     print(f"[Dizilla] Canlı tarayıcı başlatılıyor (limit: {limit}, stop_after_known: {stop_after_known}, max_items: {max_items})...", flush=True)
     try:
         from scrapers.live_scanner import scan_dizilla, build_drama_index
@@ -327,7 +327,7 @@ def sync_dizilla_latest(limit: int = 30, stop_after_known: int = 5, max_items: i
         return 0
 
 
-def sync_asyawatch_latest(limit: int = 30, stop_after_known: int = 5, max_items: int = 120) -> int:
+def sync_asyawatch_latest(limit: int = 50, stop_after_known: int = 10, max_items: int = 200) -> int:
     print(f"[AsyaWatch] Canlı tarayıcı başlatılıyor (limit: {limit}, stop_after_known: {stop_after_known}, max_items: {max_items})...", flush=True)
     try:
         from scrapers.live_scanner import scan_asyawatch, build_drama_index
@@ -345,7 +345,7 @@ def sync_asyawatch_latest(limit: int = 30, stop_after_known: int = 5, max_items:
         return 0
 
 
-def run_pending_resolver(limit: int = 100, batch_dramas: int = 25) -> dict:
+def run_pending_resolver(limit: int = 200, batch_dramas: int = 50) -> dict:
     print(f"[Pending Resolver] En fazla {limit} bekleyen bölüm ve {batch_dramas} dizi için çapraz arama başlatılıyor...", flush=True)
     try:
         from scripts.recheck_pending_episodes import recheck_pending
@@ -512,7 +512,7 @@ def run_watchdog_check() -> int:
         return 0
 
 
-def run_gap_backfill(limit: int = 15) -> int:
+def run_gap_backfill(limit: int = 30) -> int:
     """
     Detects ongoing series that have missing earlier or intermediate episodes
     (e.g. latest episode is 35, but total episode count is < 35 or min episode > 1),
@@ -608,7 +608,7 @@ def main():
         "--target",
         type=str,
         default="all",
-        help="Hedef: all | asyamag | animecix | hdfilm | ddizi | dizibox | dizilla | dizikorea | dizifon | asyawatch | pending_resolver | series_automation | calendar | watchdog_24h",
+        help="Hedef: all | asyamag | animecix | hdfilm | ddizi | dizibox | dizilla | dizikorea | dizifon | asyawatch | diziizle | webdramaturkey2 | koredizi | shortizle | dramavadisi | dramabox | animelvl | sezonlukdizi | dizipal | fullhdfilmizlesene | tranimaci | anizm | pending_resolver | series_automation | gap_backfill | calendar | watchdog_24h",
     )
     parser.add_argument(
         "--trigger",
@@ -616,8 +616,8 @@ def main():
         default="cron",
         help="Tetikleyici türü: cron | workflow_dispatch | admin_trigger | manual",
     )
-    parser.add_argument("--pending-limit", type=int, default=100, help="Bekleyen bölüm kontrol limiti")
-    parser.add_argument("--batch-dramas", type=int, default=25, help="Çapraz aranacak dizi sayısı")
+    parser.add_argument("--pending-limit", type=int, default=200, help="Bekleyen bölüm kontrol limiti")
+    parser.add_argument("--batch-dramas", type=int, default=50, help="Çapraz aranacak dizi sayısı")
     args = parser.parse_args()
 
     target = args.target.lower()
@@ -639,7 +639,7 @@ def main():
         except Exception:
             pass
 
-    record_log(f"KoUp 4 Saatlik Otomasyon Pipeline Başlatıldı — Hedef: {target} (Tetikleyici: {trigger_type})")
+    record_log(f"KoUp Derin Otomasyon Pipeline Başlatıldı — Hedef: {target} (Tetikleyici: {trigger_type})")
 
     ensure_database_ready()
 
@@ -687,8 +687,8 @@ def main():
             except Exception:
                 pass
 
-    # Helper to run a specific scraper step with per-scraper 45s timeout and try/finally
-    def run_scraper_step(bot_id: str, label: str, fn, *fn_args, timeout_sec: int = 45, **fn_kwargs):
+    # Helper to run a specific scraper step with per-scraper configurable timeout and try/finally
+    def run_scraper_step(bot_id: str, label: str, fn, *fn_args, timeout_sec: int = 300, **fn_kwargs):
         # Admin control: if bot is disabled in scraper_configs, skip!
         if enabled_map and not enabled_map.get(bot_id, True):
             record_log(f"[{label}] Bot admin panelinde 'Devre Dışı' bırakılmış. Atlanıyor.")
@@ -727,7 +727,7 @@ def main():
             worker.join(timeout=timeout_sec)
             if worker.is_alive():
                 err_msg = f"{timeout_sec}s zaman aşımı sınırı aşıldı, sonraki adıma geçildi"
-                record_log(f"[{label}] UYARI: {err_msg}.")
+                record_log(f"[{label}] ZAMAN AŞIMI UYARISI: {err_msg}.")
             elif box["err"] is not None:
                 err_obj = box["err"]
                 err_str = str(err_obj).lower()
@@ -771,60 +771,62 @@ def main():
             }
 
             update_scraper_status(bot_id, status)
+            if err_msg and status == "error":
+                record_log(f"[{label}] Hata Özeti: {err_msg}")
             record_log(
-                f"[{label}] Tamamlandı ({step_duration}s) — +{len(step_dramas)} Seri | +{len(step_episodes)} Bölüm | +{len(step_sources)} Kaynak."
+                f"[{label}] Tamamlandı ({step_duration}s) — İşlenen: {processed} | +{len(step_dramas)} Seri | +{len(step_episodes)} Bölüm | +{len(step_sources)} Kaynak."
             )
 
     fatal_error = None
     try:
         if target in ("all", "asyamag"):
-            run_scraper_step("asyamag", "AsyaMag Haber", sync_asyamag, 30)
+            run_scraper_step("asyamag", "AsyaMag Haber", sync_asyamag, 50, timeout_sec=60)
 
         if target in ("all", "animecix", "anime"):
-            run_scraper_step("animecix", "AnimeciX", sync_animecix_latest, 30)
+            run_scraper_step("animecix", "AnimeciX", sync_animecix_latest, limit=50, stop_after_known=10, max_items=200, timeout_sec=180)
 
         if target in ("all", "hdfilm", "film", "movie"):
-            run_scraper_step("hdfilm", "HDFilmcehennemi", sync_hdfilm_latest, 30)
+            run_scraper_step("hdfilm", "HDFilmcehennemi", sync_hdfilm_latest, limit=50, stop_after_known=10, max_items=200, timeout_sec=180)
 
         if target in ("all", "ddizi", "yerli"):
-            run_scraper_step("ddizi", "DDizi Yerli Arşiv", sync_ddizi_latest, 30)
+            run_scraper_step("ddizi", "DDizi Yerli Arşiv", sync_ddizi_latest, limit=50, stop_after_known=10, max_items=200, timeout_sec=300)
 
         if target in ("all", "dizibox"):
-            run_scraper_step("dizibox", "DiziBox", sync_dizibox_latest, 30)
+            run_scraper_step("dizibox", "DiziBox", sync_dizibox_latest, limit=50, stop_after_known=10, max_items=200, timeout_sec=180)
 
         if target in ("all", "dizilla"):
-            run_scraper_step("dizilla", "Dizilla", sync_dizilla_latest, 30)
+            run_scraper_step("dizilla", "Dizilla", sync_dizilla_latest, limit=50, stop_after_known=10, max_items=200, timeout_sec=180)
 
         if target in ("all", "dizikorea"):
-            run_scraper_step("dizikorea", "DiziKorea", sync_dizikorea_latest, 30)
+            run_scraper_step("dizikorea", "DiziKorea", sync_dizikorea_latest, limit=50, stop_after_known=10, max_items=200, timeout_sec=240)
 
         if target in ("all", "dizifon"):
-            run_scraper_step("dizifon", "DiziFon", sync_dizifon_latest, 30, timeout_sec=120)
+            run_scraper_step("dizifon", "DiziFon", sync_dizifon_latest, limit=50, stop_after_known=10, max_items=200, timeout_sec=300)
 
         if target in ("all", "asyawatch"):
-            run_scraper_step("asyawatch", "AsyaWatch", sync_asyawatch_latest, 30, timeout_sec=120)
+            run_scraper_step("asyawatch", "AsyaWatch", sync_asyawatch_latest, limit=50, stop_after_known=10, max_items=200, timeout_sec=300)
 
         if target in ("all", "diziizle"):
             def _sync_diziizle():
                 from scrapers.sites.diziizle import crawl_diziizle_recent
                 conn_d = get_connection(); cur_d = conn_d.cursor()
                 try:
-                    res = crawl_diziizle_recent(cur=cur_d, conn=conn_d, limit=30)
+                    res = crawl_diziizle_recent(cur=cur_d, conn=conn_d, limit=50)
                     return sum(r.get("sources_added", 0) for r in (res or []))
                 finally:
                     conn_d.close()
-            run_scraper_step("diziizle", "Diziİzle", _sync_diziizle, timeout_sec=120)
+            run_scraper_step("diziizle", "Diziİzle", _sync_diziizle, timeout_sec=300)
 
         if target in ("all", "webdramaturkey", "webdramaturkey2"):
             def _sync_wdt():
                 from scrapers.sites.webdramaturkey import crawl_webdramaturkey_recent
                 conn_w = get_connection(); cur_w = conn_w.cursor()
                 try:
-                    res = crawl_webdramaturkey_recent(cur=cur_w, conn=conn_w, limit=15)
+                    res = crawl_webdramaturkey_recent(cur=cur_w, conn=conn_w, limit=40, max_pages=5)
                     return sum(r.get("sources_added", 0) for r in (res or []))
                 finally:
                     conn_w.close()
-            run_scraper_step("webdramaturkey2", "WebDramaTurkey2", _sync_wdt, timeout_sec=150)
+            run_scraper_step("webdramaturkey2", "WebDramaTurkey2", _sync_wdt, timeout_sec=900)
 
         if target in ("all", "koredizi"):
             def _sync_koredizi():
@@ -833,80 +835,80 @@ def main():
                     return 0
                 try:
                     from scrapers.shortdrama.koredizi import KoreDiziScraper
-                    return KoreDiziScraper().run(limit=30, sync_cloud=True)
+                    return KoreDiziScraper().run(limit=50, sync_cloud=True)
                 except Exception as e:
                     record_log(f"[KoreDizi Short] UYARI: {e}")
                     return 0
-            run_scraper_step("koredizi", "KoreDizi Short", _sync_koredizi, timeout_sec=120)
+            run_scraper_step("koredizi", "KoreDizi Short", _sync_koredizi, timeout_sec=300)
 
         if target in ("all", "shortizle"):
             from scrapers.shortdrama.shortizle import ShortizleScraper
-            run_scraper_step("shortizle", "Shortİzle", lambda: ShortizleScraper().run(limit=30, sync_cloud=True), timeout_sec=120)
+            run_scraper_step("shortizle", "Shortİzle", lambda: ShortizleScraper().run(limit=50, sync_cloud=True), timeout_sec=180)
 
         if target in ("all", "dramavadisi"):
             from scrapers.shortdrama.dramavadisi import DramaVadisiScraper
-            run_scraper_step("dramavadisi", "DramaVadisi", lambda: DramaVadisiScraper().run(limit=30, sync_cloud=True), timeout_sec=120)
+            run_scraper_step("dramavadisi", "DramaVadisi", lambda: DramaVadisiScraper().run(limit=50, sync_cloud=True), timeout_sec=180)
 
         if target in ("all", "dramabox"):
             from scrapers.shortdrama.dramabox import DramaBoxScraper
-            run_scraper_step("dramabox", "DramaBox Match", lambda: DramaBoxScraper().run(limit=30, sync_cloud=True), timeout_sec=120)
+            run_scraper_step("dramabox", "DramaBox Match", lambda: DramaBoxScraper().run(limit=50, sync_cloud=True), timeout_sec=180)
 
         if target in ("all", "animelvl"):
             from scripts.backfill_phase4 import run_animelvl
-            run_scraper_step("animelvl", "AnimeLVL", lambda: run_animelvl(limit=30, resume=True), timeout_sec=120)
+            run_scraper_step("animelvl", "AnimeLVL", lambda: run_animelvl(limit=50, resume=True), timeout_sec=180)
 
         if target in ("all", "sezonlukdizi"):
             from scripts.backfill_phase4 import run_sezonlukdizi
-            run_scraper_step("sezonlukdizi", "SezonlukDizi", lambda: run_sezonlukdizi(limit=30, resume=True), timeout_sec=120)
+            run_scraper_step("sezonlukdizi", "SezonlukDizi", lambda: run_sezonlukdizi(limit=50, resume=True), timeout_sec=180)
 
         if target in ("all", "dizipal"):
             from scripts.backfill_phase4 import run_dizipal
-            run_scraper_step("dizipal", "Dizipal", lambda: run_dizipal(limit=30, resume=True), timeout_sec=120)
+            run_scraper_step("dizipal", "Dizipal", lambda: run_dizipal(limit=50, resume=True), timeout_sec=180)
 
         if target in ("all", "fullhdfilmizlesene"):
             from scripts.backfill_phase4 import run_fullhdfilmizlesene
-            run_scraper_step("fullhdfilmizlesene", "FullHDFilmizlesene", lambda: run_fullhdfilmizlesene(limit=30, resume=True), timeout_sec=120)
+            run_scraper_step("fullhdfilmizlesene", "FullHDFilmizlesene", lambda: run_fullhdfilmizlesene(limit=50, resume=True), timeout_sec=180)
 
         if target in ("all", "tranimaci"):
             def _sync_tranimaci():
                 try:
                     from scripts.backfill_phase4 import run_tranimaci
-                    return run_tranimaci(limit=30, resume=True)
+                    return run_tranimaci(limit=50, resume=True)
                 except Exception as e:
                     err_s = str(e).lower()
                     if any(k in err_s for k in ("cloudflare", "turnstile", "challenge", "just a moment", "403", "protected")):
                         record_log(f"[TRAnimeci] Cloudflare Challenge/Turnstile devrede ({e}). 0 yeni açık kaynakla sağlıklı tamamlandı.")
                         return 0
                     raise
-            run_scraper_step("tranimaci", "TRAnimeci", _sync_tranimaci, timeout_sec=120)
+            run_scraper_step("tranimaci", "TRAnimeci", _sync_tranimaci, timeout_sec=180)
 
         if target in ("all", "anizm"):
             def _sync_anizm():
                 try:
                     from scripts.backfill_phase4 import run_anizm
-                    return run_anizm(limit=30, resume=True)
+                    return run_anizm(limit=50, resume=True)
                 except Exception as e:
                     err_s = str(e).lower()
                     if any(k in err_s for k in ("cloudflare", "turnstile", "challenge", "just a moment", "403", "protected")):
                         record_log(f"[Anizm] Cloudflare Challenge/Turnstile devrede ({e}). 0 yeni açık kaynakla sağlıklı tamamlandı.")
                         return 0
                     raise
-            run_scraper_step("anizm", "Anizm", _sync_anizm, timeout_sec=120)
+            run_scraper_step("anizm", "Anizm", _sync_anizm, timeout_sec=180)
 
         if target in ("all", "pending_resolver", "pending"):
-            run_scraper_step("pending_resolver", "Bekleyen Kaynak Çözücü", run_pending_resolver, limit=args.pending_limit, batch_dramas=args.batch_dramas)
+            run_scraper_step("pending_resolver", "Bekleyen Kaynak Çözücü", run_pending_resolver, limit=args.pending_limit, batch_dramas=args.batch_dramas, timeout_sec=600)
 
         if target in ("all", "series_automation", "series_auto"):
             try:
                 from scripts.series_automation_runner import sync_all_active_series
-                run_scraper_step("series_automation", "Seri Otomasyonu", sync_all_active_series, 5)
+                run_scraper_step("series_automation", "Seri Otomasyonu", sync_all_active_series, 15, timeout_sec=600)
             except Exception as e:
                 record_log(f"[Seri Otomasyonu] Hata: {e}")
 
         # Otomatik Eksik Bölüm & Boşluk Tamamlama Motoru
         if target in ("all", "gap_backfill", "gaps", "series_automation", "series_auto"):
             try:
-                run_scraper_step("gap_backfill", "Eksik Bölüm Otomasyonu", run_gap_backfill, limit=15)
+                run_scraper_step("gap_backfill", "Eksik Bölüm Otomasyonu", run_gap_backfill, limit=30, timeout_sec=600)
             except Exception as e:
                 record_log(f"[Eksik Bölüm Otomasyonu] Hata: {e}")
 
@@ -948,7 +950,7 @@ def main():
                 record_log(f"[Takvim] Hata: {e}")
 
         if target in ("all", "watchdog_24h"):
-            run_scraper_step("watchdog_24h", "24h Watchdog", run_watchdog_check)
+            run_scraper_step("watchdog_24h", "24h Watchdog", run_watchdog_check, timeout_sec=120)
 
         # Otomasyon sirasinda yeni seriler eklendiyse otomatik duplicate kontrolu ve birlestirme
         if all_dramas:
@@ -960,7 +962,7 @@ def main():
                 record_log(f"[Deduplication] Hata: {e}")
 
             try:
-                from scripts.build_franchise_graph import main as rebuild_franchise_graph
+                from scripts.build_franchise_graph import build_graph as rebuild_franchise_graph
                 record_log(f"[Seri Evreni] {len(all_dramas)} yeni yapım için Seri Evreni & İzleme Sırası grafiği güncelleniyor...")
                 rebuild_franchise_graph()
             except Exception as e:

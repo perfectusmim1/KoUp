@@ -1,14 +1,18 @@
 """
 WebDramaTurkey2.com Scraper & WDT Stream Resolver.
 Features:
-- Restricted to ONLY New Series (/diziler) and New Movies (/filmler)
-- Adaptive rate-limit defense: 1.2s minimum delay + exponential backoff (4s -> 8s -> 16s)
+- Balanced discovery of New Series (/diziler) and New Movies (/filmler)
+- Adaptive rate-limit defense: 1.2s - 1.8s random delay + Retry-After / exponential backoff (5s -> 10s -> 20s -> 40s)
 - WDT (dtpasn.asia) embed resolution via /ajax/embed and live HLS stream verification
 - Multi-source fallback (WDT, Vidmoly, Filemoon) and full archive sync
+- Detailed diagnostic logging for deep tracing and rate-limit prevention
 """
 
+import argparse
 import json
+import random
 import re
+import sys
 import time
 from datetime import datetime, timezone
 from urllib.parse import urljoin, urlparse
@@ -20,6 +24,11 @@ except ImportError:
 
 import requests
 from bs4 import BeautifulSoup
+
+import os
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
 from scrapers.domain_resolver import get_site_base_url
 from scrapers.multisite import (
@@ -62,7 +71,8 @@ def _get_wdt_session():
     if _cfr_session is None and cfr:
         try:
             _cfr_session = cfr.Session(impersonate="chrome")
-        except Exception:
+        except Exception as e:
+            print(f"[WDT Session] curl_cffi başlatılamadı ({e}), requests fallback kullanılacak.", flush=True)
             _cfr_session = None
     if _req_session is None:
         _req_session = requests.Session()
@@ -78,20 +88,22 @@ def _rate_limited_fetch(
     method: str = "GET",
     data: dict = None,
     headers: dict = None,
-    timeout: int = 12,
-    max_retries: int = 3,
+    timeout: int = 15,
+    max_retries: int = 4,
 ) -> tuple[int, str]:
     """
     Executes an HTTP request with adaptive rate-limit protection:
-    - Guaranteed minimum 1.2s delay between requests
-    - Exponential backoff on HTTP 429/503 (4s -> 8s -> 16s)
-    - Persistent sessions to preserve CF cookies
+    - 1.2s - 1.8s randomized delay between requests to avoid burst rate limiting
+    - Retry-After header awareness with exponential backoff on HTTP 429/503/502/504
+    - Persistent sessions to preserve CF cookies and TLS sessions
+    - Clear diagnostic logging for any network, status, or Cloudflare challenge failures
     """
     global _LAST_REQUEST_TIME
 
     default_headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
     }
     if headers:
         default_headers.update(headers)
@@ -99,13 +111,16 @@ def _rate_limited_fetch(
     cfr_s, req_s = _get_wdt_session()
 
     for attempt in range(max_retries):
+        target_delay = random.uniform(1.2, 1.8)
         elapsed = time.time() - _LAST_REQUEST_TIME
-        if elapsed < 1.2:
-            time.sleep(1.2 - elapsed)
+        if elapsed < target_delay:
+            time.sleep(target_delay - elapsed)
 
         _LAST_REQUEST_TIME = time.time()
         resp_status = 0
         resp_text = ""
+        retry_after_hdr = None
+        last_error = None
 
         if cfr_s:
             try:
@@ -115,8 +130,9 @@ def _rate_limited_fetch(
                     r = cfr_s.get(url, headers=default_headers, timeout=timeout)
                 resp_status = r.status_code
                 resp_text = r.text
-            except Exception:
-                pass
+                retry_after_hdr = r.headers.get("Retry-After")
+            except Exception as e_cfr:
+                last_error = f"curl_cffi: {e_cfr}"
 
         if not resp_status:
             try:
@@ -126,14 +142,39 @@ def _rate_limited_fetch(
                     r = req_s.get(url, headers=default_headers, timeout=timeout)
                 resp_status = r.status_code
                 resp_text = r.text
-            except Exception:
-                pass
+                retry_after_hdr = r.headers.get("Retry-After")
+            except Exception as e_req:
+                last_error = f"{last_error} | requests: {e_req}" if last_error else f"requests: {e_req}"
 
-        if resp_status in (429, 503):
-            backoff = 4 * (2 ** attempt)
-            print(f"[WDT RATE-LIMIT] HTTP {resp_status} on {url}. Backing off {backoff}s (attempt {attempt+1}/{max_retries})...", flush=True)
+        # Network / Connection level failure
+        if not resp_status and last_error:
+            wait_net = 2.0 + attempt * 2.5
+            print(f"[WDT Ağ Hatası] {method} {url} -> {last_error}. {wait_net}s bekleniyor (deneme {attempt+1}/{max_retries})...", flush=True)
+            time.sleep(wait_net)
+            continue
+
+        # Rate Limit (429) or temporary server errors (503, 502, 504)
+        if resp_status in (429, 503, 502, 504):
+            backoff = 5.0 * (2 ** attempt)
+            if retry_after_hdr:
+                try:
+                    parsed_ra = float(retry_after_hdr)
+                    if 1.0 <= parsed_ra <= 120.0:
+                        backoff = parsed_ra
+                except Exception:
+                    pass
+            backoff = round(backoff + random.uniform(0.5, 2.0), 1)
+            print(
+                f"[WDT RATE-LIMIT] HTTP {resp_status} on {url}. "
+                f"Sakinleşme süresi (backoff): {backoff}s (deneme {attempt+1}/{max_retries})...",
+                flush=True,
+            )
             time.sleep(backoff)
             continue
+
+        # Cloudflare Challenge Check
+        if resp_status == 403 or (resp_text and any(k in resp_text.lower() for k in ("just a moment...", "cf-turnstile", "challenge-running", "turnstile.render"))):
+            print(f"[WDT Cloudflare Engeli] HTTP {resp_status} Cloudflare Challenge/Turnstile algılandı: {url}", flush=True)
 
         return resp_status, resp_text
 
@@ -153,7 +194,11 @@ def verify_wdt_stream(hash_code: str, base_url: str = DEFAULT_BASE_URL) -> bool:
     data = {"hash": hash_code, "r": f"{base_url}/"}
     status, text = _rate_limited_fetch(api_url, method="POST", data=data, headers=headers, timeout=10)
     if status == 200 and text:
-        return '"hls":true' in text or "videoSource" in text or ".m3u8" in text
+        is_valid = '"hls":true' in text or "videoSource" in text or ".m3u8" in text
+        if not is_valid:
+            print(f"[WDT Stream] dtpasn.asia hash={hash_code} HLS akışı içermiyor (yanıt: {text[:100]}).", flush=True)
+        return is_valid
+    print(f"[WDT Stream Hatası] dtpasn.asia hash={hash_code} sorgusu başarısız (HTTP {status}).", flush=True)
     return False
 
 
@@ -174,6 +219,7 @@ def resolve_wdt_embed(
     }
     status, text = _rate_limited_fetch(ajax_url, method="POST", data={"id": embed_id}, headers=headers, timeout=10)
     if status != 200 or not text:
+        print(f"[WDT Embed Hatası] /ajax/embed id={embed_id} HTTP {status} döndü.", flush=True)
         return None
 
     video_url = None
@@ -188,11 +234,13 @@ def resolve_wdt_embed(
             video_url = urljoin(base_url, src)
 
     if not video_url:
+        print(f"[WDT Embed] id={embed_id} yanıtında video URL bulunamadı (yanıt: {text[:120]}).", flush=True)
         return None
 
     # Fetch intermediate video.php page to inspect actual iframe src
     v_status, v_text = _rate_limited_fetch(video_url, headers={"Referer": page_url}, timeout=10)
     if v_status != 200 or not v_text:
+        print(f"[WDT Embed] video.php iframe sayfası alınamadı: {video_url} (HTTP {v_status})", flush=True)
         return None
 
     soup = BeautifulSoup(v_text, "html.parser")
@@ -204,6 +252,7 @@ def resolve_wdt_embed(
             iframe_src = m_if.group(1)
 
     if not iframe_src:
+        print(f"[WDT Embed] video.php içinde iframe etiketi bulunamadı: {video_url}", flush=True)
         return None
 
     iframe_src = urljoin(base_url, iframe_src)
@@ -214,6 +263,7 @@ def resolve_wdt_embed(
         dt_hash = iframe_src.split("/video/")[-1].split("?")[0].split("#")[0].strip()
         if verify_wdt_stream(dt_hash, base_url):
             return "WDT (Full HD)", f"https://dtpasn.asia/video/{dt_hash}#r=wdt", "wdt"
+        print(f"[WDT Stream] dtpasn.asia hash={dt_hash} doğrulamadan geçemedi.", flush=True)
         return None
 
     # 2. Vidmoly
@@ -227,6 +277,7 @@ def resolve_wdt_embed(
 
     # 4. Filter out dead / forbidden providers (sibnet, etc.)
     if any(dead in src_low for dead in ("sibnet", "sendvid", "uns.bio", "playerdkorea", "upns")):
+        print(f"[WDT Embed Filtre] Ölü/yasaklı sağlayıcı elendi: {iframe_src}", flush=True)
         return None
 
     # 5. Generic valid player
@@ -243,7 +294,7 @@ def scrape_wdt_series_or_film(
     item_url: str,
     idx: dict = None,
     is_film: bool = False,
-    max_episodes: int = 30,
+    max_episodes: int = 100,
 ) -> dict:
     """
     Scrapes a single drama or movie from webdramaturkey2.com:
@@ -252,11 +303,14 @@ def scrape_wdt_series_or_film(
     - Discovers episodes and resolves WDT/Vidmoly/Filemoon sources
     - Updates bundles and database
     """
+    t_start = time.time()
     base_url = _get_base()
     full_url = urljoin(base_url, item_url)
     status, html = _rate_limited_fetch(full_url)
     if status != 200 or not html:
-        return {"error": f"Failed to fetch {full_url}", "episodes_added": 0, "sources_added": 0}
+        err = f"HTTP {status} ile {full_url} alınamadı"
+        print(f"[WDT Hata] {err}", flush=True)
+        return {"error": err, "episodes_added": 0, "sources_added": 0}
 
     soup = BeautifulSoup(html, "html.parser")
 
@@ -338,6 +392,8 @@ def scrape_wdt_series_or_film(
         year_hint=year,
     )
 
+    print(f"[WDT Yapım] #{drama_id} '{d_title}' ({content_type}, {country_hint}, yıl: {year or 'bilinmiyor'}) işleniyor...", flush=True)
+
     episodes_added = 0
     sources_added = 0
     sample_sources = []
@@ -347,14 +403,19 @@ def scrape_wdt_series_or_film(
         ep_id, is_new = match_or_create_episode(cur, drama_id, 1, 1, f"{d_title} (Film)", full_url)
         if is_new:
             episodes_added += 1
+            print(f"[WDT Film Bölüm] '{d_title}' için film bölüm kaydı oluşturuldu (ep_id={ep_id}).", flush=True)
 
         # Check existing WDT sources
         cur.execute(
-            "SELECT id FROM episode_sources WHERE episode_id = ? AND (provider = 'wdt' OR direct_url LIKE '%dtpasn%')",
+            "SELECT id, provider, direct_url FROM episode_sources WHERE episode_id = ? AND (provider = 'wdt' OR direct_url LIKE '%dtpasn%')",
             (ep_id,),
         )
-        if not cur.fetchone():
+        existing_src = cur.fetchone()
+        if existing_src:
+            print(f"[WDT Kaynak Atlandı] '{d_title}' film kaynağı zaten mevcut (id={existing_src[0]}).", flush=True)
+        else:
             embed_btns = soup.select("a[data-embed]")
+            print(f"[WDT Embed] '{d_title}' film sayfasında {len(embed_btns)} embed butonu bulundu.", flush=True)
             for btn in embed_btns:
                 eid = btn.get("data-embed")
                 resolved = resolve_wdt_embed(eid, full_url, base_url)
@@ -363,6 +424,7 @@ def scrape_wdt_series_or_film(
                     if add_source(cur, ep_id, s_name, s_url, s_prov, "webdramaturkey2", embed_id=eid):
                         sources_added += 1
                         sample_sources.append(s_url)
+                        print(f"[WDT Kaynak Eklendi] '{d_title}' -> +{s_name} ({s_prov}): {s_url[:80]}", flush=True)
                         if s_prov == "wdt":
                             break
     else:
@@ -390,10 +452,13 @@ def scrape_wdt_series_or_film(
             return (int(sm.group(1)) if sm else 1, int(em.group(1)) if em else 1)
 
         ep_links.sort(key=_wdt_ep_sort)
+        total_discovered = len(ep_links)
         if max_episodes and len(ep_links) > max_episodes:
             ep_links = ep_links[-max_episodes:]
 
-        for ep_url in ep_links:
+        print(f"[WDT Dizi Keşif] '{d_title}': Toplam {total_discovered} bölüm linki bulundu (işlenecek: {len(ep_links)}).", flush=True)
+
+        for ep_idx, ep_url in enumerate(ep_links, 1):
             sm = re.search(r"(\d+)[-_]sezon", ep_url)
             em = re.search(r"(\d+)[-_]bolum", ep_url)
             s_num = int(sm.group(1)) if sm else 1
@@ -403,6 +468,7 @@ def scrape_wdt_series_or_film(
             ep_id, is_new = match_or_create_episode(cur, drama_id, s_num, e_num, ep_name, ep_url)
             if is_new:
                 episodes_added += 1
+                print(f"[WDT Bölüm Eklendi] '{d_title}' -> {ep_name} (yeni)", flush=True)
 
             # Check if WDT source already exists
             cur.execute(
@@ -415,6 +481,7 @@ def scrape_wdt_series_or_film(
             # Fetch episode page to get data-embed buttons
             ep_status, ep_html = _rate_limited_fetch(ep_url)
             if ep_status != 200 or not ep_html:
+                print(f"[WDT Bölüm Hatası] '{d_title}' S{s_num}E{e_num} ({ep_url}) HTTP {ep_status}", flush=True)
                 continue
 
             ep_soup = BeautifulSoup(ep_html, "html.parser")
@@ -427,6 +494,7 @@ def scrape_wdt_series_or_film(
                     if add_source(cur, ep_id, s_name, s_url, s_prov, "webdramaturkey2", embed_id=eid):
                         sources_added += 1
                         sample_sources.append(s_url)
+                        print(f"[WDT Kaynak Eklendi] '{d_title}' S{s_num}E{e_num} -> +{s_name} ({s_prov})", flush=True)
                         if s_prov == "wdt":
                             break
 
@@ -445,7 +513,7 @@ def scrape_wdt_series_or_film(
     total_sources = cur.fetchone()[0]
 
     if total_sources == 0:
-        print(f"[WDT PURGE] '{d_title}' (#{drama_id}) geçerli kaynağa sahip değil. Boş kabuk siliniyor...", flush=True)
+        print(f"[WDT PURGE] '{d_title}' (#{drama_id}) geçerli kaynağa sahip değil. Boş kabuk temizleniyor...", flush=True)
         cur.execute("DELETE FROM episode_sources WHERE episode_id IN (SELECT id FROM episodes WHERE drama_id = ?)", (drama_id,))
         cur.execute("DELETE FROM episodes WHERE drama_id = ?", (drama_id,))
         cur.execute("DELETE FROM dramas WHERE id = ?", (drama_id,))
@@ -465,6 +533,9 @@ def scrape_wdt_series_or_film(
     if episodes_added > 0 or sources_added > 0:
         sync_drama_bundle_and_counts(conn, cur, drama_id)
 
+    item_dur = round(time.time() - t_start, 1)
+    print(f"[WDT Yapım Tamamlandı] '{d_title}' -> +{episodes_added} Bölüm, +{sources_added} Kaynak ({item_dur}s)", flush=True)
+
     return {
         "drama_id": drama_id,
         "title": d_title,
@@ -480,46 +551,73 @@ def crawl_webdramaturkey_recent(
     cur,
     conn,
     idx: dict = None,
-    limit: int = 35,
+    limit: int = 40,
     category: str = "all",
+    max_pages: int = 5,
 ) -> list[dict]:
     """
-    Crawls ONLY New Series (/diziler?page=1..3) and New Movies (/filmler?page=1..3) from webdramaturkey2.com.
-    Prioritizes new movies when requested.
+    Crawls New Series (/diziler?page=1..5) and New Movies (/filmler?page=1..5) from webdramaturkey2.com.
+    Interleaves series and movies in 'all' mode to guarantee balanced coverage without starvation.
     """
+    t_crawl_start = time.time()
     base_url = _get_base()
-    candidates = []
+    film_candidates = []
+    dizi_candidates = []
     seen = set()
 
-    # 1. New Movies (/filmler pages 1..3)
+    # 1. New Movies (/filmler pages 1..max_pages)
     if category in ("all", "film"):
-        for page in range(1, 4):
+        for page in range(1, max_pages + 1):
             page_url = f"{base_url}/filmler" if page == 1 else f"{base_url}/filmler?page={page}"
             status, html = _rate_limited_fetch(page_url)
             if status == 200 and html:
                 soup = BeautifulSoup(html, "html.parser")
+                found_count = 0
                 for a in soup.find_all("a", href=True):
                     h = a["href"]
                     if "/film/" in h and "/sezon" not in h and "/bolum" not in h:
                         full_u = urljoin(base_url, h)
                         if full_u not in seen:
-                            candidates.append((full_u, True))
+                            film_candidates.append((full_u, True))
                             seen.add(full_u)
+                            found_count += 1
+                print(f"[WDT Keşif] /filmler Sayfa {page}/{max_pages}: +{found_count} film adayı bulundu.", flush=True)
+            elif status != 200:
+                print(f"[WDT Keşif Hatası] /filmler Sayfa {page} alınamadı (HTTP {status})", flush=True)
 
-    # 2. New Series (/diziler pages 1..3)
+    # 2. New Series (/diziler pages 1..max_pages)
     if category in ("all", "dizi"):
-        for page in range(1, 4):
+        for page in range(1, max_pages + 1):
             page_url = f"{base_url}/diziler" if page == 1 else f"{base_url}/diziler?page={page}"
             status, html = _rate_limited_fetch(page_url)
             if status == 200 and html:
                 soup = BeautifulSoup(html, "html.parser")
+                found_count = 0
                 for a in soup.find_all("a", href=True):
                     h = a["href"]
                     if "/dizi/" in h and "/sezon" not in h and "/bolum" not in h:
                         full_u = urljoin(base_url, h)
                         if full_u not in seen:
-                            candidates.append((full_u, False))
+                            dizi_candidates.append((full_u, False))
                             seen.add(full_u)
+                            found_count += 1
+                print(f"[WDT Keşif] /diziler Sayfa {page}/{max_pages}: +{found_count} dizi adayı bulundu.", flush=True)
+            elif status != 200:
+                print(f"[WDT Keşif Hatası] /diziler Sayfa {page} alınamadı (HTTP {status})", flush=True)
+
+    # Combine candidates fairly (interleaving so series aren't starved by films)
+    if category == "all":
+        candidates = []
+        max_len = max(len(dizi_candidates), len(film_candidates))
+        for i in range(max_len):
+            if i < len(dizi_candidates):
+                candidates.append(dizi_candidates[i])
+            if i < len(film_candidates):
+                candidates.append(film_candidates[i])
+    elif category == "dizi":
+        candidates = dizi_candidates
+    else:
+        candidates = film_candidates
 
     if idx is None:
         idx = build_drama_index(cur)
@@ -544,7 +642,7 @@ def crawl_webdramaturkey_recent(
         filtered_candidates.append((item_u, is_f))
 
     candidates = filtered_candidates
-    print(f"[WDT ARCHIVE] Toplam {len(candidates)} yeni yapım adayı keşfedildi (Sayfa 1-3). Hedef limit: {limit}", flush=True)
+    print(f"[WDT ARCHIVE] Toplam {len(candidates)} yeni yapım adayı keşfedildi (Sayfa 1-{max_pages}, Dizi: {len(dizi_candidates)}, Film: {len(film_candidates)}). Hedef limit: {limit}", flush=True)
 
     results = []
     for count_idx, (item_url, is_film) in enumerate(candidates[:limit], 1):
@@ -559,6 +657,44 @@ def crawl_webdramaturkey_recent(
         results.append(res)
         time.sleep(0.5)
 
-    return results
+    total_episodes = sum(r.get("episodes_added", 0) for r in results)
+    total_sources = sum(r.get("sources_added", 0) for r in results)
+    elapsed_total = round(time.time() - t_crawl_start, 1)
+    print(
+        f"[WDT Özet] Tarama tamamlandı ({elapsed_total}s): {len(results)} yapım işlendi. "
+        f"+{total_episodes} Bölüm | +{total_sources} Kaynak eklendi.",
+        flush=True,
+    )
 
     return results
+
+
+def main():
+    parser = argparse.ArgumentParser(description="WebDramaTurkey2 Scraper & Stream Resolver")
+    parser.add_argument("--limit", type=int, default=40, help="Taranacak maksimum yapım sayısı")
+    parser.add_argument("--category", type=str, default="all", choices=["all", "dizi", "film"], help="Kategori filtresi")
+    parser.add_argument("--pages", type=int, default=5, help="Taranacak sayfa derinliği (1..N)")
+    args = parser.parse_args()
+
+    import os
+    _root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    if _root not in sys.path:
+        sys.path.insert(0, _root)
+    from database import get_connection
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        crawl_webdramaturkey_recent(
+            cur=cur,
+            conn=conn,
+            limit=args.limit,
+            category=args.category,
+            max_pages=args.pages,
+        )
+    finally:
+        conn.close()
+
+
+if __name__ == "__main__":
+    main()

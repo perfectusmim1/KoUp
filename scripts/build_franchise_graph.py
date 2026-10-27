@@ -821,5 +821,7 @@ def build_graph(sync_cloud: bool = True):
         conn.close()
 
 
+main = build_graph
+
 if __name__ == "__main__":
     build_graph(sync_cloud=True)
