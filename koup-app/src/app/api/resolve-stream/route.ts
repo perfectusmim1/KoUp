@@ -92,6 +92,39 @@ function unpackDeanEdwards(packedJs: string): string {
   return p;
 }
 
+function decodeRapidvid(encStr: string): string | null {
+  try {
+    const rev = encStr.split('').reverse().join('');
+    const t = Buffer.from(rev, 'base64').toString('latin1');
+    const k = 'K9L';
+    let o = '';
+    for (let i = 0; i < t.length; i++) {
+      const r = k[i % 3];
+      const n = t.charCodeAt(i) - ((r.charCodeAt(0) % 5) + 1);
+      o += String.fromCharCode(n);
+    }
+    return Buffer.from(o, 'base64').toString('latin1');
+  } catch {
+    return null;
+  }
+}
+
+function decryptDizipal(k: string, ciphertextB64: string, ivHex: string, saltHex: string): string | null {
+  try {
+    const crypto = require('crypto');
+    const saltBytes = Buffer.from(saltHex, 'hex');
+    const ivBytes = Buffer.from(ivHex, 'hex');
+    const cipherBytes = Buffer.from(ciphertextB64.replace(/\\\//g, '/'), 'base64');
+    const derivedKey = crypto.pbkdf2Sync(k, saltBytes, 999, 32, 'sha512');
+    const decipher = crypto.createDecipheriv('aes-256-cbc', derivedKey, ivBytes);
+    let dec = decipher.update(cipherBytes);
+    dec = Buffer.concat([dec, decipher.final()]);
+    return dec.toString('utf8');
+  } catch {
+    return null;
+  }
+}
+
 function resolveGDrivePlayer(html: string): string | null {
   const match = html.match(/var\s+k\s*=\s*["']([^"']+)["']\s*,\s*b\s*=\s*atob\s*\(\s*["']([^"']+)["']\s*\)/);
   if (!match) return null;
@@ -759,7 +792,7 @@ export async function GET(req: NextRequest) {
               streamUrl: proxiedStream,
               directUrl: securedLink,
               qualities: [{ label: '1080p (Full HD)', url: proxiedStream }],
-              fallbackIframe: `https://dtpasn.asia/video/${hash}`,
+              fallbackIframe: null,
             };
             setCachedStream(url, result, 30 * 60 * 1000);
             return NextResponse.json(result, { headers: CACHE_HEADERS });
@@ -790,6 +823,21 @@ export async function GET(req: NextRequest) {
     lowerUrl.includes('diziizle.wiki')
   ) {
     try {
+      // Direct stream.php URL from DB
+      if (lowerUrl.includes('pilavyerplay.top/api/stream.php')) {
+        const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(url)}&ref=${encodeURIComponent('https://diziizle.wiki/')}`;
+        const result = {
+          mode: 'native_hls' as const,
+          streamType: 'hls' as const,
+          streamUrl: proxiedStream,
+          directUrl: url,
+          qualities: [{ label: '1080p (Full HD)', url: proxiedStream }],
+          fallbackIframe: null,
+        };
+        setCachedStream(url, result, 30 * 60 * 1000);
+        return NextResponse.json(result, { headers: CACHE_HEADERS });
+      }
+
       let pvSlug: string | null = null;
       if (url.startsWith('pilavyer:')) {
         pvSlug = url.slice('pilavyer:'.length);
@@ -882,16 +930,22 @@ export async function GET(req: NextRequest) {
               streamUrl = `https://play2.pilavyerplay.top${streamUrl}`;
             }
 
+            const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(streamUrl)}&ref=${encodeURIComponent('https://diziizle.wiki/')}`;
+            const proxiedSubs = subtitles.map((s) => ({
+              ...s,
+              url: `/api/stream-proxy?url=${encodeURIComponent(s.url)}&ref=${encodeURIComponent('https://diziizle.wiki/')}`,
+            }));
+
             const result = {
               mode: 'native_hls' as const,
               streamType: 'hls' as const,
-              streamUrl,
+              streamUrl: proxiedStream,
               directUrl: streamUrl,
-              qualities: [{ label: '1080p (Full HD)', url: streamUrl }],
-              subtitles: subtitles.length > 0 ? subtitles : undefined,
+              qualities: [{ label: '1080p (Full HD)', url: proxiedStream }],
+              subtitles: proxiedSubs.length > 0 ? proxiedSubs : undefined,
               audioTracks:
                 audioTracks && audioTracks.length > 0 ? audioTracks : undefined,
-              fallbackIframe: sUrl,
+              fallbackIframe: null,
             };
             setCachedStream(url, result, 30 * 60 * 1000);
             return NextResponse.json(result, { headers: CACHE_HEADERS });
@@ -906,6 +960,221 @@ export async function GET(req: NextRequest) {
     } catch {
       return NextResponse.json(
         { error: 'Pilavyer sunucusuna erişilemedi', isDead: true },
+        { status: 410, headers: CACHE_HEADERS }
+      );
+    }
+  }
+
+  // =========================================================================
+  // 0-D3. Dizipal (dizipal1592.com / sn.dplayer82.site / DPlayer) HLS Resolver
+  // =========================================================================
+  if (
+    provider === 'dizipal' ||
+    lowerUrl.includes('dizipal') ||
+    lowerUrl.includes('dplayer82.site/master.m3u8')
+  ) {
+    try {
+      if (lowerUrl.includes('.m3u8')) {
+        const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(url)}&ref=${encodeURIComponent('https://sn.dplayer82.site/')}`;
+        const result = {
+          mode: 'native_hls' as const,
+          streamType: 'hls' as const,
+          streamUrl: proxiedUrl,
+          directUrl: url,
+          qualities: [{ label: '1080p (Dizipal HD)', url: proxiedUrl }],
+          fallbackIframe: null,
+        };
+        setCachedStream(url, result, 30 * 60 * 1000);
+        return NextResponse.json(result, { headers: CACHE_HEADERS });
+      }
+
+      if (lowerUrl.includes('dizipal')) {
+        const resp = await fetch(url, {
+          headers: {
+            'User-Agent': commonUA,
+            Referer: 'https://dizipal1592.com/',
+            Accept: 'text/html,application/xhtml+xml',
+          },
+          signal: AbortSignal.timeout(7000),
+        });
+        if (resp.ok) {
+          const html = await resp.text();
+          const rscMatches = html.match(/self\.__next_f\.push\(\[1,"(.*?)"\]\)/g);
+          const blob = rscMatches
+            ? rscMatches.map((m) => m.replace(/self\.__next_f\.push\(\[1,"|"\]\)/g, '')).join('').replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+            : html;
+
+          const mk = blob.match(/"k":"([^"]+)"/);
+          const mcipher = blob.match(/"ciphertext":"([^"]+)"/);
+          const miv = blob.match(/"iv":"([^"]+)"/);
+          const msalt = blob.match(/"salt":"([^"]+)"/);
+
+          if (mk && mcipher && miv && msalt) {
+            const decPlayer = decryptDizipal(mk[1], mcipher[1], miv[1], msalt[1]);
+            if (decPlayer) {
+              let dplayerUrl = decPlayer.startsWith('//') ? `https:${decPlayer}` : decPlayer;
+              if (!dplayerUrl.startsWith('http')) dplayerUrl = `https://${dplayerUrl.replace(/^\//, '')}`;
+
+              const dpResp = await fetch(dplayerUrl, {
+                headers: {
+                  'User-Agent': commonUA,
+                  Referer: url,
+                },
+                signal: AbortSignal.timeout(6000),
+              });
+              if (dpResp.ok) {
+                const dpHtml = await dpResp.text();
+                const mOpen = dpHtml.match(/openPlayer\(['"]([^'"]+)['"]/);
+                if (mOpen?.[1]) {
+                  const token = mOpen[1];
+                  const dplayerOrigin = new URL(dplayerUrl).origin;
+                  const s2Url = `${dplayerOrigin}/source2.php?v=${encodeURIComponent(token)}`;
+                  const s2Resp = await fetch(s2Url, {
+                    headers: {
+                      'User-Agent': commonUA,
+                      Referer: dplayerUrl,
+                      'X-Requested-With': 'XMLHttpRequest',
+                      Accept: 'application/json, text/javascript, */*; q=0.01',
+                    },
+                    signal: AbortSignal.timeout(6000),
+                  });
+                  if (s2Resp.ok) {
+                    const s2Data = await s2Resp.json();
+                    const rawFile = s2Data?.playlist?.[0]?.sources?.[0]?.file;
+                    if (rawFile) {
+                      const masterUrl = rawFile.replace('m.php', 'master.m3u8');
+                      const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(masterUrl)}&ref=${encodeURIComponent('https://sn.dplayer82.site/')}`;
+                      const result = {
+                        mode: 'native_hls' as const,
+                        streamType: 'hls' as const,
+                        streamUrl: proxiedStream,
+                        directUrl: masterUrl,
+                        qualities: [{ label: '1080p (Dizipal HD)', url: proxiedStream }],
+                        fallbackIframe: null,
+                      };
+                      setCachedStream(url, result, 30 * 60 * 1000);
+                      return NextResponse.json(result, { headers: CACHE_HEADERS });
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      return NextResponse.json(
+        { error: 'Dizipal video yayını çözümlenemedi veya yayından kaldırılmış', isDead: true },
+        { status: 410, headers: CACHE_HEADERS }
+      );
+    } catch {
+      return NextResponse.json(
+        { error: 'Dizipal servisine erişilemedi', isDead: true },
+        { status: 410, headers: CACHE_HEADERS }
+      );
+    }
+  }
+
+  // =========================================================================
+  // 0-D4. SezonlukDizi (sezonlukdizi.cc) HLS / MP4 Stream Resolver
+  // =========================================================================
+  if (
+    provider === 'sezonlukdizi' ||
+    lowerUrl.includes('sezonlukdizi.cc')
+  ) {
+    try {
+      const resp = await fetch(url, {
+        headers: {
+          'User-Agent': commonUA,
+          Referer: 'https://sezonlukdizi.cc/',
+          Accept: 'text/html,application/xhtml+xml',
+        },
+        signal: AbortSignal.timeout(7000),
+      });
+
+      if (resp.ok) {
+        const html = await resp.text();
+        const bidMatch =
+          html.match(/var\s+bid\s*=\s*["']?(\d+)/i) ||
+          html.match(/bid\s*[:=]\s*["']?(\d+)/i) ||
+          html.match(/data-id=["'](\d+)/i) ||
+          html.match(/asp\?bid=(\d+)/i);
+
+        if (bidMatch?.[1]) {
+          const bid = bidMatch[1];
+          const altResp = await fetch('https://sezonlukdizi.cc/ajax/dataAlternatif22.asp', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+              'X-Requested-With': 'XMLHttpRequest',
+              Referer: url,
+              'User-Agent': commonUA,
+            },
+            body: new URLSearchParams({ bid, dil: '1' }).toString(),
+            signal: AbortSignal.timeout(6000),
+          });
+
+          if (altResp.ok) {
+            const altJson = await altResp.json();
+            const items = altJson?.data || [];
+            // Prioritize reliable embed players
+            items.sort((a: any, b: any) => {
+              const ka = (a?.baslik || '').toLowerCase();
+              const kb = (b?.baslik || '').toLowerCase();
+              const pa = ka.includes('filemoon') || ka.includes('rapid') || ka.includes('vidmoly') || ka.includes('ok') ? 0 : 1;
+              const pb = kb.includes('filemoon') || kb.includes('rapid') || kb.includes('vidmoly') || kb.includes('ok') ? 0 : 1;
+              return pa - pb;
+            });
+
+            for (const item of items) {
+              const altId = item?.id;
+              if (!altId) continue;
+              const embResp = await fetch('https://sezonlukdizi.cc/ajax/dataEmbed22.asp', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                  'X-Requested-With': 'XMLHttpRequest',
+                  Referer: url,
+                  'User-Agent': commonUA,
+                },
+                body: new URLSearchParams({ id: String(altId) }).toString(),
+                signal: AbortSignal.timeout(6000),
+              });
+              if (embResp.ok) {
+                const embHtml = await embResp.text();
+                const mIfr = embHtml.match(/<iframe[^\>]+src=["']([^"']+)["']/i);
+                if (mIfr?.[1]) {
+                  let embSrc = mIfr[1].trim();
+                  if (!embSrc.startsWith('http')) {
+                    embSrc = embSrc.startsWith('//') ? `https:${embSrc}` : `https://sezonlukdizi.cc${embSrc}`;
+                  }
+                  // Recursively forward to resolve-stream internal fetch
+                  const resolveTarget = new URL(req.url);
+                  resolveTarget.searchParams.set('url', embSrc);
+                  resolveTarget.searchParams.delete('provider');
+                  const innerResp = await fetch(resolveTarget.toString(), { cache: 'no-store' });
+                  if (innerResp.ok) {
+                    const innerData = await innerResp.json();
+                    if (innerData.mode === 'native_hls' || innerData.mode === 'native_mp4') {
+                      innerData.fallbackIframe = null;
+                      setCachedStream(url, innerData, 30 * 60 * 1000);
+                      return NextResponse.json(innerData, { headers: CACHE_HEADERS });
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      return NextResponse.json(
+        { error: 'SezonlukDizi oynatıcı kaynağı çözümlenemedi', isDead: true },
+        { status: 410, headers: CACHE_HEADERS }
+      );
+    } catch {
+      return NextResponse.json(
+        { error: 'SezonlukDizi servisine erişilemedi', isDead: true },
         { status: 410, headers: CACHE_HEADERS }
       );
     }
@@ -1176,6 +1445,21 @@ export async function GET(req: NextRequest) {
     provider.includes('dizilla')
   ) {
     try {
+      if (lowerUrl.includes('.m3u8')) {
+        const ref = lowerUrl.includes('dplayer') ? 'https://sn.dplayer82.site/' : 'https://four.pichive.online/';
+        const proxiedMaster = `/api/stream-proxy?url=${encodeURIComponent(url)}&ref=${encodeURIComponent(ref)}`;
+        const result = {
+          mode: 'native_hls' as const,
+          streamType: 'hls' as const,
+          streamUrl: proxiedMaster,
+          directUrl: url,
+          qualities: [{ label: '1080p (Orijinal)', url: proxiedMaster }],
+          fallbackIframe: null,
+        };
+        setCachedStream(url, result, 30 * 60 * 1000);
+        return NextResponse.json(result, { headers: CACHE_HEADERS });
+      }
+
       let iframeUrl = url;
       if (iframeUrl.startsWith('//')) {
         iframeUrl = `https:${iframeUrl}`;
@@ -3214,35 +3498,98 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // 4m. FullHDFilmizlesene / Turbo.imgz.me / Rapidvid
+  // 4m. FullHDFilmizlesene / Turbo.imgz.me / Rapidvid HLS Resolver
   if (
     provider === 'fullhdfilmizlesene' ||
+    provider === 'rapidvid' ||
     lowerUrl.includes('turbo.imgz.me') ||
-    lowerUrl.includes('rapidvid.org')
+    lowerUrl.includes('rapidvid') ||
+    lowerUrl.includes('cdnimage')
   ) {
     try {
+      if (lowerUrl.includes('cdnimage') && (lowerUrl.includes('/m0/') || lowerUrl.includes('/m1/') || lowerUrl.includes('.m3u8'))) {
+        const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(url)}&ref=${encodeURIComponent('https://rapidvid.net/')}`;
+        return NextResponse.json(
+          {
+            mode: 'native_hls',
+            streamUrl: proxiedUrl,
+            directUrl: url,
+            qualities: [{ label: '1080p (RapidVid HD)', url: proxiedUrl }],
+            fallbackIframe: null,
+          },
+          { headers: CACHE_HEADERS }
+        );
+      }
+
       const parsedU = new URL(url);
       const refOrigin = `${parsedU.protocol}//${parsedU.host}/`;
       const resp = await fetch(url, {
-        headers: { 'User-Agent': commonUA, Referer: refOrigin },
+        headers: { 'User-Agent': commonUA, Referer: 'https://rapidvid.net/' },
         signal: AbortSignal.timeout(6000),
       });
       if (resp.ok) {
         const rawHtml = await resp.text();
         const html = rawHtml.includes('eval(function') ? unpackDeanEdwards(rawHtml) : rawHtml;
-        const m3u8Match = html.match(/(https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)/i);
-        if (m3u8Match?.[1]) {
-          const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(m3u8Match[1])}&ref=${encodeURIComponent(refOrigin)}`;
-          return NextResponse.json(
-            {
-              mode: 'native_hls',
-              streamUrl: proxiedUrl,
-              qualities: [{ label: '1080p', url: proxiedUrl }],
-              fallbackIframe: url,
-            },
-            { headers: CACHE_HEADERS }
-          );
+
+        // 1. Check for av('...') or _('...') obfuscated stream URL (Reverse + Shift decode)
+        const avMatch =
+          html.match(/jwSetup\.sources\s*=\s*\[\s*\{\s*["']file["']\s*:\s*(?:av|_)\s*\(\s*['"]([A-Za-z0-9+/=]{20,})['"]\s*\)/) ||
+          html.match(/(?:av|_)\s*\(\s*['"]([A-Za-z0-9+/=]{20,})['"]\s*\)/);
+
+        let hlsUrl: string | null = null;
+        if (avMatch?.[1]) {
+          hlsUrl = decodeRapidvid(avMatch[1]);
         }
+
+        // 2. Fallback to atomCodecTelemetry
+        if (!hlsUrl) {
+          const mTele = html.match(/"h264"\s*:\s*"([^"]+)"/);
+          if (mTele?.[1]) {
+            hlsUrl = mTele[1].replace(/\\\//g, '/');
+          }
+        }
+
+        // 3. Fallback to direct m3u8 in html
+        if (!hlsUrl) {
+          const m3u8Match = html.match(/(https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)/i);
+          if (m3u8Match?.[1]) hlsUrl = m3u8Match[1];
+        }
+
+        // Parse subtitles from jwSetup.tracks
+        let subtitles: Array<{ label: string; lang: string; url: string; default?: boolean }> = [];
+        const tracksMatch = html.match(/jwSetup\.tracks\s*=\s*(\[[^\]]+\])/);
+        if (tracksMatch?.[1]) {
+          try {
+            const rawTracks = JSON.parse(tracksMatch[1].replace(/\\\//g, '/'));
+            subtitles = rawTracks
+              .filter((t: any) => t?.file)
+              .map((t: any) => {
+                const subUrl = t.file.startsWith('http') ? t.file : `https://rapidvid.net${t.file.startsWith('/') ? '' : '/'}${t.file}`;
+                return {
+                  label: t.label || 'Altyazı',
+                  lang: (t.label || '').toLowerCase().includes('türk') ? 'tr' : 'en',
+                  url: `/api/stream-proxy?url=${encodeURIComponent(subUrl)}&ref=${encodeURIComponent('https://rapidvid.net/')}`,
+                  default: (t.label || '').toLowerCase().includes('türk'),
+                };
+              });
+          } catch {}
+        }
+
+        if (hlsUrl) {
+          const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(hlsUrl)}&ref=${encodeURIComponent('https://rapidvid.net/')}`;
+          const result = {
+            mode: 'native_hls' as const,
+            streamType: 'hls' as const,
+            streamUrl: proxiedUrl,
+            directUrl: hlsUrl,
+            qualities: [{ label: '1080p (RapidVid HD)', url: proxiedUrl }],
+            subtitles: subtitles.length > 0 ? subtitles : undefined,
+            fallbackIframe: null,
+          };
+          setCachedStream(url, result, 30 * 60 * 1000);
+          return NextResponse.json(result, { headers: CACHE_HEADERS });
+        }
+
         const mp4Match = html.match(/(https?:\/\/[^"'\s]+\.mp4[^"'\s]*)/i);
         if (mp4Match?.[1]) {
           const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(mp4Match[1])}&ref=${encodeURIComponent(refOrigin)}`;
@@ -3250,8 +3597,9 @@ export async function GET(req: NextRequest) {
             {
               mode: 'native_mp4',
               streamUrl: proxiedUrl,
+              directUrl: mp4Match[1],
               qualities: [{ label: '1080p', url: proxiedUrl }],
-              fallbackIframe: url,
+              fallbackIframe: null,
             },
             { headers: CACHE_HEADERS }
           );
@@ -3261,11 +3609,8 @@ export async function GET(req: NextRequest) {
       // Fall through
     }
     return NextResponse.json(
-      {
-        mode: 'iframe',
-        iframeUrl: url,
-      },
-      { headers: CACHE_HEADERS }
+      { error: 'RapidVid video akışı çözümlenemedi veya silinmiş', isDead: true },
+      { status: 410, headers: CACHE_HEADERS }
     );
   }
 
@@ -3329,7 +3674,19 @@ export async function GET(req: NextRequest) {
     lowUrlCheck.includes('sprintcdn') ||
     lowUrlCheck.includes('fastsupplyhub') ||
     lowUrlCheck.includes('smartcheckout') ||
-    lowUrlCheck.includes('videopixelvanto')
+    lowUrlCheck.includes('videopixelvanto') ||
+    lowUrlCheck.includes('pilavyer') ||
+    lowUrlCheck.includes('pilavyerplay') ||
+    lowUrlCheck.includes('dtpasn') ||
+    lowUrlCheck.includes('wdt') ||
+    lowUrlCheck.includes('dizipal') ||
+    lowUrlCheck.includes('sezonlukdizi') ||
+    lowUrlCheck.includes('rapidvid') ||
+    lowUrlCheck.includes('cdnimage') ||
+    lowUrlCheck.includes('shortizle') ||
+    lowUrlCheck.includes('dramavadisi') ||
+    lowUrlCheck.includes('dramabox') ||
+    lowUrlCheck.includes('diziizle')
   ) {
     return NextResponse.json(
       {

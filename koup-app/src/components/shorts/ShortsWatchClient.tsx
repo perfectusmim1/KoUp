@@ -222,12 +222,31 @@ export default function ShortsWatchClient({
     'w1280',
     'banner'
   );
+  const posterUrl = getProxiedImageUrl(
+    media.cover_image,
+    media.poster_fallback_url || null,
+    media.title,
+    'w500',
+    'poster',
+    media.tmdb_id,
+    'tv',
+    media.release_year,
+    media.native_title,
+    media.id
+  );
+
+  const hasValidSource = useMemo(() => {
+    if (!currentEp) return false;
+    if (!currentEp.sources || currentEp.sources.length === 0) return false;
+    const src = currentEp.sources[selectedSourceIdx] || currentEp.sources[0];
+    return Boolean(src?.direct_url && src.direct_url.trim().length > 0);
+  }, [currentEp, selectedSourceIdx]);
 
   const cleanDesc = cleanOverviewText(media.overview);
 
   return (
     <div
-      className="relative w-full min-h-[100dvh] bg-[#070709] text-white flex flex-col justify-between overflow-x-hidden select-none pt-[72px] sm:pt-[92px] pb-3"
+      className="relative w-full min-h-[100dvh] lg:h-[100dvh] bg-[#070709] text-white flex flex-col justify-between overflow-x-hidden overflow-y-auto lg:overflow-y-hidden select-none pt-14 sm:pt-20 lg:pt-24 pb-2 sm:pb-3"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
@@ -247,11 +266,11 @@ export default function ShortsWatchClient({
       <div className="fixed inset-0 bg-gradient-to-b from-black/80 via-black/85 to-[#070709] pointer-events-none z-0" />
 
       {/* TOP COMPACT HEADER / NAVIGATION (Mobile Only - Under Navbar) */}
-      <header className="relative z-30 w-full px-3 py-1.5 flex lg:hidden items-center justify-between border-b-0 bg-transparent backdrop-blur-none">
+      <header className="relative z-30 w-full px-3 py-1 flex lg:hidden items-center justify-between border-b-0 bg-transparent shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <Link
             href={`/seri/${media.slug}`}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/90 text-xs font-semibold transition-all cursor-pointer min-h-[44px] min-w-[44px] justify-center shrink-0"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white/90 text-xs font-semibold transition-all cursor-pointer min-h-[38px] justify-center shrink-0"
             aria-label="Dizi Detayına Dön"
           >
             <ChevronLeft className="w-4 h-4" />
@@ -273,7 +292,7 @@ export default function ShortsWatchClient({
       </header>
 
       {/* MAIN VIEWPORT LAYOUT */}
-      <main className="relative z-10 w-full flex-1 flex flex-col lg:flex-row items-center justify-center max-w-7xl mx-auto px-2 sm:px-4 lg:px-6 py-2 sm:py-4 gap-4 lg:gap-8">
+      <main className="relative z-10 w-full flex-1 flex flex-col lg:flex-row items-center justify-center max-w-7xl mx-auto px-2 sm:px-4 lg:px-6 min-h-0 py-1 sm:py-3 gap-3 lg:gap-8">
         {/* DESKTOP LEFT: Vertical Nav Arrows (ArrowUp / ArrowDown) */}
         <aside className="hidden lg:flex flex-col items-center gap-3 shrink-0">
           <button
@@ -309,42 +328,121 @@ export default function ShortsWatchClient({
           </button>
         </aside>
 
-        {/* CENTER: 9:16 VERTICAL NETFLIX PLAYER */}
-        <section className="relative w-full max-w-[390px] sm:max-w-[420px] lg:max-w-[440px] flex flex-col items-center justify-center shrink-0">
-          <div className="relative w-full aspect-[9/16] max-h-[calc(100dvh-196px)] lg:max-h-[calc(100dvh-116px)] rounded-2xl sm:rounded-3xl overflow-hidden bg-black shadow-[0_20px_60px_rgba(0,0,0,0.9)] border border-white/15">
-            <NetflixPlayer
-              variant="vertical"
-              media={media}
-              episodes={episodes}
-              isLoadingEpisodes={episodes.length === 0}
-              currentSeason={currentSeason}
-              currentEpisode={activeEpNum}
-              onSelectEpisode={(s, ep) => handleGoToEpisode(ep)}
-              onNextEpisode={goToNext}
-              onPrevEpisode={goToPrev}
-              selectedSourceIdx={selectedSourceIdx}
-              onSelectSourceIdx={(idx) => {
-                setSelectedSourceIdx(idx);
-                if (onSelectSourceIdx) onSelectSourceIdx(idx);
-              }}
-              onSourceDead={onSourceDead}
-              ambientLightingEnabled={ambientLightingEnabled}
-              onToggleAmbientLighting={onToggleAmbientLighting}
-              autoNextEnabled={autoNextEnabled}
-              onToggleAutoNext={onToggleAutoNext}
-              hasRail={false}
-            />
+        {/* CENTER: 9:16 VERTICAL CINEMATIC PLAYER FRAME */}
+        <section className="relative flex flex-col items-center justify-center shrink-0 w-full max-w-[440px]">
+          <div className="relative h-[calc(100dvh-170px)] sm:h-[calc(100dvh-140px)] lg:h-[calc(100dvh-110px)] max-h-[820px] aspect-[9/16] max-w-[calc(100vw-20px)] w-auto rounded-2xl sm:rounded-3xl overflow-hidden bg-black shadow-[0_20px_60px_rgba(0,0,0,0.9)] border border-white/15 flex flex-col items-center justify-center mx-auto">
+            {!hasValidSource ? (
+              <div className="relative w-full h-full flex flex-col items-center justify-between p-5 sm:p-6 text-center select-none overflow-hidden bg-gradient-to-b from-[#101014] via-[#08080a] to-black">
+                {/* Blurred poster atmosphere */}
+                {posterUrl && (
+                  <img
+                    src={posterUrl}
+                    alt=""
+                    aria-hidden="true"
+                    className="absolute inset-0 w-full h-full object-cover opacity-20 filter blur-2xl scale-110 pointer-events-none"
+                  />
+                )}
+                <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-[#08080a]/85 to-black pointer-events-none" />
+
+                {/* Top Bar inside player */}
+                <div className="relative z-10 w-full flex items-center justify-between pt-1">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-500/90 to-rose-500/90 text-white border border-white/20 shadow-[0_0_12px_rgba(245,158,11,0.35)]">
+                    <Sparkles className="w-2.5 h-2.5 text-amber-200 fill-amber-200" />
+                    <span>SHORTS</span>
+                  </span>
+                  <span className="text-[11px] font-mono text-white/60 font-semibold px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
+                    {activeEpNum}. Bölüm
+                  </span>
+                </div>
+
+                {/* Center Content */}
+                <div className="relative z-10 flex flex-col items-center my-auto px-3 max-w-[280px]">
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-[0_0_24px_rgba(245,158,11,0.25)] mb-3.5">
+                    <Film className="w-7 h-7 text-amber-400" />
+                  </div>
+
+                  <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 font-mono text-[10px] sm:text-[11px] font-bold mb-2">
+                    Yakında
+                  </span>
+
+                  <h3 className="text-base sm:text-lg font-bold text-white tracking-tight leading-snug mb-2">
+                    Bu bölüm yakında eklenecek
+                  </h3>
+
+                  <p className="text-[11px] sm:text-xs text-white/60 leading-relaxed">
+                    Kaynak hazırlandığında otomatik olarak eklenecektir. Diğer bölümleri izleyebilirsiniz.
+                  </p>
+                </div>
+
+                {/* Bottom Actions inside player */}
+                <div className="relative z-10 w-full flex flex-col gap-2 pb-1">
+                  {prevEp && (
+                    <button
+                      type="button"
+                      onClick={goToPrev}
+                      className="w-full py-2.5 px-3 rounded-xl bg-white/10 hover:bg-white/15 active:scale-98 border border-white/15 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      <span>Önceki Bölüm ({prevEp.episode_number}. Bölüm)</span>
+                    </button>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    {sortedEpisodes.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowMobileEpisodesSheet(true)}
+                        className="flex-1 py-2.5 px-2 rounded-xl bg-white/10 hover:bg-white/15 active:scale-98 border border-white/15 text-white text-xs font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer"
+                      >
+                        <List className="w-4 h-4 text-amber-300" />
+                        <span>Bölümler</span>
+                      </button>
+                    )}
+                    <Link
+                      href={`/seri/${media.slug}`}
+                      className="flex-1 py-2.5 px-2 rounded-xl bg-gradient-to-r from-[#E50914] to-rose-600 hover:from-red-600 hover:to-rose-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-98 shadow-[0_0_16px_rgba(229,9,20,0.4)] cursor-pointer"
+                    >
+                      <Film className="w-4 h-4" />
+                      <span>Dizi Detayı</span>
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <NetflixPlayer
+                variant="vertical"
+                media={media}
+                episodes={episodes}
+                isLoadingEpisodes={false}
+                currentSeason={currentSeason}
+                currentEpisode={activeEpNum}
+                onSelectEpisode={(s, ep) => handleGoToEpisode(ep)}
+                onNextEpisode={goToNext}
+                onPrevEpisode={goToPrev}
+                selectedSourceIdx={selectedSourceIdx}
+                onSelectSourceIdx={(idx) => {
+                  setSelectedSourceIdx(idx);
+                  if (onSelectSourceIdx) onSelectSourceIdx(idx);
+                }}
+                onSourceDead={onSourceDead}
+                ambientLightingEnabled={ambientLightingEnabled}
+                onToggleAmbientLighting={onToggleAmbientLighting}
+                autoNextEnabled={autoNextEnabled}
+                onToggleAutoNext={onToggleAutoNext}
+                hasRail={false}
+              />
+            )}
           </div>
 
           {/* MOBILE ONLY: Bottom Glass Quick Bar (Eliminates video overlay & subtitle collisions!) */}
-          <div className="lg:hidden w-full max-w-[390px] mt-2.5 px-1 flex items-center justify-between gap-1.5 bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl p-1.5 shadow-xl">
+          <div className="lg:hidden w-full max-w-[min(380px,calc(100vw-20px))] mt-2 px-1 flex items-center justify-between gap-1.5 bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl p-1.5 shadow-xl shrink-0">
             {/* Prev Ep */}
             <button
               type="button"
               onClick={goToPrev}
               disabled={!prevEp}
               aria-label="Önceki Bölüm"
-              className={`h-11 px-3 rounded-xl flex items-center justify-center gap-1 font-mono text-xs font-bold transition-all min-h-[44px] min-w-[44px] cursor-pointer ${
+              className={`h-10 px-2.5 rounded-xl flex items-center justify-center gap-1 font-mono text-xs font-bold transition-all min-h-[40px] cursor-pointer ${
                 prevEp
                   ? 'bg-white/10 hover:bg-white/20 text-white active:scale-95 border border-white/10'
                   : 'bg-white/[0.03] text-white/20 border border-white/5 cursor-not-allowed'
@@ -359,7 +457,7 @@ export default function ShortsWatchClient({
               type="button"
               onClick={() => setShowMobileEpisodesSheet(true)}
               aria-label="Bölümler Listesi"
-              className="flex-1 h-11 px-3 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 border border-white/10 text-white flex items-center justify-center gap-1.5 font-mono text-xs font-bold transition-all min-h-[44px] cursor-pointer"
+              className="flex-1 h-10 px-2.5 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 border border-white/10 text-white flex items-center justify-center gap-1.5 font-mono text-xs font-bold transition-all min-h-[40px] cursor-pointer"
             >
               <List className="w-4 h-4 text-amber-300" />
               <span>Bölüm: {activeEpNum}/{sortedEpisodes.length || 1}</span>
@@ -371,7 +469,7 @@ export default function ShortsWatchClient({
                 type="button"
                 onClick={() => setShowMobileSourcesSheet(true)}
                 aria-label="Kaynak Seçimi"
-                className="h-11 px-3 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 border border-white/10 text-white flex items-center justify-center gap-1.5 font-mono text-xs font-bold transition-all min-h-[44px] min-w-[44px] cursor-pointer"
+                className="h-10 px-2.5 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 border border-white/10 text-white flex items-center justify-center gap-1.5 font-mono text-xs font-bold transition-all min-h-[40px] min-w-[40px] cursor-pointer"
               >
                 <Layers className="w-4 h-4 text-sky-400" />
                 <span className="hidden xs:inline">Kaynak</span>
@@ -384,7 +482,7 @@ export default function ShortsWatchClient({
               onClick={goToNext}
               disabled={!nextEp}
               aria-label="Sonraki Bölüm"
-              className={`h-11 px-3 rounded-xl flex items-center justify-center gap-1 font-mono text-xs font-bold transition-all min-h-[44px] min-w-[44px] cursor-pointer ${
+              className={`h-10 px-2.5 rounded-xl flex items-center justify-center gap-1 font-mono text-xs font-bold transition-all min-h-[40px] cursor-pointer ${
                 nextEp
                   ? 'bg-gradient-to-r from-[#E50914] to-rose-600 hover:from-red-600 hover:to-rose-700 text-white active:scale-95 shadow-[0_0_12px_rgba(229,9,20,0.5)] border border-red-500/40'
                   : 'bg-white/[0.03] text-white/20 border border-white/5 cursor-not-allowed'

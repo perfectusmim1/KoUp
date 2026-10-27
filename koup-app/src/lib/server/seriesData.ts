@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import {
   supabase,
   supabaseAdmin,
@@ -43,6 +44,26 @@ interface FranchiseGraphPayload {
 
 let cachedFranchiseGraph: FranchiseGraphPayload | null = null;
 let cachedGraphMtime = 0;
+
+let s3Client: S3Client | null = null;
+
+function getS3Client(): S3Client | null {
+  if (s3Client) return s3Client;
+  const accessKeyId = process.env.CF_R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.CF_R2_SECRET_ACCESS_KEY;
+  const endpoint = process.env.CF_R2_ENDPOINT;
+  if (!accessKeyId || !secretAccessKey || !endpoint) return null;
+
+  s3Client = new S3Client({
+    region: 'auto',
+    endpoint,
+    credentials: {
+      accessKeyId,
+      secretAccessKey,
+    },
+  });
+  return s3Client;
+}
 
 export function getFranchiseForMedia(mediaId: number): FranchiseData | null {
   if (!mediaId || Number.isNaN(Number(mediaId))) return null;
@@ -202,14 +223,34 @@ export async function getSeriesDataServer(rawSlug: string): Promise<ServerSeries
         }
       }
 
-      // Tier 1: Cloudflare R2 CDN bundle (Vercel serverless fallback)
+      // Tier 1: Cloudflare R2 Authenticated S3 Client (instant serverless read)
+      const s3 = getS3Client();
+      const bucket = process.env.CF_R2_BUCKET || 'koup-archive';
+      if (s3) {
+        try {
+          const cmd = new GetObjectCommand({
+            Bucket: bucket,
+            Key: `sources/${mediaId}.json`,
+          });
+          const res = await s3.send(cmd);
+          if (res.Body) {
+            const bodyStr = await res.Body.transformToString();
+            const r2Data = JSON.parse(bodyStr);
+            if (r2Data && Array.isArray(r2Data.episodes) && r2Data.episodes.length > 0) {
+              return r2Data.episodes as EpisodeData[];
+            }
+          }
+        } catch {}
+      }
+
+      // Tier 1.1: Cloudflare R2 CDN bundle (Vercel serverless fallback)
       const r2PublicUrl =
         process.env.R2_PUBLIC_URL ||
         'https://pub-e62742f127324512937cc3ff34c976bd.r2.dev';
       try {
         const r2Res = await fetch(`${r2PublicUrl}/sources/${mediaId}.json`, {
           next: { revalidate: 3600 },
-          signal: AbortSignal.timeout(2500),
+          signal: AbortSignal.timeout(5000),
         });
         if (r2Res.ok) {
           const parsed = await r2Res.json();
@@ -222,7 +263,7 @@ export async function getSeriesDataServer(rawSlug: string): Promise<ServerSeries
       // Fallback: Supabase episodes table
       const { data: epRows } = await client
         .from('episodes')
-        .select('id, season_number, episode_number, episode_name, episode_type, status, published_at, intro_start_sec, intro_end_sec, outro_start_sec, outro_end_sec')
+        .select('id, season_number, episode_number, episode_name, episode_type, status, published_at, intro_start_sec, intro_end_sec, outro_start_sec, outro_end_sec, video_sources')
         .eq('media_id', mediaId)
         .order('season_number', { ascending: true })
         .order('episode_number', { ascending: true });
@@ -238,7 +279,7 @@ export async function getSeriesDataServer(rawSlug: string): Promise<ServerSeries
           intro_end_sec: r.intro_end_sec ?? null,
           outro_start_sec: r.outro_start_sec ?? null,
           outro_end_sec: r.outro_end_sec ?? null,
-          sources: [],
+          sources: Array.isArray(r.video_sources) ? r.video_sources : [],
         })) as EpisodeData[];
       }
     } catch (err) {

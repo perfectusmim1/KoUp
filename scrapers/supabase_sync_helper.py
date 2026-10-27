@@ -1197,7 +1197,7 @@ def ensure_media_synced(conn, cur, drama_id: int):
         return False
 
 
-def sync_drama_bundle_and_counts(conn, cur, drama_id: int, include_short_drama: bool = False) -> bool:
+def sync_drama_bundle_and_counts(conn, cur, drama_id: int, include_short_drama: bool = True) -> bool:
     """Updates SQLite episode_count/sources_count, uploads R2 bundle, and syncs Supabase media & episodes."""
     try:
         ensure_media_synced(conn, cur, drama_id)

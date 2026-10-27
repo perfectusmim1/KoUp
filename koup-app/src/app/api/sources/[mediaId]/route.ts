@@ -475,6 +475,16 @@ export async function GET(
           .maybeSingle();
         if (mediaRow?.id) {
           idNum = mediaRow.id;
+        } else {
+          // Fallback prefix or partial slug match
+          const { data: prefixMatch } = await supabase
+            .from('media')
+            .select('id')
+            .or(`slug.ilike.${rawId}%,slug.ilike.%${rawId}%`)
+            .limit(1);
+          if (prefixMatch && prefixMatch[0]?.id) {
+            idNum = prefixMatch[0].id;
+          }
         }
       } catch {}
     }
@@ -565,7 +575,7 @@ export async function GET(
       try {
         const r2Res = await fetch(`${r2PublicUrl}/sources/${idNum}.json`, {
           next: { revalidate: 3600 },
-          signal: AbortSignal.timeout(1800),
+          signal: AbortSignal.timeout(5000),
         });
         if (r2Res.ok) {
           const r2Data = await r2Res.json();
@@ -753,6 +763,63 @@ export async function GET(
       });
     }
   }
+
+    // TIER 3: Supabase episodes fallback with video_sources (if R2 and local SQLite DB were empty)
+    if (episodes.length === 0) {
+      const { data: sbEps } = await supabase
+        .from('episodes')
+        .select(
+          'id, season_number, episode_number, episode_name, episode_type, status, scheduled_release_at, translation_note, react_fire, react_cry, react_shock, react_angry, views_count, intro_start_sec, intro_end_sec, outro_start_sec, outro_end_sec, video_sources'
+        )
+        .eq('media_id', idNum)
+        .order('season_number', { ascending: true })
+        .order('episode_number', { ascending: true });
+
+      if (sbEps && sbEps.length > 0) {
+        episodes = sbEps.map((ep: any) => {
+          const rawSrcs = Array.isArray(ep.video_sources) ? ep.video_sources : [];
+          const deduped = deduplicateSources(rawSrcs);
+          const withoutDead = deduped.filter(
+            (s: any) => !isDeadSource(s.provider, s.direct_url, s.source_name)
+          );
+          const filtered = filterYoutubeIfAlternativesExist(withoutDead);
+          const mappedSources = filtered.map((s: any) => {
+            const stype = classifyStreamType(s.provider, s.direct_url);
+            const isNative = stype === 'hls' || stype === 'tau' || stype === 'mp4';
+            const displayName = getDisplaySourceName(s.provider, s.source_name, s.direct_url, s.site);
+            return {
+              ...s,
+              source_name: displayName,
+              fansub: null,
+              stream_type: stype,
+              quality_label: isNative ? '1080p' : s.quality_label || 'HD Embed',
+            };
+          });
+          const isPending = ep.status === 'pending_source' || mappedSources.length === 0;
+          return {
+            id: ep.id,
+            season_number: ep.season_number || 1,
+            episode_number: ep.episode_number || 1,
+            episode_name: ep.episode_name || `${ep.episode_number}. Bölüm`,
+            episode_type: ep.episode_type || 'bolum',
+            status: isPending ? ('pending_source' as const) : (ep.status || 'published'),
+            pending: isPending,
+            scheduled_release_at: ep.scheduled_release_at || null,
+            translation_note: ep.translation_note || null,
+            react_fire: ep.react_fire || 0,
+            react_cry: ep.react_cry || 0,
+            react_shock: ep.react_shock || 0,
+            react_angry: ep.react_angry || 0,
+            views_count: Number(ep.views_count || 0),
+            intro_start_sec: ep.intro_start_sec || null,
+            intro_end_sec: ep.intro_end_sec || null,
+            outro_start_sec: ep.outro_start_sec || null,
+            outro_end_sec: ep.outro_end_sec || null,
+            sources: applySourceNumbering(mappedSources),
+          };
+        });
+      }
+    }
 
     // Merge live Supabase episode reactions, view counts, scheduled upcoming episodes & intro skip timestamps
     const { data: liveEps } = await supabase

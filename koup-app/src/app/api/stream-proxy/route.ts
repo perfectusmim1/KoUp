@@ -209,9 +209,54 @@ export async function GET(req: NextRequest) {
       } else if (targetUrl.includes('hotlinger')) {
         referer = 'https://sn.hotlinger.com/';
         origin = 'https://sn.hotlinger.com';
+      } else if (targetUrl.includes('dplayer82.site')) {
+        referer = 'https://sn.dplayer82.site/';
+        origin = 'https://sn.dplayer82.site';
       } else {
         referer = 'https://four.pichive.online/';
         origin = 'https://four.pichive.online';
+      }
+    } else if (
+      targetUrl.includes('pilavyerplay') ||
+      targetUrl.includes('pilavyer') ||
+      targetUrl.includes('diziizle')
+    ) {
+      if (customRef) {
+        referer = customRef;
+        try {
+          origin = new URL(customRef).origin;
+        } catch {}
+      } else {
+        referer = 'https://diziizle.wiki/';
+        origin = 'https://diziizle.wiki';
+      }
+    } else if (
+      targetUrl.includes('dtpasn.asia') ||
+      targetUrl.includes('dtpasn') ||
+      targetUrl.includes('webdramaturkey')
+    ) {
+      if (customRef) {
+        referer = customRef;
+        try {
+          origin = new URL(customRef).origin;
+        } catch {}
+      } else {
+        referer = 'https://dtpasn.asia/';
+        origin = 'https://dtpasn.asia';
+      }
+    } else if (
+      targetUrl.includes('rapidvid') ||
+      targetUrl.includes('cdnimage') ||
+      targetUrl.includes('turbo.imgz.me')
+    ) {
+      if (customRef) {
+        referer = customRef;
+        try {
+          origin = new URL(customRef).origin;
+        } catch {}
+      } else {
+        referer = 'https://rapidvid.net/';
+        origin = 'https://rapidvid.net';
       }
     }
 
@@ -549,7 +594,12 @@ function rewritePlaylist(
         pathAndQuery.includes('master.txt') ||
         pathAndQuery.includes('/m.php') ||
         pathAndQuery.includes('/l.php') ||
-        pathAndQuery.includes('/ld.php');
+        pathAndQuery.includes('/ld.php') ||
+        pathAndQuery.includes('/m0/') ||
+        pathAndQuery.includes('/m1/') ||
+        pathAndQuery.includes('/ml/') ||
+        pathAndQuery.includes('/mg/') ||
+        pathAndQuery.includes('stream.php');
 
       if (isSubPlaylist) {
         return `${proxyBase}${encodeURIComponent(absoluteUrl)}${refSuffix}`;

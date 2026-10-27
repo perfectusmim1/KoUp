@@ -32,32 +32,36 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 
-def sync_episodes(include_short_drama: bool = False):
+def sync_episodes(include_short_drama: bool = False, drama_id: int = None):
     db_path = os.path.join(_ROOT, "webdrama_archive.db")
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
 
-    print("📊 Supabase üzerinde mevcut media ID'leri alınıyor...")
-    all_media_ids = set()
-    limit = 1000
-    offset = 0
-    while True:
-        try:
-            r = requests.get(f"{SUPABASE_URL}/rest/v1/media?select=id&limit={limit}&offset={offset}", headers=HEADERS, timeout=25)
-            if r.status_code != 200:
+    if drama_id:
+        print(f"🎯 Hedef Drama #{drama_id} için Supabase eşitlemesi başlatılıyor...")
+        all_media_ids = {drama_id}
+    else:
+        print("📊 Supabase üzerinde mevcut media ID'leri alınıyor...")
+        all_media_ids = set()
+        limit = 1000
+        offset = 0
+        while True:
+            try:
+                r = requests.get(f"{SUPABASE_URL}/rest/v1/media?select=id&limit={limit}&offset={offset}", headers=HEADERS, timeout=25)
+                if r.status_code != 200:
+                    break
+                rows = r.json()
+                if not rows:
+                    break
+                for row in rows:
+                    all_media_ids.add(row["id"])
+                offset += limit
+                if len(rows) < limit:
+                    break
+            except Exception:
                 break
-            rows = r.json()
-            if not rows:
-                break
-            for row in rows:
-                all_media_ids.add(row["id"])
-            offset += limit
-            if len(rows) < limit:
-                break
-        except Exception:
-            break
 
-    print(f"✅ Supabase üzerinde {len(all_media_ids)} yapım doğrulandı.")
+        print(f"✅ Supabase üzerinde {len(all_media_ids)} yapım doğrulandı.")
 
     print("🔍 SQLite üzerinden bölümler ve temiz kaynaklar çekiliyor...")
     # Fetch distinct clean sources per episode (max 3 top providers)
@@ -154,15 +158,26 @@ def sync_episodes(include_short_drama: bool = False):
             short_drama_ids.add(did)
 
     # Fetch all episodes belonging to valid Supabase media
-    cur.execute("""
-        SELECT id, drama_id, season_number, episode_number, episode_name, episode_type
-        FROM episodes
-        ORDER BY drama_id, season_number, episode_number
-    """)
+    if drama_id:
+        cur.execute("""
+            SELECT id, drama_id, season_number, episode_number, episode_name, episode_type
+            FROM episodes
+            WHERE drama_id = ?
+            ORDER BY drama_id, season_number, episode_number
+        """, (drama_id,))
+    else:
+        cur.execute("""
+            SELECT id, drama_id, season_number, episode_number, episode_name, episode_type
+            FROM episodes
+            ORDER BY drama_id, season_number, episode_number
+        """)
     all_episodes = cur.fetchall()
     conn.close()
 
-    if not include_short_drama:
+    if drama_id:
+        valid_episodes = all_episodes
+        print(f"🎬 Drama #{drama_id} için {len(valid_episodes)} bölüm senkronize edilecek.")
+    elif not include_short_drama:
         valid_episodes = [ep for ep in all_episodes if ep[1] in all_media_ids and ep[1] not in short_drama_ids]
         print(f"🎬 Senkronize edilecek geçerli bölüm sayısı: {len(valid_episodes)} ({len(short_drama_ids)} kısa drama yapımı Supabase episodes tablosundan filtrelendi; R2 bundle & media üzerinden çalışır).")
     else:
@@ -232,5 +247,6 @@ def sync_episodes(include_short_drama: bool = False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sync SQLite episodes to Supabase public.episodes")
     parser.add_argument("--include-short-drama", action="store_true", help="Include short dramas into Supabase episodes table")
+    parser.add_argument("--drama-id", type=int, default=None, help="Specific drama ID to sync episodes for")
     args = parser.parse_args()
-    sync_episodes(include_short_drama=args.include_short_drama)
+    sync_episodes(include_short_drama=args.include_short_drama, drama_id=args.drama_id)

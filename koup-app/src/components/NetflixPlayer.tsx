@@ -373,7 +373,19 @@ function isUnframableUrl(rawUrl: string | null | undefined): boolean {
     low.includes('tau-video.xyz/api/') ||
     low.includes('hdfilmcehennemi') ||
     low.includes('rapidrame') ||
-    low.includes('/rplayer/')
+    low.includes('/rplayer/') ||
+    low.includes('pilavyer') ||
+    low.includes('pilavyerplay') ||
+    low.includes('diziizle') ||
+    low.includes('dtpasn') ||
+    low.includes('wdt') ||
+    low.includes('dizipal') ||
+    low.includes('sezonlukdizi') ||
+    low.includes('rapidvid') ||
+    low.includes('cdnimage') ||
+    low.includes('shortizle') ||
+    low.includes('dramavadisi') ||
+    low.includes('dramabox')
   ) {
     return true;
   }
@@ -502,6 +514,7 @@ export default function NetflixPlayer({
   trailerYoutubeId: propTrailerYoutubeId,
   onCloseTrailer,
   hasRail = false,
+  variant = 'default',
 }: NetflixPlayerProps) {
   const router = useRouter();
   const progressMap = useKoUpSelector((s) => s.progressMap);
@@ -3423,6 +3436,12 @@ export default function NetflixPlayer({
             ? 'fixed inset-0 z-50 w-screen h-screen max-w-none rounded-none border-none aspect-auto flex flex-col justify-center items-center'
             : isTrailerMode
             ? 'w-full h-full max-w-[calc(100dvh*16/9)] max-h-[100dvh] aspect-video rounded-none border-none shadow-none z-20 flex flex-col justify-center'
+            : variant === 'vertical'
+            ? `w-full h-full aspect-[9/16] rounded-2xl sm:rounded-3xl border z-20 transition-[border-color,box-shadow] duration-300 ${
+                cinemaLightsOff
+                  ? 'border-sky-500/30 shadow-[0_0_30px_rgba(41,151,255,0.15),0_10px_25px_rgba(0,0,0,0.5)]'
+                  : 'border-white/10 shadow-[0_10px_25px_rgba(0,0,0,0.45)]'
+              }`
             : `w-full aspect-video rounded-2xl sm:rounded-3xl border z-20 transition-[border-color,box-shadow] duration-300 ${
                 cinemaLightsOff
                   ? 'border-sky-500/30 shadow-[0_0_30px_rgba(41,151,255,0.15),0_10px_25px_rgba(0,0,0,0.5)]'
