@@ -21,20 +21,28 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _load_tmdb_key():
-    key = os.environ.get("TMDB_API_KEY", "")
-    if not key:
-        env_path = os.path.join(_ROOT, "koup-app", ".env.local")
+    key = os.environ.get("TMDB_API_KEY") or os.environ.get("NEXT_PUBLIC_TMDB_API_KEY") or ""
+    if key:
+        return key.strip().strip('"').strip("'")
+
+    candidate_paths = [
+        os.path.join(_ROOT, ".env"),
+        os.path.join(_ROOT, "koup-app", ".env.local"),
+        os.path.join(_ROOT, "koup-app", ".env"),
+    ]
+    for env_path in candidate_paths:
         if os.path.exists(env_path):
             try:
                 with open(env_path, "r", encoding="utf-8") as f:
                     for line in f:
                         line = line.strip()
-                        if line.startswith("TMDB_API_KEY="):
-                            key = line.split("=", 1)[1].strip().strip('"').strip("'")
-                            break
+                        if line.startswith(("TMDB_API_KEY=", "NEXT_PUBLIC_TMDB_API_KEY=")):
+                            cand_key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                            if cand_key:
+                                return cand_key
             except Exception:
                 pass
-    return key
+    return ""
 
 
 TMDB_API_KEY = _load_tmdb_key()
@@ -126,6 +134,55 @@ TR_CHAR_TRANS = str.maketrans({
     "ç": "c", "Ç": "c",
     "²": "2", "³": "3", "¹": "1",
 })
+
+
+SITE_BRANDS_PAT = (
+    r"(?:sezonluk\s*dizi(?:\.\w+)?|dizipal\d*(?:\.\w+)?|diziizle(?:\.\w+)?|dizi\s*izle|"
+    r"fullhdfilmizlesene(?:\.\w+)?|fullhdfilm\w*|webdramaturkey\d*(?:\.\w+)?|animelvl(?:\.\w+)?|"
+    r"tranimeci|tranimaci|anizm(?:\.\w+)?|dizibox(?:\.\w+)?|dizikorea\d*|dizifon|dizigom|"
+    r"diziasia|hdfilmcehennemi|asyawatch|diziyou|shortizle|dramavadisi|dramabox|koredizi|"
+    r"animecix|ddizi)"
+)
+
+NOISE_AUDIO_VIDEO_PAT = (
+    r"\b(?:türkçe\s+dublaj(?:lı)?|turkce\s+dublaj(?:li)?|türkçe\s+altyazı(?:lı)?|turkce\s+altyazi(?:li)?|"
+    r"altyazılı\s+ve\s+dublaj|dublaj\s+ve\s+altyazılı|full\s+hd|1080p|720p|tek\s+parça|tek\s+parca|"
+    r"dizisi\s+izle|dizi\s+izle|filmi\s+izle|film\s+izle|anime\s+izle|\bizle\b)\b"
+)
+
+
+def sanitize_media_title(raw_title: str) -> str:
+    """Cleans competitor brand names, audio/video tags, and unwanted noise from media titles."""
+    if not raw_title:
+        return ""
+    t = str(raw_title).strip()
+
+    # 1. Strip brackets with audio/video/quality noise
+    t = re.sub(
+        r"[\[\(]\s*(?:1080p|720p|480p|hd|fhd|uhd|4k|türkçe\s+altyazılı|turkce\s+altyazili|"
+        r"türkçe\s+dublaj|turkce\s+dublaj|dublajlı|dublajli|dublaj|altyazılı|altyazili|"
+        r"altyazılı\s+ve\s+dublaj|dublaj\s+ve\s+altyazılı|"
+        r"final|raw|tr|eng|sub|bluray|bdrip|web-?dl|webrip)\s*[\]\)]",
+        " ",
+        t,
+        flags=re.I,
+    )
+
+    # 2. Site brands with separators anywhere or at boundaries (supports unicode dashes – \u2013, — \u2014, etc.)
+    t = re.sub(r"[\s\-–—|•:~]+\s*" + SITE_BRANDS_PAT + r"(?:\.\w+)?\b", " ", t, flags=re.I)
+    t = re.sub(r"^\s*" + SITE_BRANDS_PAT + r"(?:\.\w+)?\s*[\-–—|•:~]+", " ", t, flags=re.I)
+    t = re.sub(r"\b" + SITE_BRANDS_PAT + r"(?:\.\w+)?\s*$", " ", t, flags=re.I)
+
+    # 3. Audio / Video / Izle noises
+    t = re.sub(NOISE_AUDIO_VIDEO_PAT, " ", t, flags=re.I)
+
+    # 4. Remove isolated year at end: e.g. '(2023)'
+    t = re.sub(r"\s*\((?:19\d{2}|20\d{2})\)\s*$", "", t)
+
+    # 5. Trim separators and whitespace at edges
+    t = re.sub(r"^[\s\-–—|•:~]+|[\s\-–—|•:~]+$", "", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
 
 
 def norm_match_str(s: str) -> str:
@@ -286,6 +343,16 @@ def resolve_anilist_metadata(title: str, year: int = None) -> dict | None:
     }
 
 
+STUDIO_PREFIXES = (
+    "marvel's ", "marvels ", "dc's ", "dcs ", "disney's ",
+    "tom clancy's ", "stephen king's ", "zack snyder's ",
+)
+STUDIO_NORMS = (
+    "marvels", "marvel", "dcs", "dc", "disneys", "disney",
+    "tomclancys", "stephenkings", "zacksnyders",
+)
+
+
 def calculate_match_score(
     query_title: str, item: dict, target_year: int = None, target_country: str = None
 ) -> int:
@@ -295,14 +362,44 @@ def calculate_match_score(
     o_name = item.get("original_name") or item.get("original_title") or ""
 
     q_parts = [p.strip() for p in query_title.split(" - ") if p.strip()]
-    q_norms = {norm_match_str(p) for p in [query_title] + q_parts if len(norm_match_str(p)) >= 2}
-    c_norms = {norm_match_str(x) for x in (t_name, o_name) if x and len(norm_match_str(x)) >= 2}
+    raw_q_list = [query_title] + q_parts
+    for q in list(raw_q_list):
+        ql = q.lower()
+        for pfx in STUDIO_PREFIXES:
+            if ql.startswith(pfx):
+                raw_q_list.append(q[len(pfx):].strip())
+
+    raw_c_list = [t_name, o_name]
+    for c in list(raw_c_list):
+        if c:
+            cl = c.lower()
+            for pfx in STUDIO_PREFIXES:
+                if cl.startswith(pfx):
+                    raw_c_list.append(c[len(pfx):].strip())
+
+    q_norms = {norm_match_str(p) for p in raw_q_list if len(norm_match_str(p)) >= 2}
+    c_norms = {norm_match_str(x) for x in raw_c_list if x and len(norm_match_str(x)) >= 2}
+
+    for s in list(q_norms):
+        for pfx in STUDIO_NORMS:
+            if s.startswith(pfx) and len(s) > len(pfx) + 3:
+                q_norms.add(s[len(pfx):])
+    for s in list(c_norms):
+        for pfx in STUDIO_NORMS:
+            if s.startswith(pfx) and len(s) > len(pfx) + 3:
+                c_norms.add(s[len(pfx):])
 
     q_str = (query_title or "").strip()
     is_short = len(q_str) <= 5 or len(q_str.split()) <= 1
 
     if q_norms & c_norms:
         score += 65
+    elif any(
+        len(qn) >= 8 and (cn.endswith(qn) or qn.endswith(cn))
+        for qn in q_norms
+        for cn in c_norms
+    ):
+        score += 55
     elif not is_short and any(
         (qn in cn or cn in qn) and min(len(qn), len(cn)) >= max(4, int(max(len(qn), len(cn)) * 0.75))
         for qn in q_norms
@@ -357,7 +454,7 @@ def calculate_match_score(
 
 
 def resolve_tmdb_metadata(
-    title: str, year: int = None, country_hint: str = None, content_type: str = "dizi"
+    title: str, year: int = None, country_hint: str = None, content_type: str = "dizi", imdb_id: str = None
 ) -> dict | None:
     """
     Finds best matching TMDB item with strict multi-criteria scoring and fetches:
@@ -370,15 +467,7 @@ def resolve_tmdb_metadata(
     if m_yr and not year:
         year = int(m_yr.group(1))
 
-    clean_t = re.sub(r'\[\s*(?:1080p|720p|480p|hd|fhd|uhd|4k|türkçe\s+altyazılı|turkce\s+altyazili|türkçe\s+dublaj|turkce\s+dublaj|dublajlı|dublajli|dublaj|altyazılı|altyazili|final|raw|tr|eng|sub|bluray|bdrip|web-?dl|webrip)\s*\]', ' ', title or "", flags=re.I)
-    clean_t = re.sub(r'[\[\]]', ' ', clean_t)
-    clean_t = re.sub(r"\(\d{4}\)", "", clean_t)
-    clean_t = re.sub(
-        r"\b(izle|hd izle|film izle|dizi izle|türkçe dublaj|türkçe altyazılı|tek parça)\b",
-        "",
-        clean_t,
-        flags=re.I,
-    ).strip()
+    clean_t = sanitize_media_title(title)
     if not clean_t:
         return None
 
@@ -395,6 +484,26 @@ def resolve_tmdb_metadata(
 
     headers = {"User-Agent": "KoUpBot/2.0"}
 
+    # Step 0: 100% exact match using imdb_id if available
+    if imdb_id and re.match(r"^tt\d+$", str(imdb_id).strip()):
+        clean_imdb = str(imdb_id).strip()
+        try:
+            find_url = f"https://api.themoviedb.org/3/find/{clean_imdb}?api_key={TMDB_API_KEY}&external_source=imdb_id&language=tr-TR"
+            req = urllib.request.Request(find_url, headers=headers)
+            with urllib.request.urlopen(req, context=ctx, timeout=8) as resp:
+                f_data = json.loads(resp.read().decode("utf-8"))
+                tv_res = f_data.get("tv_results") or []
+                mv_res = f_data.get("movie_results") or []
+                if content_type == "film":
+                    cands = [(r, "movie") for r in mv_res] + [(r, "tv") for r in tv_res]
+                else:
+                    cands = [(r, "tv") for r in tv_res] + [(r, "movie") for r in mv_res]
+                if cands:
+                    best_candidate, best_type = cands[0]
+                    best_score = 100
+        except Exception:
+            pass
+
     def _search_tmdb(q_text, ep_name, lang_code, yr=None):
         yr_param = ""
         if yr:
@@ -408,34 +517,13 @@ def resolve_tmdb_metadata(
             data = json.loads(resp.read().decode("utf-8"))
             return data.get("results") or []
 
-    # Phase 1: Search with year if year provided
-    for q in queries[:3]:
-        for ep in endpoints:
-            for lang in ("tr-TR", "en-US"):
-                try:
-                    results = _search_tmdb(q, ep, lang, yr=year)
-                    for r in results[:6]:
-                        score = calculate_match_score(
-                            clean_t, r, target_year=year, target_country=country_hint
-                        )
-                        if score > best_score:
-                            best_score = score
-                            best_candidate = r
-                            best_type = "movie" if "movie" in ep else "tv"
-                except Exception:
-                    pass
-            if best_score >= 85:
-                break
-        if best_score >= 85:
-            break
-
-    # Phase 2: If year was specified but best_score < 75, retry without year parameter
-    if year and best_score < 75:
+    if not best_candidate:
+        # Phase 1: Search with year if year provided
         for q in queries[:3]:
             for ep in endpoints:
                 for lang in ("tr-TR", "en-US"):
                     try:
-                        results = _search_tmdb(q, ep, lang, yr=None)
+                        results = _search_tmdb(q, ep, lang, yr=year)
                         for r in results[:6]:
                             score = calculate_match_score(
                                 clean_t, r, target_year=year, target_country=country_hint
@@ -451,7 +539,29 @@ def resolve_tmdb_metadata(
             if best_score >= 85:
                 break
 
-    if not best_candidate or best_score < 75:
+        # Phase 2: If year was specified but best_score < 65, retry without year parameter
+        if year and best_score < 65:
+            for q in queries[:3]:
+                for ep in endpoints:
+                    for lang in ("tr-TR", "en-US"):
+                        try:
+                            results = _search_tmdb(q, ep, lang, yr=None)
+                            for r in results[:6]:
+                                score = calculate_match_score(
+                                    clean_t, r, target_year=None, target_country=country_hint
+                                )
+                                if score > best_score:
+                                    best_score = score
+                                    best_candidate = r
+                                    best_type = "movie" if "movie" in ep else "tv"
+                        except Exception:
+                            pass
+                    if best_score >= 85:
+                        break
+                if best_score >= 85:
+                    break
+
+    if not best_candidate or best_score < 65:
         return None
 
     tmdb_id = best_candidate["id"]

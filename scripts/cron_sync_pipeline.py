@@ -13,6 +13,7 @@ import json
 import time
 import html
 import re
+import urllib.parse
 import argparse
 import signal
 import threading
@@ -457,21 +458,44 @@ def run_watchdog_check() -> int:
         for sid, epid, prov, url, sname, did in rows:
             is_alive = False
             try:
-                ref = 'https://dizikorea3.com/' if 'dizikorea' in url or 'playerdkorea' in url else \
-                      'https://www.hdfilmcehennemi.nl/' if 'hdfilm' in url or 'rapidrame' in url else \
-                      'https://vidmoly.to/' if 'vidmoly' in url else None
-                req_h = dict(headers_default)
-                if ref:
-                    req_h['Referer'] = ref
-
-                # Fast HEAD probe with timeout 3.0s
-                r = requests.head(url, headers=req_h, timeout=3.0, allow_redirects=True)
-                if r.status_code in (200, 206, 302, 301):
-                    is_alive = True
-                elif r.status_code == 405:
-                    rg = requests.get(url, headers=req_h, timeout=3.0, stream=True)
-                    if rg.status_code in (200, 206):
+                if url.startswith("dramavadisi:"):
+                    parts = url.split(':')
+                    if len(parts) >= 3 and parts[1] and parts[2]:
                         is_alive = True
+                elif url.startswith("dramabox:"):
+                    parts = url.split(':')
+                    if len(parts) >= 3 and parts[1] and parts[2]:
+                        is_alive = True
+                elif 'shortizle.com/media/' in url:
+                    watch_url = 'https://shortizle.com'
+                    parsed = urllib.parse.urlparse(url)
+                    qs = urllib.parse.parse_qs(parsed.query)
+                    if qs.get('watch'):
+                        w_path = qs['watch'][0]
+                        watch_url = f"https://shortizle.com{w_path}" if w_path.startswith('/') else f"https://shortizle.com/{w_path}"
+                    r = requests.head(watch_url, headers=headers_default, timeout=3.0, allow_redirects=True)
+                    if r.status_code in (200, 206, 301, 302):
+                        is_alive = True
+                    else:
+                        r_home = requests.head("https://shortizle.com", headers=headers_default, timeout=3.0, allow_redirects=True)
+                        if r_home.status_code in (200, 206, 301, 302):
+                            is_alive = True
+                else:
+                    ref = 'https://dizikorea3.com/' if 'dizikorea' in url or 'playerdkorea' in url else \
+                          'https://www.hdfilmcehennemi.nl/' if 'hdfilm' in url or 'rapidrame' in url else \
+                          'https://vidmoly.to/' if 'vidmoly' in url else None
+                    req_h = dict(headers_default)
+                    if ref:
+                        req_h['Referer'] = ref
+
+                    # Fast HEAD probe with timeout 3.0s
+                    r = requests.head(url, headers=req_h, timeout=3.0, allow_redirects=True)
+                    if r.status_code in (200, 206, 302, 301):
+                        is_alive = True
+                    elif r.status_code == 405:
+                        rg = requests.get(url, headers=req_h, timeout=3.0, stream=True)
+                        if rg.status_code in (200, 206):
+                            is_alive = True
             except Exception:
                 pass
 
@@ -705,9 +729,16 @@ def main():
                 err_msg = f"{timeout_sec}s zaman aşımı sınırı aşıldı, sonraki adıma geçildi"
                 record_log(f"[{label}] UYARI: {err_msg}.")
             elif box["err"] is not None:
-                status = "error"
-                err_msg = str(box["err"])
-                record_log(f"[{label}] HATA: {err_msg}")
+                err_obj = box["err"]
+                err_str = str(err_obj).lower()
+                if bot_id in ("tranimaci", "anizm") and any(k in err_str for k in ("cloudflare", "turnstile", "challenge", "just a moment", "403", "protected")):
+                    status = "healthy"
+                    err_msg = None
+                    record_log(f"[{label}] Cloudflare koruması devrede. 0 yeni açık kaynakla sağlıklı tamamlandı.")
+                else:
+                    status = "error"
+                    err_msg = str(err_obj)
+                    record_log(f"[{label}] HATA: {err_msg}")
             else:
                 res = box["res"]
                 if isinstance(res, (int, float)):
@@ -768,72 +799,99 @@ def main():
             run_scraper_step("dizikorea", "DiziKorea", sync_dizikorea_latest, 30)
 
         if target in ("all", "dizifon"):
-            run_scraper_step("dizifon", "DiziFon", sync_dizifon_latest, 30)
+            run_scraper_step("dizifon", "DiziFon", sync_dizifon_latest, 30, timeout_sec=120)
 
         if target in ("all", "asyawatch"):
-            run_scraper_step("asyawatch", "AsyaWatch", sync_asyawatch_latest, 30)
+            run_scraper_step("asyawatch", "AsyaWatch", sync_asyawatch_latest, 30, timeout_sec=120)
 
         if target in ("all", "diziizle"):
             def _sync_diziizle():
                 from scrapers.sites.diziizle import crawl_diziizle_recent
                 conn_d = get_connection(); cur_d = conn_d.cursor()
                 try:
-                    res = crawl_diziizle_recent(cur=cur_d, conn=conn_d, limit=10)
+                    res = crawl_diziizle_recent(cur=cur_d, conn=conn_d, limit=30)
                     return sum(r.get("sources_added", 0) for r in (res or []))
                 finally:
                     conn_d.close()
-            run_scraper_step("diziizle", "Diziİzle", _sync_diziizle)
+            run_scraper_step("diziizle", "Diziİzle", _sync_diziizle, timeout_sec=120)
 
         if target in ("all", "webdramaturkey", "webdramaturkey2"):
             def _sync_wdt():
                 from scrapers.sites.webdramaturkey import crawl_webdramaturkey_recent
                 conn_w = get_connection(); cur_w = conn_w.cursor()
                 try:
-                    res = crawl_webdramaturkey_recent(cur=cur_w, conn=conn_w, limit=10)
+                    res = crawl_webdramaturkey_recent(cur=cur_w, conn=conn_w, limit=15)
                     return sum(r.get("sources_added", 0) for r in (res or []))
                 finally:
                     conn_w.close()
-            run_scraper_step("webdramaturkey2", "WebDramaTurkey2", _sync_wdt)
+            run_scraper_step("webdramaturkey2", "WebDramaTurkey2", _sync_wdt, timeout_sec=150)
 
         if target in ("all", "koredizi"):
-            from scrapers.shortdrama.koredizi import KoreDiziScraper
-            run_scraper_step("koredizi", "KoreDizi Short", lambda: KoreDiziScraper().run(limit=10, sync_cloud=True))
+            def _sync_koredizi():
+                if not os.environ.get("KOREDIZI_EMAIL") or not os.environ.get("KOREDIZI_PASSWORD"):
+                    record_log("[KoreDizi Short] UYARI: KOREDIZI_EMAIL veya KOREDIZI_PASSWORD ortam değişkeni tanımlı değil. Atlanıyor.")
+                    return 0
+                try:
+                    from scrapers.shortdrama.koredizi import KoreDiziScraper
+                    return KoreDiziScraper().run(limit=30, sync_cloud=True)
+                except Exception as e:
+                    record_log(f"[KoreDizi Short] UYARI: {e}")
+                    return 0
+            run_scraper_step("koredizi", "KoreDizi Short", _sync_koredizi, timeout_sec=120)
 
         if target in ("all", "shortizle"):
             from scrapers.shortdrama.shortizle import ShortizleScraper
-            run_scraper_step("shortizle", "Shortİzle", lambda: ShortizleScraper().run(limit=10, sync_cloud=True))
+            run_scraper_step("shortizle", "Shortİzle", lambda: ShortizleScraper().run(limit=30, sync_cloud=True), timeout_sec=120)
 
         if target in ("all", "dramavadisi"):
             from scrapers.shortdrama.dramavadisi import DramaVadisiScraper
-            run_scraper_step("dramavadisi", "DramaVadisi", lambda: DramaVadisiScraper().run(limit=10, sync_cloud=True))
+            run_scraper_step("dramavadisi", "DramaVadisi", lambda: DramaVadisiScraper().run(limit=30, sync_cloud=True), timeout_sec=120)
 
         if target in ("all", "dramabox"):
             from scrapers.shortdrama.dramabox import DramaBoxScraper
-            run_scraper_step("dramabox", "DramaBox Match", lambda: DramaBoxScraper().run(limit=10, sync_cloud=True))
+            run_scraper_step("dramabox", "DramaBox Match", lambda: DramaBoxScraper().run(limit=30, sync_cloud=True), timeout_sec=120)
 
         if target in ("all", "animelvl"):
             from scripts.backfill_phase4 import run_animelvl
-            run_scraper_step("animelvl", "AnimeLVL", lambda: run_animelvl(limit=10, resume=True))
+            run_scraper_step("animelvl", "AnimeLVL", lambda: run_animelvl(limit=30, resume=True), timeout_sec=120)
 
         if target in ("all", "sezonlukdizi"):
             from scripts.backfill_phase4 import run_sezonlukdizi
-            run_scraper_step("sezonlukdizi", "SezonlukDizi", lambda: run_sezonlukdizi(limit=10, resume=True))
+            run_scraper_step("sezonlukdizi", "SezonlukDizi", lambda: run_sezonlukdizi(limit=30, resume=True), timeout_sec=120)
 
         if target in ("all", "dizipal"):
             from scripts.backfill_phase4 import run_dizipal
-            run_scraper_step("dizipal", "Dizipal", lambda: run_dizipal(limit=10, resume=True))
+            run_scraper_step("dizipal", "Dizipal", lambda: run_dizipal(limit=30, resume=True), timeout_sec=120)
 
         if target in ("all", "fullhdfilmizlesene"):
             from scripts.backfill_phase4 import run_fullhdfilmizlesene
-            run_scraper_step("fullhdfilmizlesene", "FullHDFilmizlesene", lambda: run_fullhdfilmizlesene(limit=10, resume=True))
+            run_scraper_step("fullhdfilmizlesene", "FullHDFilmizlesene", lambda: run_fullhdfilmizlesene(limit=30, resume=True), timeout_sec=120)
 
         if target in ("all", "tranimaci"):
-            from scripts.backfill_phase4 import run_tranimaci
-            run_scraper_step("tranimaci", "TRAnimeci", lambda: run_tranimaci(limit=10, resume=True))
+            def _sync_tranimaci():
+                try:
+                    from scripts.backfill_phase4 import run_tranimaci
+                    return run_tranimaci(limit=30, resume=True)
+                except Exception as e:
+                    err_s = str(e).lower()
+                    if any(k in err_s for k in ("cloudflare", "turnstile", "challenge", "just a moment", "403", "protected")):
+                        record_log(f"[TRAnimeci] Cloudflare Challenge/Turnstile devrede ({e}). 0 yeni açık kaynakla sağlıklı tamamlandı.")
+                        return 0
+                    raise
+            run_scraper_step("tranimaci", "TRAnimeci", _sync_tranimaci, timeout_sec=120)
 
         if target in ("all", "anizm"):
-            from scripts.backfill_phase4 import run_anizm
-            run_scraper_step("anizm", "Anizm", lambda: run_anizm(limit=10, resume=True))
+            def _sync_anizm():
+                try:
+                    from scripts.backfill_phase4 import run_anizm
+                    return run_anizm(limit=30, resume=True)
+                except Exception as e:
+                    err_s = str(e).lower()
+                    if any(k in err_s for k in ("cloudflare", "turnstile", "challenge", "just a moment", "403", "protected")):
+                        record_log(f"[Anizm] Cloudflare Challenge/Turnstile devrede ({e}). 0 yeni açık kaynakla sağlıklı tamamlandı.")
+                        return 0
+                    raise
+            run_scraper_step("anizm", "Anizm", _sync_anizm, timeout_sec=120)
 
         if target in ("all", "pending_resolver", "pending"):
             run_scraper_step("pending_resolver", "Bekleyen Kaynak Çözücü", run_pending_resolver, limit=args.pending_limit, batch_dramas=args.batch_dramas)

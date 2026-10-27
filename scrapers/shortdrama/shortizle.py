@@ -13,11 +13,22 @@ import sys
 import time
 from bs4 import BeautifulSoup
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 from scrapers.multisite import add_source
 from scrapers.shortdrama.common import (
+    CHECKPOINT_DIR,
+    clean_cover_image,
+    clean_drama_overview,
     get_db_connection,
     get_or_create_episode,
     get_session,
+    get_thread_session,
     load_checkpoint,
     safe_request,
     save_checkpoint,
@@ -30,10 +41,24 @@ BASE_URL = "https://shortizle.com"
 
 class ShortizleScraper:
     def __init__(self, session=None):
-        self.session = session or get_session()
+        self._session = session
+
+    def _get_sess(self):
+        return self._session if self._session is not None else get_thread_session()
 
     def get_catalog(self, max_sitemaps: int = 5) -> list[str]:
-        """Fetches all drama URLs from Shortİzle title sitemaps."""
+        """Fetches all drama URLs from Shortİzle title sitemaps with local caching."""
+        cache_file = CHECKPOINT_DIR / "shortizle_catalog.json"
+        if cache_file.exists():
+            try:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    cached_urls = json.load(f)
+                    if cached_urls and len(cached_urls) > 500:
+                        print(f"[SHORTIZLE_CATALOG] Loaded {len(cached_urls)} URLs from local cache.")
+                        return cached_urls
+            except Exception:
+                pass
+
         drama_urls = []
         seen = set()
 
@@ -42,7 +67,7 @@ class ShortizleScraper:
         for i in range(1, max_sitemaps + 1):
             for tok in gen_tokens:
                 sitemap_url = f"{BASE_URL}/sitemap-titles-{i}.xml{tok}"
-                resp = safe_request(self.session, "GET", sitemap_url, delay=0.1)
+                resp = safe_request(self._get_sess(), "GET", sitemap_url, delay=0.1)
                 if resp and resp.status_code == 200 and "<loc>" in resp.text:
                     found = re.findall(r"<loc>(https://shortizle\.com/watch/[^<]+)</loc>", resp.text)
                     for u in found:
@@ -53,17 +78,24 @@ class ShortizleScraper:
 
         if not drama_urls:
             # Fallback to main sitemap index
-            resp = safe_request(self.session, "GET", f"{BASE_URL}/sitemap.xml", delay=0.3)
+            resp = safe_request(self._get_sess(), "GET", f"{BASE_URL}/sitemap.xml", delay=0.3)
             if resp and resp.status_code == 200:
                 sitemaps = re.findall(r"<loc>(https://shortizle\.com/sitemap-titles-[^<]+)</loc>", resp.text)
                 for sm in sitemaps:
-                    sm_resp = safe_request(self.session, "GET", sm, delay=0.3)
+                    sm_resp = safe_request(self._get_sess(), "GET", sm, delay=0.3)
                     if sm_resp and sm_resp.status_code == 200:
                         found = re.findall(r"<loc>(https://shortizle\.com/watch/[^<]+)</loc>", sm_resp.text)
                         for u in found:
                             if u not in seen:
                                 seen.add(u)
                                 drama_urls.append(u)
+
+        if drama_urls:
+            try:
+                with open(cache_file, "w", encoding="utf-8") as f:
+                    json.dump(drama_urls, f, ensure_ascii=False)
+            except Exception:
+                pass
 
         return drama_urls
 
@@ -153,32 +185,29 @@ class ShortizleScraper:
 
         return sources
 
-    def scrape_drama(self, drama_url: str, sync_cloud: bool = True) -> int | None:
-        """Scrapes metadata and episodes for a single Shortİzle drama."""
-        # 1. Network I/O phase (No DB connection held during HTTP)
-        resp = safe_request(self.session, "GET", drama_url, delay=0.5)
+    def fetch_drama_network_data(self, drama_url: str) -> dict | None:
+        """Fetches drama metadata and all episodes purely in memory using thread-isolated session."""
+        sess = self._get_sess()
+        resp = safe_request(sess, "GET", drama_url, delay=0.1)
         if not resp or resp.status_code != 200:
-            print(f"[SHORTIZLE_WARN] Failed to fetch {drama_url}")
             return None
 
         data = self.extract_inertia_data(resp.text)
         if not data or "props" not in data:
-            print(f"[SHORTIZLE_WARN] No Inertia data found in {drama_url}")
             return None
 
         props = data["props"]
         t = props.get("title", {})
         title = t.get("name") or drama_url.split("/")[-1].replace("-", " ").title()
         slug = t.get("slug") or drama_url.split("/")[-1]
-        description = t.get("description") or ""
+        description = clean_drama_overview(t.get("description") or "")
 
         poster = t.get("og_image_url") or t.get("poster")
         if not poster and "poster_gradient" in t and t["poster_gradient"]:
             m = re.search(r"url\(['\"]?([^'\")]+)['\"]?\)", t["poster_gradient"])
             if m:
                 poster = m.group(1)
-        if poster and not poster.startswith("http"):
-            poster = f"{BASE_URL}{poster}"
+        poster = clean_cover_image(poster, base_url=BASE_URL)
 
         year = t.get("year")
         genres = [g.get("name") for g in t.get("genres", []) if isinstance(g, dict) and g.get("name")]
@@ -189,10 +218,8 @@ class ShortizleScraper:
         episodes = seasons[0].get("episodes", []) if seasons else []
         ep_count = len(episodes)
 
-        # Collect episode sources across all episodes
         episodes_data = []
         if episodes:
-            # Ep 1 sources
             ep1_obj = episodes[0]
             ep1_num = ep1_obj.get("episode_number") or ep1_obj.get("number") or 1
             ep1_url = f"{BASE_URL}/watch/{slug}/1/{ep1_num}"
@@ -205,15 +232,12 @@ class ShortizleScraper:
                 ep1_sources = [("Shortİzle (Türkçe Altyazı)", fallback_u, "shortizle")]
             episodes_data.append((ep1_num, ep1_obj.get("title") or f"{ep1_num}. Bölüm", ep1_url, ep1_sources))
 
-            # Check if ep1 uses Shortİzle native resolve_url (/media/shortizle-live-alternate/...)
             active_resolve_groups = [
                 g for g in ("altyazi", "dublaj")
                 if any(isinstance(it, dict) and it.get("resolve_url") for it in (ep1_ext.get(g) or []))
             ]
 
             if active_resolve_groups:
-                # Deterministic fast-path: no need to hammer 50-100 episode pages per drama;
-                # /api/resolve-stream resolves each episode dynamically via ?watch=/watch/{slug}/1/{ep_num}&kind={g}
                 for ep_idx, ep_obj in enumerate(episodes[1:], 2):
                     ep_num = ep_obj.get("episode_number") or ep_obj.get("number") or ep_idx
                     ep_url = f"{BASE_URL}/watch/{slug}/1/{ep_num}"
@@ -225,14 +249,13 @@ class ShortizleScraper:
                         ep_sources.append((lbl, s_url, "shortizle"))
                     episodes_data.append((ep_num, ep_obj.get("title") or f"{ep_num}. Bölüm", ep_url, ep_sources))
             else:
-                # Fetch remaining episodes concurrently (e.g. when external Vidmoly embeds are used)
                 from concurrent.futures import ThreadPoolExecutor
 
                 def _fetch_shortizle_ep(item):
                     ep_idx, ep_obj = item
                     ep_num = ep_obj.get("episode_number") or ep_obj.get("number") or ep_idx
                     ep_url = f"{BASE_URL}/watch/{slug}/1/{ep_num}"
-                    ep_resp = safe_request(self.session, "GET", ep_url, delay=0.05)
+                    ep_resp = safe_request(get_thread_session(), "GET", ep_url, delay=0.03)
                     ep_sources = []
                     if ep_resp and ep_resp.status_code == 200:
                         ep_data = self.extract_inertia_data(ep_resp.text)
@@ -247,45 +270,79 @@ class ShortizleScraper:
                         ep_sources = [("Shortİzle (Türkçe Altyazı)", fallback_u, "shortizle")]
                     return (ep_num, ep_obj.get("title") or f"{ep_num}. Bölüm", ep_url, ep_sources)
 
-                with ThreadPoolExecutor(max_workers=8) as executor:
+                with ThreadPoolExecutor(max_workers=6) as executor:
                     episodes_data.extend(list(executor.map(_fetch_shortizle_ep, enumerate(episodes[1:], 2))))
 
-        # 2. Fast atomic database transaction phase with retry
-        did = None
-        sources_added = 0
+        return {
+            "title": title,
+            "slug": slug,
+            "description": description,
+            "poster": poster,
+            "year": year,
+            "genres": genres,
+            "ep_count": ep_count,
+            "episodes_data": episodes_data,
+            "source_url": drama_url,
+        }
+
+    def write_batch_to_db(self, infos: list[dict], sync_cloud: bool = False) -> list[int]:
+        """Atomically writes a batch of Shortİzle dramas to SQLite in a single transaction."""
+        ingested_ids = []
+        if not infos:
+            return ingested_ids
+
         for attempt in range(10):
             try:
                 conn = get_db_connection()
                 cur = conn.cursor()
+                for info in infos:
+                    if not info:
+                        continue
+                    episodes_data = info.get("episodes_data", [])
+                    has_any_source = any(len(ep[3]) > 0 for ep in episodes_data)
+                    if not has_any_source:
+                        continue
 
-                did, final_slug, is_new = upsert_short_drama(
-                    conn=conn,
-                    cur=cur,
-                    title=title,
-                    slug=slug,
-                    cover_image=poster,
-                    overview=description,
-                    release_year=year,
-                    episode_count=ep_count,
-                    genres=genres,
-                    site_tag="shortizle",
-                    source_url=drama_url,
-                    country="CN",
-                    country_name="Çin",
-                )
+                    title = info["title"]
+                    slug = info["slug"]
+                    poster = info["poster"]
+                    description = info["description"]
+                    year = info["year"]
+                    genres = info["genres"]
+                    ep_count = info["ep_count"]
+                    drama_url = info["source_url"]
 
-                for ep_num, ep_name, ep_url, ep_sources in episodes_data:
-                    ep_db_id = get_or_create_episode(
+                    did, final_slug, is_new = upsert_short_drama(
+                        conn=conn,
                         cur=cur,
-                        drama_id=did,
-                        episode_number=ep_num,
-                        season_number=1,
-                        episode_name=ep_name,
-                        episode_url=ep_url,
+                        title=title,
+                        slug=slug,
+                        cover_image=poster,
+                        overview=description,
+                        release_year=year,
+                        episode_count=ep_count,
+                        genres=genres,
+                        site_tag="shortizle",
+                        source_url=drama_url,
+                        country="CN",
+                        country_name="Çin",
                     )
-                    for s_name, s_url, s_prov in ep_sources:
-                        if add_source(cur, ep_db_id, s_name, s_url, s_prov, "shortizle"):
-                            sources_added += 1
+                    sources_added = 0
+                    for ep_num, ep_name, ep_url, ep_sources in episodes_data:
+                        ep_db_id = get_or_create_episode(
+                            cur=cur,
+                            drama_id=did,
+                            episode_number=ep_num,
+                            season_number=1,
+                            episode_name=ep_name,
+                            episode_url=ep_url,
+                        )
+                        for s_name, s_url, s_prov in ep_sources:
+                            if add_source(cur, ep_db_id, s_name, s_url, s_prov, "shortizle"):
+                                sources_added += 1
+
+                    if sources_added > 0:
+                        ingested_ids.append(did)
 
                 conn.commit()
                 conn.close()
@@ -293,18 +350,25 @@ class ShortizleScraper:
             except sqlite3.OperationalError:
                 if attempt == 9:
                     raise
-                time.sleep(1.0)
+                time.sleep(0.5)
 
-        print(f"[SHORTIZLE_INGESTED] #{did} {title}: {ep_count} eps, {sources_added} sources.")
+        if sync_cloud and ingested_ids:
+            for did in ingested_ids:
+                sync_short_drama_to_cloud(did)
 
-        # 3. Cloud sync phase
-        if sync_cloud and did:
-            sync_short_drama_to_cloud(did)
+        return ingested_ids
 
-        return did
+    def scrape_drama(self, drama_url: str, sync_cloud: bool = True) -> int | None:
+        """Scrapes metadata and episodes for a single Shortİzle drama."""
+        info = self.fetch_drama_network_data(drama_url)
+        if not info:
+            print(f"[SHORTIZLE_WARN] Failed to fetch {drama_url}")
+            return None
+        res = self.write_batch_to_db([info], sync_cloud=sync_cloud)
+        return res[0] if res else None
 
     def run(self, limit: int = None, resume: bool = True, sync_cloud: bool = True):
-        """Runs the Shortİzle catalog ingestion with checkpointing."""
+        """Runs the Shortİzle catalog ingestion with concurrent network batches and checkpointing."""
         print("[SHORTIZLE_CATALOG] Fetching sitemaps...")
         catalog = self.get_catalog(max_sitemaps=5)
         print(f"[SHORTIZLE_CATALOG] Found {len(catalog)} drama URLs.")
@@ -317,16 +381,36 @@ class ShortizleScraper:
         if limit:
             pending = pending[:limit]
 
-        print(f"[SHORTIZLE_PROGRESS] Processing {len(pending)} dramas (Already processed: {len(done)})...")
-        for idx, drama_url in enumerate(pending, 1):
-            slug = drama_url.split("/")[-1]
-            print(f"[{idx}/{len(pending)}] Scraping Shortİzle: {slug}...")
-            try:
-                self.scrape_drama(drama_url, sync_cloud=sync_cloud)
+        print(f"[SHORTIZLE_PROGRESS] Processing {len(pending)} dramas (Already processed: {len(done)})...", flush=True)
+        from concurrent.futures import ThreadPoolExecutor
+
+        batch_size = 24
+        all_new_ids = set()
+        for i in range(0, len(pending), batch_size):
+            batch_urls = pending[i:i + batch_size]
+            with ThreadPoolExecutor(max_workers=batch_size) as executor:
+                fetched_items = list(executor.map(self.fetch_drama_network_data, batch_urls))
+
+            valid_items = [it for it in fetched_items if it]
+            if valid_items:
+                b_ids = self.write_batch_to_db(valid_items, sync_cloud=False)
+                all_new_ids.update(b_ids)
+
+            for url in batch_urls:
+                slug = url.split("/")[-1]
                 done.add(slug)
-                save_checkpoint("shortizle", done)
-            except Exception as e:
-                print(f"[SHORTIZLE_ITEM_ERROR] {slug}: {e}", file=sys.stderr)
+
+            save_checkpoint("shortizle", done)
+            processed_count = min(i + batch_size, len(pending))
+            if processed_count % 120 == 0 or processed_count == len(pending):
+                print(f"[SHORTIZLE_PROGRESS] {processed_count}/{len(pending)} processed ({len(all_new_ids)} dramas ingested)...", flush=True)
+
+        print(f"[SHORTIZLE_INGEST_COMPLETE] Finished network + DB ingest of {len(all_new_ids)} dramas.", flush=True)
+
+        if sync_cloud and all_new_ids:
+            print(f"[SHORTIZLE_CLOUD_SYNC] Starting bulk cloud sync for {len(all_new_ids)} dramas...", flush=True)
+            from scrapers.shortdrama.common import bulk_sync_short_dramas_to_cloud
+            bulk_sync_short_dramas_to_cloud(list(all_new_ids))
 
 
 if __name__ == "__main__":

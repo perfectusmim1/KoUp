@@ -16,6 +16,9 @@ from bs4 import BeautifulSoup
 
 from scrapers.multisite import add_source
 from scrapers.shortdrama.common import (
+    CHECKPOINT_DIR,
+    clean_cover_image,
+    clean_drama_overview,
     get_db_connection,
     get_or_create_episode,
     get_session,
@@ -129,9 +132,8 @@ class KoreDiziScraper:
 
             # Extract title and cover
             img = card.find("img")
-            cover = img.get("src") if img else None
-            if cover and not cover.startswith("http"):
-                cover = f"{BASE_URL}{cover}"
+            cover_raw = img.get("src") if img else None
+            cover = clean_cover_image(cover_raw, base_url=BASE_URL)
 
             title_elem = card.find(class_=re.compile(r"title|name", re.I)) or card.find(["h2", "h3", "h4", "h5", "p", "span"])
             title = title_elem.get_text(strip=True) if title_elem else slug.replace("-", " ").title()

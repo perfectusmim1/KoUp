@@ -13,6 +13,11 @@ import sqlite3
 import sys
 import time
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # Ensure project root is in sys.path
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
@@ -33,10 +38,10 @@ def get_db():
     return conn
 
 
-def run_phase3(site: str = "all", limit: int = 5, resume: bool = False):
+def run_phase3(site: str = "all", limit: int = 5, resume: bool = False, category: str = "all", backup_db: bool = False):
     conn = get_db()
     cur = conn.cursor()
-    print(f"=== [FAZ 3 BACKFILL BAŞLATILDI] Site: {site} | Limit: {limit} | Resume: {resume} ===", flush=True)
+    print(f"=== [FAZ 3 BACKFILL BAŞLATILDI] Site: {site} | Limit: {limit} | Category: {category} | Resume: {resume} ===", flush=True)
 
     total_calendar_items = 0
     diziizle_results = []
@@ -81,6 +86,16 @@ def run_phase3(site: str = "all", limit: int = 5, resume: bool = False):
                 if len(clean_name) >= 4:
                     norm_map[clean_name] = full_u
 
+            # Check existing pilavyer dramas
+            cur.execute("""
+                SELECT DISTINCT d.id
+                FROM dramas d
+                JOIN episodes e ON e.drama_id = d.id
+                JOIN episode_sources es ON es.episode_id = e.id
+                WHERE es.provider = 'pilavyer' OR es.direct_url LIKE '%pilavyerplay%'
+            """)
+            done_drama_ids = {r[0] for r in cur.fetchall()}
+
             # Match our Turkish dramas (especially YouTube ones)
             cur.execute("""
                 SELECT d.id, d.title, d.slug 
@@ -92,6 +107,8 @@ def run_phase3(site: str = "all", limit: int = 5, resume: bool = False):
             targeted_urls = []
             seen_target = set()
             for did, title, slug in tr_all:
+                if resume and did in done_drama_ids:
+                    continue
                 url_match = None
                 if slug in dizi_sitemap_urls:
                     url_match = dizi_sitemap_urls[slug]
@@ -102,16 +119,21 @@ def run_phase3(site: str = "all", limit: int = 5, resume: bool = False):
                     targeted_urls.append(url_match)
                     seen_target.add(url_match)
 
-            print(f"[DIZIIZLE TARGET] Arşivimizdeki Türk dizilerinden {len(targeted_urls)} tanesi Diziİzle ile %100 eşleşti.", flush=True)
+            print(f"[DIZIIZLE TARGET] Arşivimizdeki Türk dizilerinden {len(targeted_urls)} tanesi (kalan) Diziİzle ile eşleşti.", flush=True)
 
-            # Crawl targeted or recent diziizle series (0 = full episodes for each series)
+            # Close main connection so zero locks are held during parallel HTTP
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+            # Crawl targeted or recent diziizle series using 3-stage high-speed lockless batching
             diziizle_results = crawl_diziizle_recent(
-                cur=cur,
-                conn=conn,
-                idx=idx,
                 limit=limit,
                 max_episodes_per_series=0,
                 target_urls=targeted_urls,
+                resume=resume,
+                batch_size=20,
             )
             print(f"[FAZ 3 DIZIIZLE] {len(diziizle_results)} yapım işlendi.", flush=True)
         except Exception as e:
@@ -119,7 +141,7 @@ def run_phase3(site: str = "all", limit: int = 5, resume: bool = False):
 
     # 3. WebDramaTurkey2 WDT Player Backfill
     if site in ("webdramaturkey2", "all"):
-        print(f"\n--- [3/3] WebDramaTurkey2 Yeni Diziler & Filmler (WDT HD) Çekimi (Limit: {limit}) ---", flush=True)
+        print(f"\n--- [3/3] WebDramaTurkey2 Yeni Diziler & Filmler (WDT HD) Çekimi (Limit: {limit} | Kategori: {category}) ---", flush=True)
         try:
             idx = build_drama_index(cur)
             wdt_results = crawl_webdramaturkey_recent(
@@ -127,20 +149,21 @@ def run_phase3(site: str = "all", limit: int = 5, resume: bool = False):
                 conn=conn,
                 idx=idx,
                 limit=limit,
-                category="all",
+                category=category,
             )
             print(f"[FAZ 3 WDT] {len(wdt_results)} yeni yapım işlendi.", flush=True)
         except Exception as e:
             print(f"[FAZ 3 WDT HATA]: {e}", flush=True)
 
-    # 4. Final WAL checkpoint and Full Storage Sync
+    # 4. Final WAL checkpoint
     try:
-        conn.commit()
-        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-        conn.close()
-        print("\n--- [DEPİ SENKRONİZASYONU] Cloudflare R2 Veritabanı Yedeklemesi Başlatılıyor ---", flush=True)
-        backed_up = backup_db_to_r2()
-        print(f"[R2 DB BACKUP] Sonuç: {'Başarılı' if backed_up else 'Atlandı/Hata'}", flush=True)
+        final_conn = get_db()
+        final_conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        final_conn.close()
+        if backup_db:
+            print("\n--- [DEPO SENKRONİZASYONU] Cloudflare R2 Veritabanı Yedeklemesi Başlatılıyor ---", flush=True)
+            backed_up = backup_db_to_r2()
+            print(f"[R2 DB BACKUP] Sonuç: {'Başarılı' if backed_up else 'Atlandı/Hata'}", flush=True)
     except Exception as e:
         print(f"[DB FINAL SYNC WARN]: {e}", flush=True)
 
@@ -173,11 +196,19 @@ def run_phase3(site: str = "all", limit: int = 5, resume: bool = False):
 def main():
     parser = argparse.ArgumentParser(description="Faz 3 Backfill & Sync Pipeline")
     parser.add_argument("--site", choices=["diziizle", "webdramaturkey2", "calendar", "all"], default="all")
+    parser.add_argument("--category", choices=["all", "film", "dizi"], default="all")
     parser.add_argument("--limit", type=int, default=5)
     parser.add_argument("--resume", action="store_true", default=False)
+    parser.add_argument("--backup-db", action="store_true", default=False)
     args = parser.parse_args()
 
-    run_phase3(site=args.site, limit=args.limit, resume=args.resume)
+    run_phase3(
+        site=args.site,
+        limit=args.limit,
+        resume=args.resume,
+        category=args.category,
+        backup_db=args.backup_db,
+    )
 
 
 if __name__ == "__main__":

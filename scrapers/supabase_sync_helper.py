@@ -10,8 +10,11 @@ import json
 import os
 import re
 import ssl
+import time
+import sqlite3
 import urllib.request
 import urllib.error
+import unicodedata
 from datetime import datetime, timezone
 
 from scrapers.multisite import find_in_index, norm_title, tag_site, unique_slug, clean_episode_title, clean_scraped_slug, extract_date_and_clean_title
@@ -20,6 +23,7 @@ from scrapers.translator import (
     COUNTRY_CODE_TO_NAME,
     resolve_anilist_metadata,
     resolve_tmdb_metadata,
+    sanitize_media_title,
 )
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -82,6 +86,7 @@ def _load_r2_creds():
 
 def upload_to_r2(local_path: str, r2_key: str) -> bool:
     """Uploads a local file directly to the Cloudflare R2 bucket."""
+    local_path = str(local_path)
     try:
         import boto3
         from botocore.config import Config
@@ -260,6 +265,7 @@ def match_or_create_enriched_drama(
     site_tag: str = "dizibox",
     source_url: str = None,
     year_hint: int = None,
+    imdb_id: str = None,
     log_fn=None,
 ):
     """
@@ -267,21 +273,23 @@ def match_or_create_enriched_drama(
     or creates a fully enriched drama in both SQLite and Supabase with 0 duplicates.
     Returns (drama_id, drama_title, drama_slug, cover_image).
     """
-    clean_t = re.sub(
-        r"\s*(izle|hdfilmcehennemi|film izle|dizi izle|türkçe dublaj|türkçe altyazılı|kore dizisi).*$",
-        "",
-        raw_title or "",
-        flags=re.I,
-    )
-    # Strip known noise brackets only, keep meaningful bracket content (e.g. [Oshi no Ko] -> Oshi no Ko)
-    clean_t = re.sub(r'\[\s*(?:1080p|720p|480p|hd|fhd|uhd|4k|türkçe\s+altyazılı|turkce\s+altyazili|türkçe\s+dublaj|turkce\s+dublaj|dublajlı|dublajli|dublaj|altyazılı|altyazili|final|raw|tr|eng|sub|bluray|bdrip|web-?dl|webrip)\s*\]', ' ', clean_t, flags=re.I)
-    clean_t = re.sub(r'[\[\]]', ' ', clean_t)
-    clean_t = re.sub(r"[\-_|:•]+$", "", clean_t).strip()
-    clean_t = re.sub(r"\s+", " ", clean_t).strip()
+    clean_t = sanitize_media_title(raw_title)
     if not clean_t:
         clean_t = (slug_cand or "yapim").replace("-", " ").title()
 
-    # 0. Strip Turkish/numerical dates from daily TV program titles (e.g. 'Müge Anlı 26 Ekim 2026' -> 'Müge Anlı ile Tatlı Sert')
+    # 0. Check by imdb_id first if provided
+    did = None
+    clean_imdb = str(imdb_id).strip() if imdb_id else ""
+    if clean_imdb and clean_imdb.startswith("tt"):
+        cur.execute(
+            "SELECT id, title, slug, cover_image, backdrop_image, tmdb_id FROM dramas WHERE imdb_id = ? LIMIT 1",
+            (clean_imdb,),
+        )
+        row = cur.fetchone()
+        if row:
+            did = row[0]
+
+    # 0.1 Strip Turkish/numerical dates from daily TV program titles (e.g. 'Müge Anlı 26 Ekim 2026' -> 'Müge Anlı ile Tatlı Sert')
     clean_t, extracted_date = extract_date_and_clean_title(clean_t)
     if extracted_date or site_tag == "ddizi":
         country_hint = "TR"
@@ -292,64 +300,130 @@ def match_or_create_enriched_drama(
     if site_tag == "ddizi":
         country_hint = "TR"
 
-    # 1. Try existing index by full title or ' - ' parts
-    did = find_in_index(idx, clean_t, slug=clean_s_cand or slug_cand, content_type=content_type, year=year_hint)
-    if not did and " - " in clean_t:
-        for part in clean_t.split(" - "):
-            part = part.strip()
-            if part:
-                did = find_in_index(idx, part, content_type=content_type, year=year_hint)
-                if did:
+    if not did:
+        # 1. Try existing index by full title or ' - ' parts
+        did = find_in_index(idx, clean_t, slug=clean_s_cand or slug_cand, content_type=content_type, year=year_hint)
+        if not did and " - " in clean_t:
+            for part in clean_t.split(" - "):
+                part = part.strip()
+                if part:
+                    did = find_in_index(idx, part, content_type=content_type, year=year_hint)
+                    if did:
+                        break
+
+        if not did and (clean_s_cand or slug_cand):
+            slugs_to_check = {clean_s_cand, (slug_cand or "").lower(), (slug_cand or "").lower().replace("-izle", "")}
+            if clean_s_cand:
+                slugs_to_check.add(re.sub(r"-(\d+)-sezon", r"-season-\1", clean_s_cand))
+                slugs_to_check.add(re.sub(r"-season-(\d+)", r"-\1-sezon", clean_s_cand))
+            for cand_s in [s for s in slugs_to_check if s]:
+                cur.execute(
+                    "SELECT id, title, slug, cover_image FROM dramas WHERE slug = ?",
+                    (cand_s,),
+                )
+                row = cur.fetchone()
+                if row:
+                    did = row[0]
                     break
 
-    if not did and (clean_s_cand or slug_cand):
-        slugs_to_check = {clean_s_cand, (slug_cand or "").lower(), (slug_cand or "").lower().replace("-izle", "")}
-        if clean_s_cand:
-            slugs_to_check.add(re.sub(r"-(\d+)-sezon", r"-season-\1", clean_s_cand))
-            slugs_to_check.add(re.sub(r"-season-(\d+)", r"-\1-sezon", clean_s_cand))
-        for cand_s in [s for s in slugs_to_check if s]:
-            cur.execute(
-                "SELECT id, title, slug, cover_image FROM dramas WHERE slug = ?",
-                (cand_s,),
-            )
-            row = cur.fetchone()
-            if row:
-                did = row[0]
-                break
-
     if did:
-        cur.execute("SELECT id, title, slug, cover_image, backdrop_image, tmdb_id FROM dramas WHERE id = ?", (did,))
+        cur.execute(
+            "SELECT id, title, slug, cover_image, backdrop_image, tmdb_id, imdb_id, overview, release_year FROM dramas WHERE id = ?",
+            (did,),
+        )
         row = cur.fetchone()
         if row:
             tag_site(cur, row[0], site_tag)
+            curr_id = row[0]
+            curr_title = row[1]
+            curr_slug = row[2]
             cover = row[3]
             backdrop = row[4]
-            tmdb_id = row[5]
-            if not cover or cover == "/logo-dark.png" or any(h in (cover or "").lower() for h in ["dizifon", "dizikorea", "ddizi", "dizibox", "asyaanimeleri"]):
+            tmdb_id_val = row[5]
+            imdb_id_val = row[6] or clean_imdb or None
+            curr_overview = row[7] or ""
+            curr_year = row[8] or year_hint
+
+            # Check if record needs enrichment/cleaning
+            is_dirty_title = (sanitize_media_title(curr_title) != curr_title) or any(
+                p in (curr_title or "") for p in ["Sezonluk Dizi", "Dizipal", "Diziizle", "Diziİzle", " – ", " — ", " | "]
+            )
+            is_missing_tmdb = (content_type in ("dizi", "film") and not tmdb_id_val)
+            is_placeholder_cover = (
+                not cover or cover == "/logo-dark.png" or any(h in (cover or "").lower() for h in ["dizifon", "dizikorea", "ddizi", "dizibox", "asyaanimeleri"])
+            )
+            is_placeholder_overview = (
+                not curr_overview or "%çıkışlı" in curr_overview or "yapımıdır" in curr_overview or len(curr_overview) < 25
+            )
+
+            if is_dirty_title or is_missing_tmdb or is_placeholder_cover or is_placeholder_overview:
                 try:
                     if content_type == "anime":
                         ani_q = re.sub(r'(\d+)\s*\.?\s*sezon\b', r'Season \1', clean_t, flags=re.I)
                         ani_q = re.sub(r'sezon\s*(\d+)\b', r'Season \1', ani_q, flags=re.I)
-                        ani = resolve_anilist_metadata(ani_q, year=year_hint)
+                        ani = resolve_anilist_metadata(ani_q, year=curr_year)
                         if ani and ani.get("cover_image"):
                             cover = ani["cover_image"]
                             backdrop = ani.get("backdrop_image") or backdrop or cover
                             al_id = ani.get("anilist_id")
-                            cur.execute("UPDATE dramas SET cover_image = ?, backdrop_image = COALESCE(?, backdrop_image), anilist_id = COALESCE(?, anilist_id) WHERE id = ?", (cover, backdrop, al_id, row[0]))
+                            cur.execute(
+                                "UPDATE dramas SET title = ?, cover_image = ?, backdrop_image = COALESCE(?, backdrop_image), anilist_id = COALESCE(?, anilist_id) WHERE id = ?",
+                                (clean_t, cover, backdrop, al_id, curr_id),
+                            )
                             conn.commit()
-                            sb_request("PATCH", f"/rest/v1/media?id=eq.{row[0]}", body={"cover_image": cover, "backdrop_image": backdrop, "anilist_id": al_id})
+                            sb_request(
+                                "PATCH",
+                                f"/rest/v1/media?id=eq.{curr_id}",
+                                body={"title": clean_t, "cover_image": cover, "backdrop_image": backdrop, "anilist_id": al_id},
+                            )
+                            auto_sync_drama_cast(curr_id, clean_t, content_type, anilist_id=al_id)
                     else:
-                        meta = resolve_tmdb_metadata(clean_t, year=year_hint, country_hint=country_hint, content_type=content_type)
-                        if meta and meta.get("cover_image") and "image.tmdb.org" in meta["cover_image"]:
-                            cover = meta["cover_image"]
-                            backdrop = meta.get("backdrop_image") or backdrop or cover
-                            tmdb_id = meta.get("tmdb_id") or tmdb_id
-                            cur.execute("UPDATE dramas SET cover_image = ?, backdrop_image = COALESCE(?, backdrop_image), tmdb_id = COALESCE(?, tmdb_id) WHERE id = ?", (cover, backdrop, tmdb_id, row[0]))
+                        hint_c = "TR" if site_tag == "ddizi" else country_hint
+                        meta = resolve_tmdb_metadata(
+                            clean_t, year=curr_year, country_hint=hint_c, content_type=content_type, imdb_id=imdb_id_val
+                        )
+                        if meta:
+                            if meta.get("cover_image") and "image.tmdb.org" in meta["cover_image"]:
+                                cover = meta["cover_image"]
+                            if meta.get("backdrop_image"):
+                                backdrop = meta["backdrop_image"]
+                            tmdb_id_val = meta.get("tmdb_id") or tmdb_id_val
+                            imdb_id_val = meta.get("imdb_id") or imdb_id_val
+                            real_year = meta.get("release_year") or curr_year
+                            new_overview = meta.get("overview") or (curr_overview if not is_placeholder_overview else None)
+
+                            display_title = clean_t
+                            t_tr = meta.get("title_tr")
+                            if t_tr and not any(ord(ch) > 0x2E80 for ch in t_tr):
+                                display_title = t_tr
+
+                            cur.execute(
+                                """
+                                UPDATE dramas 
+                                SET title = ?, cover_image = COALESCE(?, cover_image), 
+                                    backdrop_image = COALESCE(?, backdrop_image), 
+                                    tmdb_id = COALESCE(?, tmdb_id), imdb_id = COALESCE(?, imdb_id),
+                                    release_year = COALESCE(?, release_year), overview = COALESCE(?, overview)
+                                WHERE id = ?
+                                """,
+                                (display_title, cover, backdrop, tmdb_id_val, imdb_id_val, real_year, new_overview, curr_id),
+                            )
                             conn.commit()
-                            sb_request("PATCH", f"/rest/v1/media?id=eq.{row[0]}", body={"cover_image": cover, "backdrop_image": backdrop, "tmdb_id": tmdb_id})
-                except Exception:
-                    pass
-            return row[0], row[1], row[2], cover or "/logo-dark.png"
+                            patch_data = {"title": display_title}
+                            if cover: patch_data["cover_image"] = cover
+                            if backdrop: patch_data["backdrop_image"] = backdrop
+                            if tmdb_id_val: patch_data["tmdb_id"] = tmdb_id_val
+                            if imdb_id_val: patch_data["imdb_id"] = imdb_id_val
+                            if real_year: patch_data["release_year"] = real_year
+                            if new_overview: patch_data["overview"] = new_overview
+                            if meta.get("imdb_rating"): patch_data["imdb_rating"] = meta["imdb_rating"]
+                            sb_request("PATCH", f"/rest/v1/media?id=eq.{curr_id}", body=patch_data)
+                            auto_sync_drama_cast(curr_id, display_title, content_type, tmdb_id=tmdb_id_val)
+                            curr_title = display_title
+                except Exception as ex:
+                    print(f"[ENRICH_EXISTING_WARN] #{curr_id}: {ex}", flush=True)
+
+            return curr_id, curr_title, curr_slug, cover or "/logo-dark.png"
 
     # 2. Not found by string -> Resolve TMDB / AniList metadata first so we can check external IDs in DB!
     # Convert Turkish season expression ("3.Sezon") to English "Season 3" for AniList & TMDb queries
@@ -388,7 +462,7 @@ def match_or_create_enriched_drama(
     else:
         hint_c = "TR" if site_tag == "ddizi" else country_hint
         meta = resolve_tmdb_metadata(
-            clean_t, year=year_hint, country_hint=hint_c, content_type=content_type
+            clean_t, year=year_hint, country_hint=hint_c, content_type=content_type, imdb_id=imdb_id
         )
         if content_type != "film":
             ani = resolve_anilist_metadata(ani_search_title, year=year_hint)
@@ -458,9 +532,16 @@ def match_or_create_enriched_drama(
     c_backdrop = (meta.get("backdrop_image") if meta else None) or c_cover
     c_orig = (meta.get("original_title") if meta else None) or clean_t
     c_tmdb = meta.get("tmdb_id") if meta else None
-    c_imdb = meta.get("imdb_id") if meta else None
+    c_imdb = (meta.get("imdb_id") if meta else None) or clean_imdb or None
     c_ani_id = meta.get("anilist_id") if meta else None
     c_ani_url = meta.get("anilist_url") if meta else None
+
+    # Determine display title
+    display_title = clean_t
+    if meta and meta.get("title_tr"):
+        t_tr = str(meta["title_tr"]).strip()
+        if not any(ord(ch) > 0x2E80 for ch in t_tr):
+            display_title = t_tr
 
     # Sanitize categories and tags to prevent explosion (max 5 genres, max 7 tags)
     clean_cats = (meta.get("categories") or meta.get("genres") or [])[:5] if meta else []
@@ -468,10 +549,10 @@ def match_or_create_enriched_drama(
 
     type_label = "animesi" if content_type == "anime" else ("filmi" if content_type == "film" else "dizisi")
     c_overview = (meta.get("overview") if meta else None) or (
-        f"{clean_t} ({c_year}), {c_name} yapımı {type_label} Türkçe altyazılı ve HD kalitesiyle KoUp arşivinde."
+        f"{display_title} ({c_year}), {c_name} yapımı {type_label} Türkçe altyazılı ve HD kalitesiyle KoUp arşivinde."
     )
 
-    base_s = clean_s_cand or clean_scraped_slug(clean_t) or "yapim"
+    base_s = clean_s_cand or clean_scraped_slug(display_title) or "yapim"
     final_slug = unique_slug(cur, base_s)
     status_b = "Final" if content_type == "film" else "Devam Ediyor"
 
@@ -486,7 +567,7 @@ def match_or_create_enriched_drama(
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)
         """,
         (
-            clean_t,
+            display_title,
             c_orig,
             final_slug,
             content_type,
@@ -511,7 +592,7 @@ def match_or_create_enriched_drama(
     conn.commit()
     _RECENT_ADDED_DRAMAS.append({
         "id": did,
-        "title": clean_t,
+        "title": display_title,
         "slug": final_slug,
         "cover_image": c_cover,
         "content_type": content_type,
@@ -527,7 +608,7 @@ def match_or_create_enriched_drama(
     clean_payload = {
         "id": did,
         "slug": final_slug,
-        "title": clean_t,
+        "title": display_title,
         "native_title": c_orig,
         "content_type": content_type,
         "country_code": c_code,
@@ -555,29 +636,48 @@ def match_or_create_enriched_drama(
         prefer="resolution=merge-duplicates,return=representation",
     )
     if isinstance(media_res, dict) and media_res.get("_error"):
-        print(f"[SUPABASE_MEDIA_INSERT_ERROR] #{did} {clean_t}: {media_res}", flush=True)
+        err_msg = str(media_res)
+        if "media_slug_key" in err_msg or "23505" in err_msg:
+            disambig_slug = f"{clean_payload['slug']}-{clean_payload['id']}"
+            for _ in range(5):
+                try:
+                    cur.execute("UPDATE dramas SET slug = ? WHERE id = ?", (disambig_slug, clean_payload["id"]))
+                    conn.commit()
+                    break
+                except Exception:
+                    time.sleep(0.2)
+            final_slug = disambig_slug
+            clean_payload["slug"] = disambig_slug
+            media_res = sb_request(
+                "POST",
+                "/rest/v1/media?on_conflict=id",
+                body=clean_payload,
+                prefer="resolution=merge-duplicates,return=representation",
+            )
+        if isinstance(media_res, dict) and media_res.get("_error"):
+            print(f"[SUPABASE_MEDIA_INSERT_ERROR] #{did} {display_title}: {media_res}", flush=True)
 
     if log_fn:
         log_fn(
             "YENİ YAPIM",
-            f'"{clean_t}" ({c_name}, {c_year}) TMDB/AniList eşleşmesiyle arşive eklendi (ID: #{did})',
+            f'"{display_title}" ({c_name}, {c_year}) TMDB/AniList eşleşmesiyle arşive eklendi (ID: #{did})',
         )
 
     # Automatically populate cast/characters (top 10) and link into Seri Evreni (franchise graph)
     try:
-        auto_sync_drama_cast(did, clean_t, content_type, tmdb_id=c_tmdb, anilist_id=c_ani_id)
+        auto_sync_drama_cast(did, display_title, content_type, tmdb_id=c_tmdb, anilist_id=c_ani_id)
     except Exception as e:
         print(f"[AUTO_CAST_SYNC_WARN] #{did}: {e}", flush=True)
 
     try:
         auto_sync_drama_franchise(
-            conn, cur, did, clean_t, final_slug, content_type, c_year, c_cover,
+            conn, cur, did, display_title, final_slug, content_type, c_year, c_cover,
             tmdb_id=c_tmdb, anilist_id=c_ani_id,
         )
     except Exception as e:
         print(f"[AUTO_FRANCHISE_SYNC_WARN] #{did}: {e}", flush=True)
 
-    return did, clean_t, final_slug, c_cover
+    return did, display_title, final_slug, c_cover
 
 
 def _slugify_person(text: str) -> str:
@@ -585,6 +685,25 @@ def _slugify_person(text: str) -> str:
         return "actor"
     s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return s or "actor"
+
+
+def _compact_person_key(text: str) -> str:
+    """Produces a strict alphanumeric lowercase key stripped of all dashes, spaces, diacritics and prefixes/suffixes."""
+    if not text:
+        return ""
+    s = str(text).strip()
+    s = s.translate(str.maketrans({
+        "ı": "i", "I": "i", "İ": "i", "i": "i",
+        "ş": "s", "Ş": "s",
+        "ğ": "g", "Ğ": "g",
+        "ü": "u", "Ü": "u",
+        "ö": "o", "Ö": "o",
+        "ç": "c", "Ç": "c",
+    }))
+    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii").lower()
+    s = re.sub(r"^char-", "", s)
+    s = re.sub(r"-\d+$", "", s)
+    return re.sub(r"[^a-z0-9]+", "", s)
 
 
 def auto_sync_drama_cast(drama_id: int, title: str, content_type: str = "dizi", tmdb_id=None, anilist_id=None):
@@ -723,18 +842,58 @@ def auto_sync_drama_cast(drama_id: int, title: str, content_type: str = "dizi", 
         # 1. Deduplication check by TMDb ID
         existing_pid = None
         if p.get("tmdb_id"):
-            ex_tmdb = sb_request("GET", f"/rest/v1/people?tmdb_id=eq.{p['tmdb_id']}&select=id,slug&limit=1")
+            ex_tmdb = sb_request("GET", f"/rest/v1/people?tmdb_id=eq.{p['tmdb_id']}&select=id,slug,image_url&limit=1")
             if isinstance(ex_tmdb, list) and ex_tmdb:
                 existing_pid = ex_tmdb[0]["id"]
                 slug_to_id[pslug] = existing_pid
+                if not ex_tmdb[0].get("image_url") and p.get("image_url"):
+                    sb_request("PATCH", f"/rest/v1/people?id=eq.{existing_pid}", body={"image_url": p["image_url"]})
 
-        # 2. Deduplication check by clean slug / char- prefix
+        # 2. Deduplication check by compact slug / clean slug / name / first token prefix
         if not existing_pid:
             cslug = re.sub(r'-\d+$', '', pslug)
-            ex_slug = sb_request("GET", f"/rest/v1/people?or=(slug.eq.{pslug},slug.eq.{cslug},slug.ilike.char-{cslug}-%)&select=id,slug&limit=1")
-            if isinstance(ex_slug, list) and ex_slug:
-                existing_pid = ex_slug[0]["id"]
-                slug_to_id[pslug] = existing_pid
+            first_tok = cslug.split('-')[0] if '-' in cslug else cslug
+            if len(first_tok) >= 2:
+                q_or = f"or=(slug.eq.{pslug},slug.eq.{cslug},slug.like.{first_tok}-*,slug.like.char-{first_tok}-*)"
+            else:
+                q_or = f"or=(slug.eq.{pslug},slug.eq.{cslug})"
+
+            ex_cands = sb_request("GET", f"/rest/v1/people?{q_or}&select=id,slug,name,tmdb_id,image_url&limit=300")
+            target_k_slug = _compact_person_key(cslug)
+            target_k_name = _compact_person_key(p["name"])
+
+            if isinstance(ex_cands, list) and ex_cands:
+                for cand in ex_cands:
+                    cand_k_slug = _compact_person_key(cand.get("slug"))
+                    cand_k_name = _compact_person_key(cand.get("name"))
+                    cand_tmdb = cand.get("tmdb_id")
+                    p_tmdb = p.get("tmdb_id")
+
+                    if (
+                        (cand_k_slug and cand_k_slug == target_k_slug)
+                        or (cand_k_name and cand_k_name == target_k_name)
+                        or (cand_k_slug and cand_k_slug == target_k_name)
+                        or (cand_k_name and cand_k_name == target_k_slug)
+                    ):
+                        if cand_tmdb and p_tmdb and str(cand_tmdb) != str(p_tmdb):
+                            continue
+
+                        existing_pid = cand["id"]
+                        slug_to_id[pslug] = existing_pid
+
+                        patch_body = {}
+                        if not cand_tmdb and p_tmdb:
+                            patch_body["tmdb_id"] = p_tmdb
+                        if not cand.get("image_url") and p.get("image_url"):
+                            patch_body["image_url"] = p["image_url"]
+                        if re.search(r'-\d+$', cand.get("slug") or "") and not re.search(r'-\d+$', cslug):
+                            chk = sb_request("GET", f"/rest/v1/people?slug=eq.{cslug}&select=id&limit=1")
+                            if not chk:
+                                patch_body["slug"] = cslug
+
+                        if patch_body:
+                            sb_request("PATCH", f"/rest/v1/people?id=eq.{existing_pid}", body=patch_body)
+                        break
 
         if not existing_pid:
             people_payload.append({
@@ -1007,8 +1166,21 @@ def ensure_media_synced(conn, cur, drama_id: int):
         }
         res = sb_request("POST", "/rest/v1/media?on_conflict=id", body=clean_payload, prefer="resolution=merge-duplicates,return=representation")
         if isinstance(res, dict) and res.get("_error"):
-            print(f"[ENSURE_MEDIA_SYNC_ERROR] Drama #{drama_id}: {res}", flush=True)
-            return False
+            err_msg = str(res)
+            if "media_slug_key" in err_msg or "23505" in err_msg:
+                disambig_slug = f"{clean_payload['slug']}-{clean_payload['id']}"
+                for _ in range(5):
+                    try:
+                        cur.execute("UPDATE dramas SET slug = ? WHERE id = ?", (disambig_slug, clean_payload["id"]))
+                        conn.commit()
+                        break
+                    except Exception:
+                        time.sleep(0.2)
+                clean_payload["slug"] = disambig_slug
+                res = sb_request("POST", "/rest/v1/media?on_conflict=id", body=clean_payload, prefer="resolution=merge-duplicates,return=representation")
+            if isinstance(res, dict) and res.get("_error"):
+                print(f"[ENSURE_MEDIA_SYNC_ERROR] Drama #{drama_id}: {res}", flush=True)
+                return False
         try:
             auto_sync_drama_cast(
                 d["id"],

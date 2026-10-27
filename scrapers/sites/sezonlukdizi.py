@@ -12,6 +12,7 @@ import os
 import re
 import json
 import time
+import threading
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import xml.etree.ElementTree as ET
@@ -44,6 +45,8 @@ from scrapers.supabase_sync_helper import match_or_create_enriched_drama, sync_d
 BASE_URL = "https://sezonlukdizi.cc"
 SITE_TAG = "sezonlukdizi"
 
+_tls = threading.local()
+
 
 def _get_session():
     s = cfr.Session(impersonate="chrome124") if hasattr(cfr, "Session") else cfr.Session()
@@ -53,6 +56,12 @@ def _get_session():
     s.headers.setdefault("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
     s.headers.setdefault("Referer", f"{BASE_URL}/")
     return s
+
+
+def _get_tls_session():
+    if not hasattr(_tls, "session"):
+        _tls.session = _get_session()
+    return _tls.session
 
 
 def fetch_html(session, url, referer=None, timeout=12):
@@ -128,10 +137,15 @@ def fetch_episode_alternatives(session, bid, ep_url):
         except Exception:
             continue
 
+        # Prioritize open embed players (Filemoon, OK, VK, Mail) over captcha-gated Dzen/Pixel
+        items.sort(key=lambda x: 0 if any(k in (x.get("baslik") or "").lower() for k in ("filemoon", "ok", "vk", "mail", "rapid")) else 1)
+
         for item in items:
             alt_id = item.get("id")
             baslik = (item.get("baslik") or "Player").strip()
             if not alt_id:
+                continue
+            if any(k in baslik.lower() for k in ("dzen", "pixel", "sibnet", "sendvid")):
                 continue
 
             try:
@@ -184,6 +198,129 @@ def fetch_episode_alternatives(session, bid, ep_url):
     return working_sources
 
 
+def fetch_series_memory(series_url):
+    """Fetches a series and all its episodes in memory without holding a DB connection. Returns dict or None."""
+    sess = _get_tls_session()
+    html = fetch_html(sess, series_url, timeout=12)
+    if not html:
+        return None
+
+    soup = BeautifulSoup(html, "html.parser")
+    title_elem = soup.find("h1") or soup.find("title")
+    if not title_elem:
+        return None
+    raw_title = title_elem.get_text(strip=True)
+    raw_title = re.sub(r"\s*[-–—|•:]\s*(?:sezonluk\s*dizi|dizipal\d*|fullhdfilm\w*|tranimeci|tranimaci|anizm|animelvl).*$", "", raw_title, flags=re.I)
+    raw_title = re.sub(r"\b(?:dizisi\s*izle|dizi\s*izle|filmi\s*izle|film\s*izle|anime\s*izle|dizisi|izle)\b", "", raw_title, flags=re.I).strip()
+    raw_title = re.sub(r"[\s\-_–—|•:]+$", "", raw_title).strip()
+
+    imdb_id = None
+    m_imdb = re.search(r"imdb\.com/title/(tt\d+)", html)
+    if m_imdb:
+        imdb_id = m_imdb.group(1)
+
+    slug = clean_scraped_slug(series_url)
+    m_yr = re.search(r"\b(19\d{2}|20\d{2})\b", raw_title) or re.search(r"yillar\.asp\?yil=(\d{4})", html)
+    year = int(m_yr.group(1)) if m_yr else None
+
+    ep_links = []
+    seen_ep_hrefs = set()
+    pages_to_scan = [soup]
+    if "/diziler/" in series_url:
+        bolumler_html = fetch_html(sess, series_url.replace("/diziler/", "/bolumler/"), referer=series_url, timeout=12)
+        if bolumler_html:
+            pages_to_scan.insert(0, BeautifulSoup(bolumler_html, "html.parser"))
+
+    for page_soup in pages_to_scan:
+        for a in page_soup.find_all("a", href=True):
+            href = a["href"]
+            if re.search(r"/\d+-sezon-\d+-bolum\.html", href) or re.search(r"/bolum/\d+", href):
+                if not href.startswith("http"):
+                    href = f"{BASE_URL}{href}" if href.startswith("/") else f"{BASE_URL}/{href}"
+                if href not in seen_ep_hrefs:
+                    seen_ep_hrefs.add(href)
+                    ep_links.append((href, a.get_text(strip=True)))
+
+    if not ep_links:
+        return None
+
+    def _fetch_single_ep(ep_u, ep_t):
+        local_sess = _get_tls_session()
+        ep_html = fetch_html(local_sess, ep_u, referer=series_url, timeout=10)
+        if not ep_html:
+            return (ep_u, ep_t, [])
+        bid = extract_bid_from_episode(ep_html)
+        if not bid:
+            return (ep_u, ep_t, [])
+        s_list = fetch_episode_alternatives(local_sess, bid, ep_u)
+        return (ep_u, ep_t, s_list)
+
+    resolved_episodes = []
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        futs = [executor.submit(_fetch_single_ep, u, t) for u, t in ep_links]
+        for fut in as_completed(futs):
+            try:
+                resolved_episodes.append(fut.result())
+            except Exception:
+                pass
+
+    if not any(sources for _, _, sources in resolved_episodes if sources):
+        return None
+
+    return {
+        "url": series_url,
+        "title": raw_title,
+        "slug": slug,
+        "year": year,
+        "imdb_id": imdb_id,
+        "resolved_episodes": resolved_episodes,
+    }
+
+
+def save_series_batch(conn, cur, idx, batch_series):
+    """Saves memory-resolved SezonlukDizi series in a single quick transaction. Returns (total_added, affected_drama_ids)."""
+    total_added = 0
+    affected_dramas = set()
+
+    for item in batch_series:
+        if not item:
+            continue
+        drama_id, d_title, d_slug, d_cover = match_or_create_enriched_drama(
+            conn=conn,
+            cur=cur,
+            idx=idx,
+            raw_title=item["title"],
+            slug_cand=item["slug"],
+            content_type="dizi",
+            country_hint="US",
+            site_tag=SITE_TAG,
+            source_url=item["url"],
+            year_hint=item.get("year"),
+            imdb_id=item.get("imdb_id"),
+        )
+        if not drama_id:
+            continue
+
+        added_for_series = 0
+        for ep_url, ep_text, sources in item["resolved_episodes"]:
+            if not sources:
+                continue
+            season, number = parse_season_and_episode(ep_url, ep_text)
+            ep_name = f"Bölüm {number}" if season == 1 else f"{season}. Sezon {number}. Bölüm"
+            ep_id, is_new = match_or_create_episode(cur, drama_id, season, number, ep_name, ep_url)
+            for sname, surl, sprovider in sources:
+                if add_source(cur, ep_id, sname, surl, sprovider, SITE_TAG):
+                    added_for_series += 1
+
+        tag_site(cur, drama_id, SITE_TAG)
+        if added_for_series > 0:
+            affected_dramas.add(drama_id)
+            total_added += added_for_series
+
+    safe_commit(conn)
+    return total_added, affected_dramas
+
+
 def scrape_series(conn, cur, idx, session, series_url):
     html = fetch_html(session, series_url, timeout=12)
     if not html:
@@ -193,7 +330,10 @@ def scrape_series(conn, cur, idx, session, series_url):
     title_elem = soup.find("h1") or soup.find("title")
     if not title_elem:
         return 0
-    raw_title = title_elem.get_text(strip=True).replace("İzle", "").replace("izle", "").replace("dizisi", "").strip()
+    raw_title = title_elem.get_text(strip=True)
+    raw_title = re.sub(r"\s*[-–—|•:]\s*(?:sezonluk\s*dizi|dizipal\d*|fullhdfilm\w*|tranimeci|tranimaci|anizm|animelvl).*$", "", raw_title, flags=re.I)
+    raw_title = re.sub(r"\b(?:dizisi\s*izle|dizi\s*izle|filmi\s*izle|film\s*izle|anime\s*izle|dizisi|izle)\b", "", raw_title, flags=re.I).strip()
+    raw_title = re.sub(r"[\s\-_–—|•:]+$", "", raw_title).strip()
 
     # Extract IMDb ID
     imdb_id = None
@@ -205,7 +345,54 @@ def scrape_series(conn, cur, idx, session, series_url):
     m_yr = re.search(r"\b(19\d{2}|20\d{2})\b", raw_title) or re.search(r"yillar\.asp\?yil=(\d{4})", html)
     year = int(m_yr.group(1)) if m_yr else None
 
-    # Get or create drama
+    # Extract episode links from series page and /bolumler/ tab
+    ep_links = []
+    seen_ep_hrefs = set()
+    pages_to_scan = [soup]
+    if "/diziler/" in series_url:
+        bolumler_html = fetch_html(session, series_url.replace("/diziler/", "/bolumler/"), referer=series_url, timeout=12)
+        if bolumler_html:
+            pages_to_scan.insert(0, BeautifulSoup(bolumler_html, "html.parser"))
+
+    for page_soup in pages_to_scan:
+        for a in page_soup.find_all("a", href=True):
+            href = a["href"]
+            if re.search(r"/\d+-sezon-\d+-bolum\.html", href) or re.search(r"/bolum/\d+", href):
+                if not href.startswith("http"):
+                    href = f"{BASE_URL}{href}" if href.startswith("/") else f"{BASE_URL}/{href}"
+                if href not in seen_ep_hrefs:
+                    seen_ep_hrefs.add(href)
+                    ep_links.append((href, a.get_text(strip=True)))
+
+    if not ep_links:
+        return 0
+
+    # Parallel in-memory episode alternatives fetching (each thread uses isolated session)
+    def _fetch_single_ep(ep_u, ep_t):
+        local_sess = _get_tls_session()
+        ep_html = fetch_html(local_sess, ep_u, referer=series_url, timeout=10)
+        if not ep_html:
+            return (ep_u, ep_t, [])
+        bid = extract_bid_from_episode(ep_html)
+        if not bid:
+            return (ep_u, ep_t, [])
+        s_list = fetch_episode_alternatives(local_sess, bid, ep_u)
+        return (ep_u, ep_t, s_list)
+
+    resolved_episodes = []
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        futs = [executor.submit(_fetch_single_ep, u, t) for u, t in ep_links]
+        for fut in as_completed(futs):
+            try:
+                resolved_episodes.append(fut.result())
+            except Exception:
+                pass
+
+    # Never create empty shells: ensure at least 1 working source exists
+    if not any(sources for _, _, sources in resolved_episodes if sources):
+        return 0
+
+    # Get or create drama only after confirming working sources
     drama_id, d_title, d_slug, d_cover = match_or_create_enriched_drama(
         conn=conn,
         cur=cur,
@@ -217,43 +404,11 @@ def scrape_series(conn, cur, idx, session, series_url):
         site_tag=SITE_TAG,
         source_url=series_url,
         year_hint=year,
+        imdb_id=imdb_id,
     )
 
     if not drama_id:
         return 0
-
-    # Extract episode links from series page
-    ep_links = []
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        if re.search(r"/\d+-sezon-\d+-bolum\.html", href) or re.search(r"/bolum/\d+", href):
-            if not href.startswith("http"):
-                href = f"{BASE_URL}{href}" if href.startswith("/") else f"{BASE_URL}/{href}"
-            if href not in [x[0] for x in ep_links]:
-                ep_links.append((href, a.get_text(strip=True)))
-
-    if not ep_links:
-        return 0
-
-    # Parallel in-memory episode alternatives fetching
-    def _fetch_single_ep(ep_u, ep_t):
-        ep_html = fetch_html(session, ep_u, referer=series_url, timeout=10)
-        if not ep_html:
-            return (ep_u, ep_t, [])
-        bid = extract_bid_from_episode(ep_html)
-        if not bid:
-            return (ep_u, ep_t, [])
-        s_list = fetch_episode_alternatives(session, bid, ep_u)
-        return (ep_u, ep_t, s_list)
-
-    resolved_episodes = []
-    with ThreadPoolExecutor(max_workers=12) as executor:
-        futs = [executor.submit(_fetch_single_ep, u, t) for u, t in ep_links]
-        for fut in as_completed(futs):
-            try:
-                resolved_episodes.append(fut.result())
-            except Exception:
-                pass
 
     # Batch write to SQLite
     added_sources_count = 0

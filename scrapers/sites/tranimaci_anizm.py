@@ -11,6 +11,7 @@ import os
 import re
 import json
 import time
+import threading
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import xml.etree.ElementTree as ET
@@ -43,6 +44,8 @@ from scrapers.supabase_sync_helper import match_or_create_enriched_drama, sync_d
 TRANIMACI_BASE = "https://tranimaci.com"
 ANIZM_BASE = "https://anizm.net"
 
+_tls = threading.local()
+
 
 def _get_session(site="tranimaci"):
     s = cfr.Session(impersonate="chrome124") if hasattr(cfr, "Session") else cfr.Session()
@@ -55,6 +58,13 @@ def _get_session(site="tranimaci"):
     base = TRANIMACI_BASE if site == "tranimaci" else ANIZM_BASE
     s.headers.setdefault("Referer", f"{base}/")
     return s
+
+
+def _get_tls_session(site="tranimaci"):
+    attr = f"session_{site}"
+    if not hasattr(_tls, attr):
+        setattr(_tls, attr, _get_session(site))
+    return getattr(_tls, attr)
 
 
 # =========================================================================
@@ -110,9 +120,6 @@ def _fetch_single_tranimaci_ep(session, ep_url, ep_text):
     except Exception:
         pass
 
-    if not streams and (has_video or "/video/" in ep_url):
-        streams.append(("TRAnimeci Web Player", ep_url, "tranimaci"))
-
     return (ep_url, ep_text, streams)
 
 
@@ -140,10 +147,14 @@ def scrape_tranimaci_anime(conn, cur, idx, session, anime_url):
     if not raw_title:
         title_elem = soup.find("h1") or soup.find("title")
         if title_elem:
-            raw_title = title_elem.get_text(strip=True).replace("İzle", "").replace("izle", "").strip()
+            raw_title = title_elem.get_text(strip=True)
 
     if not raw_title:
         return 0
+
+    raw_title = re.sub(r"\s*[-–—|•:]\s*(?:sezonluk\s*dizi|dizipal\d*|fullhdfilm\w*|tranimeci|tranimaci|anizm|animelvl).*$", "", raw_title, flags=re.I)
+    raw_title = re.sub(r"\b(?:dizisi\s*izle|dizi\s*izle|filmi\s*izle|film\s*izle|anime\s*izle|dizisi|izle)\b", "", raw_title, flags=re.I).strip()
+    raw_title = re.sub(r"[\s\-_–—|•:]+$", "", raw_title).strip()
 
     slug = clean_scraped_slug(anime_url)
     m_yr = re.search(r"\b(19\d{2}|20\d{2})\b", raw_title)
@@ -174,13 +185,21 @@ def scrape_tranimaci_anime(conn, cur, idx, session, anime_url):
 
     # Parallel in-memory HTTP fetching
     resolved_eps = []
+    def _fetch_local(ep_u, ep_t):
+        local_sess = _get_tls_session("tranimaci")
+        return _fetch_single_tranimaci_ep(local_sess, ep_u, ep_t)
+
     with ThreadPoolExecutor(max_workers=12) as executor:
-        futures = {executor.submit(_fetch_single_tranimaci_ep, session, ep_u, ep_t): (ep_u, ep_t) for ep_u, ep_t in ep_links}
+        futures = {executor.submit(_fetch_local, ep_u, ep_t): (ep_u, ep_t) for ep_u, ep_t in ep_links}
         for fut in as_completed(futures):
             try:
                 resolved_eps.append(fut.result())
             except Exception:
                 pass
+
+    # Ensure at least 1 working stream exists before creating drama
+    if not any(streams for _, _, streams in resolved_eps if streams):
+        return 0
 
     # Batch write to SQLite
     drama_id, d_title, d_slug, d_cover = match_or_create_enriched_drama(
@@ -285,7 +304,10 @@ def scrape_anizm_episode(conn, cur, idx, session, ep_url):
     title_elem = soup.find("h1") or soup.find("title")
     if not title_elem:
         return 0
-    raw_title = title_elem.get_text(strip=True).replace("İzle", "").replace("izle", "").strip()
+    raw_title = title_elem.get_text(strip=True)
+    raw_title = re.sub(r"\s*[-–—|•:]\s*(?:sezonluk\s*dizi|dizipal\d*|fullhdfilm\w*|tranimeci|tranimaci|anizm|animelvl).*$", "", raw_title, flags=re.I)
+    raw_title = re.sub(r"\b(?:dizisi\s*izle|dizi\s*izle|filmi\s*izle|film\s*izle|anime\s*izle|dizisi|izle)\b", "", raw_title, flags=re.I).strip()
+    raw_title = re.sub(r"[\s\-_–—|•:]+$", "", raw_title).strip()
 
     clean_series_title = re.sub(r"\s*\d+\.\s*Bölüm.*$", "", raw_title, flags=re.I).strip()
     slug = clean_scraped_slug(clean_series_title)
@@ -305,9 +327,10 @@ def scrape_anizm_episode(conn, cur, idx, session, ep_url):
     seen_videos = set()
 
     def fetch_trans(anizm_ep_id, trans_id):
+        local_sess = _get_tls_session("anizm")
         trans_url = f"{ANIZM_BASE}/bolum/{anizm_ep_id}/cevirmen/{trans_id}"
         try:
-            r_t = session.get(trans_url, headers=headers, timeout=8)
+            r_t = local_sess.get(trans_url, headers=headers, timeout=8)
             if r_t.status_code == 200:
                 t_data = r_t.json()
                 return anizm_ep_id, t_data.get("videos") or []
@@ -330,8 +353,12 @@ def scrape_anizm_episode(conn, cur, idx, session, ep_url):
 
     # 2. Fetch all video stream sources concurrently
     sources_collected = []
+    def _fetch_v_info(a_id, vid, v_name):
+        local_sess = _get_tls_session("anizm")
+        return _fetch_anizm_video_info(local_sess, ep_url, a_id, vid, v_name)
+
     with ThreadPoolExecutor(max_workers=12) as executor:
-        v_futs = [executor.submit(_fetch_anizm_video_info, session, ep_url, a_id, vid, v_name) for a_id, vid, v_name in videos_to_fetch]
+        v_futs = [executor.submit(_fetch_v_info, a_id, vid, v_name) for a_id, vid, v_name in videos_to_fetch]
         for fut in as_completed(v_futs):
             try:
                 res = fut.result()
@@ -339,6 +366,10 @@ def scrape_anizm_episode(conn, cur, idx, session, ep_url):
                     sources_collected.append(res)
             except Exception:
                 pass
+
+    # Ensure at least 1 working stream exists before creating drama
+    if not sources_collected:
+        return 0
 
     # 3. Batch write to SQLite
     drama_id, d_title, d_slug, d_cover = match_or_create_enriched_drama(

@@ -19,6 +19,13 @@ import sys
 import time
 from pathlib import Path
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+    except Exception:
+        pass
+
 # Ensure project root is in sys.path
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
@@ -71,10 +78,33 @@ def run_pipeline(site: str, limit: int = None, resume: bool = True, sync_cloud: 
     print(f"Short Drama Backfill Completed in {elapsed:.2f} seconds.")
     print("=" * 60)
 
-    # Output stats
+    # Output stats and cleanup any zero-source short dramas
     conn = get_db_connection()
     try:
         cur = conn.cursor()
+
+        # Zero-source purge safeguard
+        cur.execute("""
+            SELECT d.id, d.title
+            FROM dramas d
+            WHERE (d.content_type = 'kisa_drama' OR d.categories LIKE '%Kısa Drama%')
+              AND NOT EXISTS (
+                  SELECT 1 FROM episodes e
+                  JOIN episode_sources s ON s.episode_id = e.id
+                  WHERE e.drama_id = d.id AND s.direct_url IS NOT NULL AND s.direct_url != '' AND s.direct_url != 'dead'
+              )
+        """)
+        empty_dramas = cur.fetchall()
+        if empty_dramas:
+            print(f"\n[SAFEPURGE] Found {len(empty_dramas)} short dramas with 0 playable sources. Purging to prevent empty listings...")
+            for ed in empty_dramas:
+                did = ed[0]
+                cur.execute("DELETE FROM episode_sources WHERE episode_id IN (SELECT id FROM episodes WHERE drama_id = ?)", (did,))
+                cur.execute("DELETE FROM episodes WHERE drama_id = ?", (did,))
+                cur.execute("DELETE FROM dramas WHERE id = ?", (did,))
+            conn.commit()
+            print(f"[SAFEPURGE] Successfully purged {len(empty_dramas)} zero-source dramas.")
+
         cur.execute("SELECT count(id) FROM dramas WHERE content_type = 'kisa_drama' OR categories LIKE '%Kısa Drama%'")
         total_dramas = cur.fetchone()[0]
 
@@ -87,7 +117,7 @@ def run_pipeline(site: str, limit: int = None, resume: bool = True, sync_cloud: 
         """)
         total_sources = cur.fetchone()[0]
 
-        print(f"Current Archive Stats:")
+        print(f"\nCurrent Archive Stats:")
         print(f"  Total Short Dramas : {total_dramas:,}")
         print(f"  Total Sources       : {total_sources:,}")
     finally:

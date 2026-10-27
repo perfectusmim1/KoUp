@@ -13,11 +13,21 @@ import time
 from urllib.parse import quote_plus
 from bs4 import BeautifulSoup
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 from scrapers.multisite import add_source, norm_title, tag_site
 from scrapers.shortdrama.common import (
+    clean_cover_image,
+    clean_drama_overview,
     get_db_connection,
     get_or_create_episode,
     get_session,
+    get_thread_session,
     load_checkpoint,
     safe_request,
     save_checkpoint,
@@ -30,50 +40,76 @@ BASE_URL = "https://www.dramabox.com"
 
 class DramaBoxScraper:
     def __init__(self, session=None):
-        self.session = session or get_session()
+        self._session = session
         self._cached_catalog = None
 
+    def _get_sess(self):
+        return self._session if self._session is not None else get_thread_session()
+
     def get_catalog_books(self) -> list[dict]:
-        """Fetches all Turkish short drama books featured on dramabox.com/tr."""
+        """Fetches all Turkish short drama books featured on dramabox.com/tr across main, browse, and categories."""
         if self._cached_catalog is not None:
             return self._cached_catalog
 
         books = []
         seen = set()
+        sess = self._get_sess()
 
-        resp = safe_request(self.session, "GET", f"{BASE_URL}/tr", delay=0.5)
-        if resp and resp.status_code == 200:
-            soup = BeautifulSoup(resp.text, "html.parser")
-            nxt = soup.find("script", id="__NEXT_DATA__")
-            if nxt and nxt.string:
-                try:
-                    data = json.loads(nxt.string)
-                    pp = data.get("props", {}).get("pageProps", {})
+        def _extract(obj):
+            if isinstance(obj, dict):
+                if "bookId" in obj and ("bookName" in obj or "name" in obj):
+                    bid = str(obj.get("bookId")).strip()
+                    bname = (obj.get("bookName") or obj.get("name") or "").strip()
+                    bcover = clean_cover_image(obj.get("cover") or obj.get("bookCover") or "", base_url=BASE_URL)
+                    bintro = clean_drama_overview(obj.get("introduction") or obj.get("intro") or "")
+                    if bid and bname and bid not in seen:
+                        seen.add(bid)
+                        books.append({
+                            "book_id": bid,
+                            "title": bname,
+                            "cover_image": bcover,
+                            "overview": bintro,
+                        })
+                for v in obj.values():
+                    _extract(v)
+            elif isinstance(obj, list):
+                for item in obj:
+                    _extract(item)
 
-                    def _extract(obj):
-                        if isinstance(obj, dict):
-                            if "bookId" in obj and ("bookName" in obj or "name" in obj):
-                                bid = str(obj.get("bookId")).strip()
-                                bname = (obj.get("bookName") or obj.get("name") or "").strip()
-                                bcover = obj.get("cover") or obj.get("bookCover") or ""
-                                bintro = obj.get("introduction") or obj.get("intro") or ""
-                                if bid and bname and bid not in seen:
-                                    seen.add(bid)
-                                    books.append({
-                                        "book_id": bid,
-                                        "title": bname,
-                                        "cover_image": bcover,
-                                        "overview": bintro,
-                                    })
-                            for v in obj.values():
-                                _extract(v)
-                        elif isinstance(obj, list):
-                            for item in obj:
-                                _extract(item)
+        # 1. Main endpoints
+        main_pages = ["/tr", "/tr/browse", "/tr/more/trending", "/tr/more/must-sees", "/tr/more/hidden-gems"]
+        for p in main_pages:
+            resp = safe_request(sess, "GET", f"{BASE_URL}{p}", delay=0.2)
+            if resp and resp.status_code == 200:
+                soup = BeautifulSoup(resp.text, "html.parser")
+                nxt = soup.find("script", id="__NEXT_DATA__")
+                if nxt and nxt.string:
+                    try:
+                        data = json.loads(nxt.string)
+                        _extract(data.get("props", {}).get("pageProps", {}))
+                    except Exception:
+                        pass
 
-                    _extract(pp)
-                except Exception:
-                    pass
+        # 2. Browse category endpoints
+        browse_resp = safe_request(sess, "GET", f"{BASE_URL}/tr/browse", delay=0.2)
+        if browse_resp and browse_resp.status_code == 200:
+            soup = BeautifulSoup(browse_resp.text, "html.parser")
+            cat_paths = set()
+            for a in soup.find_all("a", href=True):
+                if "/tr/browse/" in a["href"]:
+                    cat_paths.add(a["href"])
+
+            for cp in sorted(list(cat_paths))[:30]:
+                c_resp = safe_request(sess, "GET", f"{BASE_URL}{cp}", delay=0.1)
+                if c_resp and c_resp.status_code == 200:
+                    c_soup = BeautifulSoup(c_resp.text, "html.parser")
+                    c_nxt = c_soup.find("script", id="__NEXT_DATA__")
+                    if c_nxt and c_nxt.string:
+                        try:
+                            c_data = json.loads(c_nxt.string)
+                            _extract(c_data.get("props", {}).get("pageProps", {}))
+                        except Exception:
+                            pass
 
         self._cached_catalog = books
         return books
@@ -94,7 +130,7 @@ class DramaBoxScraper:
 
         # 2. Search endpoint
         search_url = f"{BASE_URL}/tr/search?q={quote_plus(query)}"
-        resp = safe_request(self.session, "GET", search_url, delay=0.4)
+        resp = safe_request(self._get_sess(), "GET", search_url, delay=0.3)
         if not resp or resp.status_code != 200:
             return []
 
@@ -137,7 +173,7 @@ class DramaBoxScraper:
     def get_unlocked_chapters(self, book_id: str) -> list[dict]:
         """Fetches the chapter list and filters for unlocked episodes with MP4 streams."""
         play_url = f"{BASE_URL}/tr/video/{book_id}_play/1_Episode-1"
-        resp = safe_request(self.session, "GET", play_url, delay=0.4)
+        resp = safe_request(self._get_sess(), "GET", play_url, delay=0.4)
         if not resp or resp.status_code != 200:
             return []
 
@@ -302,6 +338,12 @@ class DramaBoxScraper:
                         site="dramabox",
                     ):
                         sources_added += 1
+
+                if sources_added == 0:
+                    conn.rollback()
+                    conn.close()
+                    print(f"[DRAMABOX_SKIP] {title} (#{book_id}): No sources added, skipping.")
+                    return None
 
                 conn.commit()
                 conn.close()

@@ -103,6 +103,57 @@ def extract_anchor_text(a) -> str:
     return a.get_text(strip=True)
 
 
+SITE_LEAKS_REGEX = re.compile(
+    r'\s*(?:[-–—|•/:]\s*)?(?:'
+    r'dizibox(?:\.live|\.com)?|'
+    r'dizikorea(?:\d+)?(?:\.com|\.net)?|'
+    r'dizifon(?:\.cc|\.com)?|'
+    r'dizilla(?:\.now|\.com|\.club)?|'
+    r'asyawatch(?:\.com|\.net)?|'
+    r'hdfilmcehennemi(?:\.nl|\.com|\.cx|\.net)?|'
+    r'animecix(?:\.tv|\.net|\.com)?|'
+    r'ddizi(?:\.org|\.com|\.pw)?|'
+    r'sezonluk\s*dizi(?:\.com|\.net)?|'
+    r'sezonlukdizi(?:\.com)?|'
+    r'diziizle(?:\.net|\.com)?|'
+    r'webdramaturkey(?:\.com)?|'
+    r'koredizi(?:\.com)?|'
+    r'shortizle(?:\.com)?|'
+    r'dramavadisi(?:\.com)?|'
+    r'dramabox(?:\.com)?|'
+    r'animelvl(?:\.com)?|'
+    r'dizipal(?:\d+)?(?:\.com)?|'
+    r'fullhdfilmizlesene(?:\.com|\.pw)?|'
+    r'tranimaci(?:\.com)?|'
+    r'anizm(?:\.net|\.com)?'
+    r')\b.*$',
+    flags=re.IGNORECASE
+)
+
+COMMON_TITLE_JUNK_REGEX = re.compile(
+    r'\s*\b(izle|türkçe altyazılı|türkçe dublaj|tek parça|full hd izle|hd izle|full hd|kore dizisi|asya dizisi|çin dizisi|japon dizisi|tayland dizisi)\b.*$',
+    flags=re.IGNORECASE
+)
+
+def clean_site_title_leak(text: str) -> str:
+    if not text:
+        return ""
+    t = text.strip()
+    t = SITE_LEAKS_REGEX.sub('', t)
+    t = COMMON_TITLE_JUNK_REGEX.sub('', t)
+    t = re.sub(r'\s*\b\d{4}\s+(?:kore|çin|cin|japon|tayland|tayvan|asya|hint|dizi)\b', '', t, flags=re.I)
+    t = re.sub(r'\s*[-–—|•/:]+\s*$', '', t).strip()
+    return t
+
+def clean_dizifon_title(raw_text: str) -> str:
+    if not raw_text:
+        return ""
+    t = clean_site_title_leak(raw_text)
+    t = re.sub(r'\s*(?:\d+\s*\.\s*(?:sezon|b[öo]l[üu]m)|\b\d+(?:-\d+)?\s*\.\s*b[öo]l[üu]m|\b\d+\s*b[öo]l[üu]m).*$', '', t, flags=re.I)
+    t = re.sub(r'\s*[-–—|•/:]+\s*$', '', t).strip()
+    return t
+
+
 def _decode_response_content(content: bytes, text: str, url: str = "") -> str:
     if not content:
         return ""
@@ -202,7 +253,7 @@ def scan_dizibox(conn, cur, idx, limit=30, target=None, stop_after_known: int = 
             slug_raw = m.group(1)
             season = int(m.group(2))
             ep_num = int(m.group(3))
-            drama_title = slug_raw.replace('-', ' ').title()
+            drama_title = clean_site_title_leak(slug_raw.replace('-', ' ').title())
 
             did, drama_title, drama_slug, cover_img = match_or_create_enriched_drama(
                 conn, cur, idx, drama_title, slug_raw,
@@ -354,8 +405,9 @@ def scan_dizikorea(conn, cur, idx, limit=30, target=None, stop_after_known: int 
             soup = BeautifulSoup(s_html, 'html.parser')
 
             d_title = soup.find('h1')
-            drama_title = d_title.get_text(strip=True) if d_title else raw_title
+            drama_title = clean_site_title_leak(d_title.get_text(strip=True)) if d_title else clean_site_title_leak(raw_title)
             drama_title = re.sub(r'\s*(izle|türkçe altyazılı|kore dizisi).*$', '', drama_title, flags=re.I).strip()
+            drama_title = clean_site_title_leak(drama_title)
             slug_cand = s_url.rstrip('/').split('/')[-1].replace('-izle', '')
 
             did, drama_title, drama_slug, cover_img = match_or_create_enriched_drama(
@@ -378,7 +430,7 @@ def scan_dizikorea(conn, cur, idx, limit=30, target=None, stop_after_known: int 
             for ep_txt, ep_url in anchors_to_scan:
                 items_checked += 1
                 season_num, ep_num = parse_season_and_episode(ep_url, ep_txt)
-                clean_name = clean_episode_title(ep_txt or f"{season_num}. Sezon {ep_num}. Bölüm", season_num, ep_num, drama_title=drama_title)
+                clean_name = clean_site_title_leak(clean_episode_title(ep_txt or f"{season_num}. Sezon {ep_num}. Bölüm", season_num, ep_num, drama_title=drama_title))
                 ep_id, is_new_ep = match_or_create_episode(cur, did, season_num, ep_num, clean_name, ep_url)
                 ep_html = fetch_url(ep_url, headers=headers)
                 is_ph = page_is_placeholder(ep_html)
@@ -513,8 +565,8 @@ def scan_ddizi(conn, cur, idx, limit=30, target=None, stop_after_known: int = 5,
         try:
             season_num, ep_num = parse_season_and_episode(ep_url, txt)
 
-            clean_title = re.sub(r'\|\s*ddizi.*$', '', txt, flags=re.I)
-            clean_title = re.sub(r'\b\d+\s*\.\s*b[öo]l[üu]m.*$', '', clean_title, flags=re.I).strip()
+            clean_title = clean_site_title_leak(re.sub(r'\|\s*ddizi.*$', '', txt, flags=re.I))
+            clean_title = clean_site_title_leak(re.sub(r'\b\d+\s*\.\s*b[öo]l[üu]m.*$', '', clean_title, flags=re.I).strip())
             if not clean_title:
                 clean_title = "Yerli Dizi"
             slug_base = clean_scraped_slug(re.sub(r'[^a-z0-9]+', '-', clean_title.lower()).strip('-'))
@@ -525,7 +577,7 @@ def scan_ddizi(conn, cur, idx, limit=30, target=None, stop_after_known: int = 5,
                 source_url=ep_url, log_fn=log
             )
 
-            clean_name = clean_episode_title(txt or f"{season_num}. Sezon {ep_num}. Bölüm", season_num, ep_num, drama_title=clean_title)
+            clean_name = clean_site_title_leak(clean_episode_title(txt or f"{season_num}. Sezon {ep_num}. Bölüm", season_num, ep_num, drama_title=clean_title))
             ep_id, _ = match_or_create_episode(cur, did, season_num, ep_num, clean_name, ep_url)
             ep_html = fetch_url(ep_url, headers=headers)
             is_ph = page_is_placeholder(ep_html)
@@ -856,7 +908,7 @@ def scan_animecix(conn, cur, idx, limit=30, target=None, stop_after_known: int =
         for t_item in target_titles:
             title_id = t_item.get('id')
             raw_name = t_item.get('name') or target
-            clean_title = re.sub(r'[\-_]?(anime|izle|\d{1,4})+$', '', raw_name, flags=re.I).strip()
+            clean_title = clean_site_title_leak(re.sub(r'[\-_]?(anime|izle|\d{1,4})+$', '', raw_name, flags=re.I).strip())
             slug_cand = re.sub(r'[^a-z0-9]+', '-', clean_title.lower()).strip('-')
 
             did, clean_title, drama_slug, cover_img = match_or_create_enriched_drama(
@@ -945,6 +997,7 @@ def scan_animecix(conn, cur, idx, limit=30, target=None, stop_after_known: int =
                     continue
                 clean_title = re.sub(r'[\-_]?(anime|izle|\d{1,4})+$', '', raw_name, flags=re.I).strip()
                 clean_title, _extracted_d = extract_date_and_clean_title(clean_title)
+                clean_title = clean_site_title_leak(clean_title)
                 slug_cand = re.sub(r'[^a-z0-9]+', '-', clean_title.lower()).strip('-')
                 s_num = ep_item.get('season_number') or 1
                 e_num = ep_item.get('episode_number') or 1
@@ -1077,7 +1130,7 @@ def scan_hdfilm(conn, cur, idx, limit=30, target=None, stop_after_known: int = 5
                     a = bs.find('a', href=True)
                     if a:
                         t_node = bs.find('h4', class_='title') or bs.find(class_='title')
-                        title_txt = t_node.get_text(strip=True) if t_node else a.get_text(strip=True)
+                        title_txt = clean_site_title_leak(t_node.get_text(strip=True) if t_node else a.get_text(strip=True))
                         img_node = bs.find('img')
                         img_src = img_node.get('src') if img_node and img_node.get('src') else '/logo-dark.png'
                         y_node = bs.find('span', class_='year')
@@ -1210,7 +1263,7 @@ def scan_hdfilm(conn, cur, idx, limit=30, target=None, stop_after_known: int = 5
 
                     raw_t = re.sub(r'^\d+\.\s*Sezon\s*\d+\.\s*B[öo]l[üu]m\s*', '', ep_title, flags=re.I)
                     raw_t = re.sub(r'\d{1,2}\s+[A-Za-zÇĞİÖŞÜçğıöşü]+\s+\d{4}.*$', '', raw_t).strip()
-                    clean_title = raw_t if raw_t else re.sub(r'[\-_]?(dizi|hdfc|izle|\d{1,4})+$', '', slug_cand, flags=re.I).replace('-', ' ').strip().title()
+                    clean_title = clean_site_title_leak(raw_t if raw_t else re.sub(r'[\-_]?(dizi|hdfc|izle|\d{1,4})+$', '', slug_cand, flags=re.I).replace('-', ' ').strip().title())
 
                     did, clean_title, drama_slug, cover_img = match_or_create_enriched_drama(
                         conn, cur, idx, clean_title, slug_cand,
@@ -1296,7 +1349,7 @@ def scan_asyawatch(conn, cur, idx, limit=30, target=None, stop_after_known: int 
             parsed = json.loads(base64.b64decode(sec).decode('utf-8'))
 
             ci = parsed.get('contentItem', {})
-            clean_title = ci.get('original_title') or target
+            clean_title = clean_site_title_leak(ci.get('original_title') or target)
             year = ci.get('release_year') or datetime.now().year
 
             did, clean_title, drama_slug, cover_img = match_or_create_enriched_drama(
@@ -1378,7 +1431,7 @@ def scan_asyawatch(conn, cur, idx, limit=30, target=None, stop_after_known: int 
                 if len(synced_items) >= effective_limit:
                     break
                 ep_slug = ep.get('episode_used_slug') or ep.get('used_slug')
-                raw_title = (ep.get('original_title') or ep.get('culture_title') or '').strip()
+                raw_title = clean_site_title_leak((ep.get('original_title') or ep.get('culture_title') or '').strip())
                 if not ep_slug or not raw_title or ep_slug in seen_ep_slugs:
                     continue
                 seen_ep_slugs.add(ep_slug)
@@ -1507,7 +1560,7 @@ def scan_dizilla(conn, cur, idx, limit=30, target=None, stop_after_known: int = 
             parsed = json.loads(decrypted[:-pad_len].decode('utf-8'))
 
             ci = parsed.get('contentItem', {})
-            clean_title = ci.get('original_title') or target
+            clean_title = clean_site_title_leak(ci.get('original_title') or target)
             year = ci.get('release_year') or datetime.now().year
 
             did, clean_title, drama_slug, cover_img = match_or_create_enriched_drama(
@@ -1596,7 +1649,7 @@ def scan_dizilla(conn, cur, idx, limit=30, target=None, stop_after_known: int = 
                 if len(synced_items) >= effective_limit:
                     break
                 ep_slug = ep.get('episode_used_slug') or ep.get('used_slug')
-                raw_title = (ep.get('original_title') or ep.get('culture_title') or '').strip()
+                raw_title = clean_site_title_leak((ep.get('original_title') or ep.get('culture_title') or '').strip())
                 if not ep_slug or not raw_title or ep_slug in seen_ep_slugs:
                     continue
                 seen_ep_slugs.add(ep_slug)
@@ -1695,6 +1748,7 @@ def scan_dizilla(conn, cur, idx, limit=30, target=None, stop_after_known: int = 
 # SCANNER: DIZIFON (Asya, Kore, Çin & Hint Arşivi)
 # =========================================================================
 def scan_dizifon(conn, cur, idx, limit=30, target=None, stop_after_known: int = 5, max_items: int = 120):
+    from scrapers.sync_target_drama import extract_streams_from_html
     log("BAŞLATILDI", "DiziFon canlı tarama motoru devrede (https://www.dizifon.cc)...")
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -1713,32 +1767,38 @@ def scan_dizifon(conn, cur, idx, limit=30, target=None, stop_after_known: int = 
             nt_target = norm_title(target)
             for a in soup.find_all('a', href=True):
                 h = a['href']
-                if '/dizi/' in h and ('-izle' in h or '-cin' in h or '-kore' in h or '-japon' in h or '-tayland' in h):
-                    txt = a.get_text(strip=True)
-                    if nt_target in norm_title(txt) or norm_title(txt) in nt_target:
+                if '/dizi/' in h:
+                    txt = extract_anchor_text(a) or a.get('title', '')
+                    if nt_target in norm_title(txt) or norm_title(txt) in nt_target or nt_target in norm_title(h):
                         target_series_url = h
                         break
-            # Do not blindly fallback to random /dizi/ link if not matching target
 
             if target_series_url:
                 log("BULUNDU", f"Hedef dizi sayfası: {target_series_url}")
                 detail_html = fetch_url(target_series_url, headers=headers)
                 d_soup = BeautifulSoup(detail_html, 'html.parser')
 
-                title_elem = d_soup.find('h1') or d_soup.find('title')
-                clean_title = title_elem.get_text(strip=True).replace('izle', '').strip() if title_elem else target
+                og_t = d_soup.find('meta', property='og:title')
+                raw_title = og_t.get('content', '') if og_t else ''
+                if not raw_title:
+                    t_elem = d_soup.find('title')
+                    raw_title = t_elem.get_text(strip=True) if t_elem else target
+                clean_title = clean_dizifon_title(raw_title) or target
 
                 m_slug = re.search(r'/dizi/([^/]+)/?', target_series_url)
-                slug_raw = m_slug.group(1) if m_slug else clean_scraped_slug(clean_title)
+                slug_raw = clean_scraped_slug(m_slug.group(1)) if m_slug else clean_scraped_slug(clean_title)
 
                 country_hint = 'KR'
-                if '-cin' in target_series_url or 'çin' in clean_title.lower():
+                chk_str = (target_series_url + " " + clean_title).lower()
+                if any(k in chk_str for k in ('-cin', 'çin', 'cin')):
                     country_hint = 'CN'
-                elif '-japon' in target_series_url or 'japon' in clean_title.lower():
+                elif any(k in chk_str for k in ('-japon', 'japon')):
                     country_hint = 'JP'
-                elif '-tayland' in target_series_url or 'tayland' in clean_title.lower():
+                elif any(k in chk_str for k in ('-tayland', 'tayland')):
                     country_hint = 'TH'
-                elif 'hint' in clean_title.lower():
+                elif any(k in chk_str for k in ('-tayvan', 'tayvan', 'taiwan')):
+                    country_hint = 'TW'
+                elif any(k in chk_str for k in ('-hint', 'hint')):
                     country_hint = 'IN'
 
                 did, clean_title, drama_slug, cover_img = match_or_create_enriched_drama(
@@ -1749,58 +1809,76 @@ def scan_dizifon(conn, cur, idx, limit=30, target=None, stop_after_known: int = 
                 touched_dramas.add(did)
 
                 ep_links = []
+                seen_ep = set()
                 for ea in d_soup.find_all('a', href=True):
                     eh = ea['href']
-                    if '/bolum/' in eh:
-                        ep_links.append((ea.get_text(strip=True), eh))
+                    if '/bolum/' in eh and eh not in seen_ep and '#comment' not in eh:
+                        ep_t = extract_anchor_text(ea) or ea.get('title', '').strip()
+                        seen_ep.add(eh)
+                        ep_links.append((ep_t, eh))
 
                 log("BÖLÜMLER", f'"{clean_title}" için {len(ep_links)} bölüm bulundu. Kaynaklar çözümleniyor...')
                 eps_to_scan = ep_links if target else ep_links[:limit]
                 for txt, ep_url in eps_to_scan:
                     m_s = re.search(r'(\d+)-sezon', ep_url)
-                    m_e = re.search(r'(\d+)-bolum', ep_url)
                     s_num = int(m_s.group(1)) if m_s else 1
-                    e_num = int(m_e.group(1)) if m_e else 1
-
-                    ep_id, _ = match_or_create_episode(cur, did, s_num, e_num, f"{s_num}. Sezon {e_num}. Bölüm", ep_url)
-                    ep_html = fetch_url(ep_url, headers=headers)
-                    is_ph = page_is_placeholder(ep_html)
-                    added = False
-
-                    esoup = BeautifulSoup(ep_html, 'html.parser')
-                    for f in esoup.find_all('iframe'):
-                        src = f.get('vdo-src') or f.get('src') or f.get('data-src')
-                        if not src:
-                            continue
-                        if src.startswith('//'):
-                            src = 'https:' + src
-                        prov = 'ok.ru' if 'ok.ru' in src else ('vidmoly' if 'vidmoly' in src else ('youtube' if 'youtube' in src else 'other'))
-                        sname = 'OK.ru HD' if prov == 'ok.ru' else ('Vidmoly 1080p' if prov == 'vidmoly' else ('YouTube HD' if prov == 'youtube' else 'Doğrudan Akış'))
-                        if add_source(cur, ep_id, sname, src, prov, 'dizifon'):
-                            added = True
-
-                    is_pending = reconcile_episode(cur, ep_id, is_placeholder=is_ph)
-                    safe_commit(conn)
-
-                    status_text = 'Canlı Çözüldü' if added else ('Kaynak Bekleniyor (Yakında)' if is_pending else 'Doğrulandı')
-                    item_obj = {
-                        'id': f"dizifon-{did}-{s_num}-{e_num}",
-                        'title': clean_title,
-                        'subtitle': f"{s_num}. Sezon {e_num}. Bölüm (DiziFon)",
-                        'image': cover_img,
-                        'link': f"/seri/{drama_slug}/{e_num}",
-                        'date': datetime.now().isoformat(),
-                        'status': status_text,
-                        'sourceName': 'DiziFon',
-                    }
-                    if added:
-                        log("AKINCI", f'"{clean_title}" -> S{s_num}B{e_num} DiziFon kaynakları bağlandı.')
-                    elif is_pending:
-                        log("BEKLEMEDE", f'"{clean_title}" -> S{s_num}B{e_num} kaynak bekleniyor.')
+                    m_range = re.search(r'(\d+)-(\d+)-bolum', ep_url)
+                    if m_range:
+                        start_ep = int(m_range.group(1))
+                        end_ep = int(m_range.group(2))
                     else:
-                        log("DOĞRULANDI", f'"{clean_title}" -> S{s_num}B{e_num} kaynak güncel.')
-                    emit_live_item(item_obj)
-                    synced_items.append(item_obj)
+                        m_e = re.search(r'(\d+)-bolum', ep_url)
+                        start_ep = int(m_e.group(1)) if m_e else 1
+                        end_ep = start_ep
+
+                    for ep_idx, e_num in enumerate(range(start_ep, end_ep + 1), start=1):
+                        sub_url = ep_url if ep_idx == 1 else f"{ep_url.rstrip('/')}/{ep_idx}/"
+                        clean_name = f"{s_num}. Sezon {e_num}. Bölüm"
+                        ep_id, is_new_ep = match_or_create_episode(cur, did, s_num, e_num, clean_name, sub_url)
+                        ep_html = fetch_url(sub_url, headers=headers)
+                        is_ph = page_is_placeholder(ep_html)
+                        added = False
+
+                        streams = extract_streams_from_html(ep_html, 'dizifon')
+                        if not streams:
+                            esoup = BeautifulSoup(ep_html, 'html.parser')
+                            for f in esoup.find_all('iframe'):
+                                src = f.get('vdo-src') or f.get('src') or f.get('data-src')
+                                if not src:
+                                    continue
+                                if src.startswith('//'):
+                                    src = 'https:' + src
+                                src_l = src.lower()
+                                prov = 'ok.ru' if any(k in src_l for k in ('ok.ru', 'odnoklassniki.ru')) else ('vidmoly' if 'vidmoly' in src_l else ('youtube' if 'youtube' in src_l else 'other'))
+                                sname = 'OK.ru HD' if prov == 'ok.ru' else ('Vidmoly 1080p' if prov == 'vidmoly' else ('YouTube HD' if prov == 'youtube' else 'Doğrudan Akış'))
+                                streams.append((sname, src, prov, 'dizifon'))
+
+                        for sname, src, prov, site_tag in streams:
+                            if add_source(cur, ep_id, sname, src, prov, 'dizifon'):
+                                added = True
+
+                        is_pending = reconcile_episode(cur, ep_id, is_placeholder=is_ph)
+                        safe_commit(conn)
+
+                        status_text = 'Canlı Çözüldü' if added else ('Kaynak Bekleniyor (Yakında)' if is_pending else 'Doğrulandı')
+                        item_obj = {
+                            'id': f"dizifon-{did}-{s_num}-{e_num}",
+                            'title': clean_title,
+                            'subtitle': f"{s_num}. Sezon {e_num}. Bölüm (DiziFon)",
+                            'image': cover_img,
+                            'link': f"/seri/{drama_slug}/{e_num}",
+                            'date': datetime.now().isoformat(),
+                            'status': status_text,
+                            'sourceName': 'DiziFon',
+                        }
+                        if added:
+                            log("AKINCI", f'"{clean_title}" -> S{s_num}B{e_num} DiziFon kaynakları bağlandı.')
+                        elif is_pending:
+                            log("BEKLEMEDE", f'"{clean_title}" -> S{s_num}B{e_num} kaynak bekleniyor.')
+                        else:
+                            log("DOĞRULANDI", f'"{clean_title}" -> S{s_num}B{e_num} kaynak güncel.')
+                        emit_live_item(item_obj)
+                        synced_items.append(item_obj)
         except Exception as e:
             log("HATA", f"DiziFon hedef tarama hatası: {e}")
     else:
@@ -1813,9 +1891,9 @@ def scan_dizifon(conn, cur, idx, limit=30, target=None, stop_after_known: int = 
             for a in soup.find_all('a', href=True):
                 h = a['href']
                 if '/bolum/' in h and h not in seen and '#comment' not in h:
-                    seen.add(h)
-                    txt = extract_anchor_text(a)
+                    txt = extract_anchor_text(a) or a.get('title', '').strip()
                     if txt:
+                        seen.add(h)
                         ep_links.append((txt, h))
                         if len(ep_links) >= effective_limit:
                             break
@@ -1827,65 +1905,99 @@ def scan_dizifon(conn, cur, idx, limit=30, target=None, stop_after_known: int = 
                 items_checked += 1
                 try:
                     m_s = re.search(r'(\d+)-sezon', ep_url)
-                    m_e = re.search(r'(\d+)-bolum', ep_url)
                     s_num = int(m_s.group(1)) if m_s else 1
-                    e_num = int(m_e.group(1)) if m_e else 1
+                    m_range = re.search(r'(\d+)-(\d+)-bolum', ep_url)
+                    if m_range:
+                        start_ep = int(m_range.group(1))
+                        end_ep = int(m_range.group(2))
+                    else:
+                        m_e = re.search(r'(\d+)-bolum', ep_url)
+                        start_ep = int(m_e.group(1)) if m_e else 1
+                        end_ep = start_ep
 
-                    # Extract slug from URL: /bolum/{drama-slug}-{s}-{e}/
                     ep_slug_raw = re.sub(r'^https?://[^/]+/bolum/', '', ep_url).strip('/')
-                    drama_slug_cand = re.sub(r'-(?:\d+-sezon-)?\d+-bolum(?:-izle)?.*$', '', ep_slug_raw)
-                    drama_slug_cand = re.sub(r'-\d{4}-(?:kore|cin|japon|tayland|asya)$', '', drama_slug_cand)
-                    drama_title = drama_slug_cand.replace('-', ' ').title()
+                    drama_slug_cand = re.sub(r'-(?:\d+-sezon-)?(?:\d+-)?\d+-bolum(?:-izle)?.*$', '', ep_slug_raw)
+                    drama_slug_cand = re.sub(r'-\d{4}-(?:kore|cin|japon|tayland|tayvan|asya|hint)$', '', drama_slug_cand)
+                    drama_slug_cand = clean_scraped_slug(drama_slug_cand)
+                    drama_title = clean_dizifon_title(txt) or drama_slug_cand.replace('-', ' ').title()
+
+                    country_hint = 'KR'
+                    chk_str = (ep_url + " " + txt + " " + drama_slug_cand).lower()
+                    if any(k in chk_str for k in ('-cin', 'çin', 'cin')):
+                        country_hint = 'CN'
+                    elif any(k in chk_str for k in ('-japon', 'japon')):
+                        country_hint = 'JP'
+                    elif any(k in chk_str for k in ('-tayland', 'tayland')):
+                        country_hint = 'TH'
+                    elif any(k in chk_str for k in ('-tayvan', 'tayvan', 'taiwan')):
+                        country_hint = 'TW'
+                    elif any(k in chk_str for k in ('-hint', 'hint')):
+                        country_hint = 'IN'
 
                     did, drama_title, drama_slug, cover_img = match_or_create_enriched_drama(
                         conn, cur, idx, drama_title, drama_slug_cand,
-                        content_type='dizi', country_hint='KR', site_tag='dizifon',
+                        content_type='dizi', country_hint=country_hint, site_tag='dizifon',
                         source_url=ep_url, log_fn=log
                     )
                     touched_dramas.add(did)
 
-                    clean_name = clean_episode_title(txt or f"{s_num}. Sezon {e_num}. Bölüm", s_num, e_num, drama_title=drama_title)
-                    ep_id, is_new_ep = match_or_create_episode(cur, did, s_num, e_num, clean_name, ep_url)
-                    ep_html = fetch_url(ep_url, headers=headers)
-                    is_ph = page_is_placeholder(ep_html)
-                    added = False
+                    any_ep_added = False
+                    all_known = True
 
-                    esoup = BeautifulSoup(ep_html, 'html.parser')
-                    for f in esoup.find_all('iframe'):
-                        src = f.get('vdo-src') or f.get('src') or f.get('data-src')
-                        if not src:
-                            continue
-                        if src.startswith('//'):
-                            src = 'https:' + src
-                        prov = 'ok.ru' if 'ok.ru' in src else ('vidmoly' if 'vidmoly' in src else ('youtube' if 'youtube' in src else 'other'))
-                        sname = 'OK.ru HD' if prov == 'ok.ru' else ('Vidmoly 1080p' if prov == 'vidmoly' else ('YouTube HD' if prov == 'youtube' else 'Doğrudan Akış'))
-                        if add_source(cur, ep_id, sname, src, prov, 'dizifon'):
-                            added = True
+                    for ep_idx, e_num in enumerate(range(start_ep, end_ep + 1), start=1):
+                        sub_url = ep_url if ep_idx == 1 else f"{ep_url.rstrip('/')}/{ep_idx}/"
+                        clean_name = f"{s_num}. Sezon {e_num}. Bölüm"
+                        ep_id, is_new_ep = match_or_create_episode(cur, did, s_num, e_num, clean_name, sub_url)
+                        ep_html = fetch_url(sub_url, headers=headers)
+                        is_ph = page_is_placeholder(ep_html)
+                        added = False
 
-                    is_pending = reconcile_episode(cur, ep_id, is_placeholder=is_ph)
-                    safe_commit(conn)
+                        streams = extract_streams_from_html(ep_html, 'dizifon')
+                        if not streams:
+                            esoup = BeautifulSoup(ep_html, 'html.parser')
+                            for f in esoup.find_all('iframe'):
+                                src = f.get('vdo-src') or f.get('src') or f.get('data-src')
+                                if not src:
+                                    continue
+                                if src.startswith('//'):
+                                    src = 'https:' + src
+                                src_l = src.lower()
+                                prov = 'ok.ru' if any(k in src_l for k in ('ok.ru', 'odnoklassniki.ru')) else ('vidmoly' if 'vidmoly' in src_l else ('youtube' if 'youtube' in src_l else 'other'))
+                                sname = 'OK.ru HD' if prov == 'ok.ru' else ('Vidmoly 1080p' if prov == 'vidmoly' else ('YouTube HD' if prov == 'youtube' else 'Doğrudan Akış'))
+                                streams.append((sname, src, prov, 'dizifon'))
 
-                    status_text = 'Canlı Çözüldü' if added else ('Kaynak Bekleniyor (Yakında)' if is_pending else 'Doğrulandı')
-                    item_obj = {
-                        'id': f"dizifon-{did}-{s_num}-{e_num}",
-                        'title': drama_title,
-                        'subtitle': f"{s_num}. Sezon {e_num}. Bölüm (DiziFon)",
-                        'image': cover_img,
-                        'link': f"/seri/{drama_slug}/{e_num}",
-                        'date': datetime.now().isoformat(),
-                        'status': status_text,
-                        'sourceName': 'DiziFon',
-                    }
-                    if added:
-                        log("AKINCI", f'"{drama_title}" -> S{s_num}B{e_num} DiziFon kaynakları bağlandı.')
-                    elif is_pending:
-                        log("BEKLEMEDE", f'"{drama_title}" -> S{s_num}B{e_num} kaynak bekleniyor.')
-                    else:
-                        log("DOĞRULANDI", f'"{drama_title}" -> S{s_num}B{e_num} kaynak güncel.')
-                    emit_live_item(item_obj)
-                    synced_items.append(item_obj)
+                        for sname, src, prov, site_tag in streams:
+                            if add_source(cur, ep_id, sname, src, prov, 'dizifon'):
+                                added = True
+                                any_ep_added = True
 
-                    if added or is_new_ep:
+                        if is_new_ep or added:
+                            all_known = False
+
+                        is_pending = reconcile_episode(cur, ep_id, is_placeholder=is_ph)
+                        safe_commit(conn)
+
+                        status_text = 'Canlı Çözüldü' if added else ('Kaynak Bekleniyor (Yakında)' if is_pending else 'Doğrulandı')
+                        item_obj = {
+                            'id': f"dizifon-{did}-{s_num}-{e_num}",
+                            'title': drama_title,
+                            'subtitle': f"{s_num}. Sezon {e_num}. Bölüm (DiziFon)",
+                            'image': cover_img,
+                            'link': f"/seri/{drama_slug}/{e_num}",
+                            'date': datetime.now().isoformat(),
+                            'status': status_text,
+                            'sourceName': 'DiziFon',
+                        }
+                        if added:
+                            log("AKINCI", f'"{drama_title}" -> S{s_num}B{e_num} DiziFon kaynakları bağlandı.')
+                        elif is_pending:
+                            log("BEKLEMEDE", f'"{drama_title}" -> S{s_num}B{e_num} kaynak bekleniyor.')
+                        else:
+                            log("DOĞRULANDI", f'"{drama_title}" -> S{s_num}B{e_num} kaynak güncel.')
+                        emit_live_item(item_obj)
+                        synced_items.append(item_obj)
+
+                    if any_ep_added or not all_known:
                         consecutive_known = 0
                     else:
                         consecutive_known += 1
@@ -1957,8 +2069,15 @@ def scan_webdramaturkey2(conn, cur, idx, limit=30, target=None):
 
 def scan_koredizi(conn, cur, idx, limit=30, target=None):
     log("BAŞLATILDI", "KoreDizi Short Drama motoru devrede...")
-    from scrapers.shortdrama.koredizi import KoreDiziScraper
-    cnt = int(KoreDiziScraper().run(limit=limit, resume=True, sync_cloud=True) or 0)
+    if not os.environ.get("KOREDIZI_EMAIL") or not os.environ.get("KOREDIZI_PASSWORD"):
+        log("UYARI", "KOREDIZI_EMAIL veya KOREDIZI_PASSWORD ortam değişkeni tanımlı değil. Atlanıyor.")
+        return 0, []
+    try:
+        from scrapers.shortdrama.koredizi import KoreDiziScraper
+        cnt = int(KoreDiziScraper().run(limit=limit, resume=True, sync_cloud=True) or 0)
+    except Exception as e:
+        log("UYARI", f"KoreDizi çalıştırma hatası: {e}")
+        return 0, []
     item_obj = {
         'id': f"koredizi-{int(time.time())}",
         'title': 'KoreDizi Short Dramas',
@@ -2148,18 +2267,22 @@ def scan_fullhdfilmizlesene(conn, cur, idx, limit=30, target=None):
 
 def scan_tranimaci(conn, cur, idx, limit=30, target=None):
     log("BAŞLATILDI", "TRAnimeci canlı tarama motoru devrede...")
-    from scrapers.sites import tranimaci_anizm
-    session = tranimaci_anizm._get_session("tranimaci")
-    urls = tranimaci_anizm.get_tranimaci_sitemap_urls(session)
+    try:
+        from scrapers.sites import tranimaci_anizm
+        session = tranimaci_anizm._get_session("tranimaci")
+        urls = tranimaci_anizm.get_tranimaci_sitemap_urls(session)
+    except Exception as e:
+        log("UYARI", f"TRAnimeci koruma/Cloudflare durumu: {e}")
+        return 0, []
     synced_items = []
     delta = 0
-    for u in urls[:limit]:
+    for u in (urls or [])[:limit]:
         try:
             added = tranimaci_anizm.scrape_tranimaci_anime(conn, cur, idx, session, u)
             delta += added
             item_obj = {
                 'id': f"tranimaci-{clean_scraped_slug(u)}",
-                'title': u.split('/')[-1].replace('-', ' ').title(),
+                'title': clean_site_title_leak(u.split('/')[-1].replace('-', ' ').title()),
                 'subtitle': f"+{added} kaynak (TRAnimeci)",
                 'image': '/logo-dark.png',
                 'link': u,
@@ -2176,18 +2299,22 @@ def scan_tranimaci(conn, cur, idx, limit=30, target=None):
 
 def scan_anizm(conn, cur, idx, limit=30, target=None):
     log("BAŞLATILDI", "Anizm canlı tarama motoru devrede...")
-    from scrapers.sites import tranimaci_anizm
-    session = tranimaci_anizm._get_session("anizm")
-    urls = tranimaci_anizm.get_anizm_catalog_urls(session, max_pages=1)
+    try:
+        from scrapers.sites import tranimaci_anizm
+        session = tranimaci_anizm._get_session("anizm")
+        urls = tranimaci_anizm.get_anizm_catalog_urls(session, max_pages=1)
+    except Exception as e:
+        log("UYARI", f"Anizm koruma/Cloudflare durumu: {e}")
+        return 0, []
     synced_items = []
     delta = 0
-    for u in urls[:limit]:
+    for u in (urls or [])[:limit]:
         try:
             added = tranimaci_anizm.scrape_anizm_episode(conn, cur, idx, session, u)
             delta += added
             item_obj = {
                 'id': f"anizm-{clean_scraped_slug(u)}",
-                'title': u.split('/')[-1].replace('-', ' ').title(),
+                'title': clean_site_title_leak(u.split('/')[-1].replace('-', ' ').title()),
                 'subtitle': f"+{added} kaynak (Anizm)",
                 'image': '/logo-dark.png',
                 'link': u,

@@ -31,11 +31,42 @@ from scrapers.multisite import (
 )
 from scrapers.supabase_sync_helper import (
     match_or_create_enriched_drama,
+    sb_request,
     sync_drama_bundle_and_counts,
 )
 
 DEFAULT_BASE_URL = "https://webdramaturkey2.com"
 _LAST_REQUEST_TIME = 0.0
+_cfr_session = None
+_req_session = None
+
+
+def clean_site_title(raw_title: str) -> str:
+    """Cleans site names, Unicode dashes (–, —, |), and watch suffixes from scraped title."""
+    if not raw_title:
+        return ""
+    t = re.sub(r"[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uff0d]", "-", raw_title)
+    t = re.sub(
+        r"\s*(?:[-|–—:]\s*)?(?:webdramaturkey(?:\d+)?(?:\.com)?|diziizle(?:\.wiki)?|izle|hd izle|türkçe altyazılı|turkce altyazili|türkçe dublaj|turkce dublaj|kore dizisi|dizisi|filmi).*$",
+        "",
+        t,
+        flags=re.I,
+    )
+    t = re.sub(r"[\-_|:•\s]+$", "", t).strip()
+    return re.sub(r"\s+", " ", t)
+
+
+def _get_wdt_session():
+    """Returns persistent curl_cffi and requests sessions to keep Cloudflare cookies & connections alive."""
+    global _cfr_session, _req_session
+    if _cfr_session is None and cfr:
+        try:
+            _cfr_session = cfr.Session(impersonate="chrome")
+        except Exception:
+            _cfr_session = None
+    if _req_session is None:
+        _req_session = requests.Session()
+    return _cfr_session, _req_session
 
 
 def _get_base() -> str:
@@ -54,6 +85,7 @@ def _rate_limited_fetch(
     Executes an HTTP request with adaptive rate-limit protection:
     - Guaranteed minimum 1.2s delay between requests
     - Exponential backoff on HTTP 429/503 (4s -> 8s -> 16s)
+    - Persistent sessions to preserve CF cookies
     """
     global _LAST_REQUEST_TIME
 
@@ -64,6 +96,8 @@ def _rate_limited_fetch(
     if headers:
         default_headers.update(headers)
 
+    cfr_s, req_s = _get_wdt_session()
+
     for attempt in range(max_retries):
         elapsed = time.time() - _LAST_REQUEST_TIME
         if elapsed < 1.2:
@@ -73,12 +107,12 @@ def _rate_limited_fetch(
         resp_status = 0
         resp_text = ""
 
-        if cfr:
+        if cfr_s:
             try:
                 if method.upper() == "POST":
-                    r = cfr.post(url, data=data, headers=default_headers, impersonate="chrome", timeout=timeout)
+                    r = cfr_s.post(url, data=data, headers=default_headers, timeout=timeout)
                 else:
-                    r = cfr.get(url, headers=default_headers, impersonate="chrome", timeout=timeout)
+                    r = cfr_s.get(url, headers=default_headers, timeout=timeout)
                 resp_status = r.status_code
                 resp_text = r.text
             except Exception:
@@ -87,9 +121,9 @@ def _rate_limited_fetch(
         if not resp_status:
             try:
                 if method.upper() == "POST":
-                    r = requests.post(url, data=data, headers=default_headers, timeout=timeout)
+                    r = req_s.post(url, data=data, headers=default_headers, timeout=timeout)
                 else:
-                    r = requests.get(url, headers=default_headers, timeout=timeout)
+                    r = req_s.get(url, headers=default_headers, timeout=timeout)
                 resp_status = r.status_code
                 resp_text = r.text
             except Exception:
@@ -234,7 +268,7 @@ def scrape_wdt_series_or_film(
     if not title and soup.title:
         title = soup.title.get_text(strip=True).split("-")[0].strip()
 
-    title = re.sub(r"\s*(izle|türkçe altyazılı|hd izle|dizisi|filmi).*$", "", title, flags=re.I).strip()
+    title = clean_site_title(title)
 
     m_slug = re.search(r"/(?:dizi|film)/([^/]+)", full_url)
     slug = m_slug.group(1) if m_slug else full_url.strip("/").split("/")[-1]
@@ -242,13 +276,50 @@ def scrape_wdt_series_or_film(
 
     content_type = "film" if (is_film or "/film/" in full_url) else "dizi"
 
+    # Precise country detection from flag icon or text
+    country_hint = "KR"
+    flag_el = soup.select_one("span.flag-icon")
+    if flag_el:
+        for c in flag_el.get("class", []):
+            m_f = re.search(r"flag-icon-([a-z]{2})", c)
+            if m_f:
+                country_hint = m_f.group(1).upper()
+                break
+    else:
+        page_sample = html[:5000].lower()
+        if any(w in page_sample for w in ("çin", "cin", "china")):
+            country_hint = "CN"
+        elif any(w in page_sample for w in ("japon", "japan")):
+            country_hint = "JP"
+        elif any(w in page_sample for w in ("tayland", "thailand")):
+            country_hint = "TH"
+        elif any(w in page_sample for w in ("filipin", "philippines")):
+            country_hint = "PH"
+        elif any(w in page_sample for w in ("tayvan", "taiwan")):
+            country_hint = "TW"
+        elif any(w in page_sample for w in ("türk", "turkey")):
+            country_hint = "TR"
+
+    # Year detection from metadata attributes
     year = None
-    m_yr = re.search(r"\b(19\d{2}|20\d{2})\b", html[:2000])
-    if m_yr:
-        try:
-            year = int(m_yr.group(1))
-        except Exception:
-            pass
+    for fa in soup.select(".featured-attr, .detail-attr"):
+        attr_name = fa.select_one(".attr")
+        attr_val = fa.select_one(".text")
+        if attr_name and attr_val:
+            an_text = attr_name.get_text(strip=True).lower()
+            if any(k in an_text for k in ("yıl", "yil", "vizyon", "yayın")):
+                m_y = re.search(r"\b(19\d{2}|20\d{2})\b", attr_val.get_text(strip=True))
+                if m_y:
+                    year = int(m_y.group(1))
+                    break
+
+    if not year:
+        m_yr = re.search(r"\b(19\d{2}|20\d{2})\b", html[:3000])
+        if m_yr:
+            try:
+                year = int(m_yr.group(1))
+            except Exception:
+                pass
 
     if idx is None:
         idx = build_drama_index(cur)
@@ -261,7 +332,7 @@ def scrape_wdt_series_or_film(
         raw_title=title,
         slug_cand=slug,
         content_type=content_type,
-        country_hint="KR",
+        country_hint=country_hint,
         site_tag="webdramaturkey2",
         source_url=full_url,
         year_hint=year,
@@ -292,6 +363,8 @@ def scrape_wdt_series_or_film(
                     if add_source(cur, ep_id, s_name, s_url, s_prov, "webdramaturkey2", embed_id=eid):
                         sources_added += 1
                         sample_sources.append(s_url)
+                        if s_prov == "wdt":
+                            break
     else:
         # Series: discover episode links
         ep_links = []
@@ -354,6 +427,40 @@ def scrape_wdt_series_or_film(
                     if add_source(cur, ep_id, s_name, s_url, s_prov, "webdramaturkey2", embed_id=eid):
                         sources_added += 1
                         sample_sources.append(s_url)
+                        if s_prov == "wdt":
+                            break
+
+    conn.commit()
+
+    # Check if drama has any valid sources (Zero Empty Shell guarantee)
+    cur.execute(
+        """
+        SELECT count(es.id) 
+        FROM episodes e 
+        JOIN episode_sources es ON es.episode_id = e.id 
+        WHERE e.drama_id = ?
+        """,
+        (drama_id,),
+    )
+    total_sources = cur.fetchone()[0]
+
+    if total_sources == 0:
+        print(f"[WDT PURGE] '{d_title}' (#{drama_id}) geçerli kaynağa sahip değil. Boş kabuk siliniyor...", flush=True)
+        cur.execute("DELETE FROM episode_sources WHERE episode_id IN (SELECT id FROM episodes WHERE drama_id = ?)", (drama_id,))
+        cur.execute("DELETE FROM episodes WHERE drama_id = ?", (drama_id,))
+        cur.execute("DELETE FROM dramas WHERE id = ?", (drama_id,))
+        conn.commit()
+        try:
+            sb_request("DELETE", f"/rest/v1/media?id=eq.{drama_id}")
+        except Exception:
+            pass
+        return {
+            "drama_id": drama_id,
+            "title": d_title,
+            "error": "No valid sources found, purged empty shell",
+            "episodes_added": 0,
+            "sources_added": 0,
+        }
 
     if episodes_added > 0 or sources_added > 0:
         sync_drama_bundle_and_counts(conn, cur, drama_id)
@@ -378,28 +485,13 @@ def crawl_webdramaturkey_recent(
 ) -> list[dict]:
     """
     Crawls ONLY New Series (/diziler?page=1..3) and New Movies (/filmler?page=1..3) from webdramaturkey2.com.
-    Adheres strictly to the user requirement: no full archive crawl, only new items.
+    Prioritizes new movies when requested.
     """
     base_url = _get_base()
     candidates = []
     seen = set()
 
-    # 1. New Series (/diziler pages 1..3)
-    if category in ("all", "dizi"):
-        for page in range(1, 4):
-            page_url = f"{base_url}/diziler" if page == 1 else f"{base_url}/diziler?page={page}"
-            status, html = _rate_limited_fetch(page_url)
-            if status == 200 and html:
-                soup = BeautifulSoup(html, "html.parser")
-                for a in soup.find_all("a", href=True):
-                    h = a["href"]
-                    if "/dizi/" in h and "/sezon" not in h and "/bolum" not in h:
-                        full_u = urljoin(base_url, h)
-                        if full_u not in seen:
-                            candidates.append((full_u, False))
-                            seen.add(full_u)
-
-    # 2. New Movies (/filmler pages 1..3)
+    # 1. New Movies (/filmler pages 1..3)
     if category in ("all", "film"):
         for page in range(1, 4):
             page_url = f"{base_url}/filmler" if page == 1 else f"{base_url}/filmler?page={page}"
@@ -414,9 +506,44 @@ def crawl_webdramaturkey_recent(
                             candidates.append((full_u, True))
                             seen.add(full_u)
 
+    # 2. New Series (/diziler pages 1..3)
+    if category in ("all", "dizi"):
+        for page in range(1, 4):
+            page_url = f"{base_url}/diziler" if page == 1 else f"{base_url}/diziler?page={page}"
+            status, html = _rate_limited_fetch(page_url)
+            if status == 200 and html:
+                soup = BeautifulSoup(html, "html.parser")
+                for a in soup.find_all("a", href=True):
+                    h = a["href"]
+                    if "/dizi/" in h and "/sezon" not in h and "/bolum" not in h:
+                        full_u = urljoin(base_url, h)
+                        if full_u not in seen:
+                            candidates.append((full_u, False))
+                            seen.add(full_u)
+
     if idx is None:
         idx = build_drama_index(cur)
 
+    # Pre-filter movies that already have WDT sources to save HTTP budget
+    filtered_candidates = []
+    for item_u, is_f in candidates:
+        if is_f:
+            f_slug = item_u.strip("/").split("/")[-1]
+            cur.execute(
+                """
+                SELECT 1 FROM dramas d
+                JOIN episodes e ON e.drama_id = d.id
+                JOIN episode_sources es ON es.episode_id = e.id
+                WHERE (d.slug = ? OR d.source_url = ?) AND (es.provider = 'wdt' OR es.direct_url LIKE '%dtpasn%')
+                LIMIT 1
+                """,
+                (f_slug, item_u),
+            )
+            if cur.fetchone():
+                continue
+        filtered_candidates.append((item_u, is_f))
+
+    candidates = filtered_candidates
     print(f"[WDT ARCHIVE] Toplam {len(candidates)} yeni yapım adayı keşfedildi (Sayfa 1-3). Hedef limit: {limit}", flush=True)
 
     results = []
@@ -430,5 +557,8 @@ def crawl_webdramaturkey_recent(
             is_film=is_film,
         )
         results.append(res)
+        time.sleep(0.5)
+
+    return results
 
     return results

@@ -8,11 +8,14 @@ Features:
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
+import os
 import re
 import sys
 import time
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urljoin, urlparse
+
+import threading
 
 try:
     from zoneinfo import ZoneInfo
@@ -61,6 +64,49 @@ DAY_MAP = {
 }
 DAY_NAMES = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
 
+_thread_local = threading.local()
+
+
+def _get_thread_session():
+    """Returns thread-safe curl_cffi and requests sessions via threading.local()."""
+    if not hasattr(_thread_local, "cfr_session") and cfr:
+        try:
+            _thread_local.cfr_session = cfr.Session(impersonate="chrome")
+        except Exception:
+            _thread_local.cfr_session = None
+    if not hasattr(_thread_local, "req_session"):
+        _thread_local.req_session = requests.Session()
+    return getattr(_thread_local, "cfr_session", None), _thread_local.req_session
+
+
+def clean_site_title(raw_title: str) -> str:
+    """Cleans site names, Unicode dashes (–, —, |), and watch suffixes from scraped title."""
+    if not raw_title:
+        return ""
+    t = re.sub(r"[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uff0d]", "-", raw_title)
+    t = re.sub(
+        r"\s*(?:[-|–—:]\s*)?(?:diziizle(?:\.wiki)?|webdramaturkey(?:\d+)?(?:\.com)?|izle|hd izle|türkçe altyazılı|turkce altyazili|türkçe dublaj|turkce dublaj|kore dizisi|dizisi|filmi).*$",
+        "",
+        t,
+        flags=re.I,
+    )
+    t = re.sub(r"[\-_|:•\s]+$", "", t).strip()
+    return re.sub(r"\s+", " ", t)
+
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def get_diziizle_db():
+    """Returns an isolated, high-timeout SQLite connection with WAL mode."""
+    import sqlite3
+    db_path = os.path.join(_ROOT, "webdrama_archive.db")
+    conn = sqlite3.connect(db_path, timeout=120)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.row_factory = sqlite3.Row
+    return conn
+
 
 def _get_base() -> str:
     return get_site_base_url("diziizle", DEFAULT_BASE_URL)
@@ -74,15 +120,17 @@ def _safe_fetch(url: str, headers: dict = None, timeout: int = 12) -> str:
     if headers:
         h.update(headers)
 
-    if cfr:
+    cfr_sess, req_sess = _get_thread_session()
+    if cfr_sess:
         try:
-            r = cfr.get(url, headers=h, impersonate="chrome", timeout=timeout)
+            r = cfr_sess.get(url, headers=h, timeout=timeout)
             if r.status_code == 200:
                 return r.text
         except Exception:
             pass
+
     try:
-        r = requests.get(url, headers=h, timeout=timeout)
+        r = req_sess.get(url, headers=h, timeout=timeout)
         if r.status_code == 200:
             return r.text
     except Exception:
@@ -114,7 +162,7 @@ def extract_ep_number(episode_label: str) -> int | None:
 
 
 def batch_calendar_upsert(items: list[dict]) -> int:
-    """Batch upserts calendar schedule items directly to Supabase with 0 timeouts."""
+    """Batch upserts calendar schedule items directly to Supabase with 0 timeouts and deduplication."""
     if not items:
         return 0
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -125,18 +173,21 @@ def batch_calendar_upsert(items: list[dict]) -> int:
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates,return=minimal",
     }
-    rows = []
+    # Deduplicate in-memory to prevent PostgreSQL ON CONFLICT DO UPDATE cannot affect row a second time
+    dedup = {}
     for it in items:
         day_num = int(it["day_of_week"])
         ep_label = it.get("episode_label", "")
+        slug = it["slug"]
+        k = ("diziizle", day_num, slug)
         next_ep_at = it.get("next_episode_at") or compute_next_occurrence_iso(day_num)
         next_ep_num = it.get("next_episode_number") or extract_ep_number(ep_label)
-        rows.append({
+        dedup[k] = {
             "source_site": "diziizle",
             "day_of_week": day_num,
             "date_label": it.get("date_label") or DAY_NAMES[day_num - 1],
             "title": it["title"],
-            "slug": it["slug"],
+            "slug": slug,
             "episode_label": ep_label,
             "category": it.get("category", "Dizi"),
             "cover_image": it.get("cover_image", ""),
@@ -144,9 +195,9 @@ def batch_calendar_upsert(items: list[dict]) -> int:
             "next_episode_at": next_ep_at,
             "next_episode_number": next_ep_num,
             "updated_at": now_iso,
-        })
+        }
 
-    # Chunk in batches of 40
+    rows = list(dedup.values())
     saved = 0
     for i in range(0, len(rows), 40):
         batch = rows[i:i + 40]
@@ -160,31 +211,50 @@ def batch_calendar_upsert(items: list[dict]) -> int:
             if r.status_code in (200, 201, 204):
                 saved += len(batch)
             else:
-                # Try single RPC fallback if REST returns schema error
-                for it in batch:
-                    if call_calendar_upsert(it):
-                        saved += 1
+                # Fallback to single-item posts if batch has any edge conflict
+                for row in batch:
+                    try:
+                        r_single = requests.post(
+                            f"{rest_url}?on_conflict=source_site,day_of_week,slug",
+                            headers=headers,
+                            json=[row],
+                            timeout=10,
+                        )
+                        if r_single.status_code in (200, 201, 204):
+                            saved += 1
+                    except Exception:
+                        pass
         except Exception as e:
             print(f"[CALENDAR_BATCH_WARN] Batch error: {e}", flush=True)
-            for it in batch:
-                if call_calendar_upsert(it):
-                    saved += 1
+            for row in batch:
+                try:
+                    r_single = requests.post(
+                        f"{rest_url}?on_conflict=source_site,day_of_week,slug",
+                        headers=headers,
+                        json=[row],
+                        timeout=10,
+                    )
+                    if r_single.status_code in (200, 201, 204):
+                        saved += 1
+                except Exception:
+                    pass
     return saved
 
 
-def verify_pilavyer_stream(pv_slug: str, base_url: str = DEFAULT_BASE_URL) -> bool:
-    """Checks if play2.pilavyerplay.top stream is active and returns valid HLS stream."""
+def verify_pilavyer_stream(pv_slug: str, base_url: str = DEFAULT_BASE_URL) -> str | None:
+    """Checks pilavyerplay.top and play2.pilavyerplay.top stream and returns verified player URL or None."""
     if not pv_slug:
-        return False
-    check_url = f"https://play2.pilavyerplay.top/assets/js/s.php?s={pv_slug}"
+        return None
     headers = {
         "Referer": f"{base_url}/",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     }
-    text = _safe_fetch(check_url, headers=headers, timeout=10)
-    if not text:
-        return False
-    return "stream.php" in text or ".m3u8" in text or "__PLAYER__" in text
+    for domain in ("pilavyerplay.top", "play2.pilavyerplay.top"):
+        check_url = f"https://{domain}/assets/js/s.php?s={pv_slug}"
+        text = _safe_fetch(check_url, headers=headers, timeout=10)
+        if text and any(k in text for k in ("stream.php", ".m3u8", "__PLAYER__", "<video", "player")):
+            return check_url
+    return None
 
 
 def sync_diziizle_calendar(conn=None, cur=None) -> int:
@@ -318,26 +388,22 @@ def _extract_pv_from_html(html: str) -> str | None:
     return None
 
 
-def scrape_diziizle_series(
-    cur,
-    conn,
+def fetch_diziizle_series_data(
     series_url: str,
-    idx: dict = None,
+    base_url: str = DEFAULT_BASE_URL,
     is_anime: bool = False,
-    max_episodes: int = 50,
-) -> dict:
+    max_episodes: int = 0,
+) -> dict | None:
     """
-    Scrapes a single drama/anime from diziizle.wiki:
-    - Parses Schema.org TVSeries / TMDB
-    - Upserts drama in SQLite and Supabase
-    - Extracts all episode URLs and Pilavyer HD player streams
-    - Verifies streams live and adds to episode_sources
+    Aşama 1 (Saf Ağ / Bellek-İçi):
+    Dizi sayfasını, sezonları, bölümleri ve Pilavyer HD yayınlarını bellekte çözer.
+    Veritabanına ASLA dokunmaz.
+    0 geçerli kaynak dönerse None döner (boş kabuk oluşumu bellekte engellenir).
     """
-    base_url = _get_base()
     full_series_url = urljoin(base_url, series_url)
     html = _safe_fetch(full_series_url)
     if not html:
-        return {"error": f"Failed to fetch {full_series_url}", "episodes_added": 0, "sources_added": 0}
+        return None
 
     soup = BeautifulSoup(html, "html.parser")
 
@@ -375,30 +441,20 @@ def scrape_diziizle_series(
     if not title:
         title = soup.title.get_text(strip=True).split("-")[0].strip() if soup.title else ""
 
+    title = clean_site_title(title)
+    if not title:
+        m_s = re.search(r"/(?:dizi|anime)/([^/]+)", full_series_url)
+        slug_raw = m_s.group(1) if m_s else full_series_url.strip("/").split("/")[-1]
+        title = slug_raw.replace("-", " ").title()
+
     m_slug = re.search(r"/(?:dizi|anime)/([^/]+)", full_series_url)
     slug = m_slug.group(1) if m_slug else full_series_url.strip("/").split("/")[-1]
     slug = clean_scraped_slug(slug)
 
     content_type = "anime" if (is_anime or "/anime/" in full_series_url) else "dizi"
+    country_hint = "JP" if is_anime else "TR"
 
-    if idx is None:
-        idx = build_drama_index(cur)
-
-    # 2. Match or create enriched drama
-    drama_id, d_title, d_slug, d_cover = match_or_create_enriched_drama(
-        conn=conn,
-        cur=cur,
-        idx=idx,
-        raw_title=title,
-        slug_cand=slug,
-        content_type=content_type,
-        country_hint="JP" if is_anime else "TR",
-        site_tag="diziizle",
-        source_url=full_series_url,
-        year_hint=year,
-    )
-
-    # 3. Find all seasons and episode links
+    # 2. Find all seasons and episode links
     season_nums = []
     for a in soup.find_all("a", href=True):
         m_s = re.search(r"[?&]sezon=(\d+)", a["href"])
@@ -410,7 +466,6 @@ def scrape_diziizle_series(
     ep_links = []
     if season_nums:
         season_nums.sort(reverse=True)
-        # Fetch all seasons, prioritizing newest first
         for s_n in season_nums:
             s_url = f"{full_series_url}?sezon={s_n}"
             s_html = _safe_fetch(s_url) if (s_n != 1 or "?sezon=1" in full_series_url) else html
@@ -428,7 +483,6 @@ def scrape_diziizle_series(
             if "/sezon-" in h and "/bolum-" in h and h not in ep_links:
                 ep_links.append(h)
 
-    # Sort episodes by season and episode number
     def _ep_sort_key(u):
         sm = re.search(r"sezon-(\d+)", u)
         em = re.search(r"bolum-(\d+)", u)
@@ -438,20 +492,11 @@ def scrape_diziizle_series(
     if max_episodes and len(ep_links) > max_episodes:
         ep_links = ep_links[-max_episodes:]
 
-    # Check which episodes already have pilavyer sources in SQLite before making network calls
-    cur.execute(
-        """
-        SELECT e.season_number, e.episode_number 
-        FROM episodes e 
-        JOIN episode_sources es ON es.episode_id = e.id 
-        WHERE e.drama_id = ? AND (es.provider = 'pilavyer' OR es.direct_url LIKE '%pilavyerplay%')
-        """,
-        (drama_id,),
-    )
-    existing_pilavyer_eps = {(row[0], row[1]) for row in cur.fetchall()}
+    if not ep_links:
+        return None
 
-    # Prepare pending episodes list
-    pending_ep_jobs = []
+    # Fetch and verify episode streams in memory
+    verified_episodes = []
     for ep_href in ep_links:
         full_ep_url = urljoin(base_url, ep_href)
         s_m = re.search(r"sezon-(\d+)", ep_href)
@@ -460,66 +505,105 @@ def scrape_diziizle_series(
         ep_num = int(e_m.group(1)) if e_m else 1
         ep_name = f"{season_num}. Sezon {ep_num}. Bölüm"
 
-        if (season_num, ep_num) in existing_pilavyer_eps:
-            continue
+        ep_html = _safe_fetch(full_ep_url)
+        pv = _extract_pv_from_html(ep_html)
+        if pv:
+            valid_url = verify_pilavyer_stream(pv, base_url)
+            if valid_url:
+                verified_episodes.append((season_num, ep_num, ep_name, full_ep_url, valid_url))
 
-        pending_ep_jobs.append((full_ep_url, season_num, ep_num, ep_name))
+    if not verified_episodes:
+        # Zero empty shells: drop right in memory!
+        return None
+
+    return {
+        "raw_title": title,
+        "slug_cand": slug,
+        "content_type": content_type,
+        "country_hint": country_hint,
+        "source_url": full_series_url,
+        "year_hint": year,
+        "cover_image": cover_image,
+        "overview": overview,
+        "episodes_total": len(ep_links),
+        "episodes": verified_episodes,
+    }
+
+
+def scrape_diziizle_series(
+    cur=None,
+    conn=None,
+    series_url: str = "",
+    idx: dict = None,
+    is_anime: bool = False,
+    max_episodes: int = 50,
+) -> dict:
+    """Single-series wrapper for backwards compatibility."""
+    base_url = _get_base()
+    parsed = fetch_diziizle_series_data(series_url, base_url, is_anime, max_episodes)
+    if not parsed:
+        return {"error": "No playable streams found", "episodes_added": 0, "sources_added": 0}
+
+    should_close = False
+    if conn is None:
+        conn = get_diziizle_db()
+        cur = conn.cursor()
+        should_close = True
+
+    if idx is None:
+        idx = build_drama_index(cur)
+
+    drama_id, d_title, d_slug, d_cover = match_or_create_enriched_drama(
+        conn=conn,
+        cur=cur,
+        idx=idx,
+        raw_title=parsed["raw_title"],
+        slug_cand=parsed["slug_cand"],
+        content_type=parsed["content_type"],
+        country_hint=parsed["country_hint"],
+        site_tag="diziizle",
+        source_url=parsed["source_url"],
+        year_hint=parsed["year_hint"],
+    )
 
     episodes_added = 0
     sources_added = 0
     sample_sources = []
 
-    # Parallel HTTP worker (pure network/parsing, NO SQLite access inside threads)
-    def _fetch_and_verify_worker(job):
-        full_u, s_n, e_n, name = job
-        ep_h = _safe_fetch(full_u)
-        pv = _extract_pv_from_html(ep_h)
-        if not pv:
-            return (full_u, s_n, e_n, name, None, False)
-        valid = verify_pilavyer_stream(pv, base_url)
-        return (full_u, s_n, e_n, name, pv, valid)
-
-    verified_results = []
-    if pending_ep_jobs:
-        with ThreadPoolExecutor(max_workers=16) as executor:
-            verified_results = list(executor.map(_fetch_and_verify_worker, pending_ep_jobs))
-
-    # Single-thread SQLite batch insertion (100% thread safe, 0 database locks)
-    for full_u, season_num, ep_num, ep_name, pv_slug, is_valid in verified_results:
-        ep_id, is_new = match_or_create_episode(cur, drama_id, season_num, ep_num, ep_name, full_u)
+    for season_num, ep_num, ep_name, full_ep_url, valid_url in parsed["episodes"]:
+        ep_id, is_new = match_or_create_episode(cur, drama_id, season_num, ep_num, ep_name, full_ep_url)
         if is_new:
             episodes_added += 1
 
-        if is_valid and pv_slug:
-            pilavyer_url = f"https://play2.pilavyerplay.top/assets/js/s.php?s={pv_slug}"
-            added = add_source(
-                cur,
-                episode_id=ep_id,
-                source_name="Diziİzle (Pilavyer HD)",
-                direct_url=pilavyer_url,
-                provider="pilavyer",
-                site="diziizle",
+        added = add_source(
+            cur,
+            episode_id=ep_id,
+            source_name="Diziİzle (Pilavyer HD)",
+            direct_url=valid_url,
+            provider="pilavyer",
+            site="diziizle",
+        )
+        if added:
+            sources_added += 1
+            sample_sources.append(valid_url)
+            cur.execute(
+                "UPDATE episode_sources SET provider = 'youtube_backup' WHERE episode_id = ? AND provider = 'youtube'",
+                (ep_id,),
             )
-            if added:
-                sources_added += 1
-                sample_sources.append(pilavyer_url)
-                # Prioritize pilavyer over existing youtube sources
-                cur.execute(
-                    "UPDATE episode_sources SET provider = 'youtube_backup' WHERE episode_id = ? AND provider = 'youtube'",
-                    (ep_id,),
-                )
 
     conn.commit()
 
-    # 4. Sync full bundle, counts, R2 and Supabase
     if episodes_added > 0 or sources_added > 0:
         sync_drama_bundle_and_counts(conn, cur, drama_id)
+
+    if should_close:
+        conn.close()
 
     return {
         "drama_id": drama_id,
         "title": d_title,
         "slug": d_slug,
-        "episodes_total": len(ep_links),
+        "episodes_total": parsed["episodes_total"],
         "episodes_added": episodes_added,
         "sources_added": sources_added,
         "sample_sources": sample_sources[:3],
@@ -527,25 +611,38 @@ def scrape_diziizle_series(
 
 
 def crawl_diziizle_recent(
-    cur,
-    conn,
+    cur=None,
+    conn=None,
     idx: dict = None,
-    limit: int = 500,
+    limit: int = 0,
     max_episodes_per_series: int = 0,
     target_urls: list[str] = None,
+    resume: bool = False,
+    batch_size: int = 20,
 ) -> list[dict]:
     """
-    Crawls diziizle.wiki catalog:
-    - Target URLs (e.g. Turkish dramas needing Pilavyer replacement) first
-    - sitemap-series.xml (all 1241 series)
-    - sitemap-anime.xml (all 27 anime)
-    - Homepage recent items
+    3-Aşamalı Yüksek Hızlı Kilitsiz Toplu İşleme:
+    Aşama 1: Saf Ağ / Bellek-İçi — ThreadPoolExecutor(16) ile HTTP & stream doğrulama (DB kapalı!)
+    Aşama 2: Kısa Atomik SQLite Yazımı — 20 dizilik paketi ~50ms içinde tek işlemde yaz ve kapat!
+    Aşama 3: Toplu Bulut Senkronu — R2 bundle & Supabase güncellemesi
     """
     base_url = _get_base()
     candidates = list(target_urls) if target_urls else []
     seen = set(candidates)
 
-    # 1. Discover candidate series from homepage
+    # 1. Discover all anime from sitemap-anime.xml first (high priority)
+    anime_sitemap = _safe_fetch(f"{base_url}/sitemap-anime.xml")
+    if anime_sitemap:
+        for line in anime_sitemap.splitlines():
+            if "<loc>" in line:
+                m = re.search(r"<loc>(https?://[^<]+)</loc>", line)
+                if m:
+                    u = m.group(1).strip()
+                    if u not in seen and u.endswith((".xml", "/animes")) is False:
+                        candidates.append(u)
+                        seen.add(u)
+
+    # 2. Discover candidate series from homepage
     home_html = _safe_fetch(base_url)
     if home_html:
         soup = BeautifulSoup(home_html, "html.parser")
@@ -557,7 +654,7 @@ def crawl_diziizle_recent(
                     candidates.append(full_u)
                     seen.add(full_u)
 
-    # 2. Discover all series from sitemap-series.xml
+    # 3. Discover all series from sitemap-series.xml
     sitemap_html = _safe_fetch(f"{base_url}/sitemap-series.xml")
     if sitemap_html:
         for line in sitemap_html.splitlines():
@@ -569,36 +666,132 @@ def crawl_diziizle_recent(
                         candidates.append(u)
                         seen.add(u)
 
-    # 3. Discover all anime from sitemap-anime.xml
-    anime_sitemap = _safe_fetch(f"{base_url}/sitemap-anime.xml")
-    if anime_sitemap:
-        for line in anime_sitemap.splitlines():
-            if "<loc>" in line:
-                m = re.search(r"<loc>(https?://[^<]+)</loc>", line)
-                if m:
-                    u = m.group(1).strip()
-                    if u not in seen:
-                        candidates.append(u)
-                        seen.add(u)
-
-    if idx is None:
-        idx = build_drama_index(cur)
-
-    print(f"[DIZIIZLE ARCHIVE] Toplam {len(candidates)} yapım adayı keşfedildi. Hedef limit: {limit}", flush=True)
-
-    results = []
-    for count_idx, s_url in enumerate(candidates[:limit], 1):
-        is_anime = "/anime/" in s_url
-        print(f"[{count_idx}/{min(len(candidates), limit)}] Scraping {s_url}...", flush=True)
-        res = scrape_diziizle_series(
-            cur=cur,
-            conn=conn,
-            series_url=s_url,
-            idx=idx,
-            is_anime=is_anime,
-            max_episodes=max_episodes_per_series,
+    if resume:
+        # Quick query for already completed pilavyer series
+        q_conn = get_diziizle_db()
+        q_cur = q_conn.cursor()
+        q_cur.execute(
+            """
+            SELECT DISTINCT d.slug
+            FROM dramas d
+            JOIN episodes e ON e.drama_id = d.id
+            JOIN episode_sources es ON es.episode_id = e.id
+            WHERE es.provider = 'pilavyer' OR es.direct_url LIKE '%pilavyerplay%'
+            """
         )
-        results.append(res)
-        time.sleep(0.3)
+        done_slugs = {row[0] for row in q_cur.fetchall() if row[0]}
+        q_conn.close()
 
-    return results
+        filtered_candidates = []
+        for u in candidates:
+            m = re.search(r"/(?:dizi|anime)/([^/]+)", u)
+            slug_cand = m.group(1) if m else u.strip("/").split("/")[-1]
+            if slug_cand in done_slugs:
+                continue
+            filtered_candidates.append(u)
+        print(f"[DIZIIZLE RESUME] {len(candidates) - len(filtered_candidates)} yapım zaten Pilavyer kaynağına sahip olduğu için atlandı.", flush=True)
+        candidates = filtered_candidates
+
+    to_process = candidates[:limit] if (limit and limit > 0) else candidates
+    total_count = len(to_process)
+    print(f"[DIZIIZLE ARCHIVE] Toplam {len(candidates)} yapım adayı keşfedildi. Çekilecek: {'TÜMÜ (' + str(total_count) + ')' if not (limit and limit > 0) else limit}", flush=True)
+
+    all_results = []
+
+    # 3-Aşamalı Paket Döngüsü (Her paket 20 yapım)
+    for batch_start in range(0, total_count, batch_size):
+        batch_urls = to_process[batch_start:batch_start + batch_size]
+        current_batch_size = len(batch_urls)
+        print(f"\n--- [DIZIIZLE PAKET {batch_start + 1}-{batch_start + current_batch_size}/{total_count}] Paralel ağ taraması başlatılıyor ({current_batch_size} yapım) ---", flush=True)
+
+        # AŞAMA 1: Saf Ağ / Bellek-İçi (16 worker paralel HTTP, DB kapalı!)
+        def _fetch_worker(u):
+            is_anime = "/anime/" in u
+            return fetch_diziizle_series_data(u, base_url, is_anime, max_episodes_per_series)
+
+        with ThreadPoolExecutor(max_workers=16) as executor:
+            batch_parsed = list(executor.map(_fetch_worker, batch_urls))
+
+        valid_items = [b for b in batch_parsed if b]
+        print(f"[DIZIIZLE AĞ TAMAMLANDI] {len(valid_items)}/{current_batch_size} yapım geçerli Pilavyer kaynağına sahip.", flush=True)
+
+        if not valid_items:
+            continue
+
+        # AŞAMA 2: Kısa Atomik SQLite Yazımı (~50ms işlem, anında commit & close!)
+        write_conn = get_diziizle_db()
+        write_cur = write_conn.cursor()
+        write_idx = build_drama_index(write_cur)
+
+        saved_dramas = []
+        for item in valid_items:
+            drama_id, d_title, d_slug, d_cover = match_or_create_enriched_drama(
+                conn=write_conn,
+                cur=write_cur,
+                idx=write_idx,
+                raw_title=item["raw_title"],
+                slug_cand=item["slug_cand"],
+                content_type=item["content_type"],
+                country_hint=item["country_hint"],
+                site_tag="diziizle",
+                source_url=item["source_url"],
+                year_hint=item["year_hint"],
+            )
+
+            eps_added = 0
+            srcs_added = 0
+            sample_src = item["episodes"][0][4] if item["episodes"] else "-"
+
+            for season_num, ep_num, ep_name, full_ep_url, valid_url in item["episodes"]:
+                ep_id, is_new = match_or_create_episode(write_cur, drama_id, season_num, ep_num, ep_name, full_ep_url)
+                if is_new:
+                    eps_added += 1
+
+                added = add_source(
+                    write_cur,
+                    episode_id=ep_id,
+                    source_name="Diziİzle (Pilavyer HD)",
+                    direct_url=valid_url,
+                    provider="pilavyer",
+                    site="diziizle",
+                )
+                if added:
+                    srcs_added += 1
+                    write_cur.execute(
+                        "UPDATE episode_sources SET provider = 'youtube_backup' WHERE episode_id = ? AND provider = 'youtube'",
+                        (ep_id,),
+                    )
+
+            saved_dramas.append((drama_id, d_title, d_slug, eps_added, srcs_added, sample_src, item["episodes_total"]))
+
+        write_conn.commit()
+        write_conn.close()
+        print(f"[DIZIIZLE SQLITE OK] {len(saved_dramas)} yapım SQLite'a atomik olarak yazıldı.", flush=True)
+
+        # AŞAMA 3: Toplu Bulut Senkronu (R2 bundles & Supabase sync)
+        sync_conn = get_diziizle_db()
+        sync_cur = sync_conn.cursor()
+
+        for did, d_title, d_slug, eps_added, srcs_added, sample_src, ep_total in saved_dramas:
+            if eps_added > 0 or srcs_added > 0:
+                try:
+                    sync_drama_bundle_and_counts(sync_conn, sync_cur, did)
+                except Exception as e:
+                    pass
+
+            result_entry = {
+                "drama_id": did,
+                "title": d_title,
+                "slug": d_slug,
+                "episodes_total": ep_total,
+                "episodes_added": eps_added,
+                "sources_added": srcs_added,
+                "sample_sources": [sample_src],
+            }
+            all_results.append(result_entry)
+
+        sync_conn.commit()
+        sync_conn.close()
+        print(f"[DIZIIZLE BULUT SENKRON OK] Paket R2 ve Supabase'e senkronlandı ({min(batch_start + current_batch_size, total_count)}/{total_count}).", flush=True)
+
+    return all_results

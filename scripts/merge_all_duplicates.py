@@ -13,6 +13,7 @@ import sys
 import re
 import json
 import time
+import unicodedata
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -25,6 +26,15 @@ if _ROOT not in sys.path:
 
 from scrapers.supabase_sync_helper import sb_request
 
+_TR_MAP = str.maketrans({
+    'ı': 'i', 'İ': 'i', 'I': 'i',
+    'ş': 's', 'Ş': 's',
+    'ğ': 'g', 'Ğ': 'g',
+    'ü': 'u', 'Ü': 'u',
+    'ö': 'o', 'Ö': 'o',
+    'ç': 'c', 'Ç': 'c',
+})
+
 def clean_slug(slug: str) -> str:
     if not slug:
         return 'actor'
@@ -34,18 +44,48 @@ def clean_slug(slug: str) -> str:
     s = re.sub(r'-\d+$', '', s).strip('-')
     return s or 'actor'
 
+def compact_slug(slug: str) -> str:
+    if not slug:
+        return ''
+    cs = clean_slug(slug)
+    cs = cs.translate(_TR_MAP).lower()
+    cs = unicodedata.normalize('NFKD', cs).encode('ascii', 'ignore').decode('ascii')
+    return re.sub(r'[^a-z0-9]', '', cs)
+
 def norm_name(text: str) -> str:
     if not text:
         return ''
-    return re.sub(r'[^a-z0-9]', '', text.lower())
+    s = str(text).translate(_TR_MAP).lower()
+    s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
+    return re.sub(r'[^a-z0-9]', '', s)
 
-def score_person(p: dict) -> float:
+def pick_best_slug(group: list) -> str:
+    candidates = []
+    for p in group:
+        raw_slug = p.get('slug') or ''
+        cs = clean_slug(raw_slug)
+        if cs and cs != 'actor':
+            is_numbered = bool(re.search(r'-\d+$', raw_slug))
+            is_char = raw_slug.startswith('char-')
+            hyphens = cs.count('-')
+            penalty = (100 if is_char else 0) + (50 if is_numbered else 0) + hyphens * 2 + len(cs) * 0.01
+            candidates.append((penalty, cs, raw_slug))
+    if not candidates:
+        return 'actor'
+    candidates.sort(key=lambda x: x[0])
+    return candidates[0][1]
+
+def score_person(p: dict, best_slug: str = None) -> float:
     score = (p.get('drama_count') or 0) * 10
     slug = p.get('slug') or ''
     is_numbered = bool(re.search(r'-\d+$', slug))
     is_char_slug = slug.startswith('char-')
     
-    # Priority for rich character data
+    if best_slug and slug == best_slug:
+        score += 800
+    elif not is_numbered and not is_char_slug:
+        score += 500
+        
     if p.get('person_type') == 'character' or p.get('anilist_id'):
         score += 1000
     if p.get('bio_tr') and len(p['bio_tr']) > 40:
@@ -58,13 +98,12 @@ def score_person(p: dict) -> float:
         score += 150
     if p.get('gender'):
         score += 50
-    if p.get('image_url') and not 'default' in p['image_url']:
+    if p.get('image_url') and 'default' not in p['image_url']:
         score += 50
-    if not is_numbered and not is_char_slug:
-        score += 80
+    if p.get('followers_count'):
+        score += min(p['followers_count'], 100) * 0.5
         
-    # Small tie-breaker preferring earlier IDs
-    score += max(0, 200000 - (p.get('id') or 0)) * 0.0001
+    score += max(0, 250000 - (p.get('id') or 0)) * 0.0001
     return score
 
 def load_all_people():
@@ -103,11 +142,32 @@ def load_all_people():
     print(f"   -> Toplam {len(all_people)} kayıt yüklendi.", flush=True)
     return all_people
 
+class UnionFind:
+    def __init__(self, elements):
+        self.parent = {e: e for e in elements}
+        self.rank = {e: 0 for e in elements}
+
+    def find(self, item):
+        if self.parent[item] != item:
+            self.parent[item] = self.find(self.parent[item])
+        return self.parent[item]
+
+    def union(self, item1, item2):
+        root1 = self.find(item1)
+        root2 = self.find(item2)
+        if root1 != root2:
+            if self.rank[root1] > self.rank[root2]:
+                self.parent[root2] = root1
+            else:
+                self.parent[root1] = root2
+                if self.rank[root1] == self.rank[root2]:
+                    self.rank[root2] += 1
+
 def merge_single_group(group: list, existing_slugs_set: set):
     if len(group) <= 1:
         return None
 
-    # Don't merge if distinct conflicting TMDb IDs exist
+    # Don't merge if distinct conflicting external IDs exist
     tmdbs = {p['tmdb_id'] for p in group if p.get('tmdb_id')}
     if len(tmdbs) > 1:
         return None
@@ -116,15 +176,16 @@ def merge_single_group(group: list, existing_slugs_set: set):
     if len(anils) > 1:
         return None
 
+    if tmdbs and anils:
+        return None
+
+    desired_slug = pick_best_slug(group)
+
     # Sort descending by score
-    sorted_group = sorted(group, key=score_person, reverse=True)
+    sorted_group = sorted(group, key=lambda p: score_person(p, desired_slug), reverse=True)
     primary = sorted_group[0]
     duplicates = sorted_group[1:]
     p_id = primary['id']
-    
-    desired_slug = clean_slug(primary['slug'])
-    if not desired_slug or desired_slug == 'actor':
-        desired_slug = clean_slug(sorted_group[-1]['slug'])
 
     # 1. Merge metadata into primary payload
     patch_payload = {}
@@ -133,39 +194,22 @@ def merge_single_group(group: list, existing_slugs_set: set):
         patch_payload['person_type'] = 'character'
 
     for dup in duplicates:
-        if not primary.get('anilist_id') and dup.get('anilist_id'):
-            patch_payload['anilist_id'] = dup['anilist_id']
-            primary['anilist_id'] = dup['anilist_id']
-        if not primary.get('tmdb_id') and dup.get('tmdb_id'):
-            patch_payload['tmdb_id'] = dup['tmdb_id']
-            primary['tmdb_id'] = dup['tmdb_id']
-        if not primary.get('native_name') and dup.get('native_name'):
-            patch_payload['native_name'] = dup['native_name']
-            primary['native_name'] = dup['native_name']
-        if not primary.get('gender') and dup.get('gender'):
-            patch_payload['gender'] = dup['gender']
-            primary['gender'] = dup['gender']
-        if not primary.get('race') and dup.get('race'):
-            patch_payload['race'] = dup['race']
-            primary['race'] = dup['race']
-        if not primary.get('height') and dup.get('height'):
-            patch_payload['height'] = dup['height']
-            primary['height'] = dup['height']
-        if not primary.get('blood_type') and dup.get('blood_type'):
-            patch_payload['blood_type'] = dup['blood_type']
-            primary['blood_type'] = dup['blood_type']
-        if not primary.get('birth_date') and dup.get('birth_date'):
-            patch_payload['birth_date'] = dup['birth_date']
-            primary['birth_date'] = dup['birth_date']
-        if not primary.get('country_code') and dup.get('country_code'):
-            patch_payload['country_code'] = dup['country_code']
-            primary['country_code'] = dup['country_code']
+        for k in ['anilist_id', 'tmdb_id', 'native_name', 'gender', 'race', 'height', 'blood_type', 'birth_date', 'death_date', 'place_of_birth', 'country_code', 'mydramalist_url', 'profile_url']:
+            if not primary.get(k) and dup.get(k):
+                patch_payload[k] = dup[k]
+                primary[k] = dup[k]
         if (not primary.get('bio_tr') or len(primary.get('bio_tr') or '') < 30) and (dup.get('bio_tr') and len(dup.get('bio_tr') or '') >= 30):
             patch_payload['bio_tr'] = dup['bio_tr']
             primary['bio_tr'] = dup['bio_tr']
         if (not primary.get('image_url') or 'default' in (primary.get('image_url') or '')) and (dup.get('image_url') and 'default' not in dup['image_url']):
             patch_payload['image_url'] = dup['image_url']
             primary['image_url'] = dup['image_url']
+        if (dup.get('followers_count') or 0) > (primary.get('followers_count') or 0):
+            patch_payload['followers_count'] = dup['followers_count']
+            primary['followers_count'] = dup['followers_count']
+        if (dup.get('favorites_count') or 0) > (primary.get('favorites_count') or 0):
+            patch_payload['favorites_count'] = dup['favorites_count']
+            primary['favorites_count'] = dup['favorites_count']
 
     # Merge also_known_as
     combined_aliases = []
@@ -235,41 +279,69 @@ def main():
     all_people = load_all_people()
     existing_slugs_set = {p['slug'] for p in all_people if p.get('slug')}
 
-    # Group by clean_slug AND norm_name
-    by_clean_slug = defaultdict(list)
-    by_norm_name = defaultdict(list)
+    uf = UnionFind([p['id'] for p in all_people])
+    key_to_ids = defaultdict(list)
+
     for p in all_people:
+        pid = p['id']
         cs = clean_slug(p.get('slug') or '')
+        if cs and cs != 'actor' and len(cs) >= 3:
+            key_to_ids[f"cs:{cs}"].append(pid)
+
+        cps = compact_slug(p.get('slug') or '')
+        if cps and cps != 'actor' and len(cps) >= 4:
+            key_to_ids[f"cps:{cps}"].append(pid)
+
         nn = norm_name(p.get('name') or '')
-        if cs:
-            by_clean_slug[cs].append(p)
-        if nn:
-            by_norm_name[nn].append(p)
+        if nn and len(nn) >= 3:
+            key_to_ids[f"nn:{nn}"].append(pid)
 
-    # Combine duplicate clusters
-    id_to_person = {p['id']: p for p in all_people}
-    visited_ids = set()
+        tid = p.get('tmdb_id')
+        if tid:
+            key_to_ids[f"tmdb:{tid}"].append(pid)
+
+        aid = p.get('anilist_id')
+        if aid:
+            key_to_ids[f"anilist:{aid}"].append(pid)
+
+    for k, ids in key_to_ids.items():
+        if len(ids) > 1:
+            first = ids[0]
+            for other in ids[1:]:
+                uf.union(first, other)
+
+    raw_clusters = defaultdict(list)
+    for p in all_people:
+        raw_clusters[uf.find(p['id'])].append(p)
+
     clusters = []
+    for c in raw_clusters.values():
+        if len(c) <= 1:
+            continue
+        tmdbs = {p['tmdb_id'] for p in c if p.get('tmdb_id')}
+        anils = {p['anilist_id'] for p in c if p.get('anilist_id')}
 
-    for cs, grp in by_clean_slug.items():
-        if len(grp) > 1:
-            grp_ids = {p['id'] for p in grp}
-            # Expand cluster with matching norm_name
-            for p in list(grp):
-                nn = norm_name(p.get('name') or '')
-                if nn and len(by_norm_name[nn]) > 1:
-                    for np in by_norm_name[nn]:
-                        grp_ids.add(np['id'])
-            if not grp_ids.issubset(visited_ids):
-                clusters.append([id_to_person[i] for i in grp_ids if i in id_to_person])
-                visited_ids.update(grp_ids)
-
-    for nn, grp in by_norm_name.items():
-        if len(grp) > 1:
-            grp_ids = {p['id'] for p in grp}
-            if not grp_ids.issubset(visited_ids):
-                clusters.append([id_to_person[i] for i in grp_ids if i in id_to_person])
-                visited_ids.update(grp_ids)
+        if len(tmdbs) > 1 or len(anils) > 1:
+            if len(tmdbs) > 1:
+                tmdb_sub = defaultdict(list)
+                for p in c:
+                    if p.get('tmdb_id'):
+                        tmdb_sub[p['tmdb_id']].append(p)
+                for sub in tmdb_sub.values():
+                    if len(sub) > 1:
+                        clusters.append(sub)
+            elif len(anils) > 1:
+                ani_sub = defaultdict(list)
+                for p in c:
+                    if p.get('anilist_id'):
+                        ani_sub[p['anilist_id']].append(p)
+                for sub in ani_sub.values():
+                    if len(sub) > 1:
+                        clusters.append(sub)
+        elif tmdbs and anils:
+            continue
+        else:
+            clusters.append(c)
 
     print(f"\n2. Toplam {len(clusters)} adet duplicate grubu tespit edildi. Birleştirme başlatılıyor...", flush=True)
 

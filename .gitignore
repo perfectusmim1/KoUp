@@ -46,6 +46,7 @@ database.py
 
 # R2 Local Bundles & Large Dumps
 r2_bundles/
+/data/
 scrapers/ddizi_catalog.json
 scripts/reports/
 audit_reports/

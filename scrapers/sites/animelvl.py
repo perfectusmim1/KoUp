@@ -11,6 +11,7 @@ import os
 import re
 import json
 import time
+import threading
 from datetime import datetime, timezone
 import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
@@ -42,6 +43,8 @@ from scrapers.supabase_sync_helper import match_or_create_enriched_drama, sb_req
 BASE_URL = "https://animelvl.com"
 SITE_TAG = "animelvl"
 
+_tls = threading.local()
+
 
 def _get_session():
     s = cfr.Session(impersonate="chrome124") if hasattr(cfr, "Session") else cfr.Session()
@@ -51,6 +54,12 @@ def _get_session():
     s.headers.setdefault("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
     s.headers.setdefault("Referer", f"{BASE_URL}/")
     return s
+
+
+def _get_tls_session():
+    if not hasattr(_tls, "session"):
+        _tls.session = _get_session()
+    return _tls.session
 
 
 def fetch_with_retry(session, url, retries=3, timeout=12):
@@ -130,8 +139,22 @@ def scrape_anime_item(conn, cur, idx, a_data):
         return 0
 
     raw_title = (a_data.get("title") or a_data.get("t") or "").strip()
+    raw_title = re.sub(r"\s*[-–—|•:]\s*(?:sezonluk\s*dizi|dizipal\d*|fullhdfilm\w*|tranimeci|tranimaci|anizm|animelvl).*$", "", raw_title, flags=re.I)
+    raw_title = re.sub(r"\b(?:dizisi\s*izle|dizi\s*izle|filmi\s*izle|film\s*izle|anime\s*izle|dizisi|izle)\b", "", raw_title, flags=re.I).strip()
+    raw_title = re.sub(r"[\s\-_–—|•:]+$", "", raw_title).strip()
+
     slug = a_data.get("slug") or clean_scraped_slug(raw_title)
     if not raw_title or not slug:
+        return 0
+
+    episodes = a_data.get("episodes") or []
+    # Guard against 0-stream empty shells
+    has_any_stream = False
+    for ep in episodes:
+        if isinstance(ep, dict) and any(ep.get(k) and str(ep.get(k)).startswith("http") for k in ("sub", "embed", "dub")):
+            has_any_stream = True
+            break
+    if not has_any_stream:
         return 0
 
     a_id = a_data.get("id", "")
@@ -157,8 +180,6 @@ def scrape_anime_item(conn, cur, idx, a_data):
     )
     if not drama_id:
         return 0
-
-    episodes = a_data.get("episodes") or []
     added_sources_count = 0
 
     for ep in episodes:
@@ -282,17 +303,11 @@ def sync_animelvl_calendar(session=None):
         "perşembe": 4, "persembe": 4, "cuma": 5, "cumartesi": 6, "pazar": 7
     }
 
-    synced = 0
-    # Search for calendar containers / day columns
-    day_blocks = soup.select(".day-block, .takvim-gun, .calendar-day, [data-day]")
-    if not day_blocks:
-        day_blocks = soup.find_all(["div", "section"], class_=re.compile(r"day|gun|calendar", re.I))
-
-    for block in day_blocks:
-        day_title = block.find(["h2", "h3", "h4", "span", "div"], class_=re.compile(r"title|header|gun", re.I))
-        if not day_title:
-            continue
-        day_text = day_title.get_text(strip=True).lower()
+    headers = soup.find_all(["h2", "h3", "h4", "div"], class_=re.compile(r"title|header|gun|day", re.I)) or soup.find_all(["h2", "h3"])
+    payloads = []
+    seen_keys = set()
+    for h in headers:
+        day_text = h.get_text(strip=True).lower()
         day_num = None
         for dk, dv in days_map.items():
             if dk in day_text:
@@ -301,14 +316,24 @@ def sync_animelvl_calendar(session=None):
         if not day_num:
             continue
 
-        for item_a in block.find_all("a", href=True):
+        nxt = h.find_next_sibling()
+        item_links = nxt.find_all("a", href=True) if nxt else []
+        if not item_links and h.parent:
+            item_links = h.parent.find_all("a", href=True)
+
+        for item_a in item_links:
             item_title = item_a.get_text(strip=True)
             item_href = item_a["href"]
-            if not item_title or len(item_title) < 2:
+            if not item_title or len(item_title) < 2 or "/anime/" not in item_href:
                 continue
 
             slug = clean_scraped_slug(item_href)
-            payload = {
+            key = (SITE_TAG, slug, day_num)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+
+            payloads.append({
                 "source_site": SITE_TAG,
                 "day_of_week": day_num,
                 "date_label": day_text.title(),
@@ -318,11 +343,17 @@ def sync_animelvl_calendar(session=None):
                 "category": "Anime",
                 "cover_image": "",
                 "source_url": item_href if item_href.startswith("http") else f"{BASE_URL}{item_href}",
-            }
-            # Upsert into calendar_schedules in Supabase
-            try:
-                sb_request("POST", "/rest/v1/calendar_schedules?on_conflict=source_site,slug,day_of_week", body=payload)
-                synced += 1
-            except Exception:
-                pass
-    return synced
+            })
+
+    if payloads:
+        try:
+            sb_request(
+                "POST",
+                "/rest/v1/calendar_schedules?on_conflict=source_site,slug,day_of_week",
+                body=payloads,
+                prefer="resolution=merge-duplicates,return=minimal",
+            )
+            return len(payloads)
+        except Exception:
+            pass
+    return 0
