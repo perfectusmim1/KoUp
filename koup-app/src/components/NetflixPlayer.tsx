@@ -971,6 +971,14 @@ export default function NetflixPlayer({
     setIsMounted(true);
   }, []);
 
+  const isNativeFs =
+    typeof document !== 'undefined' &&
+    Boolean(
+      document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement
+    );
+
   const isMobileInline =
     !isFullscreen &&
     (isTouchDevice || (typeof window !== 'undefined' && window.innerWidth < 768));
@@ -1528,25 +1536,42 @@ export default function NetflixPlayer({
     if (!el) return;
 
     const isCurrentlyFs = Boolean(
-      document.fullscreenElement || (document as any).webkitFullscreenElement
+      document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement
     );
 
     if (!isCurrentlyFs) {
-      if (el.requestFullscreen) {
-        await el.requestFullscreen().catch(() => {});
-      } else if ((el as any).webkitRequestFullscreen) {
-        (el as any).webkitRequestFullscreen();
-      } else if (video?.webkitEnterFullscreen) {
-        video.webkitEnterFullscreen();
-      }
+      setIsFullscreen(true);
       try {
-        await (screen.orientation as any)?.lock?.('landscape');
-      } catch {}
+        if (el.requestFullscreen) {
+          await el.requestFullscreen();
+        } else if ((el as any).webkitRequestFullscreen) {
+          (el as any).webkitRequestFullscreen();
+        } else if (video?.webkitEnterFullscreen) {
+          video.webkitEnterFullscreen();
+        }
+        try {
+          await (screen.orientation as any)?.lock?.('landscape');
+        } catch {}
+      } catch {
+        setIsFullscreen(false);
+      }
     } else {
-      if (document.exitFullscreen) {
-        await document.exitFullscreen().catch(() => {});
-      } else if ((document as any).webkitExitFullscreen) {
-        (document as any).webkitExitFullscreen();
+      setIsFullscreen(false);
+      try {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if ((document as any).webkitExitFullscreen) {
+          (document as any).webkitExitFullscreen();
+        }
+      } catch {
+        const activeFs = Boolean(
+          document.fullscreenElement ||
+            (document as any).webkitFullscreenElement ||
+            (document as any).mozFullScreenElement
+        );
+        setIsFullscreen(activeFs);
       }
     }
   }, []);
@@ -3518,21 +3543,21 @@ export default function NetflixPlayer({
             setShowVolumeSlider(false);
           }
         }}
-        style={isFullscreen || isTrailerMode ? undefined : { width: '100%', height: '100%' }}
-        className={`relative mx-auto select-none bg-black overflow-hidden ${
+        style={(isFullscreen && isNativeFs) || isTrailerMode ? undefined : { width: '100%', height: '100%' }}
+        className={`relative mx-auto select-none bg-black overflow-hidden outline-none ${
           !showOverlay && isPlaying ? 'cursor-none' : 'cursor-default'
         } ${
-          isFullscreen
-            ? 'fixed inset-0 z-50 w-screen h-screen max-w-none rounded-none border-none aspect-auto flex flex-col justify-center items-center'
+          isFullscreen && isNativeFs
+            ? 'fixed inset-0 z-50 w-screen h-screen max-w-none rounded-none border-none outline-none ring-0 shadow-none aspect-auto flex flex-col justify-center items-center transition-[border-radius,box-shadow,border-color] duration-200 ease-out'
             : isTrailerMode
             ? 'w-full h-full max-w-[calc(100dvh*16/9)] max-h-[100dvh] aspect-video rounded-none border-none shadow-none z-20 flex flex-col justify-center'
             : variant === 'vertical'
-            ? `w-full h-full aspect-[9/16] rounded-2xl sm:rounded-3xl border z-20 transition-[border-color,box-shadow] duration-300 ${
+            ? `w-full h-full aspect-[9/16] rounded-2xl sm:rounded-3xl border z-20 transition-[border-radius,box-shadow,border-color] duration-200 ease-out ${
                 cinemaLightsOff
                   ? 'border-sky-500/30 shadow-[0_0_30px_rgba(41,151,255,0.15),0_10px_25px_rgba(0,0,0,0.5)]'
                   : 'border-white/10 shadow-[0_10px_25px_rgba(0,0,0,0.45)]'
               }`
-            : `w-full aspect-video rounded-2xl sm:rounded-3xl border z-20 transition-[border-color,box-shadow] duration-300 ${
+            : `w-full aspect-video rounded-2xl sm:rounded-3xl border z-20 transition-[border-radius,box-shadow,border-color] duration-200 ease-out ${
                 cinemaLightsOff
                   ? 'border-sky-500/30 shadow-[0_0_30px_rgba(41,151,255,0.15),0_10px_25px_rgba(0,0,0,0.5)]'
                   : 'border-white/10 shadow-[0_10px_25px_rgba(0,0,0,0.45)]'
@@ -3761,7 +3786,7 @@ export default function NetflixPlayer({
                   src={trailerStreamUrl}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   onLoad={handleTrailerIframeLoad}
-                  className={`w-[138%] h-[138%] min-w-[138%] min-h-[138%] border-0 pointer-events-none select-none transition-opacity duration-700 ${
+                  className={`w-[138%] h-[138%] min-w-[138%] min-h-[138%] border-0 border-none outline-none pointer-events-none select-none transition-opacity duration-700 ${
                     isTrailerReady ? 'opacity-100' : 'opacity-0'
                   }`}
                 />
@@ -3953,7 +3978,7 @@ export default function NetflixPlayer({
                   setResolvedMode('error');
                 }
               }}
-              className={`w-full h-full object-contain pointer-events-none transition-opacity duration-300 ${
+              className={`w-full h-full object-contain pointer-events-none outline-none border-none transition-opacity duration-300 ${
                 isResumeReady || targetResumeRef.current <= 3 ? 'opacity-100' : 'opacity-0'
               }`}
             />
@@ -6194,7 +6219,7 @@ export default function NetflixPlayer({
                         referrerPolicy={
                           isCurrentYouTube ? 'strict-origin-when-cross-origin' : 'no-referrer'
                         }
-                        className="w-full h-full border-0"
+                        className="w-full h-full border-0 border-none outline-none"
                       />
                     </div>
                   );

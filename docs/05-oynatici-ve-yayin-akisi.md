@@ -30,6 +30,7 @@ Bu doküman; `/seri/[slug]/[episode]` rotasından başlayan uçtan uca akışı,
    - [Sinematik Işıklandırma (YouTube Stili Dual-Buffer Ambient Canvas)](#sinematik-ışıklandırma-youtube-stili-dual-buffer-ambient-canvas)
    - [Klavye Kısayolları Referans Tablosu](#klavye-kısayolları-referans-tablosu)
    - [Mobil Dokunma ve Jest Kontrolleri](#mobil-dokunma-ve-jest-kontrolleri)
+   - [Tam Ekran (Fullscreen) Mimarisi ve Donanım Hızlandırmalı Geçişler](#tam-ekran-fullscreen-mimarisi-ve-donanım-hızlandırmalı-geçişler)
    - [İzleme İlerlemesi Kaydetme (`flushCurrentProgress`)](#izleme-ilerlemesi-kaydetme-flushcurrentprogress)
    - [İzlenme Sayımı (`trackMediaView`)](#izlenme-sayımı-trackmediaview)
    - [Bölüm Reaksiyonları](#bölüm-reaksiyonları)
@@ -368,6 +369,23 @@ Mobil cihazlarda kullanıcı deneyimini mükemmelleştirmek için tasarlanmış 
    - Tam ekrandayken iki parmakla dışa doğru kıstırma hareketi yapıldığında video ölçeği 1.15x (sinematik siyah barları gizle) ve 1.24x (tam ekranı doldur) seviyelerine büyütülür. İçe doğru kıstırma orijinal en-boy oranına döndürür.
 3. **Ekran Kilidi (Screen Lock):**
    - Yanlışlıkla dokunmaları önlemek için ekran kilitlenebilir. Kilitliyken tüm arayüz butonları gizlenir, yalnızca kilit açma ikonu görünür.
+
+### Tam Ekran (Fullscreen) Mimarisi ve Donanım Hızlandırmalı Geçişler
+
+HTML5 Fullscreen API kullanılırken tarayıcı ile React bileşen yaşam döngüsü arasındaki asenkron olay döngüsü gecikmesi (100–300ms) arayüzde takılmalara (glitch) yol açabilmektedir. KoUp oynatıcısı 0ms gecikmesiz ve kenarlık parazitinden arındırılmış tam ekran akışına sahiptir:
+
+1. **Tarayıcı Düzeyinde 0ms Native CSS Geçişi (`:fullscreen` & `:-webkit-full-screen`):**
+   - `#koup-player-container:fullscreen` ve `#koup-player-container:-webkit-full-screen` kuralları `globals.css` içinde GPU/kompozitör seviyesinde zorlanır.
+   - Tarayıcı tam ekran sinyalini aldığı ilk video frame'inde container anında `position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important; background: #000 !important;` boyutlarına oturur. React re-render döngüsünü beklemeden donanım seviyesinde tam ekrana geçer.
+2. **Beyaz Çizgi / Çerçeve (Border & Focus Outline) Eliminasyonu:**
+   - Standart tarayıcı `:focus` ve `:focus-visible` çerçevelerinin tam ekranda beyaz hat oluşturmasını önlemek için `#koup-player-container`, `<video>` ve `<iframe>` elemanlarına `border-none outline-none ring-0 box-shadow: none !important;` uygulanır.
+   - Geçişler GPU dostu `transition-[border-radius,box-shadow,border-color] duration-200 ease-out` ile pürüzsüzleştirilir.
+3. **Sekme İçinde Asılı Kalmayı Önleme (`isNativeFs` Çift Kilidi):**
+   - Tam ekrandan çıkıldığında tarayıcı derhal standart pencere moduna döner; ancak React `fullscreenchange` olayı asenkron tetiklenene kadar `isFullscreen` durumu bir anlığına `true` kalabilir.
+   - Bu gecikmede oynatıcının sekme içinde `fixed inset-0` olarak büyümesini önlemek için `isNativeFs` (`document.fullscreenElement` kontrolü) koşulu aranır (`isFullscreen && isNativeFs`).
+   - Kullanıcı tam ekrandan çıktığı anda `document.fullscreenElement` anında `null` olduğu için oynatıcı sekme içinde asla takılı kalmaz; doğrudan sayfa içi boyutlarına döner.
+4. **Optimistik State Yönetimi (`toggleFullscreen`):**
+   - Tam ekran butonuna basıldığı an `setIsFullscreen(true)` veya çıkışta `setIsFullscreen(false)` optimistik olarak tetiklenir; herhangi bir tarayıcı engeli veya hata durumunda `.catch()` bloğuyla state geri alınır.
 
 ### İzleme İlerlemesi Kaydetme (`flushCurrentProgress`)
 

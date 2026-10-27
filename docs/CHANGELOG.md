@@ -11,6 +11,22 @@ Bu dosya, KoUp platformunda yapılan tüm önemli geliştirmeleri, mimari kararl
 
 ---
 
+## [2026-10-27] — Video Oynatıcı Tam Ekran 0ms Akıcı Geçişi, Beyaz Kenarlık Onarımı ve GitNexus Kurulumu
+
+### Fixed
+- `NetflixPlayer.tsx` & `globals.css`: Tam ekrana geçerken ve çıkarken oluşan 3 aşamalı takılmalı büyüme (tarayıcı native fullscreen'e girdikten sonra React `isFullscreen` state'inin gecikmesi ve çıkışta sekme içinde `fixed inset-0` olarak asılı kalması) giderildi:
+  - `globals.css`: `#koup-player-container:fullscreen` ve `:-webkit-full-screen` seçicileri ile 0ms GPU/kompozitör seviyesinde anında `position: fixed; inset: 0; width: 100vw; height: 100vh; background: #000;` uygulanması sağlandı.
+  - `NetflixPlayer.tsx`: `toggleFullscreen` fonksiyonuna anlık optimistik state güncellemesi ve `.catch()` hata geri alma koruması getirildi. `isNativeFs` (`document.fullscreenElement || webkitFullscreenElement`) kontrolüyle container layout'u ve boyutlandırması çift kilit ile güvenceye alındı; sekme içinde büyüme ve takılma tamamen ortadan kaldırıldı.
+- `NetflixPlayer.tsx` & `globals.css`: Tam ekranda oynatıcı etrafında beliren 1px istenmeyen beyaz çerçeve/çizgi kaldırıldı. `#koup-player-container`, alt elemanları, `<video>` ve `<iframe>` etiketlerine `border: none; outline: none; ring-0; box-shadow: none;` uygulandı; geçişler GPU hızlandırmalı yumuşak animasyonla desteklendi.
+
+### Added
+- `GitNexus`: Projeye GitNexus kod haritalama ve grafik indeksleme aracı kuruldu (`npx gitnexus setup -c antigravity` & `analyze`). Antigravity ortamı için 12 adet GitNexus skill'i, araçlar ve AfterTool hook'ları yapılandırıldı; 7.145 sembol, 15.572 bağımlılık ve 532 yürütme akışı indekslendi.
+
+### Changed
+- `docs/05-oynatici-ve-yayin-akisi.md`: Bölüm 3 altına "Tam Ekran (Fullscreen) Mimarisi ve Donanım Hızlandırmalı Geçişler" teknik dokümantasyonu eklendi.
+
+---
+
 ## [2026-10-27] — Seri Sayfası Bölüm Listesine Tümünü İzlendi İşaretle Butonu
 
 ### Added

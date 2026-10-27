@@ -1174,6 +1174,38 @@ input[type="range"].netflix-volume-slider:focus-visible {
   }
 }
 
+/* Native 0ms Fullscreen Transitions & White Border Elimination */
+#koup-player-container:fullscreen,
+#koup-player-container:-webkit-full-screen {
+  position: fixed !important;
+  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  aspect-ratio: auto !important;
+  z-index: 99999 !important;
+  background: #000 !important;
+}
+
+#koup-player-container:fullscreen *,
+#koup-player-container:-webkit-full-screen * {
+  outline: none !important;
+}
+
+#koup-player-container {
+  outline: none !important;
+}
+
+
 
 
 
