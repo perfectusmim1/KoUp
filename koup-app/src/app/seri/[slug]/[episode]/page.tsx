@@ -1193,44 +1193,6 @@ export default function EpisodeWatchPage({
                 )}
               </span>
             </span>
-
-            {/* Sinematik Işıklandırma Button (Same button style as Sinema Modu, not a toggle, persisted) */}
-            <button
-              type="button"
-              onClick={handleToggleAmbientLighting}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors cursor-pointer ${
-                ambientLightingEnabled
-                  ? 'bg-amber-400 text-black border-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.4)]'
-                  : 'bg-white/[0.05] hover:bg-white/[0.12] text-white/80 border-white/10 hover:text-white'
-              }`}
-              aria-label="Sinematik Işıklandırma"
-              title="Sinematik Işıklandırma (Video renklerini ekrana yayar)"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">
-                Sinematik Işıklandırma
-              </span>
-            </button>
-
-            {/* Otomatik Sonraki Bölüm Button (Only for series) */}
-            {!isMovie && (
-              <button
-                type="button"
-                onClick={handleToggleAutoNext}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors cursor-pointer ${
-                  autoNextEnabled
-                    ? 'bg-[#2997ff] text-white border-sky-400 shadow-[0_0_15px_rgba(41,151,255,0.4)]'
-                    : 'bg-white/[0.05] hover:bg-white/[0.12] text-white/80 border-white/10 hover:text-white'
-                }`}
-                aria-label="Otomatik Sonraki Bölüm"
-                title="Otomatik Sonraki Bölüm (Bölüm bitince sıradakine otomatik geçer)"
-              >
-                <SkipForward className="w-3.5 h-3.5" />
-                <span className="hidden md:inline">
-                  Otomatik Sonraki Bölüm
-                </span>
-              </button>
-            )}
           </div>
         </div>
       </div>

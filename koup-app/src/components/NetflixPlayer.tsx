@@ -4632,13 +4632,13 @@ export default function NetflixPlayer({
                                 )
                               }
                               aria-label="Oynatma Tercihleri"
-                              className={`flex items-center gap-1 py-1 text-xs font-medium cursor-pointer shrink-0 transition-colors ${
+                              className={`flex items-center gap-1 py-1 text-xs font-semibold cursor-pointer shrink-0 transition-colors ${
                                 activePanel === 'playback_settings'
-                                  ? 'text-[#E50914] font-bold'
+                                  ? 'text-[#E50914]'
                                   : 'text-white/90 hover:text-white'
                               }`}
                             >
-                              <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                              <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
                               <span className="hidden xs:inline">Ayarlar</span>
                             </button>
 
@@ -4646,49 +4646,45 @@ export default function NetflixPlayer({
                             <AnimatePresence>
                               {isFullscreen && activePanel === 'playback_settings' && (
                                 <motion.div
-                                  key="panel-settings-mobile"
+                                  key="panel-settings-fullscreen"
                                   initial={{ opacity: 0, scale: 0.94, y: 10 }}
                                   animate={{ opacity: 1, scale: 1, y: 0 }}
                                   exit={{ opacity: 0, scale: 0.94, y: 10 }}
                                   transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
                                   data-netflix-control="true"
                                   onClick={(e) => e.stopPropagation()}
-                                  className="absolute bottom-full mb-3 right-0 z-50 w-72 p-3 rounded-2xl bg-[#141414]/98 backdrop-blur-xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-2 select-none"
+                                  className="absolute bottom-full mb-3 right-0 z-50 w-72 p-3 rounded-2xl bg-[#141414]/98 backdrop-blur-xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1.5 select-none transform-gpu origin-bottom"
                                 >
                                   <div className="flex items-center justify-between border-b border-white/10 pb-2 px-1">
                                     <span className="text-white/80 font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
-                                      <Settings className="w-3.5 h-3.5 text-[#E50914]" />
+                                      <Settings className="w-3.5 h-3.5 text-[#E50914] shrink-0" />
                                       Oynatma Tercihleri
                                     </span>
                                     <button
                                       type="button"
                                       onClick={() => setActivePanel(null)}
                                       className="text-white/50 hover:text-white p-0.5 rounded cursor-pointer"
+                                      aria-label="Kapat"
                                     >
-                                      <X className="w-3.5 h-3.5" />
+                                      <X className="w-3.5 h-3.5 shrink-0" />
                                     </button>
                                   </div>
 
                                   <div
                                     onClick={toggleAutoSkipIntro}
-                                    className="w-full px-2 py-1.5 rounded-xl text-left flex items-center justify-between gap-2 hover:bg-white/5 cursor-pointer transition-colors"
+                                    className="w-full px-2 py-2 rounded-xl text-left flex items-center justify-between gap-3 hover:bg-white/5 cursor-pointer transition-colors"
                                   >
-                                    <div className="min-w-0 pr-1">
-                                      <div className="text-xs font-semibold text-white flex items-center gap-1.5">
-                                        <FastForward className="w-3.5 h-3.5 text-amber-400" />
-                                        <span>Otomatik İntro Atla</span>
-                                      </div>
-                                      <div className="text-[10px] text-zinc-400 mt-0.5">
-                                        İntro başladığında doğrudan atlar
-                                      </div>
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <FastForward className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                      <span className="text-xs font-semibold text-white">Otomatik İntro Atla</span>
                                     </div>
                                     <div
-                                      className={`w-9 h-5 rounded-full p-0.5 transition-colors shrink-0 flex items-center ${
+                                      className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
                                         autoSkipIntro ? 'bg-[#E50914]' : 'bg-zinc-700'
                                       }`}
                                     >
                                       <div
-                                        className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${
+                                        className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
                                           autoSkipIntro ? 'translate-x-4' : 'translate-x-0'
                                         }`}
                                       />
@@ -4698,30 +4694,46 @@ export default function NetflixPlayer({
                                   {!isMovie && (
                                     <div
                                       onClick={toggleAutoNext}
-                                      className="w-full px-2 py-1.5 rounded-xl text-left flex items-center justify-between gap-2 hover:bg-white/5 cursor-pointer transition-colors"
+                                      className="w-full px-2 py-2 rounded-xl text-left flex items-center justify-between gap-3 hover:bg-white/5 cursor-pointer transition-colors"
                                     >
-                                      <div className="min-w-0 pr-1">
-                                        <div className="text-xs font-semibold text-white flex items-center gap-1.5">
-                                          <NetflixNextEpIcon className="w-3.5 h-3.5 text-cyan-400" />
-                                          <span>Otomatik Sonraki Bölüm</span>
-                                        </div>
-                                        <div className="text-[10px] text-zinc-400 mt-0.5">
-                                          Outroda 3sn geri sayıp geçer
-                                        </div>
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <NetflixNextEpIcon className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                                        <span className="text-xs font-semibold text-white">Otomatik Sonraki Bölüm</span>
                                       </div>
                                       <div
-                                        className={`w-9 h-5 rounded-full p-0.5 transition-colors shrink-0 flex items-center ${
+                                        className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
                                           autoNextEnabled ? 'bg-[#E50914]' : 'bg-zinc-700'
                                         }`}
                                       >
                                         <div
-                                          className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${
+                                          className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
                                             autoNextEnabled ? 'translate-x-4' : 'translate-x-0'
                                           }`}
                                         />
                                       </div>
                                     </div>
                                   )}
+
+                                  <div
+                                    onClick={toggleAmbientLighting}
+                                    className="w-full px-2 py-2 rounded-xl text-left flex items-center justify-between gap-3 hover:bg-white/5 cursor-pointer transition-colors"
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                                      <span className="text-xs font-semibold text-white">Sinematik Işıklandırma</span>
+                                    </div>
+                                    <div
+                                      className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
+                                        ambientLightingEnabled ? 'bg-[#E50914]' : 'bg-zinc-700'
+                                      }`}
+                                    >
+                                      <div
+                                        className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                                          ambientLightingEnabled ? 'translate-x-4' : 'translate-x-0'
+                                        }`}
+                                      />
+                                    </div>
+                                  </div>
                                 </motion.div>
                               )}
                             </AnimatePresence>
@@ -5116,16 +5128,16 @@ export default function NetflixPlayer({
                                   )
                                 }
                                 aria-label="Oynatma Tercihleri"
-                                className={`flex items-center gap-1.5 py-1 text-sm font-medium transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap ${
+                                className={`flex items-center gap-1.5 py-1 text-sm font-semibold transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap ${
                                   activePanel === 'playback_settings'
-                                    ? 'text-[#E50914] font-bold'
+                                    ? 'text-[#E50914]'
                                     : 'text-white/90 hover:text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]'
                                 }`}
                               >
                                 <Settings className="w-4 h-4 shrink-0" />
                                 <span className="hidden lg:inline">Ayarlar</span>
                                 <ChevronDown
-                                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                                  className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${
                                     activePanel === 'playback_settings' ? 'rotate-180 text-white' : 'text-white/60'
                                   }`}
                                 />
@@ -5141,19 +5153,20 @@ export default function NetflixPlayer({
                                     transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
                                     data-netflix-control="true"
                                     onClick={(e) => e.stopPropagation()}
-                                    className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-50 w-76 p-3 rounded-2xl bg-[#141414]/98 backdrop-blur-xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-2 select-none"
+                                    className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-50 w-76 p-3 rounded-2xl bg-[#141414]/98 backdrop-blur-xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1.5 select-none transform-gpu origin-bottom"
                                   >
                                     <div className="flex items-center justify-between border-b border-white/10 pb-2 px-1">
                                       <span className="text-white/80 font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
-                                        <Settings className="w-3.5 h-3.5 text-[#E50914]" />
+                                        <Settings className="w-3.5 h-3.5 text-[#E50914] shrink-0" />
                                         Oynatma Tercihleri
                                       </span>
                                       <button
                                         type="button"
                                         onClick={() => setActivePanel(null)}
                                         className="text-white/50 hover:text-white p-0.5 rounded cursor-pointer"
+                                        aria-label="Kapat"
                                       >
-                                        <X className="w-3.5 h-3.5" />
+                                        <X className="w-3.5 h-3.5 shrink-0" />
                                       </button>
                                     </div>
 
@@ -5161,22 +5174,17 @@ export default function NetflixPlayer({
                                       onClick={toggleAutoSkipIntro}
                                       className="w-full px-2.5 py-2 rounded-xl text-left flex items-center justify-between gap-3 hover:bg-white/5 cursor-pointer transition-colors"
                                     >
-                                      <div className="min-w-0 pr-1">
-                                        <div className="text-xs font-semibold text-white flex items-center gap-1.5">
-                                          <FastForward className="w-3.5 h-3.5 text-amber-400" />
-                                          <span>Otomatik İntro Atla</span>
-                                        </div>
-                                        <div className="text-[10px] text-zinc-400 mt-0.5">
-                                          İntro başladığında doğrudan atlar
-                                        </div>
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <FastForward className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                        <span className="text-xs font-semibold text-white">Otomatik İntro Atla</span>
                                       </div>
                                       <div
-                                        className={`w-9 h-5 rounded-full p-0.5 transition-colors shrink-0 flex items-center ${
+                                        className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
                                           autoSkipIntro ? 'bg-[#E50914]' : 'bg-zinc-700'
                                         }`}
                                       >
                                         <div
-                                          className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${
+                                          className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
                                             autoSkipIntro ? 'translate-x-4' : 'translate-x-0'
                                           }`}
                                         />
@@ -5188,28 +5196,44 @@ export default function NetflixPlayer({
                                         onClick={toggleAutoNext}
                                         className="w-full px-2.5 py-2 rounded-xl text-left flex items-center justify-between gap-3 hover:bg-white/5 cursor-pointer transition-colors"
                                       >
-                                        <div className="min-w-0 pr-1">
-                                          <div className="text-xs font-semibold text-white flex items-center gap-1.5">
-                                            <NetflixNextEpIcon className="w-3.5 h-3.5 text-cyan-400" />
-                                            <span>Otomatik Sonraki Bölüm</span>
-                                          </div>
-                                          <div className="text-[10px] text-zinc-400 mt-0.5">
-                                            Outroda 3sn geri sayıp geçer
-                                          </div>
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <NetflixNextEpIcon className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                                          <span className="text-xs font-semibold text-white">Otomatik Sonraki Bölüm</span>
                                         </div>
                                         <div
-                                          className={`w-9 h-5 rounded-full p-0.5 transition-colors shrink-0 flex items-center ${
+                                          className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
                                             autoNextEnabled ? 'bg-[#E50914]' : 'bg-zinc-700'
                                           }`}
                                         >
                                           <div
-                                            className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${
+                                            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
                                               autoNextEnabled ? 'translate-x-4' : 'translate-x-0'
                                             }`}
                                           />
                                         </div>
                                       </div>
                                     )}
+
+                                    <div
+                                      onClick={toggleAmbientLighting}
+                                      className="w-full px-2.5 py-2 rounded-xl text-left flex items-center justify-between gap-3 hover:bg-white/5 cursor-pointer transition-colors"
+                                    >
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                                        <span className="text-xs font-semibold text-white">Sinematik Işıklandırma</span>
+                                      </div>
+                                      <div
+                                        className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
+                                          ambientLightingEnabled ? 'bg-[#E50914]' : 'bg-zinc-700'
+                                        }`}
+                                      >
+                                        <div
+                                          className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                                            ambientLightingEnabled ? 'translate-x-4' : 'translate-x-0'
+                                          }`}
+                                        />
+                                      </div>
+                                    </div>
                                   </motion.div>
                                 )}
                               </AnimatePresence>
@@ -6252,27 +6276,22 @@ export default function NetflixPlayer({
 
                 {/* Panel 3: Playback Settings */}
                 {activePanel === 'playback_settings' && (
-                  <div className="space-y-2.5 py-1">
+                  <div className="space-y-2 py-1">
                     <div
                       onClick={toggleAutoSkipIntro}
                       className="w-full p-3.5 rounded-2xl bg-white/5 flex items-center justify-between gap-3 cursor-pointer hover:bg-white/10 active:bg-white/15 transition-colors"
                     >
-                      <div className="min-w-0 pr-2">
-                        <div className="text-sm font-semibold text-white flex items-center gap-2">
-                          <FastForward className="w-4 h-4 text-amber-400 shrink-0" />
-                          <span>Otomatik İntro Atla</span>
-                        </div>
-                        <div className="text-xs text-zinc-400 mt-0.5">
-                          İntro başladığında doğrudan atlar
-                        </div>
+                      <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                        <FastForward className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span className="text-sm font-semibold text-white">Otomatik İntro Atla</span>
                       </div>
                       <div
-                        className={`w-11 h-6 rounded-full p-0.5 transition-colors shrink-0 flex items-center ${
+                        className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
                           autoSkipIntro ? 'bg-[#E50914]' : 'bg-zinc-700'
                         }`}
                       >
                         <div
-                          className={`w-5 h-5 rounded-full bg-white shadow-md transform transition-transform ${
+                          className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
                             autoSkipIntro ? 'translate-x-5' : 'translate-x-0'
                           }`}
                         />
@@ -6284,28 +6303,44 @@ export default function NetflixPlayer({
                         onClick={toggleAutoNext}
                         className="w-full p-3.5 rounded-2xl bg-white/5 flex items-center justify-between gap-3 cursor-pointer hover:bg-white/10 active:bg-white/15 transition-colors"
                       >
-                        <div className="min-w-0 pr-2">
-                          <div className="text-sm font-semibold text-white flex items-center gap-2">
-                            <NetflixNextEpIcon className="w-4 h-4 text-cyan-400 shrink-0" />
-                            <span>Otomatik Sonraki Bölüm</span>
-                          </div>
-                          <div className="text-xs text-zinc-400 mt-0.5">
-                            Outroda 3sn geri sayıp sonrakine geçer
-                          </div>
+                        <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                          <NetflixNextEpIcon className="w-4 h-4 text-cyan-400 shrink-0" />
+                          <span className="text-sm font-semibold text-white">Otomatik Sonraki Bölüm</span>
                         </div>
                         <div
-                          className={`w-11 h-6 rounded-full p-0.5 transition-colors shrink-0 flex items-center ${
+                          className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
                             autoNextEnabled ? 'bg-[#E50914]' : 'bg-zinc-700'
                           }`}
                         >
                           <div
-                            className={`w-5 h-5 rounded-full bg-white shadow-md transform transition-transform ${
+                            className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
                               autoNextEnabled ? 'translate-x-5' : 'translate-x-0'
                             }`}
                           />
                         </div>
                       </div>
                     )}
+
+                    <div
+                      onClick={toggleAmbientLighting}
+                      className="w-full p-3.5 rounded-2xl bg-white/5 flex items-center justify-between gap-3 cursor-pointer hover:bg-white/10 active:bg-white/15 transition-colors"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                        <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
+                        <span className="text-sm font-semibold text-white">Sinematik Işıklandırma</span>
+                      </div>
+                      <div
+                        className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
+                          ambientLightingEnabled ? 'bg-[#E50914]' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <div
+                          className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                            ambientLightingEnabled ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </div>
+                    </div>
                   </div>
                 )}
               </motion.div>
