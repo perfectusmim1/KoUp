@@ -516,6 +516,7 @@ export default function NetflixPlayer({
   hasRail = false,
   variant = 'default',
 }: NetflixPlayerProps) {
+  const isVertical = variant === 'vertical';
   const router = useRouter();
   const progressMap = useKoUpSelector((s) => s.progressMap);
   const updateEpisodeProgress = useKoUpSelector((s) => s.updateEpisodeProgress);
@@ -4349,12 +4350,14 @@ export default function NetflixPlayer({
                     isHoveringBottomControlsRef.current = false;
                     scheduleHideOverlay();
                   }}
-                  className={`w-full px-3 sm:px-8 pb-1.5 sm:pb-4 pt-1.5 sm:pt-4 bg-gradient-to-t from-black/75 via-black/20 to-transparent space-y-1 sm:space-y-2.5 shrink-0 transition-opacity duration-200 ${
+                  className={`w-full ${
+                    isVertical ? 'px-2.5 sm:px-4 pb-2 pt-2' : 'px-3 sm:px-8 pb-1.5 sm:pb-4 pt-1.5 sm:pt-4'
+                  } bg-gradient-to-t from-black/75 via-black/20 to-transparent space-y-1 sm:space-y-2.5 shrink-0 transition-opacity duration-200 ${
                     showOverlay ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
                   }`}
                 >
                   {/* RED TIMELINE SCRUBBER + RIGHT TIMESTAMP */}
-                  <div className="flex items-center gap-2.5 sm:gap-4">
+                  <div className={`flex items-center ${isVertical ? 'gap-2 sm:gap-2.5' : 'gap-2.5 sm:gap-4'}`}>
                     <div
                       className="relative flex-1 flex items-center"
                       onPointerMove={(e) => {
@@ -4486,7 +4489,9 @@ export default function NetflixPlayer({
                   {/* DEDICATED ACTION BAR: PC vs MOBILE */}
                   {isTouchDevice ? (
                     /* MOBILE ACTION BAR (Proportionally fitted for mobile windowed mode) */
-                    <div className="flex items-center justify-around gap-1 sm:gap-3 pt-0 overflow-visible text-[11px] sm:text-xs">
+                    <div className={`flex items-center ${
+                      isVertical ? 'justify-between px-1 gap-1 text-[11px]' : 'justify-around gap-1 sm:gap-3 text-[11px] sm:text-xs'
+                    } pt-0 overflow-visible`}>
                       {!isTrailerMode && (
                         <>
                           <button
@@ -4500,10 +4505,10 @@ export default function NetflixPlayer({
                             }`}
                           >
                             <NetflixSpeedIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                            <span>Hız ({playbackRate}x)</span>
+                            <span>{isVertical ? `${playbackRate}x` : `Hız (${playbackRate}x)`}</span>
                           </button>
 
-                          {!isMovie && isFullscreen && (
+                          {!isMovie && !isVertical && isFullscreen && (
                             <button
                               type="button"
                               onClick={() =>
@@ -4606,11 +4611,11 @@ export default function NetflixPlayer({
                               }`}
                             >
                               <NetflixAudioSubtitleIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                              <span>Ses & Altyazı</span>
+                              <span className={isVertical ? 'hidden' : 'inline'}>Ses & Altyazı</span>
                             </button>
                           )}
 
-                          {!isMovie && nextEp && (
+                          {!isMovie && !isVertical && nextEp && (
                             <button
                               type="button"
                               onClick={handleNextEpisode}
@@ -4639,7 +4644,7 @@ export default function NetflixPlayer({
                               }`}
                             >
                               <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-                              <span className="hidden xs:inline">Ayarlar</span>
+                              <span className={isVertical ? 'hidden' : 'hidden xs:inline'}>Ayarlar</span>
                             </button>
 
                             {/* Fullscreen Mobile Popover */}
@@ -4758,8 +4763,10 @@ export default function NetflixPlayer({
                     </div>
                   ) : (
                     /* PC ACTION BAR */
-                    <div className="flex items-center justify-between gap-2 sm:gap-4 md:gap-6 pt-0.5 min-w-0 flex-nowrap">
-                      <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+                    <div className={`flex items-center justify-between ${
+                      isVertical ? 'gap-1.5' : 'gap-2 sm:gap-4 md:gap-6'
+                    } pt-0.5 min-w-0 flex-nowrap`}>
+                      <div className={`flex items-center ${isVertical ? 'gap-1.5 sm:gap-2' : 'gap-2 sm:gap-4'} shrink-0`}>
                         <button
                           type="button"
                           onClick={togglePlayPause}
@@ -4768,9 +4775,9 @@ export default function NetflixPlayer({
                         >
                           <div key={isPlaying ? 'pause' : 'play'} className="animate-play-pop flex items-center justify-center">
                             {isPlaying ? (
-                              <NetflixPauseBarsIcon className="w-6 h-6" />
+                              <NetflixPauseBarsIcon className={isVertical ? 'w-5 h-5' : 'w-6 h-6'} />
                             ) : (
-                              <NetflixPlayTriangleIcon className="w-6 h-6" />
+                              <NetflixPlayTriangleIcon className={isVertical ? 'w-5 h-5' : 'w-6 h-6'} />
                             )}
                           </div>
                         </button>
@@ -4778,7 +4785,7 @@ export default function NetflixPlayer({
                         {/* HORIZONTAL VOLUME SLIDER: expands to the right (PC only) */}
                         {(() => {
                           const THUMB = 12;
-                          const TRACK_W = 72;
+                          const TRACK_W = isVertical ? 48 : 72;
                           const level = isMuted ? 0 : volume;
                           const open = showVolumeSlider || isDraggingVolume;
                           const applyVolume = (raw: number) => {
@@ -4828,11 +4835,11 @@ export default function NetflixPlayer({
                                 type="button"
                                 onClick={toggleMute}
                                 aria-label={isMuted ? 'Sesi Aç (M)' : 'Sesi Kapat (M)'}
-                                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-200 group/vol cursor-pointer shrink-0 text-white/90 hover:text-white"
+                                className={`${isVertical ? 'w-7 h-7' : 'w-8 h-8'} flex items-center justify-center rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-200 group/vol cursor-pointer shrink-0 text-white/90 hover:text-white`}
                               >
                                 <svg
                                   viewBox="0 0 24 24"
-                                  className="w-5 h-5 shrink-0 group-hover/vol:scale-110 transition-transform duration-200 ease-out will-change-transform transform-gpu"
+                                  className={`${isVertical ? 'w-4 h-4' : 'w-5 h-5'} shrink-0 group-hover/vol:scale-110 transition-transform duration-200 ease-out will-change-transform transform-gpu`}
                                   fill="none"
                                 >
                                   {/* Solid white speaker cone */}
@@ -4878,11 +4885,11 @@ export default function NetflixPlayer({
                               {/* Horizontal Slider Track: smoothly expands to the right without displacing the speaker button */}
                               <div
                                 className={`overflow-hidden transition-[max-width,opacity] duration-150 ease-out flex items-center ${
-                                  open ? 'max-w-[88px] opacity-100 pl-1.5 pr-1' : 'max-w-0 opacity-0 pointer-events-none pl-0 pr-0'
+                                  open ? (isVertical ? 'max-w-[58px] opacity-100 pl-1 pr-0.5' : 'max-w-[88px] opacity-100 pl-1.5 pr-1') : 'max-w-0 opacity-0 pointer-events-none pl-0 pr-0'
                                 }`}
                               >
                                 <div
-                                  className="relative w-[72px] h-8 flex items-center cursor-pointer touch-none shrink-0"
+                                  className={`relative ${isVertical ? 'w-[48px]' : 'w-[72px]'} h-8 flex items-center cursor-pointer touch-none shrink-0`}
                                   onPointerDown={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
@@ -4953,22 +4960,28 @@ export default function NetflixPlayer({
                               setActivePanel((prev) => (prev === 'speed' ? null : 'speed'))
                             }
                             aria-label="Oynatma Hızı"
-                            className={`flex items-center gap-1.5 py-1 text-xs font-medium transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap [text-shadow:0_1px_3px_rgba(0,0,0,0.9)] ${
+                            className={`flex items-center ${
+                              isVertical ? 'gap-1 py-1 text-[11px]' : 'gap-1.5 py-1 text-xs'
+                            } font-medium transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap [text-shadow:0_1px_3px_rgba(0,0,0,0.9)] ${
                               activePanel === 'speed'
                                 ? 'text-[#E50914] font-bold'
                                 : 'text-white/90 hover:text-white'
                             }`}
                           >
-                            <NetflixSpeedIcon className="w-5 h-5 shrink-0" />
-                            <span className="hidden sm:inline">Hız ({playbackRate}x)</span>
+                            <NetflixSpeedIcon className={`${isVertical ? 'w-4 h-4' : 'w-5 h-5'} shrink-0`} />
+                            <span className={isVertical ? 'inline font-mono' : 'hidden sm:inline'}>
+                              {isVertical ? `${playbackRate}x` : `Hız (${playbackRate}x)`}
+                            </span>
                           </button>
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 sm:gap-4 md:gap-6 shrink-0 flex-nowrap min-w-0">
+                      <div className={`flex items-center ${
+                        isVertical ? 'gap-1 sm:gap-1.5' : 'gap-2 sm:gap-4 md:gap-6'
+                      } shrink-0 flex-nowrap min-w-0`}>
                         {!isTrailerMode && (
                           <>
-                            {!isMovie && (
+                            {!isMovie && !isVertical && (
                               <div className="relative flex items-center shrink-0">
                                 <button
                                   type="button"
@@ -5023,18 +5036,20 @@ export default function NetflixPlayer({
                                   )
                                 }
                                 aria-label="Ses ve Altyazı"
-                                className={`flex items-center gap-1.5 py-1 text-sm font-medium transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap ${
+                                className={`flex items-center gap-1 py-1 ${
+                                  isVertical ? 'text-[11px]' : 'text-sm'
+                                } font-medium transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap ${
                                   activePanel === 'audio_subtitles'
                                     ? 'text-[#E50914] font-bold'
                                     : 'text-white/90 hover:text-white'
                                 }`}
                               >
-                                <NetflixAudioSubtitleIcon className="w-5 h-5 shrink-0" />
-                                <span className="hidden md:inline">Ses ve Altyazı</span>
+                                <NetflixAudioSubtitleIcon className={`${isVertical ? 'w-4 h-4' : 'w-5 h-5'} shrink-0`} />
+                                <span className={isVertical ? 'hidden' : 'hidden md:inline'}>Ses ve Altyazı</span>
                               </button>
                             )}
 
-                            {!isMovie && nextEp && (
+                            {!isMovie && !isVertical && nextEp && (
                               <button
                                 type="button"
                                 onClick={handleNextEpisode}
@@ -5056,66 +5071,74 @@ export default function NetflixPlayer({
                                     )
                                   }
                                   aria-label={`Video Kalitesi: ${cleanQualityLabel(selectedQuality)}`}
-                                  className={`flex items-center gap-1.5 py-1 text-sm font-medium transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap ${
+                                  className={`flex items-center gap-1 py-1 ${
+                                    isVertical ? 'text-[11px]' : 'text-sm'
+                                  } font-medium transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap ${
                                     activePanel === 'quality'
                                       ? 'text-[#E50914] font-bold'
                                       : 'text-white/90 hover:text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]'
                                   }`}
                                 >
-                                  <SlidersHorizontal className="w-4 h-4 shrink-0" />
-                                  <span>{cleanQualityLabel(selectedQuality)}</span>
-                                  <ChevronDown
-                                    className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                                      activePanel === 'quality' ? 'rotate-180 text-white' : 'text-white/60'
-                                    }`}
-                                  />
+                                  <SlidersHorizontal className={`${isVertical ? 'w-3.5 h-3.5' : 'w-4 h-4'} shrink-0`} />
+                                  <span className={isVertical ? 'text-[11px] font-mono' : ''}>
+                                    {cleanQualityLabel(selectedQuality)}
+                                  </span>
+                                  {!isVertical && (
+                                    <ChevronDown
+                                      className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                                        activePanel === 'quality' ? 'rotate-180 text-white' : 'text-white/60'
+                                      }`}
+                                    />
+                                  )}
                                 </button>
 
                                 <AnimatePresence>
-                                    {activePanel === 'quality' && (
-                                      <motion.div
-                                        key="panel-quality-pc"
-                                        initial={{ opacity: 0, scale: 0.94, y: 10 }}
-                                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                                        exit={{ opacity: 0, scale: 0.94, y: 10 }}
-                                        transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-                                        data-netflix-control="true"
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-50 min-w-[170px] max-w-[220px] max-h-[300px] overflow-y-auto no-scrollbar p-2.5 rounded-xl bg-[#181818]/98 backdrop-blur-sm border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1 select-none"
-                                      >
-                                        <div className="flex items-center border-b border-white/10 pb-1.5 mb-1 px-1">
-                                          <span className="text-white/60 font-semibold text-[11px] uppercase tracking-wider">
-                                            Kalite Seçimi
-                                          </span>
-                                        </div>
-                                        {qualities.map((q, qIdx) => {
-                                          const cleanLabel = cleanQualityLabel(q.label);
-                                          const isSelected = cleanQualityLabel(selectedQuality) === cleanLabel;
-                                          return (
-                                            <button
-                                              key={`${cleanLabel}-${q.url || ''}-${qIdx}`}
-                                              type="button"
-                                              onClick={() => {
-                                                handleSelectQuality(q);
-                                                setActivePanel(null);
-                                              }}
-                                              className={`w-full px-2.5 py-1.5 rounded-lg text-left text-xs font-medium flex items-center justify-between gap-3 transition-colors cursor-pointer ${
-                                                isSelected
-                                                  ? 'text-white font-bold bg-white/10'
-                                                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-                                              }`}
-                                            >
-                                              <span>{cleanLabel}</span>
-                                              {isSelected && (
-                                                <Check className="w-4 h-4 text-white stroke-[2.5] shrink-0" />
-                                              )}
-                                            </button>
-                                          );
-                                        })}
-                                      </motion.div>
-                                    )}
-                                  </AnimatePresence>
-                                </div>
+                                  {activePanel === 'quality' && (
+                                    <motion.div
+                                      key="panel-quality-pc"
+                                      initial={{ opacity: 0, scale: 0.94, y: 10 }}
+                                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                                      exit={{ opacity: 0, scale: 0.94, y: 10 }}
+                                      transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                                      data-netflix-control="true"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className={`absolute bottom-full mb-3 ${
+                                        isVertical ? 'right-0' : 'left-1/2 -translate-x-1/2'
+                                      } z-50 min-w-[170px] max-w-[220px] max-h-[300px] overflow-y-auto no-scrollbar p-2.5 rounded-xl bg-[#181818]/98 backdrop-blur-sm border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1 select-none`}
+                                    >
+                                      <div className="flex items-center border-b border-white/10 pb-1.5 mb-1 px-1">
+                                        <span className="text-white/60 font-semibold text-[11px] uppercase tracking-wider">
+                                          Kalite Seçimi
+                                        </span>
+                                      </div>
+                                      {qualities.map((q, qIdx) => {
+                                        const cleanLabel = cleanQualityLabel(q.label);
+                                        const isSelected = cleanQualityLabel(selectedQuality) === cleanLabel;
+                                        return (
+                                          <button
+                                            key={`${cleanLabel}-${q.url || ''}-${qIdx}`}
+                                            type="button"
+                                            onClick={() => {
+                                              handleSelectQuality(q);
+                                              setActivePanel(null);
+                                            }}
+                                            className={`w-full px-2.5 py-1.5 rounded-lg text-left text-xs font-medium flex items-center justify-between gap-3 transition-colors cursor-pointer ${
+                                              isSelected
+                                                ? 'text-white font-bold bg-white/10'
+                                                : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                                            }`}
+                                          >
+                                            <span>{cleanLabel}</span>
+                                            {isSelected && (
+                                              <Check className="w-4 h-4 text-white stroke-[2.5] shrink-0" />
+                                            )}
+                                          </button>
+                                        );
+                                      })}
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                              </div>
                             )}
 
                             {/* Oynatma Ayarları Popover (PC) */}
@@ -5128,19 +5151,23 @@ export default function NetflixPlayer({
                                   )
                                 }
                                 aria-label="Oynatma Tercihleri"
-                                className={`flex items-center gap-1.5 py-1 text-sm font-semibold transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap ${
+                                className={`flex items-center gap-1 py-1 ${
+                                  isVertical ? 'text-[11px]' : 'text-sm font-semibold'
+                                } transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap ${
                                   activePanel === 'playback_settings'
                                     ? 'text-[#E50914]'
                                     : 'text-white/90 hover:text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]'
                                 }`}
                               >
-                                <Settings className="w-4 h-4 shrink-0" />
-                                <span className="hidden lg:inline">Ayarlar</span>
-                                <ChevronDown
-                                  className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${
-                                    activePanel === 'playback_settings' ? 'rotate-180 text-white' : 'text-white/60'
-                                  }`}
-                                />
+                                <Settings className={`${isVertical ? 'w-3.5 h-3.5' : 'w-4 h-4'} shrink-0`} />
+                                <span className={isVertical ? 'hidden' : 'hidden lg:inline'}>Ayarlar</span>
+                                {!isVertical && (
+                                  <ChevronDown
+                                    className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${
+                                      activePanel === 'playback_settings' ? 'rotate-180 text-white' : 'text-white/60'
+                                    }`}
+                                  />
+                                )}
                               </button>
 
                               <AnimatePresence>
@@ -5153,7 +5180,9 @@ export default function NetflixPlayer({
                                     transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
                                     data-netflix-control="true"
                                     onClick={(e) => e.stopPropagation()}
-                                    className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 z-50 w-76 p-3 rounded-2xl bg-[#141414]/98 backdrop-blur-xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1.5 select-none transform-gpu origin-bottom"
+                                    className={`absolute bottom-full mb-3 ${
+                                      isVertical ? 'right-0 w-64' : 'left-1/2 -translate-x-1/2 w-76'
+                                    } p-3 rounded-2xl bg-[#141414]/98 backdrop-blur-xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1.5 select-none transform-gpu origin-bottom`}
                                   >
                                     <div className="flex items-center justify-between border-b border-white/10 pb-2 px-1">
                                       <span className="text-white/80 font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
@@ -5247,13 +5276,17 @@ export default function NetflixPlayer({
                           onClick={handleCastPrompt}
                           aria-label={isCasting ? "TV'ye Yansıtılıyor" : "TV'ye Yansıt (Chromecast)"}
                           title={isCasting ? "TV'ye Yansıtılıyor" : "TV'ye Yansıt (Chromecast)"}
-                          className={`w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-200 group/cast cursor-pointer shrink-0 ${
+                          className={`${
+                            isVertical ? 'w-7 h-7' : 'w-8 h-8'
+                          } flex items-center justify-center rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-200 group/cast cursor-pointer shrink-0 ${
                             isCasting
                               ? 'text-sky-400 drop-shadow-[0_0_8px_rgba(56,189,248,0.6)] animate-pulse'
                               : 'text-white/90 hover:text-white'
                           }`}
                         >
-                          <CastIcon className="w-5 h-5 group-hover/cast:scale-110 transition-transform duration-200 ease-out will-change-transform transform-gpu" />
+                          <CastIcon className={`${
+                            isVertical ? 'w-4 h-4' : 'w-5 h-5'
+                          } group-hover/cast:scale-110 transition-transform duration-200 ease-out will-change-transform transform-gpu`} />
                         </button>
 
                         {/* Tam Ekran Butonu: Titremeyen stabil konteyner & GPU hızlandırmalı ikon ölçekleme */}
@@ -5261,13 +5294,17 @@ export default function NetflixPlayer({
                           type="button"
                           onClick={toggleFullscreen}
                           aria-label={isFullscreen ? 'Tam Ekrandan Çık (F)' : 'Tam Ekran (F)'}
-                          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-200 group/fs text-white/90 hover:text-white cursor-pointer shrink-0"
+                          className={`${
+                            isVertical ? 'w-7 h-7' : 'w-8 h-8'
+                          } flex items-center justify-center rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-200 group/fs text-white/90 hover:text-white cursor-pointer shrink-0`}
                         >
-                          <div className="w-5 h-5 flex items-center justify-center group-hover/fs:scale-110 transition-transform duration-200 ease-out will-change-transform transform-gpu">
+                          <div className={`${
+                            isVertical ? 'w-4 h-4' : 'w-5 h-5'
+                          } flex items-center justify-center group-hover/fs:scale-110 transition-transform duration-200 ease-out will-change-transform transform-gpu`}>
                             {isFullscreen ? (
-                              <Minimize className="w-5 h-5" />
+                              <Minimize className={isVertical ? 'w-4 h-4' : 'w-5 h-5'} />
                             ) : (
-                              <Maximize className="w-5 h-5" />
+                              <Maximize className={isVertical ? 'w-4 h-4' : 'w-5 h-5'} />
                             )}
                           </div>
                         </button>

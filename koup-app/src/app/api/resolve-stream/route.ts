@@ -1268,91 +1268,123 @@ export async function GET(req: NextRequest) {
             }
           }
 
-          const chosen =
-            (targetSourceId && candidates.find((c) => Number(c?.id) === targetSourceId)) ||
-            candidates[0] ||
-            null;
+          const matched = targetSourceId ? candidates.find((c) => Number(c?.id) === targetSourceId) : null;
+          const evalList = matched ? [matched, ...candidates.filter((c) => c !== matched)] : candidates;
 
-          if (chosen?.resolve_url) {
-            const resolveFullUrl = chosen.resolve_url.startsWith('http')
-              ? chosen.resolve_url
-              : `https://shortizle.com${chosen.resolve_url}`;
+          for (const cand of evalList) {
+            if (!cand) continue;
+            const subUrl = cand.subtitle_url || null;
 
-            const resResp = await fetch(resolveFullUrl, {
-              headers: {
-                'User-Agent': commonUA,
-                Accept: 'application/json',
-                Referer: watchUrl,
-                Cookie: cookiePairs,
-                'X-Storage-Pilot': '1',
-                'X-Protected-Storage': '1',
-                'Sec-Fetch-Site': 'same-origin',
-                'Sec-Fetch-Mode': 'cors',
-                'Sec-Fetch-Dest': 'empty',
-              },
-              signal: AbortSignal.timeout(6000),
-            });
+            // Direct m3u8 or mp4 (e.g. b-cdn.net)
+            if (cand.url && (cand.url.includes('.m3u8') || cand.url.includes('.mp4'))) {
+              const isHls = cand.url.includes('.m3u8');
+              const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(cand.url)}&ref=${encodeURIComponent('https://shortizle.com/')}`;
+              let subtitles: Array<{ label: string; lang: string; url: string; default?: boolean }> | undefined;
+              if (subUrl) {
+                subtitles = [{ label: 'Türkçe', lang: 'tr', url: subUrl, default: true }];
+              }
+              const result = {
+                mode: isHls ? ('native_hls' as const) : ('native_mp4' as const),
+                streamType: isHls ? ('hls' as const) : ('mp4' as const),
+                streamUrl: proxiedStream,
+                directUrl: cand.url,
+                qualities: [{ label: isHls ? '1080p HLS (Shortİzle)' : '1080p MP4', url: proxiedStream }],
+                subtitles,
+                fallbackIframe: watchUrl,
+              };
+              setCachedStream(url, result, 30 * 60 * 1000);
+              return NextResponse.json(result, { headers: CACHE_HEADERS });
+            }
 
-            if (resResp.ok) {
-              const resJson = await resResp.json();
-              let finalM3u8: string | null = null;
-              let shzMediaCookie = '';
+            // Signed resolve_url
+            if (cand.resolve_url) {
+              const resolveFullUrl = cand.resolve_url.startsWith('http')
+                ? cand.resolve_url
+                : `https://shortizle.com${cand.resolve_url}`;
 
-              if (resJson?.gateway_bootstrap?.url && resJson?.gateway_bootstrap?.token) {
-                const authResp = await fetch(resJson.gateway_bootstrap.url, {
-                  method: 'POST',
+              try {
+                const resResp = await fetch(resolveFullUrl, {
                   headers: {
                     'User-Agent': commonUA,
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    Origin: 'https://shortizle.com',
-                    Referer: 'https://shortizle.com/',
-                    'Sec-Fetch-Site': 'same-site',
-                    'Sec-Fetch-Mode': 'cors',
-                    'Sec-Fetch-Dest': 'empty',
+                    Accept: 'application/json, text/plain, */*',
+                    Referer: watchUrl,
+                    Cookie: cookiePairs,
+                    'X-Requested-With': 'XMLHttpRequest',
                   },
-                  body: JSON.stringify({ token: resJson.gateway_bootstrap.token }),
-                  signal: AbortSignal.timeout(6000),
+                  signal: AbortSignal.timeout(8000),
                 });
 
-                if (authResp.ok) {
-                  const authCookies =
-                    typeof (authResp.headers as any).getSetCookie === 'function'
-                      ? ((authResp.headers as any).getSetCookie() as string[])
-                      : [authResp.headers.get('set-cookie') || ''];
-                  for (const ac of authCookies) {
-                    const m = ac.match(/__Host-shortizle_media=([a-f0-9]+)/i);
-                    if (m?.[1]) {
-                      shzMediaCookie = m[1];
-                      break;
+                if (resResp.ok) {
+                  const resJson = await resResp.json();
+                  let finalM3u8: string | null = null;
+                  let shzMediaCookie = '';
+
+                  if (resJson?.gateway_bootstrap?.url && resJson?.gateway_bootstrap?.token) {
+                    const authResp = await fetch(resJson.gateway_bootstrap.url, {
+                      method: 'POST',
+                      headers: {
+                        'User-Agent': commonUA,
+                        'Content-Type': 'application/json',
+                        Accept: 'application/json',
+                        Origin: 'https://shortizle.com',
+                        Referer: 'https://shortizle.com/',
+                        'Sec-Fetch-Site': 'same-site',
+                        'Sec-Fetch-Mode': 'cors',
+                        'Sec-Fetch-Dest': 'empty',
+                      },
+                      body: JSON.stringify({ token: resJson.gateway_bootstrap.token }),
+                      signal: AbortSignal.timeout(6000),
+                    });
+
+                    if (authResp.ok) {
+                      const authCookies =
+                        typeof (authResp.headers as any).getSetCookie === 'function'
+                          ? ((authResp.headers as any).getSetCookie() as string[])
+                          : [authResp.headers.get('set-cookie') || ''];
+                      for (const ac of authCookies) {
+                        const m = ac.match(/__Host-shortizle_media=([a-f0-9]+)/i);
+                        if (m?.[1]) {
+                          shzMediaCookie = m[1];
+                          break;
+                        }
+                      }
+                      const authJson = await authResp.json();
+                      if (authJson?.url) {
+                        finalM3u8 = authJson.url;
+                      }
                     }
+                  } else if (resJson?.url) {
+                    finalM3u8 = resJson.url.startsWith('/')
+                      ? `https://shortizle.com${resJson.url}`
+                      : resJson.url;
                   }
-                  const authJson = await authResp.json();
-                  if (authJson?.url) {
-                    finalM3u8 = authJson.url;
+
+                  if (finalM3u8) {
+                    const cookieParam = shzMediaCookie
+                      ? `&shz_cookie=${encodeURIComponent(shzMediaCookie)}`
+                      : '';
+                    const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(finalM3u8)}&ref=${encodeURIComponent('https://shortizle.com/')}${cookieParam}`;
+                    const effectiveSub = subUrl || resJson.subtitle_url;
+                    let subtitles: Array<{ label: string; lang: string; url: string; default?: boolean }> | undefined;
+                    if (effectiveSub) {
+                      subtitles = [{ label: 'Türkçe', lang: 'tr', url: effectiveSub, default: true }];
+                    }
+                    const isDub = (cand.selection_key && kindParam === 'dublaj') || finalM3u8.includes('cut=dub');
+                    const result = {
+                      mode: 'native_hls' as const,
+                      streamType: 'hls' as const,
+                      streamUrl: proxiedStream,
+                      directUrl: finalM3u8,
+                      qualities: [{ label: isDub ? '1080p Dublaj (Shortİzle)' : '1080p Altyazı (Shortİzle)', url: proxiedStream }],
+                      subtitles,
+                      fallbackIframe: watchUrl,
+                    };
+                    setCachedStream(url, result, 30 * 60 * 1000);
+                    return NextResponse.json(result, { headers: CACHE_HEADERS });
                   }
                 }
-              } else if (resJson?.url) {
-                finalM3u8 = resJson.url.startsWith('/')
-                  ? `https://shortizle.com${resJson.url}`
-                  : resJson.url;
-              }
-
-              if (finalM3u8) {
-                const cookieParam = shzMediaCookie
-                  ? `&shz_cookie=${encodeURIComponent(shzMediaCookie)}`
-                  : '';
-                const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(finalM3u8)}&ref=${encodeURIComponent('https://shortizle.com/')}${cookieParam}`;
-                const result = {
-                  mode: 'native_hls' as const,
-                  streamType: 'hls' as const,
-                  streamUrl: proxiedStream,
-                  directUrl: finalM3u8,
-                  qualities: [{ label: '1080p (Full HD)', url: proxiedStream }],
-                  fallbackIframe: watchUrl,
-                };
-                setCachedStream(url, result, 30 * 60 * 1000);
-                return NextResponse.json(result, { headers: CACHE_HEADERS });
+              } catch {
+                continue;
               }
             }
           }
@@ -2647,6 +2679,7 @@ export async function GET(req: NextRequest) {
   ) {
     try {
       const normalizedVidmoly = url
+        .replace(/embed-embed\.html-/gi, 'embed-')
         .replace(/\/\/(?:www\.)?vidmoly\.(?:to|net|me)\//i, '//vidmoly.biz/')
         .replace(/\/\/(?:www\.)?vidmolynet\//i, '//vidmoly.biz/');
       const parsedVm = new URL(normalizedVidmoly);
@@ -3619,7 +3652,13 @@ export async function GET(req: NextRequest) {
   if (lowerUrl.includes('.m3u8')) {
     try {
       const parsedU = new URL(url);
-      const refOrigin = `${parsedU.protocol}//${parsedU.host}/`;
+      const isShortDrama =
+        lowerUrl.includes('b-cdn.net') ||
+        lowerUrl.includes('mybigdramapool.com') ||
+        provider.includes('shortizle');
+      const refOrigin = isShortDrama
+        ? 'https://shortizle.com/'
+        : `${parsedU.protocol}//${parsedU.host}/`;
       const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(url)}&ref=${encodeURIComponent(refOrigin)}`;
       return NextResponse.json(
         {

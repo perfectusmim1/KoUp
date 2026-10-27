@@ -344,33 +344,94 @@ def resolve_dramavadisi(url: str, session: Optional[cfr.Session] = None) -> Opti
     return None
 
 
-def resolve_shortizle(url: str, session: Optional[cfr.Session] = None) -> Optional[Dict[str, Any]]:
+def resolve_shortizle(url: str, session: Optional[Any] = None) -> Optional[Dict[str, Any]]:
     """Resolves Shortİzle direct HLS stream."""
-    session = session or _get_session()
     try:
-        r = session.get(url, headers={"User-Agent": COMMON_UA, "Referer": "https://shortizle.com/"}, timeout=8)
+        import requests
+        session = session or requests.Session()
+        from urllib.parse import urlparse, parse_qs
+        parsed = urlparse(url)
+        qs = parse_qs(parsed.query)
+        watch_url = url
+        if "/watch/" in parsed.path:
+            watch_url = url
+        elif "watch" in qs:
+            w_val = qs["watch"][0]
+            watch_url = w_val if w_val.startswith("http") else f"https://shortizle.com{w_val if w_val.startswith('/') else '/' + w_val}"
+        
+        target_id = None
+        m_id = re.search(r"/media/[^/]+/(\d+)", parsed.path)
+        if m_id:
+            target_id = int(m_id.group(1))
+        requested_kind = qs.get("kind", [""])[0]
+
+        r = session.get(watch_url, headers={"User-Agent": COMMON_UA, "Referer": "https://shortizle.com/"}, timeout=8)
         if r.status_code == 200:
-            m_dp = re.search(r'data-page="([^"]+)"', r.text)
+            m_dp = re.search(r'data-page="app"[^>]*>({.+?})</script>', r.text, re.DOTALL) or re.search(r'data-page="({.+?})"', r.text)
             if m_dp:
                 un = m_dp.group(1).replace("&quot;", '"').replace("&amp;", "&")
                 p = json.loads(un).get("props", {}).get("externalSources", {})
-                cand = (p.get("altyazi") or []) + (p.get("dublaj") or [])
-                if cand and cand[0].get("resolve_url"):
-                    res_url = cand[0]["resolve_url"]
-                    if not res_url.startswith("http"):
-                        res_url = f"https://shortizle.com{res_url}"
-                    r_res = session.get(res_url, headers={"User-Agent": COMMON_UA, "Referer": url, "X-Storage-Pilot": "1"}, timeout=8)
-                    if r_res.status_code == 200:
-                        rj = r_res.json()
-                        stream_url = rj.get("url")
-                        if stream_url:
-                            return {
-                                "mode": "native_hls",
-                                "stream_url": stream_url if stream_url.startswith("http") else f"https://shortizle.com{stream_url}",
-                                "type": "hls",
-                                "provider": "shortizle",
-                                "headers": {"Referer": "https://shortizle.com/", "Origin": "https://shortizle.com"},
-                            }
+                candidates = []
+                if requested_kind and requested_kind in p:
+                    candidates.extend(p[requested_kind])
+                for k, v in p.items():
+                    if k != requested_kind and isinstance(v, list):
+                        candidates.extend(v)
+                
+                matched = None
+                if target_id:
+                    for c in candidates:
+                        if c.get("id") == target_id:
+                            matched = c
+                            break
+                eval_list = [matched] if matched else []
+                for c in candidates:
+                    if c not in eval_list:
+                        eval_list.append(c)
+
+                for cand in eval_list:
+                    sub_url = cand.get("subtitle_url")
+                    
+                    res_url = cand.get("resolve_url")
+                    if res_url:
+                        if not res_url.startswith("http"):
+                            res_url = f"https://shortizle.com{res_url}"
+                        try:
+                            r_res = session.get(
+                                res_url,
+                                headers={
+                                    "User-Agent": COMMON_UA,
+                                    "Referer": watch_url,
+                                    "X-Requested-With": "XMLHttpRequest",
+                                    "Accept": "application/json, text/plain, */*",
+                                },
+                                timeout=8,
+                            )
+                            if r_res.status_code == 200:
+                                rj = r_res.json()
+                                stream_url = rj.get("url")
+                                if stream_url:
+                                    return {
+                                        "mode": "native_hls" if "m3u8" in stream_url else "native_mp4",
+                                        "stream_url": stream_url if stream_url.startswith("http") else f"https://shortizle.com{stream_url}",
+                                        "type": "hls" if "m3u8" in stream_url else "mp4",
+                                        "subtitle_url": sub_url or rj.get("subtitle_url"),
+                                        "provider": "shortizle",
+                                        "headers": {"Referer": "https://shortizle.com/", "Origin": "https://shortizle.com"},
+                                    }
+                        except Exception:
+                            pass
+
+                    direct_stream = cand.get("url")
+                    if direct_stream and ("m3u8" in direct_stream or "mp4" in direct_stream):
+                        return {
+                            "mode": "native_hls" if "m3u8" in direct_stream else "native_mp4",
+                            "stream_url": direct_stream,
+                            "type": "hls" if "m3u8" in direct_stream else "mp4",
+                            "subtitle_url": sub_url,
+                            "provider": "shortizle",
+                            "headers": {"Referer": "https://shortizle.com/", "Origin": "https://shortizle.com"},
+                        }
     except Exception:
         pass
     return None

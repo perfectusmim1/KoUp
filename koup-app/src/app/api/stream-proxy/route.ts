@@ -277,10 +277,16 @@ export async function GET(req: NextRequest) {
       upstreamHeaders['Range'] = rangeHeader;
     }
 
-    if (targetUrl.includes('shortizle.com')) {
+    if (
+      targetUrl.includes('shortizle.com') ||
+      targetUrl.includes('b-cdn.net') ||
+      targetUrl.includes('mybigdramapool.com')
+    ) {
+      referer = 'https://shortizle.com/';
+      origin = 'https://shortizle.com';
       upstreamHeaders['Referer'] = 'https://shortizle.com/';
       upstreamHeaders['Origin'] = 'https://shortizle.com';
-      upstreamHeaders['Sec-Fetch-Site'] = 'same-site';
+      upstreamHeaders['Sec-Fetch-Site'] = 'cross-site';
       upstreamHeaders['Sec-Fetch-Mode'] = 'cors';
       upstreamHeaders['Sec-Fetch-Dest'] = 'empty';
       if (shzCookie && /^[a-f0-9]+$/i.test(shzCookie)) {
@@ -290,10 +296,13 @@ export async function GET(req: NextRequest) {
 
     const isMediaChunk =
       targetUrl.includes('.ts') ||
+      targetUrl.includes('.dts') ||
       targetUrl.includes('.mp4') ||
       targetUrl.includes('.m4s') ||
       targetUrl.includes('.webm') ||
       targetUrl.includes('stream.shortizle.com/v1/') ||
+      targetUrl.includes('mybigdramapool.com') ||
+      targetUrl.includes('b-cdn.net') ||
       targetUrl.includes('okcdn.ru') ||
       targetUrl.includes('mycdn.me') ||
       (targetUrl.includes('.jpg') && (targetUrl.includes('/f/') || targetUrl.includes('/o/a/') || targetUrl.includes('/m/a/') || targetUrl.includes('/dual')));
@@ -509,6 +518,7 @@ export async function GET(req: NextRequest) {
 
     if (
       targetUrl.includes('.ts') ||
+      targetUrl.includes('.dts') ||
       (targetUrl.includes('.png') && (targetUrl.includes('/1080p/') || targetUrl.includes('/720p/') || targetUrl.includes('/480p/') || targetUrl.includes('/sheila') || targetUrl.includes('/v/'))) ||
       (targetUrl.includes('.jpg') && (targetUrl.includes('/f/') || targetUrl.includes('/o/a/') || targetUrl.includes('/m/a/') || targetUrl.includes('/dual')))
     ) {
@@ -558,13 +568,16 @@ function rewritePlaylist(
     if (!trimmed || trimmed.startsWith('#')) {
       // Fix syntax defects in upstream master playlists (e.g. Pichive missing comma before RESOLUTION or double commas)
       if (trimmed.startsWith('#EXT-X-STREAM-INF:')) {
-        let fixed = trimmed
-          // Strip misleading/hardcoded CODECS (e.g. Pichive advertising mp4a.40.2 when audio is actually MP3, causing Chrome MSE bufferAddCodecError)
-          .replace(/,?\s*CODECS="[^"]*"/i, '')
+        let fixed = trimmed;
+        if (baseTargetUrl.includes('pichive') || baseTargetUrl.includes('hotlinger')) {
+          fixed = fixed.replace(/,?\s*CODECS="[^"]*"/i, '');
+        }
+        fixed = fixed
           .replace(/,,+/g, ',')
           .replace(/([0-9a-zA-Z_"])RESOLUTION=/g, '$1,RESOLUTION=')
           .replace(/([0-9a-zA-Z_"])NAME=/g, '$1,NAME=')
-          .replace(/,,+/g, ',');
+          .replace(/,,+/g, ',')
+          .replace(/,+$/g, '');
         return fixed;
       }
 
@@ -608,6 +621,7 @@ function rewritePlaylist(
       // Open-CORS CDNs: return direct segment URL so user streams at direct 500 Mbps without proxy choke!
       const isOpenCorsCdn =
         hostLower.includes('vmpx.online') ||
+        hostLower.includes('media.mybigdramapool.com') ||
         hostLower.includes('acek-cdn.com') ||
         hostLower.includes('owphbf24.com') ||
         hostLower.includes('sprintcdn') ||
