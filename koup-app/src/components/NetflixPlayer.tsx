@@ -971,14 +971,6 @@ export default function NetflixPlayer({
     setIsMounted(true);
   }, []);
 
-  const isNativeFs =
-    typeof document !== 'undefined' &&
-    Boolean(
-      document.fullscreenElement ||
-        (document as any).webkitFullscreenElement ||
-        (document as any).mozFullScreenElement
-    );
-
   const isMobileInline =
     !isFullscreen &&
     (isTouchDevice || (typeof window !== 'undefined' && window.innerWidth < 768));
@@ -1542,7 +1534,6 @@ export default function NetflixPlayer({
     );
 
     if (!isCurrentlyFs) {
-      setIsFullscreen(true);
       try {
         if (el.requestFullscreen) {
           await el.requestFullscreen();
@@ -1550,28 +1541,26 @@ export default function NetflixPlayer({
           (el as any).webkitRequestFullscreen();
         } else if (video?.webkitEnterFullscreen) {
           video.webkitEnterFullscreen();
+          setIsFullscreen(true);
         }
         try {
           await (screen.orientation as any)?.lock?.('landscape');
         } catch {}
       } catch {
-        setIsFullscreen(false);
+        // Request failed or rejected
       }
     } else {
-      setIsFullscreen(false);
       try {
         if (document.exitFullscreen) {
           await document.exitFullscreen();
         } else if ((document as any).webkitExitFullscreen) {
           (document as any).webkitExitFullscreen();
+        } else if (video?.webkitExitFullscreen) {
+          video.webkitExitFullscreen();
+          setIsFullscreen(false);
         }
       } catch {
-        const activeFs = Boolean(
-          document.fullscreenElement ||
-            (document as any).webkitFullscreenElement ||
-            (document as any).mozFullScreenElement
-        );
-        setIsFullscreen(activeFs);
+        // Exit fullscreen failed
       }
     }
   }, []);
@@ -3543,21 +3532,21 @@ export default function NetflixPlayer({
             setShowVolumeSlider(false);
           }
         }}
-        style={(isFullscreen && isNativeFs) || isTrailerMode ? undefined : { width: '100%', height: '100%' }}
+        style={isFullscreen || isTrailerMode ? undefined : { width: '100%', height: '100%' }}
         className={`relative mx-auto select-none bg-black overflow-hidden outline-none ${
           !showOverlay && isPlaying ? 'cursor-none' : 'cursor-default'
         } ${
-          isFullscreen && isNativeFs
-            ? 'fixed inset-0 z-50 w-screen h-screen max-w-none rounded-none border-none outline-none ring-0 shadow-none aspect-auto flex flex-col justify-center items-center transition-[border-radius,box-shadow,border-color] duration-200 ease-out'
+          isFullscreen
+            ? 'w-full h-full max-w-none rounded-none border-0 border-none outline-none ring-0 shadow-none aspect-auto flex flex-col justify-center items-center transition-none'
             : isTrailerMode
             ? 'w-full h-full max-w-[calc(100dvh*16/9)] max-h-[100dvh] aspect-video rounded-none border-none shadow-none z-20 flex flex-col justify-center'
             : variant === 'vertical'
-            ? `w-full h-full aspect-[9/16] rounded-2xl sm:rounded-3xl border z-20 transition-[border-radius,box-shadow,border-color] duration-200 ease-out ${
+            ? `w-full h-full aspect-[9/16] rounded-2xl sm:rounded-3xl border z-20 transition-[border-color,box-shadow] duration-200 ease-out ${
                 cinemaLightsOff
                   ? 'border-sky-500/30 shadow-[0_0_30px_rgba(41,151,255,0.15),0_10px_25px_rgba(0,0,0,0.5)]'
                   : 'border-white/10 shadow-[0_10px_25px_rgba(0,0,0,0.45)]'
               }`
-            : `w-full aspect-video rounded-2xl sm:rounded-3xl border z-20 transition-[border-radius,box-shadow,border-color] duration-200 ease-out ${
+            : `w-full aspect-video rounded-2xl sm:rounded-3xl border z-20 transition-[border-color,box-shadow] duration-200 ease-out ${
                 cinemaLightsOff
                   ? 'border-sky-500/30 shadow-[0_0_30px_rgba(41,151,255,0.15),0_10px_25px_rgba(0,0,0,0.5)]'
                   : 'border-white/10 shadow-[0_10px_25px_rgba(0,0,0,0.45)]'

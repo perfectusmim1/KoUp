@@ -372,20 +372,19 @@ Mobil cihazlarda kullanıcı deneyimini mükemmelleştirmek için tasarlanmış 
 
 ### Tam Ekran (Fullscreen) Mimarisi ve Donanım Hızlandırmalı Geçişler
 
-HTML5 Fullscreen API kullanılırken tarayıcı ile React bileşen yaşam döngüsü arasındaki asenkron olay döngüsü gecikmesi (100–300ms) arayüzde takılmalara (glitch) yol açabilmektedir. KoUp oynatıcısı 0ms gecikmesiz ve kenarlık parazitinden arındırılmış tam ekran akışına sahiptir:
+HTML5 Fullscreen API kullanılırken tarayıcı ile React bileşen yaşam döngüsü arasındaki asenkron olay döngüsü gecikmesi (100–300ms) arayüzde takılmalara (3 aşamalı açılış/kapanış gecikmesi, beyaz çizgi ve çıkışta sekme içinde takılma) yol açabilmektedir. KoUp oynatıcısı 0ms gecikmesiz ve kenarlık parazitinden arındırılmış tam ekran akışına sahiptir:
 
-1. **Tarayıcı Düzeyinde 0ms Native CSS Geçişi (`:fullscreen` & `:-webkit-full-screen`):**
-   - `#koup-player-container:fullscreen` ve `#koup-player-container:-webkit-full-screen` kuralları `globals.css` içinde GPU/kompozitör seviyesinde zorlanır.
-   - Tarayıcı tam ekran sinyalini aldığı ilk video frame'inde container anında `position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important; background: #000 !important;` boyutlarına oturur. React re-render döngüsünü beklemeden donanım seviyesinde tam ekrana geçer.
+1. **Ayrık CSS Seçici İzolasyonu (`:fullscreen` & `:-webkit-full-screen`):**
+   - CSS spesifikasyonu gereği virgüllü bir seçici listesinde tek bir satıcı öneki (vendor prefix) desteklenmediğinde tarayıcı tüm kural bloğunu geçersiz kılar. Bu nedenle `globals.css` içinde `:fullscreen` ve `:-webkit-full-screen` kuralları kesinlikle ayrı bağımsız bloklar halinde tanımlanır.
+   - Tarayıcı native tam ekrana girdiği 0. milisaniyede container `position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important; background: #000 !important;` olarak donanım seviyesinde yerleşir.
 2. **Beyaz Çizgi / Çerçeve (Border & Focus Outline) Eliminasyonu:**
-   - Standart tarayıcı `:focus` ve `:focus-visible` çerçevelerinin tam ekranda beyaz hat oluşturmasını önlemek için `#koup-player-container`, `<video>` ve `<iframe>` elemanlarına `border-none outline-none ring-0 box-shadow: none !important;` uygulanır.
-   - Geçişler GPU dostu `transition-[border-radius,box-shadow,border-color] duration-200 ease-out` ile pürüzsüzleştirilir.
-3. **Sekme İçinde Asılı Kalmayı Önleme (`isNativeFs` Çift Kilidi):**
-   - Tam ekrandan çıkıldığında tarayıcı derhal standart pencere moduna döner; ancak React `fullscreenchange` olayı asenkron tetiklenene kadar `isFullscreen` durumu bir anlığına `true` kalabilir.
-   - Bu gecikmede oynatıcının sekme içinde `fixed inset-0` olarak büyümesini önlemek için `isNativeFs` (`document.fullscreenElement` kontrolü) koşulu aranır (`isFullscreen && isNativeFs`).
-   - Kullanıcı tam ekrandan çıktığı anda `document.fullscreenElement` anında `null` olduğu için oynatıcı sekme içinde asla takılı kalmaz; doğrudan sayfa içi boyutlarına döner.
-4. **Optimistik State Yönetimi (`toggleFullscreen`):**
-   - Tam ekran butonuna basıldığı an `setIsFullscreen(true)` veya çıkışta `setIsFullscreen(false)` optimistik olarak tetiklenir; herhangi bir tarayıcı engeli veya hata durumunda `.catch()` bloğuyla state geri alınır.
+   - Standart tarayıcı çerçevelerinin ve Tailwind kenarlıklarının tam ekranda beyaz hat oluşturmasını önlemek için `:fullscreen` bloğunda `border: 0 none transparent !important; outline: 0 none transparent !important; box-shadow: none !important; border-radius: 0 !important;` ve `::backdrop { background: #000 !important; }` kuralları zorunlu kılınmıştır.
+   - Tam ekran durumunda `transition-none` uygulanarak kenarlık ve gölge animasyonlarının gecikmeli olarak beyaz çizgi şeklinde görünmesi engellenmiştir.
+3. **Sekme İçinde Asılı Kalmayı Önleyen Native CSS Devri:**
+   - React sınıfında `fixed inset-0` tutmak yerine tam ekran boyutlandırması doğrudan tarayıcının yerel `:fullscreen` motoruna bırakılmıştır.
+   - Kullanıcı tam ekrandan çıktığında (Esc veya buton) tarayıcının `:fullscreen` psödo-sınıfı anında eşleşmeyi bırakır; React render döngüsü beklenmeksizin oynatıcı anında orijinal sayfa içi boyutlarına döner. Böylece sekme içinde tam ekran kalma hatası fiziksel olarak imkansız hale gelir.
+4. **Olay Tabanlı State Senkronizasyonu (`handleFullscreenChange`):**
+   - `toggleFullscreen` fonksiyonunda yapay erken state güncellemeleri yerine tarayıcının yerel `fullscreenchange` ve `webkitfullscreenchange` olayları dinlenir. State yalnızca tarayıcı gerçekten tam ekrana geçtiğinde veya çıktığında güncellenir.
 
 ### İzleme İlerlemesi Kaydetme (`flushCurrentProgress`)
 

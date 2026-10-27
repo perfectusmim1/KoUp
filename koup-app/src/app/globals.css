@@ -1175,7 +1175,34 @@ input[type="range"].netflix-volume-slider:focus-visible {
 }
 
 /* Native 0ms Fullscreen Transitions & White Border Elimination */
-#koup-player-container:fullscreen,
+#koup-player-container:fullscreen {
+  position: fixed !important;
+  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 none transparent !important;
+  border-width: 0 !important;
+  border-color: transparent !important;
+  outline: 0 none transparent !important;
+  outline-width: 0 !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  aspect-ratio: auto !important;
+  z-index: 99999 !important;
+  background: #000 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-items: center !important;
+  transition: none !important;
+}
+
 #koup-player-container:-webkit-full-screen {
   position: fixed !important;
   inset: 0 !important;
@@ -1187,16 +1214,31 @@ input[type="range"].netflix-volume-slider:focus-visible {
   max-height: none !important;
   margin: 0 !important;
   padding: 0 !important;
-  border: none !important;
-  outline: none !important;
+  border: 0 none transparent !important;
+  border-width: 0 !important;
+  border-color: transparent !important;
+  outline: 0 none transparent !important;
+  outline-width: 0 !important;
   box-shadow: none !important;
   border-radius: 0 !important;
   aspect-ratio: auto !important;
   z-index: 99999 !important;
   background: #000 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-items: center !important;
+  transition: none !important;
 }
 
-#koup-player-container:fullscreen *,
+#koup-player-container::backdrop {
+  background: #000 !important;
+}
+
+#koup-player-container:fullscreen * {
+  outline: none !important;
+}
+
 #koup-player-container:-webkit-full-screen * {
   outline: none !important;
 }
