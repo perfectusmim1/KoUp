@@ -12,6 +12,7 @@ KoUp platformu; yüksek performanslı streaming, büyük ölçekli çok kaynakl�
    - [2.3. Sitenin Tasarım Dilinden Kopma Yasağı](#23-sitenin-tasarım-dilinden-kopma-yasağı)
    - [2.4. Akıcı Açılış/Kapanış Animasyonu Zorunluluğu](#24-akıcı-açılışkapanış-animasyonu-zorunluluğu)
    - [2.5. %100 Mobil Uyum ve 44x44px Dokunma Hedefi](#25-100-mobil-uyum-ve-44x44px-dokunma-hedefi)
+   - [2.6. %100 Dil Uyumu ve Site Dili Bütünlüğü](#26-100-dil-uyumu-ve-site-dili-bütünlüğü)
 3. [Güvenlik ve Kimlik Doğrulama Standartları](#3-güvenlik-ve-kimlik-doğrulama-standartları)
    - [3.1. Kaynak Koda Gizli Anahtar Gömme Yasağı (Zero Hardcoded Secrets)](#31-kaynak-koda-gizli-anahtar-gömme-yasağı-zero-hardcoded-secrets)
    - [3.2. SSRF (Server-Side Request Forgery) Koruma Kuralları](#32-ssrf-server-side-request-forgery-koruma-kuralları)
@@ -28,15 +29,10 @@ KoUp platformu; yüksek performanslı streaming, büyük ölçekli çok kaynakl�
 5. [Arşiv Yönetimi ve Depolama Eşitleme Zinciri](#5-arşiv-yönetimi-ve-depolama-eşitleme-zinciri)
    - [5.1. Tam Arşiv Senkronizasyon Zinciri Zorunluluğu](#51-tam-arşiv-senkronizasyon-zinciri-zorunluluğu)
    - [5.2. Orijinal Afiş ve Metadata Koruma Kuralı](#52-orijinal-afiş-ve-metadata-koruma-kuralı)
-6. [Geliştirme Ortamı, Terminal ve Git Disiplini](#6-geliştirme-ortamı-terminal-ve-git-disiplini)
-   - [6.1. Durduk Yere Dev Server Başlatmama Disiplini](#61-durduk-yere-dev-server-başlatmama-disiplini)
-   - [6.2. Temiz Git Commit ve Push Disiplini](#62-temiz-git-commit-ve-push-disiplini)
-   - [6.3. Çalışma Alanı Temizliği ve Çöp Dosya Bırakmama](#63-çalışma-alanı-temizliği-ve-çöp-dosya-bırakmama)
-   - [6.4. %100 Dürüstlük ve Doğrulama (No Fake Success)](#64-100-dürüstlük-ve-doğrulama-no-fake-success)
-7. [Yaşayan Dokümantasyon ve Subagent Protokolleri](#7-yaşayan-dokümantasyon-ve-subagent-protokolleri)
-   - [7.1. Yaşayan Dokümantasyon Zorunluluğu (GEMINI.md §12)](#71-yaşayan-dokümantasyon-zorunluluğu-geminimd-12)
-   - [7.2. Alt Ajan Brifinginde Büyük Resim ve Takım Görünürlüğü](#72-alt-ajan-brifinginde-büyük-resim-ve-takım-görünürlüğü)
-8. [İlgili Dokümanlar](#8-ilgili-dokümanlar)
+6. [Kod Kalitesi, Temiz Commit ve Çalışma Alanı Disiplini](#6-kod-kalitesi-temiz-commit-ve-çalışma-alanı-disiplini)
+   - [6.1. Temiz Git Commit ve Push Disiplini](#61-temiz-git-commit-ve-push-disiplini)
+   - [6.2. Çalışma Alanı Temizliği ve Çöp Dosya Bırakmama](#62-çalışma-alanı-temizliği-ve-çöp-dosya-bırakmama)
+7. [İlgili Dokümanlar](#7-ilgili-dokümanlar)
 
 ---
 
@@ -63,13 +59,8 @@ KoUp platformu; yüksek performanslı streaming, büyük ölçekli çok kaynakl�
 | **R-PERF-04**| Performans| `useEffect` Event / Timer Cleanup Zorunluluğu | 🔴 KRİTİK | `NetflixPlayer.tsx`, timer/listener içeren hooklar |
 | **R-DATA-01**| Veri / Arşiv| Tam Senkronizasyon Zinciri (SQLite ⇄ R2 ⇄ Supabase) | 🔴 KRİTİK | `scripts/upload_to_r2.py`, `scripts/export_sources_bundles.py` |
 | **R-DATA-02**| Veri / Arşiv| Orijinal Afiş / MDL / AniList Bilgisini Ezmeme | 🟠 YÜKSEK | `api/image-proxy/route.ts`, `api/media/auto-enrich/route.ts` |
-| **R-DEV-01** | Dev / Git | Durduk Yere `npm run dev` Başlatmama | 🟡 ORTA | Terminal süreç yönetimi |
-| **R-DEV-02** | Dev / Git | Temiz Commit Disiplini (Geçici/Env Dosyası Commitlenmez)| 🔴 KRİTİK | `.gitignore`, `git status` |
-| **R-DEV-03** | Dev / Git | Çalışma Alanı Temizliği (Çöp Script Bırakmama) | 🟡 ORTA | `scripts/`, `tmp/`, kök dizin |
-| **R-DEV-04** | Disiplin | %100 Dürüstlük & Doğrulama (No Fake Success) | 🔴 KRİTİK | Test çıktıları, tip kontrolü, terminal doğrulama |
-| **R-DEV-05** | Dev / Task | Sonsuz Döngü / Hayalet Task Yasağı & Canlı Terminal İlerlemesi | 🔴 KRİTİK | Test scriptleri, batch/scrap döngüleri, background tasklar |
-| **R-DOC-01** | Doküman | Yaşayan Dokümantasyon (`docs/`) Güncelleme Zorunluluğu | 🔴 KRİTİK | `docs/*.md`, `docs/CHANGELOG.md`, `GEMINI.md` |
-| **R-DOC-02** | Orkestrasyon| Subagent Brifinginde Büyük Resim & Takım Görünürlüğü | 🟠 YÜKSEK | `invoke_subagent` çağrıları |
+| **R-CODE-01**| Kod / Git   | Temiz Git Commit Disiplini (Geçici/Env Dosyası Commitlenmez)| 🔴 KRİTİK | `.gitignore`, `git status` |
+| **R-CODE-02**| Kod / Repo  | Çalışma Alanı Temizliği (Çöp Dosya / Script Bırakmama) | 🟡 ORTA | `scripts/`, `tmp/`, kök dizin |
 
 ---
 
@@ -342,15 +333,9 @@ useEffect(() => {
 
 ---
 
-## 6. Geliştirme Ortamı, Terminal ve Git Disiplini
+## 6. Kod Kalitesi, Temiz Commit ve Çalışma Alanı Disiplini
 
-### 6.1. Durduk Yere Dev Server Başlatmama Disiplini
-- **Kural:** Kullanıcı açıkça talep etmedikçe veya canlı tarayıcı testi zorunlu olmadıkça ajanlar kendi kendilerine terminalde `npm run dev` başlatamaz.
-- **Neden Var (Somut Risk):** Arka planda unutulan dev sunucuları portları işgal eder (`localhost:3000` çakışması), CPU/RAM tüketir ve `.next` önbelleğini kilitleyerek `npx tsc --noEmit` veya derleme işlemlerinin çökmesine yol açar.
-
----
-
-### 6.2. Temiz Git Commit ve Push Disiplini
+### 6.1. Temiz Git Commit ve Push Disiplini
 - **Kural:**
   - Bir geliştirme, refaktör veya onarım tamamlanıp doğrulandıktan sonra değişiklikler anlamlı bir commit mesajıyla kaydedilmeli ve repoya gönderilmelidir.
   - `.env`, `.env.local`, API anahtarları, geçici log dosyaları, test çıktıları veya SQLite WAL geçici dosyaları **asla commitlenemez**.
@@ -359,47 +344,12 @@ useEffect(() => {
 
 ---
 
-### 6.3. Çalışma Alanı Temizliği ve Çöp Dosya Bırakmama
-- **Kural:** Görev sırasında oluşturulan geçici test scriptleri (örneğin `test_resolve.py`, `temp_dump.json`), tek kullanımlık analiz scriptleri veya log dosyaları iş tamamlandığında **mutlaka silinmelidir**. Proje kökünde çöp dosya bırakılamaz.
+### 6.2. Çalışma Alanı Temizliği ve Çöp Dosya Bırakmama
+- **Kural:** Geliştirme sırasında oluşturulan geçici test scriptleri (örneğin `test_resolve.py`, `temp_dump.json`), tek kullanımlık analiz scriptleri veya log dosyaları iş tamamlandığında **mutlaka silinmelidir**. Proje kökünde çöp dosya bırakılamaz.
 
 ---
 
-### 6.4. %100 Dürüstlük ve Doğrulama (No Fake Success)
-- **Kural:** Bir özellik, düzeltme veya API ucu gerçekten test edilip çalıştığı doğrulanmadan asla "çalışıyor", "düzeltildi" veya "tamamlandı" denilemez.
-- **Neden Var (Somut Risk):** Varsayıma dayalı sahte başarı beyanları kullanıcı güvenini sıfırlar ve zincirleme gizli hatalara sebep olur.
-- **Nasıl Uygulanır:**
-  - TypeScript tip kontrolü (`npx tsc --noEmit`) hatasız geçmelidir.
-  - İlgili uçlar terminal komutlarıyla (curl, python istekleri) bizzat tetiklenip 200 OK yanıtı doğrulanmalıdır.
-
----
-
-### 6.5. Arka Plan Süreçleri, Sonsuz Döngü Koruması ve Canlı Terminal İlerleme Loglaması (Anti-Hang & Live Progress Protocol)
-- **Kural 1: Sonsuz Döngü ve Hayalet Task Yasağı (Zombie Process Guard)**
-  - `tsx`, `node` veya `python` ile çalıştırılan test, doğrulama veya toplu scriptlerde açık kalan HTTP soketleri, keep-alive bağlantıları veya timer'lar yüzünden Node event loop'un açık kalıp arka plan task'ının sonsuza kadar askıda kalması kesinlikle yasaktır.
-  - Node/TypeScript test kodlarında scriptin sonuna mutlaka açıkça `process.exit(0)` eklenmeli (`finally { process.exit(0); }`), Python'da `sys.exit(0)` konmalıdır. Ayrıca her test scriptinde maksimum 30-45 saniyelik bir timeout muhafazası (`setTimeout(() => { console.error('Zaman aşımı'); process.exit(1); }, 30000)`) bulunmalıdır.
-  - Alt ajan veya ana ajan "İş bitti/tamamlandı" demeden önce `manage_task(Action: 'list')` ile arkada asılı kalan arka plan task'ı olup olmadığını kontrol etmeli, varsa `manage_task(Action: 'kill')` ile derhal sonlandırmalıdır. Asla arkada hayalet task açık bırakılamaz.
-- **Kural 2: Canlı Terminal İlerleme & Yüzde Loglaması (Real-Time Terminal Progress)**
-  - Çoklu veri tarama, toplu afiş aktarma, kazıma veya güncelleme gibi döngülü/uzun süren işlemlerde scriptlerin sessizce (log basmadan) çalışması kesinlikle yasaktır.
-  - Kullanıcının ve ajanın anlık durumu görebilmesi için her adımda veya periyodik bloklarda terminale canlı ilerleme logu basılacaktır: `[Zaman] [Mevcut/Toplam] (%Yüzde) - [İşlenen Öğe / Durum]` (Örnek: `[12:30:15] [145/2990] (%4.8) - Güncelleniyor: Seri Adı`). Böylece işlemin hangi aşamada olduğu, ne kadar kaldığı ve takılıp takılmadığı terminal çıktısında anbean görülecektir.
-
----
-
-## 7. Yaşayan Dokümantasyon ve Subagent Protokolleri
-
-### 7.1. Yaşayan Dokümantasyon Zorunluluğu (GEMINI.md §12)
-- **Kural:** Sitenin tek doğruluk kaynağı `docs/` klasörüdür. Yeni bir sayfa, bileşen, API ucu, script, tablo veya kural eklendiğinde, aynı görev içinde ilgili doküman dosyası güncellenecek ve [`docs/CHANGELOG.md`](./CHANGELOG.md) dosyasına işlenecektir. Doküman güncellenmeden görev "tamamlandı" sayılamaz.
-
----
-
-### 7.2. Alt Ajan Brifinginde Büyük Resim ve Takım Görünürlüğü
-- **Kural:** Ana Ajan (Master Orchestrator), alt ajanlara (`invoke_subagent`) asla sadece dar ve mekanik görevler veremez. Her alt ajanın brifingine:
-  1. Kullanıcının ana talebi ve varmak istediğimiz **Büyük Resim**,
-  2. O anda sahada görev yapan diğer paralel ajanların tam listesi, rolleri ve **kilitledikleri dosyalar (Exclusive Lock)** eksiksiz yazılmalıdır.
-- **Neden Var:** Alt ajanlar izole kaldıklarında birbirlerinin dosyalarını ezebilir veya genel mimariyle çelişen varsayımlarla hata yapabilirler.
-
----
-
-## 8. İlgili Dokümanlar
+## 7. İlgili Dokümanlar
 - [01-genel-bakis-ve-mimari.md](./01-genel-bakis-ve-mimari.md) — 3 Katmanlı Mimari ve Veri Akışı
 - [04-bilesenler-ve-tasarim-sistemi.md](./04-bilesenler-ve-tasarim-sistemi.md) — CustomSelect ve Tasarım Dili
 - [07-kimlik-yetki-ve-guvenlik.md](./07-kimlik-yetki-ve-guvenlik.md) — AdminAuth, RLS ve Güvenlik
