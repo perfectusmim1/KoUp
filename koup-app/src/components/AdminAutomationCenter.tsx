@@ -304,6 +304,24 @@ const SCRAPER_BRANDS: Record<
     category: 'Anime & Çizgi Dizi Fansub',
     protocol: 'Mail.ru & MP4/HLS Akışları',
   },
+  anizm: {
+    logoText: 'Anizm',
+    domain: 'https://anizm.net',
+    bgGradient: 'from-sky-600/25 via-blue-700/20 to-sky-950/40',
+    borderGlow: 'border-sky-500/40 group-hover:border-sky-400/80',
+    textColor: 'text-sky-300',
+    category: 'Anime & Fansub Arşivi',
+    protocol: 'Anizm Player + Tau-Video MP4/HLS Akışları',
+  },
+  asyamag: {
+    logoText: 'AsyaMag',
+    domain: 'https://asyamag.com',
+    bgGradient: 'from-fuchsia-600/25 via-pink-700/20 to-fuchsia-950/40',
+    borderGlow: 'border-fuchsia-500/40 group-hover:border-fuchsia-400/80',
+    textColor: 'text-fuchsia-300',
+    category: 'Asya Magazin & Dizi Haberleri',
+    protocol: 'WordPress REST API v2 + Oyuncu/Dizi Eşleme',
+  },
 };
 
 export default function AdminAutomationCenter({
@@ -515,6 +533,8 @@ export default function AdminAutomationCenter({
     { value: 'dizipal', label: 'Dizipal (Dinamik Domain)', description: 'Otomatik domain çözümü ile güncel Dizipal yayınlarını çeker' },
     { value: 'fullhdfilmizlesene', label: 'FullHDFilmİzlesene (Sinema)', description: 'Rapidrame & Close Dual 1080p film akışlarını günceller' },
     { value: 'tranimaci', label: 'TrAnimaci (Anime & Çizgi Dizi)', description: 'TrAnimaci fansub bölümlerini ve MP4 kaynaklarını işler' },
+    { value: 'anizm', label: 'Anizm (Anime & Fansub)', description: 'Anizm Player ve Tau-Video anime akışlarını tarar' },
+    { value: 'asyamag', label: 'AsyaMag (Magazin & Haber)', description: 'WordPress REST API üzerinden Asya magazin haberlerini çeker' },
     // Klasik Botlar & Sistem Servisleri
     { value: 'dizikorea', label: 'DiziKorea (K-Drama)', description: 'Kore, Çin ve Asya dizilerinin son bölümlerini tarar' },
     { value: 'animecix', label: 'AnimeciX (Anime)', description: 'Yeni anime bölümleri ve Tau-Video akışlarını işler' },
@@ -762,7 +782,7 @@ export default function AdminAutomationCenter({
               {stats24h.totalSynced.toLocaleString('tr-TR')}
             </span>
             <span className="text-[11px] font-mono text-white/40 block mt-0.5">
-              8 bot arşiv toplamı
+              {localScrapers.length} bot arşiv toplamı
             </span>
           </div>
         </div>
@@ -906,7 +926,7 @@ export default function AdminAutomationCenter({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {localScrapers.map((bot) => {
             const isRunning = runningScraperId === bot.id;
 

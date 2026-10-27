@@ -22,11 +22,10 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(parseInt(searchParams.get('limit') || '30', 10), 100);
 
     // 1. Fetch active scrapers from scraper_configs
-    const activeIds = ['ddizi', 'animecix', 'dizibox', 'dizikorea', 'hdfilm', 'asyawatch', 'dizilla', 'dizifon'];
     const { data: scrapersData, error: scrapersErr } = await supabase
       .from('scraper_configs')
       .select('*')
-      .in('id', activeIds);
+      .order('id');
 
     if (scrapersErr) {
       console.error('Error fetching scraper_configs:', scrapersErr);

@@ -72,14 +72,28 @@ def emit_result(res: dict):
 
 
 SUPPORTED_SITES = [
-    {"id": "asyawatch", "name": "AsyaWatch", "badge": "1080p HLS"},
-    {"id": "dizikorea", "name": "DiziKorea", "badge": "PlayerDKorea"},
-    {"id": "dizifon", "name": "DiziFon", "badge": "OK.ru / Vidmoly"},
-    {"id": "dizibox", "name": "DiziBox", "badge": "DBX Pro HLS"},
-    {"id": "dizilla", "name": "Dizilla", "badge": "1080p Native"},
-    {"id": "animecix", "name": "AnimeciX", "badge": "Tau-Video"},
     {"id": "ddizi", "name": "DDizi", "badge": "YouTube HD"},
+    {"id": "animecix", "name": "AnimeciX", "badge": "Tau-Video"},
+    {"id": "dizibox", "name": "DiziBox", "badge": "DBX Pro HLS"},
+    {"id": "dizikorea", "name": "DiziKorea", "badge": "PlayerDKorea"},
     {"id": "hdfilm", "name": "HDFilmcehennemi", "badge": "Rapidrame HLS"},
+    {"id": "asyawatch", "name": "AsyaWatch", "badge": "1080p HLS"},
+    {"id": "dizilla", "name": "Dizilla", "badge": "1080p Native"},
+    {"id": "dizifon", "name": "DiziFon", "badge": "OK.ru / Vidmoly"},
+    {"id": "diziizle", "name": "Diziİzle", "badge": "Pilavyer 1080p HLS"},
+    {"id": "webdramaturkey2", "name": "WebDramaTurkey2", "badge": "WDT Custom Player"},
+    {"id": "koredizi", "name": "KoreDizi", "badge": "Direct MP4 CDN"},
+    {"id": "shortizle", "name": "Shortİzle", "badge": "Direct MP4 Stream"},
+    {"id": "dramavadisi", "name": "DramaVadisi", "badge": "Open Stream + HLS"},
+    {"id": "dramabox", "name": "DramaBox", "badge": "Metadata Resolution"},
+    {"id": "animelvl", "name": "AnimeLVL", "badge": "stream.mp4 Direct"},
+    {"id": "sezonlukdizi", "name": "SezonlukDizi", "badge": "dataAlternatif22"},
+    {"id": "dizipal", "name": "Dizipal", "badge": "PBKDF2/AES Direct HLS"},
+    {"id": "fullhdfilmizlesene", "name": "FullHDFilmizlesene", "badge": "ROT13/Base64 1080p"},
+    {"id": "tranimaci", "name": "TRAnimeci", "badge": "Next.js Fansub"},
+    {"id": "anizm", "name": "Anizm", "badge": "Odnoklassniki Fansub"},
+    {"id": "bldrama", "name": "BLDrama", "badge": "BL Custom Player"},
+    {"id": "asyaanimeleri", "name": "AsyaAnimeleri", "badge": "Fansub HLS"},
 ]
 
 
@@ -87,7 +101,8 @@ def auto_resolve_site_slug(site_id: str, title: str):
     """Dynamically discovers the exact site-specific slug used on this site via live search."""
     try:
         from scripts.live_multi_search import (
-            search_asyawatch, search_dizifon, search_dizikorea, search_animecix, search_dizibox
+            search_asyawatch, search_dizifon, search_dizikorea, search_animecix, search_dizibox,
+            search_diziizle, search_shortizle
         )
         fn_map = {
             "asyawatch": search_asyawatch,
@@ -95,6 +110,8 @@ def auto_resolve_site_slug(site_id: str, title: str):
             "dizikorea": search_dizikorea,
             "animecix": search_animecix,
             "dizibox": search_dizibox,
+            "diziizle": search_diziizle,
+            "shortizle": search_shortizle,
         }
         fn = fn_map.get(site_id)
         if not fn:
@@ -110,7 +127,8 @@ def auto_resolve_site_slug(site_id: str, title: str):
 def resolve_all_site_slugs(title: str, connected_sites=None) -> dict:
     """Searches all connected/supported sites concurrently and returns exact slugs and match details."""
     from scripts.live_multi_search import (
-        search_asyawatch, search_dizifon, search_dizikorea, search_animecix, search_dizibox
+        search_asyawatch, search_dizifon, search_dizikorea, search_animecix, search_dizibox,
+        search_diziizle, search_shortizle
     )
     from concurrent.futures import ThreadPoolExecutor
 
@@ -120,6 +138,8 @@ def resolve_all_site_slugs(title: str, connected_sites=None) -> dict:
         "dizikorea": (search_dizikorea, "DiziKorea"),
         "animecix": (search_animecix, "AnimeciX"),
         "dizibox": (search_dizibox, "DiziBox"),
+        "diziizle": (search_diziizle, "Diziİzle"),
+        "shortizle": (search_shortizle, "Shortİzle"),
     }
     targets = connected_sites or list(fn_map.keys())
     results = {}
@@ -308,6 +328,102 @@ def sync_single_series(drama_id: int) -> dict:
                 from scrapers.sync_target_drama import sync_asyaanimeleri_target
                 eps_a, srcs_a = sync_asyaanimeleri_target(conn, cur, dr_dict, target_url=manual_u)
                 site_delta = eps_a + srcs_a
+            elif site_id == "diziizle":
+                from scrapers.sites.diziizle import fetch_diziizle_series_data, _get_base
+                from scrapers.multisite import add_source, match_or_create_episode
+                base_u = _get_base()
+                is_an = dr_dict.get("content_type") == "anime"
+                pfx = "/anime/" if is_an else "/dizi/"
+                s_url = manual_u if manual_u else (f"{pfx}{target_term}" if target_term and not target_term.startswith("/") else (target_term if target_term else f"{pfx}{dr_dict.get('slug')}"))
+                parsed = fetch_diziizle_series_data(s_url, base_u, is_anime=is_an)
+                if parsed and parsed.get("episodes"):
+                    for season_num, ep_num, ep_name, full_ep_u, valid_u in parsed["episodes"]:
+                        ep_id, is_new = match_or_create_episode(cur, drama_id, season_num, ep_num, ep_name, full_ep_u)
+                        if is_new:
+                            site_delta += 1
+                        if add_source(cur, episode_id=ep_id, source_name="Diziİzle (Pilavyer HD)", direct_url=valid_u, provider="pilavyer", site="diziizle"):
+                            site_delta += 1
+                    conn.commit()
+            elif site_id in ("webdramaturkey2", "webdramaturkey"):
+                from scrapers.sites.webdramaturkey import scrape_wdt_series_or_film
+                is_flm = dr_dict.get("content_type") == "film"
+                pfx = "/film/" if is_flm else "/dizi/"
+                w_url = manual_u if manual_u else (f"{pfx}{target_term}" if target_term and not target_term.startswith("/") else (target_term if target_term else f"{pfx}{dr_dict.get('slug')}"))
+                wdt_res = scrape_wdt_series_or_film(cur, conn, w_url, idx=idx, is_film=is_flm)
+                site_delta = (wdt_res.get("episodes_added", 0) or 0) + (wdt_res.get("sources_added", 0) or 0)
+            elif site_id == "shortizle":
+                from scrapers.shortdrama.shortizle import ShortizleScraper
+                s_scraper = ShortizleScraper()
+                before_src = cur.execute("SELECT count(s.id) FROM episode_sources s JOIN episodes e ON s.episode_id=e.id WHERE e.drama_id=?", (drama_id,)).fetchone()[0]
+                target_u = manual_u or (f"https://shortizle.com/watch/{target_term}" if target_term else f"https://shortizle.com/watch/{dr_dict.get('slug')}")
+                s_scraper.scrape_drama(target_u, sync_cloud=False)
+                after_src = cur.execute("SELECT count(s.id) FROM episode_sources s JOIN episodes e ON s.episode_id=e.id WHERE e.drama_id=?", (drama_id,)).fetchone()[0]
+                site_delta = max(0, after_src - before_src)
+            elif site_id == "dramavadisi":
+                from scrapers.shortdrama.dramavadisi import DramaVadisiScraper
+                dv_scraper = DramaVadisiScraper()
+                before_src = cur.execute("SELECT count(s.id) FROM episode_sources s JOIN episodes e ON s.episode_id=e.id WHERE e.drama_id=?", (drama_id,)).fetchone()[0]
+                target_u = manual_u or (f"https://dramavadisi.com/dizi/{target_term}" if target_term else f"https://dramavadisi.com/dizi/{dr_dict.get('slug')}")
+                dv_scraper.scrape_drama(target_u, sync_cloud=False)
+                after_src = cur.execute("SELECT count(s.id) FROM episode_sources s JOIN episodes e ON s.episode_id=e.id WHERE e.drama_id=?", (drama_id,)).fetchone()[0]
+                site_delta = max(0, after_src - before_src)
+            elif site_id == "koredizi":
+                from scrapers.shortdrama.koredizi import KoreDiziScraper
+                kd_scraper = KoreDiziScraper()
+                kd_scraper.login()
+                before_src = cur.execute("SELECT count(s.id) FROM episode_sources s JOIN episodes e ON s.episode_id=e.id WHERE e.drama_id=?", (drama_id,)).fetchone()[0]
+                t_slug = target_term or dr_dict.get("slug")
+                t_url = manual_u or f"https://koredizi.biz/dizi/{t_slug}"
+                kd_scraper.scrape_drama({"url": t_url, "slug": t_slug, "title": dr_dict.get("title")}, sync_cloud=False)
+                after_src = cur.execute("SELECT count(s.id) FROM episode_sources s JOIN episodes e ON s.episode_id=e.id WHERE e.drama_id=?", (drama_id,)).fetchone()[0]
+                site_delta = max(0, after_src - before_src)
+            elif site_id == "dramabox":
+                from scrapers.shortdrama.dramabox import DramaBoxScraper
+                db_scraper = DramaBoxScraper()
+                site_delta = db_scraper.match_and_backfill_drama(dr_dict, sync_cloud=False) or 0
+            elif site_id == "animelvl":
+                from scrapers.sites.animelvl import scrape_anime_page, _get_tls_session
+                a_sess = _get_tls_session()
+                target_u = manual_u or (f"https://animelvl.com/anime/{target_term}" if target_term else f"https://animelvl.com/anime/{dr_dict.get('slug')}")
+                site_delta = scrape_anime_page(conn, cur, idx, a_sess, target_u) or 0
+            elif site_id == "sezonlukdizi":
+                from scrapers.sites.sezonlukdizi import scrape_series, save_series_batch, _get_tls_session
+                s_sess = _get_tls_session()
+                s_slug = target_term or dr_dict.get("slug")
+                target_u = manual_u or (s_slug if s_slug.endswith(".html") else f"https://sezonlukdizi.cc/diziler/{s_slug}.html")
+                item = scrape_series(conn, cur, idx, s_sess, target_u)
+                if item:
+                    tot_added, _ = save_series_batch(conn, cur, idx, [item])
+                    site_delta = tot_added or 0
+            elif site_id == "dizipal":
+                from scrapers.sites.dizipal import scrape_series, save_dizipal_items_batch, _get_tls_session, resolve_current_domain
+                d_sess = _get_tls_session()
+                base_u = resolve_current_domain(d_sess)
+                d_slug = target_term or dr_dict.get("slug")
+                target_u = manual_u or f"{base_u}/dizi/{d_slug}"
+                item = scrape_series(conn, cur, idx, d_sess, target_u, base_u)
+                if item:
+                    tot_added, _ = save_dizipal_items_batch(conn, cur, idx, [item], base_u)
+                    site_delta = tot_added or 0
+            elif site_id == "fullhdfilmizlesene":
+                from scrapers.sites.fullhdfilmizlesene import scrape_movie, _get_tls_session, resolve_base_url
+                f_sess = _get_tls_session()
+                base_u = resolve_base_url(f_sess)
+                f_slug = target_term or dr_dict.get("slug")
+                target_u = manual_u or f"{base_u}/{f_slug}"
+                site_delta = scrape_movie(conn, cur, idx, f_sess, target_u) or 0
+            elif site_id == "tranimaci":
+                from scrapers.sites.tranimaci_anizm import scrape_tranimaci_anime, _get_tls_session
+                t_sess = _get_tls_session(site="tranimaci")
+                t_slug = target_term or dr_dict.get("slug")
+                target_u = manual_u or f"https://tranimaci.com/anime/{t_slug}"
+                site_delta = scrape_tranimaci_anime(conn, cur, idx, t_sess, target_u) or 0
+            elif site_id == "anizm":
+                from scrapers.sites.tranimaci_anizm import scrape_anizm_episode, _get_tls_session
+                a_sess = _get_tls_session(site="anizm")
+                a_slug = target_term or dr_dict.get("slug")
+                target_u = manual_u or f"https://anizm.net/{a_slug}"
+                site_delta = scrape_anizm_episode(conn, cur, idx, a_sess, target_u) or 0
             else:
                 emit_log(f"[{site_id}] Bilinmeyen site atlandı.")
                 continue

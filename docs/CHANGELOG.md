@@ -11,7 +11,14 @@ Bu dosya, KoUp platformunda yapılan tüm önemli geliştirmeleri, mimari kararl
 
 ---
 
-## [2026-10-27] — Admin Paneli Kolaylaştırıcı Seçici (AdminMediaPicker) & Seri Otomasyonu Kart İyileştirmesi
+## [2026-10-27] — Admin Scraper Otomasyonu 20+ Siteye Genişletildi
+
+### Changed
+- `koup-app/src/app/admin/page.tsx` & `koup-app/src/app/api/admin/automation/route.ts`: Sabit 8 site kısıtlaması (`ACTIVE_SCRAPER_IDS`) kaldırılarak Supabase'deki tüm aktif 20 scraper botu (`diziizle`, `shortizle`, `dramavadisi`, `webdramaturkey2`, `dramabox`, `animelvl`, `sezonlukdizi`, `dizipal` vb.) panele açıldı.
+- `koup-app/src/components/AdminAutomationCenter.tsx`: 20 bot için marka bilgileri (`anizm`, `asyamag` dahil) eklendi ve bot ızgarası 3'lü kompakt sütuna uyarlandı.
+- `scripts/series_automation_runner.py`: `SUPPORTED_SITES` listesi 22 siteye genişletildi ve tüm sitelerin scraper router fonksiyonları bağlandı.
+- `scripts/live_multi_search.py`: Diziİzle ve Shortİzle canlı arama entegrasyonu sağlandı.
+
 
 ### Changed
 - `koup-app/src/components/AdminSeriesAutomation.tsx`: Kart düzeni 2 seviyeli hiyerarşiye dönüştürüldü; poster, başlık ve istatistiklerin tek satırda dar sütuna sıkışması engellendi. Bağlı olmayan kaynak siteleri akordeon açılır tepsisine taşındı. `slugifyTR` ile Türkçe karakter destekli slug üretimi sağlandı.

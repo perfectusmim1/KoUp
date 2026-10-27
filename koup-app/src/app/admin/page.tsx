@@ -557,6 +557,26 @@ const SCRAPER_BRAND_INFO: Record<
     category: 'Anime & Çizgi Dizi Fansub',
     protocol: 'Mail.ru & MP4/HLS Akışları',
   },
+  anizm: {
+    logoText: 'Anizm',
+    domain: 'https://anizm.net',
+    tag: 'Anime Fansub',
+    bgGradient: 'from-sky-600/25 via-blue-700/20 to-sky-950/40',
+    borderGlow: 'border-sky-500/40 group-hover:border-sky-400/80',
+    textColor: 'text-sky-300',
+    category: 'Anime & Fansub Arşivi',
+    protocol: 'Anizm Player + Tau-Video MP4/HLS Akışları',
+  },
+  asyamag: {
+    logoText: 'AsyaMag',
+    domain: 'https://asyamag.com',
+    tag: 'Asya Haber',
+    bgGradient: 'from-fuchsia-600/25 via-pink-700/20 to-fuchsia-950/40',
+    borderGlow: 'border-fuchsia-500/40 group-hover:border-fuchsia-400/80',
+    textColor: 'text-fuchsia-300',
+    category: 'Asya Magazin & Dizi Haberleri',
+    protocol: 'WordPress REST API v2 + Oyuncu/Dizi Eşleme',
+  },
 };
 
 function ScraperLogoBadge({ siteKey, name }: { siteKey: string; name: string }) {
@@ -933,20 +953,7 @@ export default function AdminDashboardPage() {
           supabase.from('media').select('*').eq('is_featured', true).order('featured_order', { ascending: true }).limit(16),
         ]);
 
-        const ACTIVE_SCRAPER_IDS = new Set([
-          'ddizi',
-          'animecix',
-          'dizibox',
-          'dizikorea',
-          'hdfilm',
-          'asyawatch',
-          'dizilla',
-          'dizifon',
-        ]);
-        const filteredScrapers = ((sRes.data as ScraperConfigRow[]) || []).filter((bot) =>
-          ACTIVE_SCRAPER_IDS.has(bot.id)
-        );
-        setScrapers(filteredScrapers);
+        setScrapers((sRes.data as ScraperConfigRow[]) || []);
         setReports((rRes.data as IssueReportRow[]) || []);
         setFeaturedMedia((fRes.data as MediaItem[]) || []);
 

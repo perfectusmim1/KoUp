@@ -86,7 +86,10 @@ def clean_display_title(raw: str) -> str:
     if not raw:
         return ''
     t = re.sub(r'★\s*[\d.]+\s*', '', raw)
+    t = re.sub(r'^(?:DiziHD|FilmHD)[\d.]*', '', t, flags=re.I)
+    t = re.sub(r'^(?:\+18|Altyazı|Dublaj|\s)+', '', t, flags=re.I)
     t = re.sub(r'\d+\.\s*(Sezon|Bölüm).*$', '', t, flags=re.I)
+    t = re.sub(r'•?\s*\d+\s*(?:bölüm|sezon).*$', '', t, flags=re.I)
     t = re.sub(r'\b(izle|hdfilmcehennemi|film izle|dizi izle|türkçe dublaj|türkçe altyazılı|kore dizisi|kore|japon|tayland|çin|cin|d1|altyazı|dublaj|\d+\s*saat\s*önce|\d+\s*gün\s*önce)\b', '', t, flags=re.I)
     t = re.sub(r'\b(19\d\d|20\d\d)\b', '', t)
     t = re.sub(r'[\-_|:•]+$', '', t)
@@ -284,6 +287,82 @@ def search_dizibox(q: str):
     return results
 
 
+def search_diziizle(q: str):
+    url = f"https://diziizle.cafe/?s={urllib.parse.quote(q)}"
+    req = urllib.request.Request(url, headers={'Referer': 'https://diziizle.cafe/', **HEADERS})
+    results = []
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=8) as r:
+            html = r.read().decode('utf-8', errors='ignore')
+            soup = BeautifulSoup(html, 'html.parser')
+            seen = set()
+            for a in soup.find_all('a', href=True):
+                h = a['href']
+                if '/dizi/' in h and '-sezon-' not in h and '-bolum-' not in h:
+                    slug = h.split('/dizi/')[-1].strip('/')
+                    if not slug or slug in seen:
+                        continue
+                    img = a.find('img')
+                    img_src = (img.get('data-src') or img.get('src')) if img else None
+                    if img_src and img_src.startswith('data:'):
+                        img_src = None
+                    raw_title = img.get('alt') if (img and img.get('alt')) else a.get_text(strip=True)
+                    clean_t = clean_display_title(raw_title) or slug.replace('-', ' ').title()
+                    if not query_matches(q, slug, clean_t):
+                        continue
+                    seen.add(slug)
+                    results.append({
+                        "site": "diziizle",
+                        "site_name": "Diziİzle",
+                        "badge": "Pilavyer 1080p HLS",
+                        "title": clean_t,
+                        "slug": slug,
+                        "url": h,
+                        "cover_image": img_src,
+                    })
+                    if len(results) >= 6:
+                        break
+    except Exception:
+        pass
+    return results
+
+
+def search_shortizle(q: str):
+    url = f"https://shortizle.com/search?q={urllib.parse.quote(q)}"
+    req = urllib.request.Request(url, headers={'Referer': 'https://shortizle.com/', **HEADERS})
+    results = []
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=8) as r:
+            html = r.read().decode('utf-8', errors='ignore')
+            soup = BeautifulSoup(html, 'html.parser')
+            seen = set()
+            for a in soup.find_all('a', href=True):
+                h = a['href']
+                if '/icerik/' in h or '/watch/' in h:
+                    slug = h.split('/icerik/')[-1].strip('/') if '/icerik/' in h else h.split('/watch/')[-1].strip('/')
+                    if not slug or slug in seen:
+                        continue
+                    raw_title = a.get_text(strip=True)
+                    clean_t = clean_display_title(raw_title) or slug.replace('-', ' ').title()
+                    if not query_matches(q, slug, clean_t):
+                        continue
+                    seen.add(slug)
+                    results.append({
+                        "site": "shortizle",
+                        "site_name": "Shortİzle",
+                        "badge": "Direct MP4 Stream",
+                        "title": clean_t,
+                        "slug": slug,
+                        "url": f"https://shortizle.com/watch/{slug}" if not h.startswith('http') else h.replace('/icerik/', '/watch/'),
+                        "cover_image": None,
+                    })
+                    if len(results) >= 6:
+                        break
+    except Exception:
+        pass
+    return results
+
+
 def multi_search(q: str):
     q = q.strip()
     if not q:
@@ -292,14 +371,16 @@ def multi_search(q: str):
     local_results = search_local_catalog(q)
 
     live_results = []
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    with ThreadPoolExecutor(max_workers=7) as executor:
         f_asya = executor.submit(search_asyawatch, q)
         f_dfon = executor.submit(search_dizifon, q)
         f_dkorea = executor.submit(search_dizikorea, q)
         f_anime = executor.submit(search_animecix, q)
         f_dbox = executor.submit(search_dizibox, q)
+        f_dizi = executor.submit(search_diziizle, q)
+        f_short = executor.submit(search_shortizle, q)
 
-        for f in [f_asya, f_dfon, f_dkorea, f_anime, f_dbox]:
+        for f in [f_asya, f_dfon, f_dkorea, f_anime, f_dbox, f_dizi, f_short]:
             try:
                 res = f.result()
                 if res:
