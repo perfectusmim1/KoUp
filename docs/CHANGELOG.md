@@ -20,6 +20,7 @@ Bu dosya, KoUp platformunda yapılan tüm önemli geliştirmeleri, mimari kararl
 - `NetflixPlayer.tsx` & `globals.css`: Tam ekranda oynatıcı etrafında beliren 1px istenmeyen beyaz çerçeve/çizgi kaldırıldı. `#koup-player-container`, alt elemanları, `<video>` ve `<iframe>` etiketlerine `border: none; outline: none; ring-0; box-shadow: none;` uygulandı; geçişler GPU hızlandırmalı yumuşak animasyonla desteklendi.
 
 ### Added
+- `Trail-Code`: Projeye Trail-Code (`@trailhq/trail-code`) kod zekası, Tree-sitter graft haritası ve oturum hafıza katmanı (`.trail/learnings/`) kuruldu. Antigravity ve Gemini için `~/.gemini/config/mcp_config.json`, `.gemini/settings.json`, `~/.gemini/skills/trail/SKILL.md` ve `AGENTS.md` entegre edildi; 1.721 düğüm ve 5.256 kenar indekslendi.
 - `GitNexus`: Projeye GitNexus kod haritalama ve grafik indeksleme aracı kuruldu (`npx gitnexus setup -c antigravity` & `analyze`). Antigravity ortamı için 12 adet GitNexus skill'i, araçlar ve AfterTool hook'ları yapılandırıldı; 7.145 sembol, 15.572 bağımlılık ve 532 yürütme akışı indekslendi.
 
 ### Changed
