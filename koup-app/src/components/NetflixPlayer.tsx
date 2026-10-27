@@ -5528,21 +5528,12 @@ export default function NetflixPlayer({
                                 <Film className="w-6 h-6" />
                               </div>
                             )}
-                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                              <div className="w-7 h-7 rounded-full bg-white/25 backdrop-blur-sm border border-white/40 flex items-center justify-center shadow-lg">
-                                <Play className="w-3.5 h-3.5 fill-white text-white ml-0.5" />
-                              </div>
-                            </div>
-                            <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/75 backdrop-blur-sm text-[9px] font-bold text-white/90">
-                              {nextEp.episode_number}. Bölüm
-                            </div>
                           </div>
 
                           {/* Title & Countdown Progress */}
                           <div className="min-w-0 flex-1">
-                            <div className="text-[10px] font-bold uppercase tracking-wider text-[#E50914] flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-[#E50914] animate-ping" />
-                              <span>SIRADAKİ BÖLÜM</span>
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-[#E50914]">
+                              SIRADAKİ BÖLÜM
                             </div>
                             <div className="text-xs sm:text-sm font-bold text-white truncate mt-0.5">
                               {nextEp.season_number && nextEp.season_number > 1
