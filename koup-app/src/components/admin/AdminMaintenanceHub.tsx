@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import CustomSelect from '@/components/CustomSelect';
 import KoupInput from '@/components/KoupInput';
+import AdminMediaPicker, { AdminMediaPickerValue } from '@/components/admin/AdminMediaPicker';
 import { adminFetch } from '@/lib/adminClient';
 import { useKoUpSelector } from '@/context/KoUpContext';
 
@@ -90,12 +91,12 @@ export default function AdminMaintenanceHub({
   const [healMaxGap, setHealMaxGap] = useState('30');
   const [healCountry, setHealCountry] = useState('ALL');
   const [healProvider, setHealProvider] = useState('all');
-  const [healDramaId, setHealDramaId] = useState('');
+  const [healSelectedMedia, setHealSelectedMedia] = useState<AdminMediaPickerValue | null>(null);
   const [healDryRun, setHealDryRun] = useState(false);
 
   const [pendingLimit, setPendingLimit] = useState('50');
   const [pendingSite, setPendingSite] = useState('all');
-  const [pendingDramaId, setPendingDramaId] = useState('');
+  const [pendingSelectedMedia, setPendingSelectedMedia] = useState<AdminMediaPickerValue | null>(null);
   const [pendingForce, setPendingForce] = useState(false);
   const [pendingDryRun, setPendingDryRun] = useState(false);
 
@@ -497,13 +498,13 @@ export default function AdminMaintenanceHub({
                 />
               </div>
               <div className="col-span-2 sm:col-span-1">
-                <label className="text-[10px] font-mono text-white/45 block mb-1">Özel Dizi ID (Opsiyonel)</label>
-                <KoupInput
-                  type="number"
-                  value={healDramaId}
-                  onChange={(e) => setHealDramaId(e.target.value)}
+                <AdminMediaPicker
+                  value={healSelectedMedia}
+                  onChange={setHealSelectedMedia}
                   size="sm"
-                  placeholder="Tümü"
+                  label="Dizi (Boş = Tümü)"
+                  placeholder="Dizi adı veya ID..."
+                  allowEmptyLabel="Boş: Tüm eksikler taranır"
                 />
               </div>
             </div>
@@ -527,7 +528,7 @@ export default function AdminMaintenanceHub({
                   maxGap: Number(healMaxGap) || 30,
                   country: healCountry,
                   provider: healProvider,
-                  dramaId: healDramaId ? Number(healDramaId) : undefined,
+                  dramaId: healSelectedMedia ? healSelectedMedia.id : undefined,
                   dryRun: healDryRun,
                 })
               }
@@ -592,13 +593,13 @@ export default function AdminMaintenanceHub({
                 />
               </div>
               <div className="col-span-2 sm:col-span-1">
-                <label className="text-[10px] font-mono text-white/45 block mb-1">Özel Dizi ID</label>
-                <KoupInput
-                  type="number"
-                  value={pendingDramaId}
-                  onChange={(e) => setPendingDramaId(e.target.value)}
+                <AdminMediaPicker
+                  value={pendingSelectedMedia}
+                  onChange={setPendingSelectedMedia}
                   size="sm"
-                  placeholder="Tümü"
+                  label="Hedef Dizi (Boş = Tümü)"
+                  placeholder="Dizi adı veya ID..."
+                  allowEmptyLabel="Boş: Tüm bekleyenler çözülür"
                 />
               </div>
             </div>
@@ -631,7 +632,7 @@ export default function AdminMaintenanceHub({
                 runStreamingTool('recheck_pending', 'Bekleyen Kaynak Çözücü', {
                   limit: Number(pendingLimit) || 50,
                   site: pendingSite,
-                  dramaId: pendingDramaId ? Number(pendingDramaId) : undefined,
+                  dramaId: pendingSelectedMedia ? pendingSelectedMedia.id : undefined,
                   force: pendingForce,
                   dryRun: pendingDryRun,
                 })

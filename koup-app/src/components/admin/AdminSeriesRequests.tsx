@@ -25,6 +25,7 @@ import { adminFetch } from '@/lib/adminClient';
 import { supabase } from '@/lib/supabase';
 import CustomSelect from '@/components/CustomSelect';
 import KoupInput from '@/components/KoupInput';
+import AdminMediaPicker, { AdminMediaPickerValue } from '@/components/admin/AdminMediaPicker';
 import { useKoUp } from '@/context/KoUpContext';
 import { motion } from 'motion/react';
 import { usePillDragTracking } from '@/hooks/usePillDragTracking';
@@ -109,6 +110,7 @@ export default function AdminSeriesRequests({
 
   const [draftNotes, setDraftNotes] = useState<Record<string | number, string>>({});
   const [draftSlugs, setDraftSlugs] = useState<Record<string | number, string>>({});
+  const [draftMedia, setDraftMedia] = useState<Record<string | number, AdminMediaPickerValue | null>>({});
   const [processingId, setProcessingId] = useState<string | number | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(
     null
@@ -165,8 +167,11 @@ export default function AdminSeriesRequests({
         draftNotes[reqItem.id] !== undefined
           ? draftNotes[reqItem.id]
           : reqItem.admin_note || '';
+      const selectedMedia = draftMedia[reqItem.id];
       const mediaSlug =
-        draftSlugs[reqItem.id] !== undefined
+        selectedMedia !== undefined
+          ? selectedMedia?.slug || ''
+          : draftSlugs[reqItem.id] !== undefined
           ? draftSlugs[reqItem.id]
           : reqItem.media_slug || '';
 
@@ -485,6 +490,17 @@ export default function AdminSeriesRequests({
               draftSlugs[req.id] !== undefined ? draftSlugs[req.id] : req.media_slug || '';
             const currentNote =
               draftNotes[req.id] !== undefined ? draftNotes[req.id] : req.admin_note || '';
+            const currentMedia =
+              draftMedia[req.id] !== undefined
+                ? draftMedia[req.id]
+                : req.media_slug
+                ? {
+                    id: Number(req.media_id) || 0,
+                    title: req.media_slug,
+                    slug: req.media_slug,
+                    poster: req.cover_image,
+                  }
+                : null;
 
             const cardStyle =
               req.status === 'approved'
@@ -620,21 +636,18 @@ export default function AdminSeriesRequests({
                 <div className="w-full lg:w-80 shrink-0 flex flex-col justify-between gap-3 pt-4 lg:pt-0 lg:pl-5 border-t lg:border-t-0 lg:border-l border-white/10">
                   <div className="space-y-2.5">
                     <div>
-                      <label className="block text-[10px] font-mono uppercase text-white/50 mb-1">
-                        Site İçi Seri Slug (İsteğe Bağlı)
-                      </label>
-                      <div className="relative">
-                        <Link2 className="w-3.5 h-3.5 text-white/40 absolute left-3 top-1/2 -translate-y-1/2" />
-                        <input
-                          type="text"
-                          value={currentSlug}
-                          onChange={(e) =>
-                            setDraftSlugs((prev) => ({ ...prev, [req.id]: e.target.value }))
-                          }
-                          placeholder="Örn: solo-leveling"
-                          className="w-full pl-8 pr-3 py-2 rounded-xl bg-black/50 border border-white/15 text-xs text-white placeholder:text-white/30 focus:outline-none focus:border-sky-400"
-                        />
-                      </div>
+                      <AdminMediaPicker
+                        value={currentMedia}
+                        onChange={(val) => {
+                          setDraftMedia((prev) => ({ ...prev, [req.id]: val }));
+                          setDraftSlugs((prev) => ({ ...prev, [req.id]: val?.slug || '' }));
+                        }}
+                        label="Site İçi Seri Eşleme (İsteğe Bağlı)"
+                        placeholder="Katalogdan dizi ara veya ID gir..."
+                        initialQuery={req.title}
+                        size="sm"
+                        allowEmptyLabel="Boş: Otomatik isim eşlemesi denenir"
+                      />
                     </div>
 
                     <div>

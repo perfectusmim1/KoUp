@@ -107,6 +107,24 @@ const ALL_SUPPORTED_SITES = [
   { id: 'hdfilm', name: 'HDFilmcehennemi', badge: 'Rapidrame HLS', color: 'from-amber-600/20 to-red-600/20 text-amber-400 border-amber-600/30' },
 ];
 
+function slugifyTR(text: string): string {
+  const trMap: Record<string, string> = {
+    ç: 'c', Ç: 'c',
+    ğ: 'g', Ğ: 'g',
+    ı: 'i', I: 'i', İ: 'i',
+    ö: 'o', Ö: 'o',
+    ş: 's', Ş: 's',
+    ü: 'u', Ü: 'u',
+  };
+  return text
+    .split('')
+    .map((c) => trMap[c] || c)
+    .join('')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
+
 function cleanDisplayTitle(raw: string): string {
   if (!raw) return '';
   return raw
@@ -151,6 +169,16 @@ export default function AdminSeriesAutomation() {
   const [editingSlugs, setEditingSlugs] = useState<Record<string, string>>({});
   const [isResolvingSlugs, setIsResolvingSlugs] = useState(false);
   const [slugVerificationResults, setSlugVerificationResults] = useState<Record<string, any>>({});
+
+  // Expanded Sites Accordion per Card
+  const [expandedSitesMediaIds, setExpandedSitesMediaIds] = useState<Record<number, boolean>>({});
+
+  const toggleCardExpandedSites = (mediaId: number) => {
+    setExpandedSitesMediaIds((prev) => ({
+      ...prev,
+      [mediaId]: !prev[mediaId],
+    }));
+  };
 
   // Sync / Execution Terminal Drawer
   const [activeSyncingId, setActiveSyncingId] = useState<number | 'all' | null>(null);
@@ -344,7 +372,9 @@ export default function AdminSeriesAutomation() {
           pushNotification('Eksik Bilgi', 'Dizi başlığı girmelisin.', 'info');
           return;
         }
-        const candidateSlug = (manualSlug.trim() || manualTitle.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''));
+        const candidateSlug = manualSlug.trim()
+          ? slugifyTR(manualSlug.trim())
+          : slugifyTR(manualTitle.trim());
         payload = {
           media_id: 'new',
           title: manualTitle.trim(),
@@ -628,11 +658,11 @@ export default function AdminSeriesAutomation() {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
           <button
             onClick={() => handleRunSync()}
             disabled={activeSyncingId !== null || stats.active === 0}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 transition-all cursor-pointer disabled:opacity-50"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 transition-all cursor-pointer disabled:opacity-50 whitespace-nowrap min-h-[40px] sm:min-h-0"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${activeSyncingId === 'all' ? 'animate-spin' : ''}`} />
             <span>Tüm Aktifleri Tara</span>
@@ -646,7 +676,7 @@ export default function AdminSeriesAutomation() {
               setSelectedLiveItem(null);
               setAddModalTab('catalog');
             }}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold bg-white text-black hover:bg-white/90 shadow-lg transition-all cursor-pointer"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold bg-white text-black hover:bg-white/90 shadow-lg transition-all cursor-pointer whitespace-nowrap min-h-[40px] sm:min-h-0"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Yeni Seri Bağla</span>
@@ -674,6 +704,11 @@ export default function AdminSeriesAutomation() {
           {filteredAutomations.map((item) => {
             const isSyncingThis = activeSyncingId === item.media_id;
             const isOngoing = item.status_broadcast?.toLowerCase().includes('devam');
+            const isExpanded = !!expandedSitesMediaIds[item.media_id];
+
+            const connectedSites = ALL_SUPPORTED_SITES.filter((s) => item.connected_sites.includes(s.id));
+            const unconnectedSites = ALL_SUPPORTED_SITES.filter((s) => !item.connected_sites.includes(s.id));
+            const unconnectedCount = unconnectedSites.length;
 
             return (
               <motion.div
@@ -687,11 +722,12 @@ export default function AdminSeriesAutomation() {
                     : 'border-white/[0.04] opacity-65 bg-black/40'
                 }`}
               >
-                <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-                  {/* Left Info */}
-                  <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                {/* 1. TOP ROW: Poster & Info (Left) + Actions (Right) */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+                  {/* Left: Poster + Title & Stats */}
+                  <div className="flex items-start sm:items-center gap-3.5 min-w-0 flex-1">
                     {/* Poster */}
-                    <div className="w-12 h-16 rounded-xl overflow-hidden bg-black/60 shrink-0 border border-white/10 relative">
+                    <div className="w-14 h-20 rounded-xl overflow-hidden bg-black/60 shrink-0 border border-white/10 relative shadow-md">
                       {item.poster_url ? (
                         <img
                           src={getProxiedImageUrl(item.poster_url)}
@@ -708,13 +744,14 @@ export default function AdminSeriesAutomation() {
                       )}
                     </div>
 
-                    {/* Titles & Counts */}
-                    <div className="min-w-0 flex-1">
+                    {/* Titles, Badges & Stats */}
+                    <div className="min-w-0 flex-1 space-y-1">
+                      {/* Title & Status Badges */}
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-bold text-white hover:text-sky-300 transition-colors truncate">
+                        <span className="text-sm sm:text-base font-bold text-white hover:text-sky-300 transition-colors truncate">
                           {item.title}
                         </span>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/[0.08] text-white/70">
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/[0.06] text-white/50 border border-white/[0.08]">
                           #{item.media_id}
                         </span>
                         <span
@@ -728,13 +765,13 @@ export default function AdminSeriesAutomation() {
                         </span>
                       </div>
 
-                      {/* Stats & Last Synced */}
-                      <div className="flex items-center gap-3 mt-1.5 text-xs text-white/50 flex-wrap">
-                        <span className="font-mono text-white/80 font-medium">
+                      {/* Stats & Scan Info */}
+                      <div className="flex items-center gap-2 text-xs text-white/50 flex-wrap">
+                        <span className="font-mono text-white/80 font-medium whitespace-nowrap">
                           {item.episode_count} Bölüm • {item.sources_count} Kaynak
                         </span>
-                        <span>•</span>
-                        <span className="text-white/40 text-[11px]">
+                        <span className="text-white/20">•</span>
+                        <span className="text-white/40 text-[11px] whitespace-nowrap">
                           {item.last_synced_at
                             ? `Son Tarama: ${new Date(item.last_synced_at).toLocaleString('tr-TR', {
                                 month: 'short',
@@ -746,8 +783,11 @@ export default function AdminSeriesAutomation() {
                         </span>
                         {item.last_message && (
                           <>
-                            <span>•</span>
-                            <span className="text-sky-400/80 text-[11px] truncate max-w-xs font-mono">
+                            <span className="text-white/20">•</span>
+                            <span
+                              className="text-sky-400/80 text-[11px] truncate max-w-[200px] sm:max-w-xs font-mono"
+                              title={item.last_message}
+                            >
                               {item.last_message}
                             </span>
                           </>
@@ -756,55 +796,12 @@ export default function AdminSeriesAutomation() {
                     </div>
                   </div>
 
-                  {/* Middle: Connected Sites Interactive Pills */}
-                  <div className="flex flex-col gap-1 w-full lg:w-auto">
-                    <div className="text-[10px] font-mono text-white/40 flex items-center justify-between gap-2">
-                      <span>BAĞLI KAYNAK SİTELERİ ({item.connected_sites.length})</span>
-                      <button
-                        onClick={() => {
-                          setEditingSeries(item);
-                          setEditingSlugs(item.site_slugs || {});
-                        }}
-                        className="text-sky-400 hover:text-sky-300 flex items-center gap-1 text-[10px] cursor-pointer"
-                      >
-                        <Settings className="w-3 h-3" />
-                        <span>Slug Ayarları</span>
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {ALL_SUPPORTED_SITES.map((site) => {
-                        const isConnected = item.connected_sites.includes(site.id);
-                        const hasOverride = item.site_slugs && item.site_slugs[site.id];
-
-                        return (
-                          <button
-                            key={site.id}
-                            onClick={() => handleToggleSite(item, site.id)}
-                            title={`${site.name} (${site.badge}) ${
-                              hasOverride ? `[Özel Slug: ${item.site_slugs[site.id]}]` : ''
-                            } - Tıklayarak aç/kapa`}
-                            className={`px-2.5 py-1 rounded-xl text-[11px] font-medium transition-all flex items-center gap-1.5 cursor-pointer border ${
-                              isConnected
-                                ? `${site.color} shadow-sm font-semibold`
-                                : 'bg-black/30 border-white/[0.05] text-white/30 hover:text-white/60 hover:border-white/10'
-                            }`}
-                          >
-                            <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-current' : 'bg-white/20'}`} />
-                            <span>{site.name}</span>
-                            {hasOverride && <span className="text-[9px] opacity-75">★</span>}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Right Actions & Toggle */}
-                  <div className="flex items-center gap-2.5 self-end lg:self-center shrink-0">
+                  {/* Right: Actions */}
+                  <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 pt-2 sm:pt-0 border-t border-white/[0.06] sm:border-t-0">
                     {/* Toggle Active Button */}
                     <button
                       onClick={() => handleToggleActive(item)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                      className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2.5 sm:py-2 min-h-[44px] sm:min-h-0 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
                         item.is_active
                           ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
                           : 'bg-white/5 text-white/40 border-white/10 hover:bg-white/10'
@@ -819,7 +816,7 @@ export default function AdminSeriesAutomation() {
                       onClick={() => handleRunSync(item)}
                       disabled={isSyncingThis || activeSyncingId !== null}
                       title="Bağlı tüm sitelerden şimdi yeni bölümleri tara"
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 transition-all cursor-pointer disabled:opacity-50"
+                      className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2.5 sm:py-2 min-h-[44px] sm:min-h-0 rounded-xl text-xs font-bold bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 transition-all cursor-pointer disabled:opacity-50"
                     >
                       <Play className={`w-3 h-3 ${isSyncingThis ? 'animate-spin' : ''}`} />
                       <span>{isSyncingThis ? 'Taranıyor...' : 'Şimdi Çapraz Tara'}</span>
@@ -829,11 +826,117 @@ export default function AdminSeriesAutomation() {
                     <button
                       onClick={() => handleDeleteSeries(item)}
                       title="Otomasyondan Kaldır"
-                      className="p-1.5 rounded-xl text-white/30 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                      className="p-2.5 sm:p-2 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 flex items-center justify-center rounded-xl text-white/40 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-all cursor-pointer"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
+                </div>
+
+                {/* 2. BOTTOM ROW: Connected Sites & Expandable Sites Tray */}
+                <div className="mt-3.5 pt-3 border-t border-white/[0.08] space-y-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono text-white/40">
+                        BAĞLI KAYNAK SİTELERİ ({item.connected_sites.length})
+                      </span>
+                      {item.connected_sites.length === 0 && (
+                        <span className="text-[11px] text-amber-400/80 italic">Kaynak site yok</span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setEditingSeries(item);
+                          setEditingSlugs(item.site_slugs || {});
+                        }}
+                        className="text-sky-400 hover:text-sky-300 flex items-center gap-1 text-[11px] cursor-pointer"
+                      >
+                        <Settings className="w-3 h-3" />
+                        <span>Slug Ayarları</span>
+                      </button>
+
+                      {unconnectedCount > 0 && (
+                        <button
+                          onClick={() => toggleCardExpandedSites(item.media_id)}
+                          className={`flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-lg transition-all cursor-pointer border ${
+                            isExpanded
+                              ? 'bg-white/15 text-white border-white/25'
+                              : 'bg-white/[0.04] text-white/50 hover:text-white border-white/[0.08] hover:bg-white/[0.08]'
+                          }`}
+                        >
+                          <Plus className={`w-3 h-3 transition-transform duration-200 ${isExpanded ? 'rotate-45' : ''}`} />
+                          <span>{isExpanded ? 'Kapat' : `+ ${unconnectedCount} Site Ekle`}</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Active Connected Site Chips */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {connectedSites.map((site) => {
+                      const hasOverride = item.site_slugs && item.site_slugs[site.id];
+                      return (
+                        <button
+                          key={site.id}
+                          onClick={() => handleToggleSite(item, site.id)}
+                          title={`${site.name} (${site.badge})${
+                            hasOverride ? ` [Özel Slug: ${item.site_slugs[site.id]}]` : ''
+                          } — Tıkla ve bağlantıyı kaldır`}
+                          className={`group px-2.5 py-1 rounded-xl text-[11px] font-semibold transition-all flex items-center gap-1.5 cursor-pointer border ${site.color} shadow-sm hover:brightness-110 active:scale-95`}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                          <span>{site.name}</span>
+                          {hasOverride && <span className="text-[9px] opacity-75">★</span>}
+                          <X className="w-3 h-3 ml-0.5 opacity-50 group-hover:opacity-100 transition-opacity" />
+                        </button>
+                      );
+                    })}
+
+                    {connectedSites.length === 0 && (
+                      <button
+                        onClick={() => toggleCardExpandedSites(item.media_id)}
+                        className="px-2.5 py-1 rounded-xl text-[11px] font-medium bg-amber-500/10 text-amber-300 border border-amber-500/30 flex items-center gap-1 cursor-pointer hover:bg-amber-500/20"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>İlk Siteyi Bağla</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Expandable Unconnected Sites Drawer/Tray */}
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.18 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="pt-2 pb-1 space-y-1.5">
+                          <div className="text-[10px] font-mono text-white/40">
+                            EKLENEBİLİR DİĞER KAYNAK SİTELERİ (Tıklayarak bağla):
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {unconnectedSites.map((site) => (
+                              <button
+                                key={site.id}
+                                onClick={() => handleToggleSite(item, site.id)}
+                                title={`${site.name} (${site.badge}) — Otomasyona bağlamak için tıkla`}
+                                className="px-2.5 py-1 rounded-xl text-[11px] font-medium transition-all flex items-center gap-1.5 cursor-pointer border bg-black/40 border-white/[0.08] text-white/40 hover:text-white hover:border-white/20 hover:bg-white/[0.05] active:scale-95"
+                              >
+                                <Plus className="w-3 h-3 text-white/30" />
+                                <span>{site.name}</span>
+                                <span className="text-[9px] font-mono text-white/30">{site.badge}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </motion.div>
             );
@@ -849,7 +952,7 @@ export default function AdminSeriesAutomation() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-2xl bg-[#0f0f11] border border-white/10 rounded-3xl p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col"
+              className="w-full max-w-2xl bg-[#0f0f11] border border-white/10 rounded-3xl p-4 sm:p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col"
             >
               {/* Header */}
               <div className="flex items-center justify-between pb-3 border-b border-white/10">
@@ -1250,7 +1353,7 @@ export default function AdminSeriesAutomation() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-lg bg-[#0f0f11] border border-white/10 rounded-3xl p-6 shadow-2xl space-y-4"
+              className="w-full max-w-lg bg-[#0f0f11] border border-white/10 rounded-3xl p-4 sm:p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
             >
               <div className="flex items-center justify-between pb-3 border-b border-white/10">
                 <div className="flex items-center gap-2">
