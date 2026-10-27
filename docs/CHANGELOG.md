@@ -11,6 +11,18 @@ Bu dosya, KoUp platformunda yapılan tüm önemli geliştirmeleri, mimari kararl
 
 ---
 
+## [2026-10-27] — Seri Sayfası Bölüm Listesine Tümünü İzlendi İşaretle Butonu
+
+### Added
+- `KoUpContext.tsx`: `markAllEpisodesWatched(media, episodeNumbers?, forceMark?)` fonksiyonu eklendi. Aktif kullanıcının ilgili diziye/sezona ait bölümlerini tek tıkla toplu olarak `watched_episodes` dizisine ekler veya geri alır; `koup_progress_v1` yerel hafızasını, bölüm pozisyonlarını ve Supabase `user_media_progress` tablosunu anında günceller.
+- `SeriesDetailClient.tsx`: Bölüm listesi başlık alanına `CheckCheck` ikonlu, cam hap (glass-pill) tasarımlı "Tümünü İzlendi İşaretle" / "Tümü İzlendi" butonu entegre edildi. Aktif sezondaki yayınlanmış tüm bölümlerin izlenip izlenmediğini dinamik olarak takip eder, tıklandığında ses efekti (`complete` / `click`) ve toast bildirimi tetikler; tekrar tıklandığında işaretleri temizler.
+
+### Changed
+- `docs/03-sayfalar-ve-rotalar.md`: Dizi detay sayfası kullanıcı etkileşimlerine bölüm listesi toplu izlendi işaretleme özelliği eklendi.
+- `docs/10-kullanici-ozellikleri.md`: `markAllEpisodesWatched` anında senkronizasyon tetikleyicisi olarak belgelendi.
+
+---
+
 ## [2026-10-27] — Video Oynatıcı İntro Atlama ve Z-Index Katmanlama Onarımı
 
 ### Fixed

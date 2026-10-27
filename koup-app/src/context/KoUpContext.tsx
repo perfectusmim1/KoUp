@@ -118,6 +118,11 @@ export interface KoUpContextValue {
   ) => void;
   flushProgressSync: (mediaId?: number, options?: { keepalive?: boolean }) => void;
   toggleEpisodeWatched: (media: MediaItem, episodeNum: number, upToHere?: boolean) => void;
+  markAllEpisodesWatched: (
+    media: MediaItem,
+    episodeNumbers?: number[],
+    forceMark?: boolean
+  ) => void;
   setLibraryStatus: (
     media: MediaItem,
     status: UserMediaProgress['status'],
@@ -1622,6 +1627,160 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     [user, isSoftBanned, openAuthModal, pushNotification]
   );
 
+  const markAllEpisodesWatched = useCallback(
+    (
+      media: MediaItem,
+      episodeNumbers?: number[],
+      forceMark?: boolean
+    ) => {
+      if (!user) {
+        openAuthModal('Bölümleri izlendi olarak işaretlemek için lütfen giriş yapın.');
+        return;
+      }
+      if (isSoftBanned) {
+        pushNotification(
+          'Hesap Askıda',
+          'Hesabınız topluluk kuralları ihlali nedeniyle askıya alınmıştır. İçerik etkileşimleri devre dışıdır.',
+          'info'
+        );
+        return;
+      }
+
+      setProgressMap((prev) => {
+        const existing = prev[media.id] || {
+          media_id: media.id,
+          status: null,
+          is_favorite: false,
+          watched_episodes: [],
+          last_season_num: 1,
+          last_episode_num: 1,
+          last_episode_title: '1. Bölüm',
+          resume_position_sec: 0,
+          resume_duration_sec: 3600,
+          updated_at: new Date().toISOString(),
+          media,
+        };
+
+        const existingWatched = new Set(existing.watched_episodes || []);
+
+        const epNumsToProcess =
+          episodeNumbers && episodeNumbers.length > 0
+            ? Array.from(new Set(episodeNumbers.filter((n) => typeof n === 'number' && n > 0)))
+            : Array.from({ length: Math.max(media.episode_count || 1, 1) }, (_, i) => i + 1);
+
+        const allAlreadyWatched =
+          epNumsToProcess.length > 0 &&
+          epNumsToProcess.every((n) => existingWatched.has(n));
+        const shouldMark = forceMark !== undefined ? forceMark : !allAlreadyWatched;
+
+        const watchedSet = new Set(existingWatched);
+        const safeDur = existing.resume_duration_sec || 3600;
+        const newEpPositions = { ...(existing.episode_positions || {}) };
+
+        if (shouldMark) {
+          epNumsToProcess.forEach((num) => {
+            watchedSet.add(num);
+            const epKey = `${existing.last_season_num || 1}_${num}`;
+            newEpPositions[epKey] = {
+              position: safeDur,
+              duration: newEpPositions[epKey]?.duration || safeDur,
+              updated_at: new Date().toISOString(),
+            };
+            try {
+              localStorage.setItem(
+                `koup_ep_pos_${media.id}_${existing.last_season_num || 1}_${num}`,
+                JSON.stringify({ position: safeDur, duration: newEpPositions[epKey]?.duration || safeDur })
+              );
+            } catch {}
+          });
+
+          pushNotification(
+            'Tümü İzlendi Olarak İşaretlendi',
+            `${media.title} · ${epNumsToProcess.length} bölüm izlendi olarak kaydedildi.`,
+            'success'
+          );
+        } else {
+          epNumsToProcess.forEach((num) => {
+            watchedSet.delete(num);
+            const epKey = `${existing.last_season_num || 1}_${num}`;
+            if (newEpPositions[epKey]) {
+              newEpPositions[epKey] = {
+                position: 0,
+                duration: newEpPositions[epKey].duration || safeDur,
+                updated_at: new Date().toISOString(),
+              };
+            }
+            try {
+              localStorage.setItem(
+                `koup_ep_pos_${media.id}_${existing.last_season_num || 1}_${num}`,
+                JSON.stringify({ position: 0, duration: safeDur })
+              );
+            } catch {}
+          });
+
+          pushNotification(
+            'İzlendi İşaretleri Kaldırıldı',
+            `${media.title} · ${epNumsToProcess.length} bölüm izlenmedi olarak güncellendi.`,
+            'info'
+          );
+        }
+
+        const watchedArr = Array.from(watchedSet).sort((a, b) => a - b);
+        const maxWatched = watchedArr.length > 0 ? Math.max(...watchedArr) : 0;
+        const nextEpNum =
+          watchedArr.length > 0
+            ? media.episode_count && media.episode_count > 0
+              ? Math.min(media.episode_count, maxWatched + 1)
+              : maxWatched + 1
+            : 1;
+
+        const existingStatus = existing.status || null;
+        const isFilmMedia = media.content_type === 'film' || media.episode_count === 1;
+        const isCompleted = isFilmMedia
+          ? watchedSet.has(1)
+          : (media.episode_count > 0 && watchedSet.size >= media.episode_count);
+
+        const nextStatus: UserMediaProgress['status'] = shouldMark
+          ? (isCompleted ? 'completed' : (existingStatus || 'watching'))
+          : (existingStatus === 'completed' ? (watchedSet.size > 0 ? 'watching' : null) : existingStatus);
+
+        const updated: UserMediaProgress = {
+          ...existing,
+          user_id: user.id,
+          media_id: media.id,
+          status: nextStatus,
+          watched_episodes: watchedArr,
+          last_episode_num: existing.last_episode_num || nextEpNum,
+          last_episode_title: existing.last_episode_title || (isFilmMedia ? 'Film' : `${nextEpNum}. Bölüm`),
+          resume_position_sec: existing.resume_position_sec || 0,
+          episode_positions: newEpPositions,
+          updated_at: new Date().toISOString(),
+          media,
+        };
+
+        const next = { ...prev, [media.id]: updated };
+        try {
+          localStorage.setItem('koup_progress_v1', JSON.stringify(next));
+        } catch {}
+
+        lastSyncedProgressRef.current[media.id] = {
+          positionSec: updated.resume_position_sec || 0,
+          seasonNum: updated.last_season_num || 1,
+          episodeNum: updated.last_episode_num || 1,
+          status: updated.status || '',
+          watchedCount: updated.watched_episodes.length,
+          syncedAt: Date.now(),
+        };
+
+        const payload = sanitizeProgressDbPayload(updated, user.id);
+        void syncProgressRecordToSupabase(payload);
+
+        return next;
+      });
+    },
+    [user, isSoftBanned, openAuthModal, pushNotification]
+  );
+
   const removeMultipleFromLibrary = useCallback(
     async (mediaIds: number[]) => {
       const validIds = Array.from(new Set(mediaIds.filter((id) => typeof id === 'number' && id > 0)));
@@ -2694,6 +2853,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       updateEpisodeProgress,
       flushProgressSync,
       toggleEpisodeWatched,
+      markAllEpisodesWatched,
       setLibraryStatus,
       setMediaScore,
       removeFromLibrary,
@@ -2775,6 +2935,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
     updateEpisodeProgress,
     flushProgressSync,
     toggleEpisodeWatched,
+    markAllEpisodesWatched,
     setLibraryStatus,
     setMediaScore,
     removeFromLibrary,

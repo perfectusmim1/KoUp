@@ -134,7 +134,7 @@ Veritabanını lüzumsuz UPDATE sorgularıyla boğmamak ve Supabase egress kotas
 - **`LOCAL_TICK_INTERVAL_MS` (4 saniye):** Oynatma sürerken yerel state ve `localStorage` her 4 saniyede bir güncellenir. UI anında tepki verir.
 - **`SIGNIFICANT_DELTA_SEC` (10 saniye):** Kullanıcı duraklattığında (`pause`) veya sayfadan ayrıldığında (`exit`), son DB eşitlemesinden bu yana en az 10 saniyelik bir ilerleme farkı oluşmamışsa Supabase'e ağ isteği atılmaz.
 - **`PERIODIC_SYNC_INTERVAL_MS` (150 saniye / 2.5 dakika):** Kesintisiz, uzun izleme seanslarında arka plan emniyet eşitlemesi en fazla 2.5 dakikada bir çalışır.
-- **Anında Eşitleme Durumları:** Bölüm tamamlandığında (`completed`), bir sonraki bölüme geçildiğinde (`newEpisode !== lastSync.episodeNum`) veya kütüphane durumu (`status`) değiştiğinde eşitleme derhal (`immediate: true`) tetiklenir.
+- **Anında Eşitleme Durumları:** Bölüm tamamlandığında (`completed`), bir sonraki bölüme geçildiğinde (`newEpisode !== lastSync.episodeNum`), bölüm listesinden tekil veya toplu ("Tümünü İzlendi İşaretle" - `markAllEpisodesWatched`) izlendi yapıldığında ya da kütüphane durumu (`status`) değiştiğinde eşitleme derhal (`immediate: true`) tetiklenir.
 
 #### Misafir Kullanıcı ve Giriş Yapınca Birleştirme
 - Giriş yapmamış misafir kullanıcıların izleme kayıtları `localStorage` içindeki `koup_progress_v1` anahtarında `user_id: 'guest'` olarak güvenle tutulur. Misafirin hiçbir verisi Supabase'e gönderilmez; böylece RLS yetki hataları ve DB kirliliği engellenir.

@@ -298,6 +298,7 @@ KoUp, geleneksel yatay sinema formatının yanı sıra Çin/Kore dikey kısa dra
   - "İzlemeye Başla" veya "Kaldığın Yerden Devam Et" butonu (en son izlenen bölüme anında atlar).
   - Fragman izleme modalı, Listeye Ekle (`AddToListModal`), Favorilere Ekle, Takip Et / Bildirim Aç.
   - Sezonlar arası geçiş ve bölüm kartlarından doğrudan oynatıcıya geçiş.
+  - Bölüm listesinde tek tıkla "Tümünü İzlendi İşaretle" (veya geri alma) butonu ile aktif sezon/dizi bölümlerini toplu tamamlama.
   - Oyuncu kartlarına tıklayarak oyuncu detayına gitme.
 - **Mobil Davranışı:**
   - Üst banner görseli dikey poster oranına uyarlanır.

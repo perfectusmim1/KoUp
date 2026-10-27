@@ -13,6 +13,7 @@ import {
   Users,
   CheckCircle2,
   Check,
+  CheckCheck,
   Star,
   Plus,
   Eye,
@@ -125,6 +126,7 @@ export default function SeriesDetailClient({
   const toggleMediaFavorite = useKoUpSelector((s) => s.toggleMediaFavorite);
   const toggleMediaFollow = useKoUpSelector((s) => s.toggleMediaFollow);
   const toggleEpisodeWatched = useKoUpSelector((s) => s.toggleEpisodeWatched);
+  const markAllEpisodesWatched = useKoUpSelector((s) => s.markAllEpisodesWatched);
   const pushNotification = useKoUpSelector((s) => s.pushNotification);
   const openAuthModal = useKoUpSelector((s) => s.openAuthModal);
   const isSoftBanned = useKoUpSelector((s) => s.isSoftBanned);
@@ -1106,6 +1108,17 @@ export default function SeriesDetailClient({
   const seasonEpisodes = episodes.filter(
     (e) => (e.season_number || 1) === selectedSeason
   );
+
+  const publishedSeasonEpisodes = useMemo(() => {
+    const published = seasonEpisodes.filter((ep) => !isEpisodePendingOrUpcoming(ep));
+    return published.length > 0 ? published : seasonEpisodes;
+  }, [seasonEpisodes]);
+
+  const allSeasonEpisodesWatched = useMemo(() => {
+    if (publishedSeasonEpisodes.length === 0) return false;
+    const watchedSet = new Set(userProg?.watched_episodes || []);
+    return publishedSeasonEpisodes.every((ep) => watchedSet.has(ep.episode_number));
+  }, [publishedSeasonEpisodes, userProg?.watched_episodes]);
 
   const submitSeriesIssue = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2270,7 +2283,7 @@ export default function SeriesDetailClient({
               </div>
             </div>
 
-            <div className="flex items-center justify-between sm:justify-end gap-3">
+            <div className="flex items-center justify-between sm:justify-end gap-3 flex-wrap">
               {/* Season Selector Tabs if Multi-Season with Fluid Sliding Pill */}
               {!isFilm && seasons.length > 1 && (
                 <LayoutGroup id="seri-season-selector-group">
@@ -2308,6 +2321,47 @@ export default function SeriesDetailClient({
                     })}
                   </div>
                 </LayoutGroup>
+              )}
+
+              {/* Mark All As Watched Button */}
+              {!isFilm && publishedSeasonEpisodes.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!user) {
+                      openAuthModal('Bölümleri izlendi olarak işaretlemek için lütfen giriş yapın.');
+                      return;
+                    }
+                    if (!media) return;
+                    const epNumbers = publishedSeasonEpisodes.map((ep) => ep.episode_number);
+                    markAllEpisodesWatched(media, epNumbers);
+                    triggerSound(allSeasonEpisodesWatched ? 'click' : 'complete');
+                  }}
+                  title={
+                    allSeasonEpisodesWatched
+                      ? 'Tüm bölümleri izlenmedi olarak işaretlemek için tıkla'
+                      : 'Bu sezondaki tüm bölümleri izlendi olarak işaretle'
+                  }
+                  aria-label={
+                    allSeasonEpisodesWatched
+                      ? 'Tümünü izlenmedi işaretle'
+                      : 'Tümünü izlendi işaretle'
+                  }
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold font-mono border transition-all duration-200 cursor-pointer select-none active:scale-95 ${
+                    allSeasonEpisodesWatched
+                      ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300 hover:bg-emerald-500/25 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
+                      : 'bg-white/[0.05] hover:bg-white/[0.10] border-white/12 hover:border-sky-400/40 text-white/80 hover:text-white shadow-sm'
+                  }`}
+                >
+                  <CheckCheck
+                    className={`w-3.5 h-3.5 shrink-0 ${
+                      allSeasonEpisodesWatched ? 'text-emerald-400' : 'text-sky-400'
+                    }`}
+                  />
+                  <span>
+                    {allSeasonEpisodesWatched ? 'Tümü İzlendi' : 'Tümünü İzlendi İşaretle'}
+                  </span>
+                </button>
               )}
             </div>
           </div>
