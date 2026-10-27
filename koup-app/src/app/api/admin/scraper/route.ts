@@ -106,7 +106,7 @@ const SCRAPER_METAS: Record<string, ScraperMeta> = {
   diziizle: {
     id: 'diziizle',
     name: 'Diziİzle (Türk Dizileri & Pilavyer HD)',
-    domain: 'https://diziizle.wiki',
+    domain: 'https://diziizle.cafe',
     logoText: 'Diziİzle',
     badgeColor: 'from-blue-500 to-cyan-600',
     protocol: 'Pilavyer 1080p HLS + Takvim Senkronizasyonu',

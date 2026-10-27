@@ -227,8 +227,8 @@ export async function GET(req: NextRequest) {
           origin = new URL(customRef).origin;
         } catch {}
       } else {
-        referer = 'https://diziizle.wiki/';
-        origin = 'https://diziizle.wiki';
+        referer = 'https://diziizle.cafe/';
+        origin = 'https://diziizle.cafe';
       }
     } else if (
       targetUrl.includes('dtpasn.asia') ||

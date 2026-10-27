@@ -69,10 +69,10 @@ def run_phase3(site: str = "all", limit: int = 5, resume: bool = False, category
 
             dizi_sitemap_urls = {}
             try:
-                r_sm = requests.get("https://diziizle.wiki/sitemap-series.xml", timeout=12)
+                r_sm = requests.get("https://diziizle.cafe/sitemap-series.xml", timeout=12)
                 if r_sm.status_code == 200:
                     for l in r_sm.text.splitlines():
-                        m = re.search(r"<loc>(https://diziizle\.wiki/dizi/([^<]+))</loc>", l)
+                        m = re.search(r"<loc>(https://diziizle\.(?:wiki|cafe)/dizi/([^<]+))</loc>", l)
                         if m:
                             full_u, s_slug = m.group(1), m.group(2)
                             dizi_sitemap_urls[s_slug] = full_u

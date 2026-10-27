@@ -49,7 +49,7 @@ from scrapers.supabase_sync_helper import (
     sync_drama_bundle_and_counts,
 )
 
-DEFAULT_BASE_URL = "https://diziizle.wiki"
+DEFAULT_BASE_URL = "https://diziizle.cafe"
 DAY_MAP = {
     "pazartesi": 1,
     "salı": 2,

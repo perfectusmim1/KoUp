@@ -79,9 +79,9 @@ def resolve_pilavyer(url: str, session: Optional[cfr.Session] = None) -> Optiona
         m = re.search(r"[?&]s=([^&]+)", url)
         if m:
             pv_slug = m.group(1)
-    elif "diziizle.wiki" in url.lower():
+    elif "diziizle.wiki" in url.lower() or "diziizle.cafe" in url.lower():
         try:
-            r = session.get(url, headers={"User-Agent": COMMON_UA, "Referer": "https://diziizle.wiki/"}, timeout=8)
+            r = session.get(url, headers={"User-Agent": COMMON_UA, "Referer": "https://diziizle.cafe/"}, timeout=8)
             if r.status_code == 200:
                 m = re.search(r'data-pv=["\']([^"\']+)["\']', r.text) or re.search(r's\.php\?s=([^"\'\s&]+)', r.text)
                 if m:
@@ -92,7 +92,7 @@ def resolve_pilavyer(url: str, session: Optional[cfr.Session] = None) -> Optiona
     if pv_slug:
         s_url = f"https://play2.pilavyerplay.top/assets/js/s.php?s={pv_slug}"
         try:
-            r = session.get(s_url, headers={"User-Agent": COMMON_UA, "Referer": "https://diziizle.wiki/", "Origin": "https://diziizle.wiki"}, timeout=8)
+            r = session.get(s_url, headers={"User-Agent": COMMON_UA, "Referer": "https://diziizle.cafe/", "Origin": "https://diziizle.cafe"}, timeout=8)
             if r.status_code == 200:
                 stream_url = None
                 subtitles = []
@@ -121,7 +121,7 @@ def resolve_pilavyer(url: str, session: Optional[cfr.Session] = None) -> Optiona
                         "stream_url": stream_url,
                         "type": "hls",
                         "provider": "pilavyer",
-                        "headers": {"Referer": "https://diziizle.wiki/", "Origin": "https://diziizle.wiki"},
+                        "headers": {"Referer": "https://diziizle.cafe/", "Origin": "https://diziizle.cafe"},
                         "subtitles": subtitles,
                     }
         except Exception:
@@ -387,7 +387,7 @@ def resolve_stream(url: str, provider: Optional[str] = None) -> Optional[Dict[st
     low = url.lower()
     p = (provider or "").lower()
 
-    if p == "pilavyer" or "pilavyer" in low or "diziizle.wiki" in low:
+    if p == "pilavyer" or "pilavyer" in low or "diziizle" in low:
         res = resolve_pilavyer(url)
         if res:
             return res

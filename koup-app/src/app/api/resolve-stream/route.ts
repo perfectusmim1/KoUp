@@ -820,12 +820,13 @@ export async function GET(req: NextRequest) {
     provider === 'diziizle' ||
     url.startsWith('pilavyer:') ||
     lowerUrl.includes('pilavyerplay.') ||
-    lowerUrl.includes('diziizle.wiki')
+    lowerUrl.includes('diziizle.wiki') ||
+    lowerUrl.includes('diziizle.cafe')
   ) {
     try {
       // Direct stream.php URL from DB
       if (lowerUrl.includes('pilavyerplay.top/api/stream.php')) {
-        const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(url)}&ref=${encodeURIComponent('https://diziizle.wiki/')}`;
+        const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(url)}&ref=${encodeURIComponent('https://diziizle.cafe/')}`;
         const result = {
           mode: 'native_hls' as const,
           streamType: 'hls' as const,
@@ -845,11 +846,11 @@ export async function GET(req: NextRequest) {
         try {
           pvSlug = new URL(url).searchParams.get('s');
         } catch {}
-      } else if (lowerUrl.includes('diziizle.wiki')) {
+      } else if (lowerUrl.includes('diziizle.wiki') || lowerUrl.includes('diziizle.cafe')) {
         const resp = await fetch(url, {
           headers: {
             'User-Agent': commonUA,
-            Referer: 'https://diziizle.wiki/',
+            Referer: 'https://diziizle.cafe/',
             Accept: 'text/html,application/xhtml+xml',
           },
           signal: AbortSignal.timeout(6000),
@@ -868,8 +869,8 @@ export async function GET(req: NextRequest) {
         const sUrl = `https://play2.pilavyerplay.top/assets/js/s.php?s=${encodeURIComponent(pvSlug)}`;
         const sResp = await fetch(sUrl, {
           headers: {
-            Referer: 'https://diziizle.wiki/',
-            Origin: 'https://diziizle.wiki',
+            Referer: 'https://diziizle.cafe/',
+            Origin: 'https://diziizle.cafe',
             'User-Agent': commonUA,
           },
           signal: AbortSignal.timeout(6000),
@@ -930,10 +931,10 @@ export async function GET(req: NextRequest) {
               streamUrl = `https://play2.pilavyerplay.top${streamUrl}`;
             }
 
-            const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(streamUrl)}&ref=${encodeURIComponent('https://diziizle.wiki/')}`;
+            const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(streamUrl)}&ref=${encodeURIComponent('https://diziizle.cafe/')}`;
             const proxiedSubs = subtitles.map((s) => ({
               ...s,
-              url: `/api/stream-proxy?url=${encodeURIComponent(s.url)}&ref=${encodeURIComponent('https://diziizle.wiki/')}`,
+              url: `/api/stream-proxy?url=${encodeURIComponent(s.url)}&ref=${encodeURIComponent('https://diziizle.cafe/')}`,
             }));
 
             const result = {
