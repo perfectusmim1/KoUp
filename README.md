@@ -31,7 +31,7 @@
   <img src="./koup-app/public/flags/gb.svg" width="22" alt="GB" />
 </p>
 
-[**🌟 Canlı Demo (Vercel)**](https://koup-app.vercel.app) &nbsp;•&nbsp; [**✨ Vitrin & Özellikler**](#-görsel-vitrin--öne-çıkan-özellikler) &nbsp;•&nbsp; [**🎬 Çift Katmanlı Player**](#-çift-katmanlı-koup-cinema-player--franchise-evreni) &nbsp;•&nbsp; [**⚡ Mimari & Senkronizasyon**](#-üç-katmanlı-bulut--arşiv-mimarisi) &nbsp;•&nbsp; [**🚀 Kurulum**](#-hızlı-kurulum--çalıştırma)
+[**🌟 Canlı Demo (Vercel)**](https://koup-app.vercel.app) &nbsp;•&nbsp; [**📚 Dokümantasyon Portalı (`docs/`)**](./docs/README.md) &nbsp;•&nbsp; [**✨ Vitrin & Özellikler**](#-görsel-vitrin--öne-çıkan-özellikler) &nbsp;•&nbsp; [**🎬 Çift Katmanlı Player**](#-çift-katmanlı-koup-cinema-player--franchise-evreni) &nbsp;•&nbsp; [**⚡ Mimari & Senkronizasyon**](#-üç-katmanlı-bulut--arşiv-mimarisi) &nbsp;•&nbsp; [**🚀 Kurulum**](#-hızlı-kurulum--çalıştırma)
 
 <br />
 
