@@ -67,6 +67,7 @@ KoUp platformu; yüksek performanslı streaming, büyük ölçekli çok kaynakl�
 | **R-DEV-02** | Dev / Git | Temiz Commit Disiplini (Geçici/Env Dosyası Commitlenmez)| 🔴 KRİTİK | `.gitignore`, `git status` |
 | **R-DEV-03** | Dev / Git | Çalışma Alanı Temizliği (Çöp Script Bırakmama) | 🟡 ORTA | `scripts/`, `tmp/`, kök dizin |
 | **R-DEV-04** | Disiplin | %100 Dürüstlük & Doğrulama (No Fake Success) | 🔴 KRİTİK | Test çıktıları, tip kontrolü, terminal doğrulama |
+| **R-DEV-05** | Dev / Task | Sonsuz Döngü / Hayalet Task Yasağı & Canlı Terminal İlerlemesi | 🔴 KRİTİK | Test scriptleri, batch/scrap döngüleri, background tasklar |
 | **R-DOC-01** | Doküman | Yaşayan Dokümantasyon (`docs/`) Güncelleme Zorunluluğu | 🔴 KRİTİK | `docs/*.md`, `docs/CHANGELOG.md`, `GEMINI.md` |
 | **R-DOC-02** | Orkestrasyon| Subagent Brifinginde Büyük Resim & Takım Görünürlüğü | 🟠 YÜKSEK | `invoke_subagent` çağrıları |
 
@@ -369,6 +370,17 @@ useEffect(() => {
 - **Nasıl Uygulanır:**
   - TypeScript tip kontrolü (`npx tsc --noEmit`) hatasız geçmelidir.
   - İlgili uçlar terminal komutlarıyla (curl, python istekleri) bizzat tetiklenip 200 OK yanıtı doğrulanmalıdır.
+
+---
+
+### 6.5. Arka Plan Süreçleri, Sonsuz Döngü Koruması ve Canlı Terminal İlerleme Loglaması (Anti-Hang & Live Progress Protocol)
+- **Kural 1: Sonsuz Döngü ve Hayalet Task Yasağı (Zombie Process Guard)**
+  - `tsx`, `node` veya `python` ile çalıştırılan test, doğrulama veya toplu scriptlerde açık kalan HTTP soketleri, keep-alive bağlantıları veya timer'lar yüzünden Node event loop'un açık kalıp arka plan task'ının sonsuza kadar askıda kalması kesinlikle yasaktır.
+  - Node/TypeScript test kodlarında scriptin sonuna mutlaka açıkça `process.exit(0)` eklenmeli (`finally { process.exit(0); }`), Python'da `sys.exit(0)` konmalıdır. Ayrıca her test scriptinde maksimum 30-45 saniyelik bir timeout muhafazası (`setTimeout(() => { console.error('Zaman aşımı'); process.exit(1); }, 30000)`) bulunmalıdır.
+  - Alt ajan veya ana ajan "İş bitti/tamamlandı" demeden önce `manage_task(Action: 'list')` ile arkada asılı kalan arka plan task'ı olup olmadığını kontrol etmeli, varsa `manage_task(Action: 'kill')` ile derhal sonlandırmalıdır. Asla arkada hayalet task açık bırakılamaz.
+- **Kural 2: Canlı Terminal İlerleme & Yüzde Loglaması (Real-Time Terminal Progress)**
+  - Çoklu veri tarama, toplu afiş aktarma, kazıma veya güncelleme gibi döngülü/uzun süren işlemlerde scriptlerin sessizce (log basmadan) çalışması kesinlikle yasaktır.
+  - Kullanıcının ve ajanın anlık durumu görebilmesi için her adımda veya periyodik bloklarda terminale canlı ilerleme logu basılacaktır: `[Zaman] [Mevcut/Toplam] (%Yüzde) - [İşlenen Öğe / Durum]` (Örnek: `[12:30:15] [145/2990] (%4.8) - Güncelleniyor: Seri Adı`). Böylece işlemin hangi aşamada olduğu, ne kadar kaldığı ve takılıp takılmadığı terminal çıktısında anbean görülecektir.
 
 ---
 

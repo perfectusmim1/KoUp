@@ -11,7 +11,12 @@ Bu dosya, KoUp platformunda yapılan tüm önemli geliştirmeleri, mimari kararl
 
 ---
 
-## [2026-10-27] — Admin Paneli Kolaylaştırıcı Seçici (AdminMediaPicker) & Seri Otomasyonu Kart İyileştirmesi
+## [2026-10-27] — Arka Plan Süreçleri, Sonsuz Döngü Koruması & Canlı Terminal İlerleme Protokolü
+
+### Added
+- `docs/12-kurallar-ve-yasaklar.md`: `R-DEV-05` kuralı eklendi. Test ve batch scriptlerinde açık soket/timer'lar yüzünden Node event loop'un açık kalmasını önlemek için zorunlu `process.exit(0)` / `sys.exit(0)`, 30-45 saniyelik timeout muhafazası ve task bitiminde otomatik zombie cleanup zorunlu kılındı.
+- Çoklu döngülü/kazımalı işlemlerde sessiz çalışma yasaklandı; `[Zaman] [Mevcut/Toplam] (%Yüzde) - [İşlenen Öğe / Durum]` formatında canlı terminal progress logu basılması kuralı getirildi.
+
 
 ### Added
 - `koup-app/src/components/admin/AdminMediaPicker.tsx`: Afişli, klavye destekli, anlık Türkçe arama ve sayısal ID destekli evrensel medya seçici.
