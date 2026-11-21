@@ -417,6 +417,10 @@ def apply_cast_for_batch(
     for mid, items in planned_by_media.items():
         ex_rows = existing_cast_by_media.get(mid, [])
         ex_by_pid = {r["person_id"]: r for r in ex_rows}
+        ex_roles_by_pid = defaultdict(set)
+        for r in ex_rows:
+            if r.get("role_type"):
+                ex_roles_by_pid[r["person_id"]].add(r["role_type"])
         if not ex_rows:
             backfilled_media += 1
         media_had_fix = False
@@ -479,6 +483,31 @@ def apply_cast_for_batch(
                     "voice_actor_slug": item.get("voice_actor_slug"),
                 })
 
+        next_order = max((item.get("billing_order") or 0 for item in items), default=len(items)) + 1
+        for ex in ex_rows:
+            epid = ex["person_id"]
+            if epid not in seen_pids and ex.get("role_type") == "lead":
+                role_updates += 1
+                media_had_fix = True
+                if not dry_run:
+                    sb_http(
+                        sb_url, sb_key, "DELETE",
+                        f"/rest/v1/media_cast?media_id=eq.{mid}&person_id=eq.{epid}&role_type=eq.lead",
+                    )
+                    if "support" not in ex_roles_by_pid[epid]:
+                        upsert_rows.append({
+                            "media_id": mid,
+                            "person_id": epid,
+                            "character_name": ex.get("character_name"),
+                            "role_type": "support",
+                            "billing_order": next_order,
+                            "voice_actor_name": ex.get("voice_actor_name"),
+                            "voice_actor_image": ex.get("voice_actor_image"),
+                            "voice_actor_slug": ex.get("voice_actor_slug"),
+                        })
+                        ex_roles_by_pid[epid].add("support")
+                        next_order += 1
+
         if media_had_fix:
             repaired_media += 1
 
@@ -500,6 +529,145 @@ def apply_cast_for_batch(
     }
 
 
+def rebalance_cast_anomalies(sb_url: str, sb_key: str, dry_run: bool = False) -> dict:
+    """Normalizes remaining lead/support role ratios and billing_order across Supabase media_cast."""
+    print(f"=== KoUp Global Cast Anomaly Rebalance ({'DRY-RUN' if dry_run else 'APPLY'}) ===", flush=True)
+    media_rows = fetch_all_pages(sb_url, sb_key, "/rest/v1/media?select=id,content_type&order=id.asc")
+    media_type_map = {int(r["id"]): (r.get("content_type") or "").lower() for r in media_rows}
+
+    cast_rows = fetch_all_pages(
+        sb_url, sb_key,
+        "/rest/v1/media_cast?select=media_id,person_id,role_type,billing_order,character_name,voice_actor_name,voice_actor_image,voice_actor_slug&order=media_id.asc,billing_order.asc.nullslast,person_id.asc",
+    )
+    by_media = defaultdict(list)
+    for r in cast_rows:
+        by_media[int(r["media_id"])].append(r)
+
+    deletes: list[tuple[int, int, str]] = []
+    upserts: list[dict] = []
+    rebalanced_media = 0
+    role_changes = 0
+    order_changes = 0
+    deduped_rows = 0
+
+    for mid, raw_rows in by_media.items():
+        ctype = media_type_map.get(mid, "")
+        # Dedupe identical (media_id, person_id) rows with distinct role_types before assigning dense ranks
+        best_by_pid: dict[int, dict] = {}
+        raw_sorted = sorted(
+            raw_rows,
+            key=lambda r: (
+                0 if r.get("role_type") == "lead" else 1,
+                r["billing_order"] if r.get("billing_order") is not None else 999999,
+                int(r["person_id"]),
+            ),
+        )
+        rows = []
+        for r in raw_sorted:
+            pid = int(r["person_id"])
+            if pid in best_by_pid:
+                deletes.append((mid, pid, str(r.get("role_type") or "support")))
+                deduped_rows += 1
+                continue
+            best_by_pid[pid] = r
+            rows.append(r)
+
+        if not rows:
+            continue
+
+        leads = sum(1 for r in rows if r.get("role_type") == "lead")
+        orders = [r.get("billing_order") for r in rows]
+        has_null = any(o is None for o in orders)
+        has_dup = len(set(o for o in orders if o is not None)) < sum(1 for o in orders if o is not None)
+        has_lead_gt4 = any(r.get("role_type") == "lead" and (r.get("billing_order") or 999999) > 4 for r in rows)
+
+        if ctype != "anime":
+            needs_fix = (leads > 4) or (leads == 0) or has_lead_gt4 or has_null or has_dup
+            recompute_roles = (leads > 4) or (leads == 0) or has_lead_gt4
+        else:
+            needs_fix = (leads == 0) or has_null or has_dup or (leads > 6)
+            recompute_roles = (leads == 0) or (leads > 6)
+
+        if not needs_fix:
+            continue
+
+        rebalanced_media += 1
+        n_rows = len(rows)
+        lead_cap = min(4, n_rows)
+
+        for rank, r in enumerate(rows, 1):
+            old_role = r.get("role_type") or "support"
+            old_order = r.get("billing_order")
+            new_role = ("lead" if rank <= lead_cap else "support") if recompute_roles else old_role
+            if new_role == old_role and old_order == rank:
+                continue
+            if new_role != old_role:
+                role_changes += 1
+                deletes.append((mid, int(r["person_id"]), old_role))
+            else:
+                order_changes += 1
+            upserts.append({
+                "media_id": mid,
+                "person_id": int(r["person_id"]),
+                "character_name": r.get("character_name"),
+                "role_type": new_role,
+                "billing_order": rank,
+                "voice_actor_name": r.get("voice_actor_name"),
+                "voice_actor_image": r.get("voice_actor_image"),
+                "voice_actor_slug": r.get("voice_actor_slug"),
+            })
+
+    print(
+        f"Hedeflenen anomali yapım: {rebalanced_media:,} | Rol değişimi: {role_changes:,} | Sıra düzeltmesi: {order_changes:,} | Tekilleştirilen PK çakışması: {deduped_rows:,}",
+        flush=True,
+    )
+
+    if not dry_run:
+        if deletes:
+            def _del_one(item):
+                mid, pid, rtype = item
+                return sb_http(
+                    sb_url, sb_key, "DELETE",
+                    f"/rest/v1/media_cast?media_id=eq.{mid}&person_id=eq.{pid}&role_type=eq.{rtype}",
+                )
+
+            with ThreadPoolExecutor(max_workers=12) as pool:
+                futs = [pool.submit(_del_one, d) for d in deletes]
+                for idx, fut in enumerate(as_completed(futs), 1):
+                    res = fut.result()
+                    if isinstance(res, dict) and res.get("_error"):
+                        print(f"[REBALANCE_DEL_ERR] {res}", flush=True)
+                    if idx % 1000 == 0 or idx == len(deletes):
+                        _progress("Rebalance DELETE", idx, len(deletes))
+
+        if upserts:
+            for i in range(0, len(upserts), 500):
+                chunk = upserts[i : i + 500]
+                res = sb_http(
+                    sb_url, sb_key, "POST",
+                    "/rest/v1/media_cast?on_conflict=media_id,person_id,role_type",
+                    chunk, "resolution=merge-duplicates,return=minimal",
+                )
+                if isinstance(res, dict) and res.get("_error"):
+                    print(f"[REBALANCE_UPSERT_ERR] {res}", flush=True)
+                done = min(i + 500, len(upserts))
+                if done % 2000 == 0 or done == len(upserts):
+                    _progress("Rebalance UPSERT", done, len(upserts))
+
+    summary = {
+        "ok": True,
+        "dryRun": dry_run,
+        "rebalancedMedia": rebalanced_media,
+        "roleChanges": role_changes,
+        "orderChanges": order_changes,
+        "dedupedRows": deduped_rows,
+        "deletes": len(deletes),
+        "upserts": len(upserts),
+    }
+    print(f"__RESULT__ {json.dumps(summary, ensure_ascii=False)}", flush=True)
+    return summary
+
+
 def main():
     parser = argparse.ArgumentParser(description="KoUp Full-Archive Cast Hierarchy & Backfill Sync")
     parser.add_argument("--db", type=str, default=None, help="Path to SQLite DB (for supplementary IDs)")
@@ -508,6 +676,7 @@ def main():
     parser.add_argument("--mode", choices=["all", "fix", "backfill"], default="all", help="Scope: all, fix existing cast, or backfill missing")
     parser.add_argument("--limit", type=int, default=0, help="Limit number of media per phase (0 = full archive)")
     parser.add_argument("--include-mdl", action="store_true", help="Also query MyDramaList /cast for Asian dramas lacking TMDB ID")
+    parser.add_argument("--rebalance-anomalies", action="store_true", help="Rebalance remaining lead/support role ratios and billing_order across Supabase media_cast")
     args = parser.parse_args()
 
     is_apply = bool(args.apply and not args.dry_run)
@@ -516,6 +685,10 @@ def main():
     if not sb_url or not sb_key:
         print("[ERROR] SUPABASE_URL veya SUPABASE_SERVICE_ROLE_KEY bulunamadı!", flush=True)
         sys.exit(1)
+
+    if args.rebalance_anomalies:
+        rebalance_cast_anomalies(sb_url, sb_key, dry_run=dry_run)
+        sys.exit(0)
 
     db_path = args.db or os.environ.get("ARCHIVE_DB_PATH") or os.path.join(_ROOT, "webdrama_archive.db")
     sqlite_meta = {}

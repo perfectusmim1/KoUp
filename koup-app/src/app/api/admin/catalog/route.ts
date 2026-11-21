@@ -535,42 +535,6 @@ export async function POST(req: NextRequest) {
     const publishedAt = status === 'published' ? (ep.published_at ? String(ep.published_at) : nowIso) : null;
     const videoSources = Array.isArray(ep.video_sources) ? ep.video_sources : undefined;
 
-    const upsertPayload: Record<string, unknown> = {
-      media_id: mediaId,
-      season_number: seasonNumber,
-      episode_number: episodeNumber,
-      episode_name: episodeName,
-      episode_type: episodeType,
-      status,
-      scheduled_publish_at: scheduledPublishAt,
-      published_at: publishedAt,
-    };
-    if (videoSources !== undefined) {
-      upsertPayload.video_sources = videoSources;
-    }
-    if (ep.intro_start_sec !== undefined) {
-      upsertPayload.intro_start_sec = ep.intro_start_sec != null ? Number(ep.intro_start_sec) : null;
-    }
-    if (ep.intro_end_sec !== undefined) {
-      upsertPayload.intro_end_sec = ep.intro_end_sec != null ? Number(ep.intro_end_sec) : null;
-    }
-    if (ep.outro_start_sec !== undefined) {
-      upsertPayload.outro_start_sec = ep.outro_start_sec != null ? Number(ep.outro_start_sec) : null;
-    }
-    if (ep.outro_end_sec !== undefined) {
-      upsertPayload.outro_end_sec = ep.outro_end_sec != null ? Number(ep.outro_end_sec) : null;
-    }
-
-    const { data: savedEp, error } = await supabase
-      .from('episodes')
-      .upsert(upsertPayload, { onConflict: 'media_id,season_number,episode_number' })
-      .select('*')
-      .single();
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
     const syncResult = await runLocalCatalogPatch('episode_upsert', {
       media_id: mediaId,
       season_number: seasonNumber,
@@ -581,6 +545,7 @@ export async function POST(req: NextRequest) {
       video_sources: videoSources,
     });
 
+    let r2Written = syncResult.syncedLocalDb;
     if (!syncResult.syncedLocalDb) {
       const bundle = (await readR2SourceBundle(mediaId)) || { media_id: mediaId, episodes: [] };
       const epsList = Array.isArray(bundle.episodes) ? [...(bundle.episodes as Record<string, unknown>[])] : [];
@@ -604,7 +569,43 @@ export async function POST(req: NextRequest) {
           Number(a.episode_number || 0) - Number(b.episode_number || 0)
       );
       bundle.episodes = epsList;
-      await writeR2SourceBundle(mediaId, bundle);
+      r2Written = await writeR2SourceBundle(mediaId, bundle);
+    }
+
+    const upsertPayload: Record<string, unknown> = {
+      media_id: mediaId,
+      season_number: seasonNumber,
+      episode_number: episodeNumber,
+      episode_name: episodeName,
+      episode_type: episodeType,
+      status,
+      scheduled_publish_at: scheduledPublishAt,
+      published_at: publishedAt,
+    };
+    if (videoSources !== undefined) {
+      upsertPayload.video_sources = r2Written ? null : videoSources;
+    }
+    if (ep.intro_start_sec !== undefined) {
+      upsertPayload.intro_start_sec = ep.intro_start_sec != null ? Number(ep.intro_start_sec) : null;
+    }
+    if (ep.intro_end_sec !== undefined) {
+      upsertPayload.intro_end_sec = ep.intro_end_sec != null ? Number(ep.intro_end_sec) : null;
+    }
+    if (ep.outro_start_sec !== undefined) {
+      upsertPayload.outro_start_sec = ep.outro_start_sec != null ? Number(ep.outro_start_sec) : null;
+    }
+    if (ep.outro_end_sec !== undefined) {
+      upsertPayload.outro_end_sec = ep.outro_end_sec != null ? Number(ep.outro_end_sec) : null;
+    }
+
+    const { data: savedEp, error } = await supabase
+      .from('episodes')
+      .upsert(upsertPayload, { onConflict: 'media_id,season_number,episode_number' })
+      .select('*')
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     await supabase.from('admin_audit_log').insert({
@@ -682,27 +683,6 @@ export async function POST(req: NextRequest) {
     }
 
     const newStatus = sources.length > 0 ? 'published' : String(body.status || 'published');
-    const { data: updatedEp, error } = await supabase
-      .from('episodes')
-      .upsert(
-        {
-          media_id: mediaId,
-          season_number: seasonNumber,
-          episode_number: episodeNumber,
-          episode_name: episodeName,
-          status: newStatus,
-          video_sources: sources,
-          published_at: new Date().toISOString(),
-        },
-        { onConflict: 'media_id,season_number,episode_number' }
-      )
-      .select('*')
-      .single();
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
     const syncResult = await runLocalCatalogPatch('source_sync', {
       media_id: mediaId,
       season_number: seasonNumber,
@@ -712,6 +692,7 @@ export async function POST(req: NextRequest) {
       video_sources: sources,
     });
 
+    let r2Written = syncResult.syncedLocalDb;
     if (!syncResult.syncedLocalDb) {
       const bundle = (await readR2SourceBundle(mediaId)) || { media_id: mediaId, episodes: [] };
       const epsList = Array.isArray(bundle.episodes) ? [...(bundle.episodes as Record<string, unknown>[])] : [];
@@ -736,7 +717,28 @@ export async function POST(req: NextRequest) {
         });
       }
       bundle.episodes = epsList;
-      await writeR2SourceBundle(mediaId, bundle);
+      r2Written = await writeR2SourceBundle(mediaId, bundle);
+    }
+
+    const { data: updatedEp, error } = await supabase
+      .from('episodes')
+      .upsert(
+        {
+          media_id: mediaId,
+          season_number: seasonNumber,
+          episode_number: episodeNumber,
+          episode_name: episodeName,
+          status: newStatus,
+          video_sources: r2Written ? null : sources,
+          published_at: new Date().toISOString(),
+        },
+        { onConflict: 'media_id,season_number,episode_number' }
+      )
+      .select('*')
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     await supabase.from('admin_audit_log').insert({

@@ -789,8 +789,22 @@ export default function EpisodeWatchPage({
 
   const filteredSources = availableSources;
 
+  const liveSourceEntries = filteredSources
+    .map((source, idx) => ({ source, idx }))
+    .filter(({ source }) => !deadSourceUrls.has(source.direct_url));
+
   const activeSource: EpisodeSource | undefined =
-    filteredSources[selectedSourceIdx] || availableSources[0];
+    filteredSources[selectedSourceIdx] || liveSourceEntries[0]?.source || availableSources[0];
+
+  useEffect(() => {
+    const current = filteredSources[selectedSourceIdx];
+    if (current && deadSourceUrls.has(current.direct_url)) {
+      const nextLiveIdx = filteredSources.findIndex((s) => !deadSourceUrls.has(s.direct_url));
+      if (nextLiveIdx !== -1 && nextLiveIdx !== selectedSourceIdx) {
+        setSelectedSourceIdx(nextLiveIdx);
+      }
+    }
+  }, [deadSourceUrls, filteredSources, selectedSourceIdx]);
 
   // Track active source preference for seamless cross-episode playback continuity
   useEffect(() => {
@@ -1110,34 +1124,30 @@ export default function EpisodeWatchPage({
           </Link>
 
           {/* Center / Right: Kaynak Seçici Dropdown */}
-          <div className="flex items-center gap-2.5 ml-auto sm:ml-0 justify-end sm:justify-center sm:flex-1 sm:max-w-md">
-            {filteredSources.length > 0 ? (
-              <div className="w-auto min-w-0 sm:min-w-[220px]">
+          <div className="flex items-center gap-2.5 ml-auto sm:ml-0 justify-end sm:justify-center sm:flex-1 sm:max-w-md min-w-0">
+            {liveSourceEntries.length > 0 ? (
+              <div className="w-auto min-w-0 max-w-full sm:min-w-[220px]">
                 <CustomSelect
                   value={String(selectedSourceIdx)}
                   onChange={(val) => setSelectedSourceIdx(Number(val) || 0)}
                   variant="dark"
                   size="sm"
-                  leftIcon={<Layers className="w-3.5 h-3.5 text-sky-400" />}
+                  triggerClassName="max-w-[200px] sm:max-w-[280px]"
+                  leftIcon={<Layers className="w-3.5 h-3.5 text-sky-400 shrink-0" />}
                   portal={true}
-                  options={filteredSources.map((s, idx) => {
+                  options={liveSourceEntries.map(({ source: s, idx }) => {
                     const isNative =
                       s.stream_type === 'hls' ||
                       s.stream_type === 'tau' ||
                       s.stream_type === 'mp4';
-                    const isDead = deadSourceUrls.has(s.direct_url);
                     const baseName = cleanSourceName(s.source_name || `Kaynak ${idx + 1}`);
                     return {
                       value: String(idx),
                       label: baseName,
-                      disabled: isDead,
-                      description: isDead ? 'Çalışmıyor' : undefined,
                       icon: (
                         <span
                           className={`w-2 h-2 rounded-full ${
-                            isDead
-                              ? 'bg-rose-500/70'
-                              : isNative
+                            isNative
                               ? 'bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]'
                               : 'bg-blue-400'
                           }`}
@@ -1147,6 +1157,10 @@ export default function EpisodeWatchPage({
                   })}
                 />
               </div>
+            ) : filteredSources.length > 0 ? (
+              <span className="px-3 py-1 rounded-full bg-white/[0.06] border border-white/10 text-white/60 text-xs font-medium">
+                Çalışan kaynak bulunamadı
+              </span>
             ) : isLoading ? (
               <span className="text-xs text-white/40 font-mono">Kaynak Hazırlanıyor...</span>
             ) : episodes.length === 0 ? (

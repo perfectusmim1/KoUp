@@ -935,6 +935,21 @@ flowchart TD
 
 ---
 
+### 40. `POST /api/report-dead-source`
+
+- **Ne İşe Yarar:** Oynatıcı (`NetflixPlayer.tsx` `handleSourceDead`) tarafından çalışmadığı tespit edilen kaynakları `public.dead_source_reports` tablosuna işler; kullanıcı deneyimini kesmeden arızalı linkleri bakım kuyruğuna alır.
+- **Yetkilendirme:** Hız sınırlamalı herkese açık telemetri (girdi doğrulamalı `mediaId`, `episodeNumber`, `sourceUrl`, `reason`).
+
+### 41. `/api/admin/rpc`, `POST /api/devices/revoke` & `POST /api/episodes/reaction`
+
+- **Ne İşe Yarar:** İstemci bileşenlerinden (`admin/page.tsx`, `deviceTracker.ts`, `NetflixPlayer.tsx` `handleReaction`) doğrudan Supabase SECURITY DEFINER RPC çağırma ihtiyacını kaldıran kimlik doğrulamalı ve hız sınırlamalı sunucu vekilleridir.
+- **Önemli Güncellemeler:**
+  - `/api/takvim/live`: İçindeki sabit senkron belirteci ve yedek TMDB API anahtarı kaldırıldı (`process.env` zorunlu).
+  - `/api/sources/[mediaId]`: `dramavadisi:`, `dramabox:`, `wdt:` ve `pilavyer:` kaynak şemalarına izin verir.
+  - `/api/media/auto-enrich`, `/api/person/bio`, `/api/media/view`: Kimlik, girdi doğrulama ve hız sınırları sertleştirildi.
+
+---
+
 ## İlgili Dokümanlar
 - [01-genel-bakis-ve-mimari.md](./01-genel-bakis-ve-mimari.md) — 3 Katmanlı Mimari ve Veri Akışı
 - [05-oynatici-ve-yayin-akisi.md](./05-oynatici-ve-yayin-akisi.md) — Oynatıcı, HLS, Stream Proxy ve Worker Akışı

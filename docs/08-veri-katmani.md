@@ -701,6 +701,18 @@ Next.js Server-Side Rendering (SSR) ve ISR süreçlerinde bölüm listeleri [kou
 
 ---
 
+### 2026-11 Arşiv & 3 Katmanlı Senkronizasyon Durumu
+
+- **Yeni Tablo & RPC Güncellemeleri:**
+  - `public.dead_source_reports`: İstemci oynatıcılarından gelen kırık kaynak bildirimlerini kaydeder.
+  - `sync_episodes_items` RPC & [`scripts/sync_all_episodes_to_supabase.py`](../scripts/sync_all_episodes_to_supabase.py): Geçmiş/kaynak güncellemesi senkronlarında `"published_at": None` gönderir; RPC mevcut `published_at` değerini koruduğu için yeni bölüm varmış gibi sahte bildirim veya `/son-eklenenler` akışında tarihi sıçrama oluşmaz (`homeData.ts` `.not('published_at', 'is', null)` ve dar sütun seçimi `HOME_MEDIA_COLUMNS` kullanır).
+- **Tam 3 Katmanlı Doğrulanmış Büyüklükler & Depolama Optimizasyonu (2026-11-21):**
+  - **Yerel SQLite (`webdrama_archive.db`, `PRAGMA integrity_check = ok`):** `32.551` yapım (`32.190` kaynaklı, `6.701` `kisa_drama`), `626.098` bölüm (`610.067` kaynaklı), `1.041.295` video kaynağı; `VACUUM` + `wal_checkpoint(TRUNCATE)` sonrası `644,60 MB` -> `559,73 MB` (`freelist: 0`).
+  - **Supabase PostgreSQL (`590 MB` -> `278 MB`):** `32.743` `media` (9 birleştirilmiş mükerrer silindi, 4.505 sayaç/tip eşitlendi), `267.963` `episodes` (`254.077` ana dizi/anime bölümü tam senkron), `114.100` `people`, `215.000` `media_cast` (`23.921` kadrolu yapımda sıfır başrol/kadro hiyerarşi anomalisi). R2 JSON paketi bulunan `32.190` yapımın yinelenen `episodes.video_sources` JSONB verisi (`117 MB`) temizlenip R2 birincil katman haline getirildi (`allow_null_video_sources_in_sync_episodes_items` göçü + `supabase_sync_helper.py`, `sync_all_episodes_to_supabase.py`, `api/admin/catalog/route.ts` güncellemesi; yalnızca paketsiz `1.746` satırda `473 kB` fallback kalır). `VACUUM FULL` ve `ANALYZE` ile toplam DB boyutu `278 MB` düzeyine indirildi.
+  - **Cloudflare R2 (`koup-archive`):** `32.190` kaynak JSON paketi (`975.242` yayın kaynağı, sıfır hata) ve güncel `db/webdrama_archive.db` (`559,73 MB`) yedeği.
+
+---
+
 ## 5. İlgili Dokümanlar
 
 - **[01-genel-bakis-ve-mimari.md](./01-genel-bakis-ve-mimari.md):** Üç katmanlı mimarinin genel sistem diyagramları ve Vercel-Cloudflare-Supabase veri akışı.

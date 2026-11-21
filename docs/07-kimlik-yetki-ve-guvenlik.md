@@ -487,6 +487,13 @@ export const supabaseAdmin =
 
 ### Supabase Advisor Denetimi Zorunluluğu
 
+- Platformdaki her değişiklikten sonra Supabase Security ve Performance Advisor (`get_advisors`) bulguları denetlenir ve göç (`migration`) betikleriyle onarılır.
+- **2026-11 Güvenlik & Advisor Sertleştirmeleri:**
+  - Hardcoded token ve yedek API anahtarı (`/api/takvim/live`, `scripts/sync_real_calendars.py`) tamamen kaldırıldı.
+  - İstemci doğrudan RPC çağrıları sunucu vekil uçlarına taşındı (`/api/admin/rpc`, `/api/devices/revoke`, `/api/episodes/reaction`).
+  - `create_dead_source_reports`, `fix_notifications_and_sync_episodes` ve `security_and_performance_advisors_core` göçleri uygulandı; RLS initplan seçicileri `(SELECT ...)` sarmalamasına alındı ve tüm `SECURITY DEFINER` fonksiyonlarda `0029` arama yolu (`search_path`) uyarıları sıfırlandı.
+  - *Dashboard Manuel İşlemleri:* Auth **Leaked Password Protection** ayarı ve 23 kullanılmayan indeksin (`DROP INDEX`) kaldırılması Supabase Dashboard üzerinden uygulanmalıdır.
+
 Proje kuralları (`GEMINI.md` §4) gereğince, veritabanı şemasında yapılan her değişiklik sonrasında Supabase MCP `get_advisors` aracı çalıştırılmalı ve bulgular onarılmalıdır:
 - **Güvenlik Advisor'ı (`type: "security"`):**
   - `function_search_path_mutable`: `SECURITY DEFINER` fonksiyonların `search_path` manipülasyonuyla yetki yükseltme saldırılarına maruz kalmaması için tüm fonksiyonlarda `SET search_path = ''` veya `SET search_path TO 'public'` tanımlanması zorunludur.

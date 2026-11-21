@@ -1517,6 +1517,7 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int, include_short_drama: 
 
         bundle_dir = os.path.join(_ROOT, "r2_bundles", "sources")
         bundle_path = os.path.join(bundle_dir, f"{drama_id}.json")
+        r2_uploaded = False
         if ep_out or os.path.exists(bundle_path):
             os.makedirs(bundle_dir, exist_ok=True)
             payload = {
@@ -1529,7 +1530,7 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int, include_short_drama: 
             with open(bundle_path, "w", encoding="utf-8") as f:
                 json.dump(payload, f, ensure_ascii=False)
             # 1. Immediately upload bundle to Cloudflare R2 bucket so Cloud and Edge CDN are 100% updated
-            upload_to_r2(bundle_path, f"sources/{drama_id}.json")
+            r2_uploaded = bool(upload_to_r2(bundle_path, f"sources/{drama_id}.json"))
 
         now_dt = datetime.now(timezone.utc)
         now_iso = now_dt.isoformat()
@@ -1561,8 +1562,9 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int, include_short_drama: 
         has_newly_published = False
         max_newly_published_ep = 0
 
-        # 3. Upsert episodes into Supabase public.episodes table with full source parity
+        # 3. Upsert episodes into Supabase public.episodes table (metadata/status primary; R2 holds sources)
         sb_episodes_map = {}
+        cand_src_counts = {}
         for ep in ep_out:
             s_num = int(ep.get("season_number") or 1)
             e_num = int(ep.get("episode_number") or 1)
@@ -1592,6 +1594,8 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int, include_short_drama: 
                 if e_num > max_newly_published_ep:
                     max_newly_published_ep = e_num
 
+            src_list = ep.get("sources") or []
+            src_cnt = len(src_list)
             candidate = {
                 "media_id": drama_id,
                 "season_number": s_num,
@@ -1599,13 +1603,14 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int, include_short_drama: 
                 "episode_name": ep.get("episode_name") or f"Bölüm {e_num}",
                 "episode_type": ep.get("episode_type") or "normal",
                 "status": new_status,
-                "video_sources": ep.get("sources") or [],
+                "video_sources": None if (is_pend or r2_uploaded) else src_list,
                 "published_at": ep_pub_at,
             }
 
             # If duplicate season/episode exists in SQLite, keep the one with more sources
-            if key not in sb_episodes_map or (len(candidate["video_sources"]) > len(sb_episodes_map[key]["video_sources"])):
+            if key not in sb_episodes_map or src_cnt > cand_src_counts.get(key, 0):
                 sb_episodes_map[key] = candidate
+                cand_src_counts[key] = src_cnt
 
         # Parity cleanup: clear stale video_sources on Supabase episodes whose SQLite sources were purged,
         # and delete episodes that were removed completely from SQLite.
@@ -1623,7 +1628,7 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int, include_short_drama: 
                     "episode_name": zmeta["episode_name"] or f"Bölüm {e_num}",
                     "episode_type": zmeta["episode_type"] or "normal",
                     "status": "broken",
-                    "video_sources": [],
+                    "video_sources": None,
                     "published_at": ex_row.get("published_at"),
                 }
             elif ex_key not in sqlite_ep_keys and ex_row.get("id"):

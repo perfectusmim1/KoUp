@@ -3420,7 +3420,88 @@ export default function NetflixPlayer({
     media.title
   );
 
+  const cleanedQualityLabel = cleanQualityLabel(selectedQuality);
+  const compactQualityLabel =
+    isVertical && cleanedQualityLabel === 'Otomatik' ? 'Oto' : cleanedQualityLabel;
 
+  const renderPlaybackSettingsRows = (
+    compactVertical: boolean,
+    surface: 'popover' | 'sheet' = 'popover'
+  ) => {
+    const isSheet = surface === 'sheet';
+    const rowCls = isSheet
+      ? 'w-full p-3.5 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-between gap-3 cursor-pointer hover:bg-white/[0.08] active:bg-white/12 transition-colors'
+      : `w-full ${compactVertical ? 'min-h-[44px]' : ''} px-2.5 py-2 rounded-xl text-left flex items-center justify-between gap-2.5 hover:bg-white/[0.07] active:bg-white/10 cursor-pointer transition-colors`;
+    const iconBoxCls = isSheet
+      ? 'w-8 h-8 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-white/80 shrink-0'
+      : 'w-7 h-7 rounded-lg bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-white/80 shrink-0';
+    const trackCls = isSheet ? 'w-11 h-6' : 'w-9 h-5';
+    const thumbCls = isSheet ? 'w-5 h-5' : 'w-4 h-4';
+    const onShiftCls = isSheet ? 'translate-x-5' : 'translate-x-4';
+
+    const items = [
+      ...(!compactVertical
+        ? [
+            {
+              key: 'intro',
+              label: 'Otomatik İntro Atla',
+              active: autoSkipIntro,
+              onToggle: toggleAutoSkipIntro,
+              icon: <FastForward className={isSheet ? 'w-4 h-4' : 'w-3.5 h-3.5'} />,
+            },
+          ]
+        : []),
+      ...(!isMovie
+        ? [
+            {
+              key: 'next',
+              label: 'Otomatik Sonraki Bölüm',
+              active: autoNextEnabled,
+              onToggle: toggleAutoNext,
+              icon: <NetflixNextEpIcon className={isSheet ? 'w-4 h-4' : 'w-3.5 h-3.5'} />,
+            },
+          ]
+        : []),
+      {
+        key: 'ambient',
+        label: 'Sinematik Işıklandırma',
+        active: ambientLightingEnabled,
+        onToggle: toggleAmbientLighting,
+        icon: <Sparkles className={isSheet ? 'w-4 h-4' : 'w-3.5 h-3.5'} />,
+      },
+    ];
+
+    return items.map((item) => (
+      <button
+        key={item.key}
+        type="button"
+        role="switch"
+        aria-checked={item.active}
+        onClick={item.onToggle}
+        className={rowCls}
+      >
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+          <div className={iconBoxCls}>{item.icon}</div>
+          <span
+            className={`${isSheet ? 'text-sm' : 'text-xs'} font-medium text-white/95 leading-tight text-left`}
+          >
+            {item.label}
+          </span>
+        </div>
+        <div
+          className={`relative ${trackCls} rounded-full transition-colors duration-200 shrink-0 ${
+            item.active ? 'bg-[#E50914]' : 'bg-white/20'
+          }`}
+        >
+          <div
+            className={`absolute top-0.5 left-0.5 ${thumbCls} rounded-full bg-white shadow-sm transition-transform duration-200 ${
+              item.active ? onShiftCls : 'translate-x-0'
+            }`}
+          />
+        </div>
+      </button>
+    ));
+  };
 
   return (
     <div className={isTrailerMode ? "w-full h-full flex items-center justify-center overflow-hidden" : "relative"}>
@@ -3669,37 +3750,30 @@ export default function NetflixPlayer({
             <p className="max-w-md text-xs sm:text-sm text-white/60 mb-5 leading-relaxed">
               Bu video sunucusu geçici olarak yanıt vermiyor. Lütfen alternatif kaynakları deneyin.
             </p>
-            {filteredSources.length > 1 && (
-              <div className="flex flex-wrap items-center justify-center gap-2 max-w-lg mb-5">
-                {filteredSources.map((s, idx) => {
-                  const isDead = isSourceMarkedDead(s);
-                  return (
+            {(() => {
+              const liveAltSources = filteredSources
+                .map((s, idx) => ({ s, idx }))
+                .filter(({ s }) => !isSourceMarkedDead(s));
+              if (liveAltSources.length === 0) return null;
+              return (
+                <div className="flex flex-wrap items-center justify-center gap-2 max-w-lg mb-5">
+                  {liveAltSources.map(({ s, idx }) => (
                     <button
                       key={`${s.embed_id || s.direct_url}_${idx}`}
                       type="button"
-                      disabled={isDead}
-                      onClick={() => {
-                        if (!isDead) setSelectedSourceIdx(idx);
-                      }}
-                      className={`min-h-[44px] px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors duration-150 inline-flex items-center gap-1.5 ${
-                        isDead
-                          ? 'bg-white/[0.04] border border-white/10 text-white/40 opacity-65 cursor-not-allowed'
-                          : selectedSourceIdx === idx
-                          ? 'bg-[#E50914] text-white shadow-md shadow-[#E50914]/25 cursor-pointer'
-                          : 'bg-white/10 hover:bg-white/20 text-white/80 cursor-pointer'
+                      onClick={() => setSelectedSourceIdx(idx)}
+                      className={`min-h-[44px] px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors duration-150 inline-flex items-center gap-1.5 cursor-pointer ${
+                        selectedSourceIdx === idx
+                          ? 'bg-[#E50914] text-white shadow-md shadow-[#E50914]/25'
+                          : 'bg-white/10 hover:bg-white/20 text-white/80'
                       }`}
                     >
                       <span>{s.source_name || `Kaynak ${idx + 1}`}</span>
-                      {isDead && (
-                        <span className="px-1.5 py-0.5 rounded bg-red-500/15 border border-red-400/25 text-[10px] font-medium text-red-300">
-                          Çalışmıyor
-                        </span>
-                      )}
                     </button>
-                  );
-                })}
-              </div>
-            )}
+                  ))}
+                </div>
+              );
+            })()}
             <button
               onClick={() => window.location.reload()}
               className="px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-2 cursor-pointer transition-transform active:scale-95"
@@ -4658,7 +4732,7 @@ export default function NetflixPlayer({
                                     prev === 'quality' ? null : 'quality'
                                   )
                                 }
-                                aria-label={`Kalite (${cleanQualityLabel(selectedQuality)})`}
+                                aria-label={`Kalite (${cleanedQualityLabel})`}
                                 className={`flex items-center justify-center gap-1 ${
                                   isVertical ? 'min-w-[44px] min-h-[44px] px-1.5 text-[11px] font-mono' : 'py-1 text-xs'
                                 } font-medium cursor-pointer shrink-0 [text-shadow:0_1px_2px_rgba(0,0,0,0.8)] ${
@@ -4668,7 +4742,7 @@ export default function NetflixPlayer({
                                 }`}
                               >
                                 <SlidersHorizontal className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                                <span>{cleanQualityLabel(selectedQuality)}</span>
+                                <span>{compactQualityLabel}</span>
                               </button>
 
                               <AnimatePresence>
@@ -4681,20 +4755,20 @@ export default function NetflixPlayer({
                                     transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
                                     data-netflix-control="true"
                                     onClick={(e) => e.stopPropagation()}
-                                    className={`absolute bottom-full mb-3 ${
+                                    className={`absolute bottom-full ${
                                       isVertical
-                                        ? 'right-0 min-w-[160px] max-w-[200px] max-h-[min(240px,48dvh)]'
-                                        : 'left-1/2 -translate-x-1/2 min-w-[170px] max-w-[220px] max-h-[240px]'
-                                    } z-[60] overflow-y-auto no-scrollbar p-2.5 rounded-xl bg-[#181818]/98 backdrop-blur-sm border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1 select-none transform-gpu origin-bottom`}
+                                        ? 'mb-10 sm:mb-11 right-0 min-w-[164px] max-w-[204px] max-h-[min(240px,46dvh)] origin-bottom-right'
+                                        : 'mb-3 right-0 min-w-[170px] max-w-[220px] max-h-[240px] origin-bottom-right'
+                                    } z-[60] overflow-y-auto no-scrollbar p-2.5 rounded-2xl bg-[#0d0e13]/95 backdrop-blur-2xl border border-white/[0.12] shadow-[0_24px_60px_rgba(0,0,0,0.92)] space-y-1 select-none transform-gpu`}
                                   >
-                                    <div className="flex items-center border-b border-white/10 pb-1.5 mb-1 px-1">
-                                      <span className="text-white/60 font-semibold text-[11px] uppercase tracking-wider">
-                                        Kalite Seçimi
+                                    <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-1 px-1">
+                                      <span className="text-white/90 font-semibold text-xs tracking-wide">
+                                        Kalite
                                       </span>
                                     </div>
                                     {qualities.map((q, qIdx) => {
                                       const cleanLabel = cleanQualityLabel(q.label);
-                                      const isSelected = cleanQualityLabel(selectedQuality) === cleanLabel;
+                                      const isSelected = cleanedQualityLabel === cleanLabel;
                                       return (
                                         <button
                                           key={`${cleanLabel}-${q.url || ''}-${qIdx}`}
@@ -4705,10 +4779,10 @@ export default function NetflixPlayer({
                                           }}
                                           className={`w-full ${
                                             isVertical ? 'min-h-[44px]' : ''
-                                          } px-2.5 py-1.5 rounded-lg text-left text-xs font-medium flex items-center justify-between gap-3 transition-colors cursor-pointer ${
+                                          } px-2.5 py-1.5 rounded-xl text-left text-xs font-medium flex items-center justify-between gap-3 transition-colors cursor-pointer ${
                                             isSelected
-                                              ? 'text-white font-bold bg-white/10'
-                                              : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                                              ? 'text-white font-semibold bg-white/10'
+                                              : 'text-zinc-400 hover:text-white hover:bg-white/[0.06]'
                                           }`}
                                         >
                                           <span>{cleanLabel}</span>
@@ -4767,7 +4841,7 @@ export default function NetflixPlayer({
                                   prev === 'playback_settings' ? null : 'playback_settings'
                                 )
                               }
-                              aria-label="Oynatma Tercihleri"
+                              aria-label="Oynatma Ayarları"
                               className={`flex items-center justify-center gap-1 ${
                                 isVertical ? 'min-w-[44px] min-h-[44px]' : 'py-1'
                               } text-xs font-semibold cursor-pointer shrink-0 transition-colors ${
@@ -4791,87 +4865,24 @@ export default function NetflixPlayer({
                                   transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
                                   data-netflix-control="true"
                                   onClick={(e) => e.stopPropagation()}
-                                  className="absolute bottom-full mb-3 right-0 z-[60] w-72 p-3 rounded-2xl bg-[#141414]/98 backdrop-blur-xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1.5 select-none transform-gpu origin-bottom"
+                                  className="absolute bottom-full mb-3 right-0 z-[60] w-[276px] max-w-[calc(100vw-2rem)] p-3 rounded-2xl bg-[#0d0e13]/95 backdrop-blur-2xl border border-white/[0.12] shadow-[0_24px_60px_rgba(0,0,0,0.92)] space-y-1.5 select-none transform-gpu origin-bottom-right"
                                 >
                                   <div className="flex items-center justify-between border-b border-white/10 pb-2 px-1">
-                                    <span className="text-white/80 font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
-                                      <Settings className="w-3.5 h-3.5 text-[#E50914] shrink-0" />
-                                      Oynatma Tercihleri
+                                    <span className="text-white/90 font-semibold text-xs tracking-wide flex items-center gap-1.5">
+                                      <Settings className="w-3.5 h-3.5 text-white/60 shrink-0" />
+                                      Oynatma Ayarları
                                     </span>
                                     <button
                                       type="button"
                                       onClick={() => setActivePanel(null)}
-                                      className="text-white/50 hover:text-white p-0.5 rounded cursor-pointer"
+                                      className="w-7 h-7 rounded-full hover:bg-white/10 flex items-center justify-center text-white/60 hover:text-white cursor-pointer"
                                       aria-label="Kapat"
                                     >
                                       <X className="w-3.5 h-3.5 shrink-0" />
                                     </button>
                                   </div>
 
-                                  <div
-                                    onClick={toggleAutoSkipIntro}
-                                    className="w-full px-2 py-2 rounded-xl text-left flex items-center justify-between gap-3 hover:bg-white/5 cursor-pointer transition-colors"
-                                  >
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      <FastForward className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                      <span className="text-xs font-semibold text-white">Otomatik İntro Atla</span>
-                                    </div>
-                                    <div
-                                      className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
-                                        autoSkipIntro ? 'bg-[#E50914]' : 'bg-zinc-700'
-                                      }`}
-                                    >
-                                      <div
-                                        className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                                          autoSkipIntro ? 'translate-x-4' : 'translate-x-0'
-                                        }`}
-                                      />
-                                    </div>
-                                  </div>
-
-                                  {!isMovie && (
-                                    <div
-                                      onClick={toggleAutoNext}
-                                      className="w-full px-2 py-2 rounded-xl text-left flex items-center justify-between gap-3 hover:bg-white/5 cursor-pointer transition-colors"
-                                    >
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <NetflixNextEpIcon className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                                        <span className="text-xs font-semibold text-white">Otomatik Sonraki Bölüm</span>
-                                      </div>
-                                      <div
-                                        className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
-                                          autoNextEnabled ? 'bg-[#E50914]' : 'bg-zinc-700'
-                                        }`}
-                                      >
-                                        <div
-                                          className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                                            autoNextEnabled ? 'translate-x-4' : 'translate-x-0'
-                                          }`}
-                                        />
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  <div
-                                    onClick={toggleAmbientLighting}
-                                    className="w-full px-2 py-2 rounded-xl text-left flex items-center justify-between gap-3 hover:bg-white/5 cursor-pointer transition-colors"
-                                  >
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" />
-                                      <span className="text-xs font-semibold text-white">Sinematik Işıklandırma</span>
-                                    </div>
-                                    <div
-                                      className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
-                                        ambientLightingEnabled ? 'bg-[#E50914]' : 'bg-zinc-700'
-                                      }`}
-                                    >
-                                      <div
-                                        className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                                          ambientLightingEnabled ? 'translate-x-4' : 'translate-x-0'
-                                        }`}
-                                      />
-                                    </div>
-                                  </div>
+                                  {renderPlaybackSettingsRows(false, 'popover')}
                                 </motion.div>
                               )}
                             </AnimatePresence>
@@ -4903,28 +4914,28 @@ export default function NetflixPlayer({
                     <div className={`flex items-center justify-between ${
                       isVertical ? 'gap-0.5' : 'gap-2 sm:gap-4 md:gap-6'
                     } pt-0.5 min-w-0 flex-nowrap`}>
-                      <div className={`flex items-center ${isVertical ? 'gap-0.5 sm:gap-1' : 'gap-2 sm:gap-4'} shrink-0`}>
+                      <div className={`flex items-center ${isVertical ? 'gap-0.5' : 'gap-2 sm:gap-4'} shrink-0`}>
                         <button
                           type="button"
                           onClick={togglePlayPause}
                           aria-label={isPlaying ? 'Duraklat (Space / K)' : 'Oynat (Space / K)'}
                           className={`${
-                            isVertical ? 'min-w-[44px] min-h-[44px] flex items-center justify-center' : ''
+                            isVertical ? 'w-9 h-9 flex items-center justify-center' : ''
                           } text-white/95 hover:text-white hover:scale-115 active:scale-85 hover:drop-shadow-[0_0_12px_rgba(255,255,255,0.45)] transition-all duration-150 ease-out cursor-pointer shrink-0`}
                         >
                           <div key={isPlaying ? 'pause' : 'play'} className="animate-play-pop flex items-center justify-center">
                             {isPlaying ? (
-                              <NetflixPauseBarsIcon className={isVertical ? 'w-5 h-5' : 'w-6 h-6'} />
+                              <NetflixPauseBarsIcon className={isVertical ? 'w-4 h-4' : 'w-6 h-6'} />
                             ) : (
-                              <NetflixPlayTriangleIcon className={isVertical ? 'w-5 h-5' : 'w-6 h-6'} />
+                              <NetflixPlayTriangleIcon className={isVertical ? 'w-4 h-4' : 'w-6 h-6'} />
                             )}
                           </div>
                         </button>
 
-                        {/* HORIZONTAL VOLUME SLIDER: expands to the right (PC only) */}
+                        {/* VOLUME SLIDER: floating popover in 9:16 vertical mode (never shifts bar); inline expanding track in landscape */}
                         {(() => {
                           const THUMB = 12;
-                          const TRACK_W = isVertical ? 40 : 72;
+                          const TRACK_W = 72;
                           const level = isMuted ? 0 : volume;
                           const open = showVolumeSlider || isDraggingVolume;
                           const applyVolume = (raw: number) => {
@@ -4948,6 +4959,66 @@ export default function NetflixPlayer({
                             }
                           };
 
+                          const trackElement = (
+                            <div
+                              className="relative w-[72px] h-8 flex items-center cursor-pointer touch-none shrink-0"
+                              onPointerDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                isDraggingVolumeRef.current = true;
+                                setIsDraggingVolume(true);
+                                setShowVolumeSlider(true);
+                                if (volumeHideTimerRef.current) {
+                                  clearTimeout(volumeHideTimerRef.current);
+                                  volumeHideTimerRef.current = null;
+                                }
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const calc = (clientX: number) =>
+                                  applyVolume(
+                                    (clientX - rect.left - THUMB / 2) / (rect.width - THUMB)
+                                  );
+                                calc(e.clientX);
+                                const handleMove = (ev: PointerEvent) => calc(ev.clientX);
+                                const onUp = () => {
+                                  isDraggingVolumeRef.current = false;
+                                  setIsDraggingVolume(false);
+                                  window.removeEventListener('pointermove', handleMove);
+                                  window.removeEventListener('pointerup', onUp);
+                                  window.removeEventListener('pointercancel', onUp);
+                                };
+                                window.addEventListener('pointermove', handleMove);
+                                window.addEventListener('pointerup', onUp);
+                                window.addEventListener('pointercancel', onUp);
+                              }}
+                            >
+                              <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[3px] rounded-full bg-white/40 pointer-events-none" />
+                              <div
+                                className="absolute left-0 top-1/2 -translate-y-1/2 h-[3px] rounded-full bg-white pointer-events-none"
+                                style={{
+                                  width: `${level * (TRACK_W - THUMB) + THUMB / 2}px`,
+                                }}
+                              />
+                              <div
+                                className="absolute top-1/2 -translate-y-1/2 rounded-full bg-white pointer-events-none shadow-sm"
+                                style={{
+                                  width: `${THUMB}px`,
+                                  height: `${THUMB}px`,
+                                  left: `${level * (TRACK_W - THUMB)}px`,
+                                }}
+                              />
+                              <input
+                                type="range"
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                value={level}
+                                aria-label="Ses seviyesi"
+                                onChange={(e) => applyVolume(Number(e.target.value))}
+                                className="sr-only"
+                              />
+                            </div>
+                          );
+
                           return (
                             <div
                               className="relative flex items-center shrink-0 select-none"
@@ -4969,19 +5040,17 @@ export default function NetflixPlayer({
                                 adjustVolume(e.deltaY < 0 ? 0.05 : -0.05);
                               }}
                             >
-                              {/* Speaker Icon Button: Sized and animated identically to Fullscreen & Cast (stable bounding box, zero jitter) */}
                               <button
                                 type="button"
                                 onClick={toggleMute}
                                 aria-label={isMuted ? 'Sesi Aç (M)' : 'Sesi Kapat (M)'}
-                                className={`${isVertical ? 'min-w-[44px] min-h-[44px]' : 'w-8 h-8'} flex items-center justify-center rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-200 group/vol cursor-pointer shrink-0 text-white/90 hover:text-white`}
+                                className={`${isVertical ? 'w-9 h-9' : 'w-8 h-8'} flex items-center justify-center rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-200 group/vol cursor-pointer shrink-0 text-white/90 hover:text-white`}
                               >
                                 <svg
                                   viewBox="0 0 24 24"
                                   className={`${isVertical ? 'w-4 h-4' : 'w-5 h-5'} shrink-0 group-hover/vol:scale-110 transition-transform duration-200 ease-out will-change-transform transform-gpu`}
                                   fill="none"
                                 >
-                                  {/* Solid white speaker cone */}
                                   <polygon
                                     points="11 4 6 8.5 2 8.5 2 15.5 6 15.5 11 20 11 4"
                                     fill="currentColor"
@@ -4989,7 +5058,6 @@ export default function NetflixPlayer({
                                     strokeWidth="1.2"
                                     strokeLinejoin="round"
                                   />
-                                  {/* Sound waves or mute X */}
                                   {level === 0 ? (
                                     <>
                                       <line x1="16" y1="8.5" x2="22" y2="15.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
@@ -5021,73 +5089,28 @@ export default function NetflixPlayer({
                                 </svg>
                               </button>
 
-                              {/* Horizontal Slider Track: smoothly expands to the right without displacing the speaker button */}
-                              <div
-                                className={`overflow-hidden transition-[max-width,opacity] duration-150 ease-out flex items-center ${
-                                  open ? (isVertical ? 'max-w-[48px] opacity-100 pl-0.5 pr-0.5' : 'max-w-[88px] opacity-100 pl-1.5 pr-1') : 'max-w-0 opacity-0 pointer-events-none pl-0 pr-0'
-                                }`}
-                              >
+                              {isVertical ? (
                                 <div
-                                  className={`relative ${isVertical ? 'w-[40px]' : 'w-[72px]'} h-8 flex items-center cursor-pointer touch-none shrink-0`}
-                                  onPointerDown={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    isDraggingVolumeRef.current = true;
-                                    setIsDraggingVolume(true);
-                                    setShowVolumeSlider(true);
-                                    if (volumeHideTimerRef.current) {
-                                      clearTimeout(volumeHideTimerRef.current);
-                                      volumeHideTimerRef.current = null;
-                                    }
-                                    const rect = e.currentTarget.getBoundingClientRect();
-                                    const calc = (clientX: number) =>
-                                      applyVolume(
-                                        (clientX - rect.left - THUMB / 2) / (rect.width - THUMB)
-                                      );
-                                    calc(e.clientX);
-                                    const handleMove = (ev: PointerEvent) => calc(ev.clientX);
-                                    const onUp = () => {
-                                      isDraggingVolumeRef.current = false;
-                                      setIsDraggingVolume(false);
-                                      window.removeEventListener('pointermove', handleMove);
-                                      window.removeEventListener('pointerup', onUp);
-                                      window.removeEventListener('pointercancel', onUp);
-                                    };
-                                    window.addEventListener('pointermove', handleMove);
-                                    window.addEventListener('pointerup', onUp);
-                                    window.addEventListener('pointercancel', onUp);
-                                  }}
+                                  data-testid="vertical-volume-popover"
+                                  className={`absolute bottom-full left-0 pb-10 z-[60] transition-all duration-150 origin-bottom-left ${
+                                    open
+                                      ? 'opacity-100 scale-100 pointer-events-auto'
+                                      : 'opacity-0 scale-95 pointer-events-none'
+                                  }`}
                                 >
-                                  {/* Groove Line */}
-                                  <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[3px] rounded-full bg-white/40 pointer-events-none" />
-                                  {/* Filled Line */}
-                                  <div
-                                    className="absolute left-0 top-1/2 -translate-y-1/2 h-[3px] rounded-full bg-white pointer-events-none"
-                                    style={{
-                                      width: `${level * (TRACK_W - THUMB) + THUMB / 2}px`,
-                                    }}
-                                  />
-                                  {/* Thumb */}
-                                  <div
-                                    className="absolute top-1/2 -translate-y-1/2 rounded-full bg-white pointer-events-none shadow-sm"
-                                    style={{
-                                      width: `${THUMB}px`,
-                                      height: `${THUMB}px`,
-                                      left: `${level * (TRACK_W - THUMB)}px`,
-                                    }}
-                                  />
-                                  <input
-                                    type="range"
-                                    min={0}
-                                    max={1}
-                                    step={0.01}
-                                    value={level}
-                                    aria-label="Ses seviyesi"
-                                    onChange={(e) => applyVolume(Number(e.target.value))}
-                                    className="sr-only"
-                                  />
+                                  <div className="px-2.5 py-1 rounded-xl bg-[#0d0e13]/95 backdrop-blur-2xl border border-white/[0.12] shadow-[0_16px_40px_rgba(0,0,0,0.9)]">
+                                    {trackElement}
+                                  </div>
                                 </div>
-                              </div>
+                              ) : (
+                                <div
+                                  className={`overflow-hidden transition-[max-width,opacity] duration-150 ease-out flex items-center ${
+                                    open ? 'max-w-[88px] opacity-100 pl-1.5 pr-1' : 'max-w-0 opacity-0 pointer-events-none pl-0 pr-0'
+                                  }`}
+                                >
+                                  {trackElement}
+                                </div>
+                              )}
                             </div>
                           );
                         })()}
@@ -5100,14 +5123,14 @@ export default function NetflixPlayer({
                             }
                             aria-label="Oynatma Hızı"
                             className={`flex items-center justify-center ${
-                              isVertical ? 'gap-1 min-w-[44px] min-h-[44px] px-1 text-[11px]' : 'gap-1.5 py-1 text-xs'
+                              isVertical ? 'gap-1 h-9 px-1.5 text-[11px]' : 'gap-1.5 py-1 text-xs'
                             } font-medium transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap [text-shadow:0_1px_3px_rgba(0,0,0,0.9)] ${
                               activePanel === 'speed'
                                 ? 'text-[#E50914] font-bold'
                                 : 'text-white/90 hover:text-white'
                             }`}
                           >
-                            <NetflixSpeedIcon className={`${isVertical ? 'w-4 h-4' : 'w-5 h-5'} shrink-0`} />
+                            <NetflixSpeedIcon className={`${isVertical ? 'w-3.5 h-3.5' : 'w-5 h-5'} shrink-0`} />
                             <span className={isVertical ? 'inline font-mono' : 'hidden sm:inline'}>
                               {isVertical ? `${playbackRate}x` : `Hız (${playbackRate}x)`}
                             </span>
@@ -5176,7 +5199,7 @@ export default function NetflixPlayer({
                                 }
                                 aria-label="Ses ve Altyazı"
                                 className={`flex items-center justify-center gap-1 ${
-                                  isVertical ? 'min-w-[44px] min-h-[44px] text-[11px]' : 'py-1 text-sm'
+                                  isVertical ? 'w-9 h-9 text-[11px]' : 'py-1 text-sm'
                                 } font-medium transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap ${
                                   activePanel === 'audio_subtitles'
                                     ? 'text-[#E50914] font-bold'
@@ -5209,9 +5232,9 @@ export default function NetflixPlayer({
                                       prev === 'quality' ? null : 'quality'
                                     )
                                   }
-                                  aria-label={`Video Kalitesi: ${cleanQualityLabel(selectedQuality)}`}
+                                  aria-label={`Video Kalitesi: ${cleanedQualityLabel}`}
                                   className={`flex items-center justify-center gap-1 ${
-                                    isVertical ? 'min-w-[44px] min-h-[44px] px-1 text-[11px]' : 'py-1 text-sm'
+                                    isVertical ? 'h-9 px-1.5 text-[11px]' : 'py-1 text-sm'
                                   } font-medium transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap ${
                                     activePanel === 'quality'
                                       ? 'text-[#E50914] font-bold'
@@ -5220,7 +5243,7 @@ export default function NetflixPlayer({
                                 >
                                   <SlidersHorizontal className={`${isVertical ? 'w-3.5 h-3.5' : 'w-4 h-4'} shrink-0`} />
                                   <span className={isVertical ? 'text-[11px] font-mono' : ''}>
-                                    {cleanQualityLabel(selectedQuality)}
+                                    {compactQualityLabel}
                                   </span>
                                   {!isVertical && (
                                     <ChevronDown
@@ -5241,20 +5264,20 @@ export default function NetflixPlayer({
                                       transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
                                       data-netflix-control="true"
                                       onClick={(e) => e.stopPropagation()}
-                                      className={`absolute bottom-full mb-3 ${
+                                      className={`absolute bottom-full ${
                                         isVertical
-                                          ? 'right-0 min-w-[160px] max-w-[200px] max-h-[min(240px,48dvh)]'
-                                          : 'left-1/2 -translate-x-1/2 min-w-[170px] max-w-[220px] max-h-[300px]'
-                                      } z-[60] overflow-y-auto no-scrollbar p-2.5 rounded-xl bg-[#181818]/98 backdrop-blur-sm border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1 select-none transform-gpu origin-bottom`}
+                                          ? 'mb-10 sm:mb-11 right-0 min-w-[164px] max-w-[204px] max-h-[min(240px,46dvh)]'
+                                          : 'mb-3 right-0 min-w-[164px] max-w-[210px] max-h-[300px]'
+                                      } z-[60] overflow-y-auto no-scrollbar p-2.5 rounded-2xl bg-[#0d0e13]/95 backdrop-blur-2xl border border-white/[0.12] shadow-[0_24px_60px_rgba(0,0,0,0.92)] space-y-1 select-none transform-gpu origin-bottom-right`}
                                     >
-                                      <div className="flex items-center border-b border-white/10 pb-1.5 mb-1 px-1">
-                                        <span className="text-white/60 font-semibold text-[11px] uppercase tracking-wider">
-                                          Kalite Seçimi
+                                      <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-1 px-1">
+                                        <span className="text-white/90 font-semibold text-xs tracking-wide">
+                                          Kalite
                                         </span>
                                       </div>
                                       {qualities.map((q, qIdx) => {
                                         const cleanLabel = cleanQualityLabel(q.label);
-                                        const isSelected = cleanQualityLabel(selectedQuality) === cleanLabel;
+                                        const isSelected = cleanedQualityLabel === cleanLabel;
                                         return (
                                           <button
                                             key={`${cleanLabel}-${q.url || ''}-${qIdx}`}
@@ -5265,10 +5288,10 @@ export default function NetflixPlayer({
                                             }}
                                             className={`w-full ${
                                               isVertical ? 'min-h-[44px]' : ''
-                                            } px-2.5 py-1.5 rounded-lg text-left text-xs font-medium flex items-center justify-between gap-3 transition-colors cursor-pointer ${
+                                            } px-2.5 py-1.5 rounded-xl text-left text-xs font-medium flex items-center justify-between gap-3 transition-colors cursor-pointer ${
                                               isSelected
-                                                ? 'text-white font-bold bg-white/10'
-                                                : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                                                ? 'text-white font-semibold bg-white/10'
+                                                : 'text-zinc-400 hover:text-white hover:bg-white/[0.06]'
                                             }`}
                                           >
                                             <span>{cleanLabel}</span>
@@ -5293,16 +5316,16 @@ export default function NetflixPlayer({
                                     prev === 'playback_settings' ? null : 'playback_settings'
                                   )
                                 }
-                                aria-label="Oynatma Tercihleri"
+                                aria-label="Oynatma Ayarları"
                                 className={`flex items-center justify-center gap-1 ${
-                                  isVertical ? 'min-w-[44px] min-h-[44px] text-[11px]' : 'py-1 text-sm font-semibold'
+                                  isVertical ? 'w-9 h-9 text-[11px]' : 'py-1 text-sm font-semibold'
                                 } transition-colors duration-150 cursor-pointer shrink-0 whitespace-nowrap ${
                                   activePanel === 'playback_settings'
                                     ? 'text-[#E50914]'
                                     : 'text-white/90 hover:text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]'
                                 }`}
                               >
-                                <Settings className={`${isVertical ? 'w-3.5 h-3.5' : 'w-4 h-4'} shrink-0`} />
+                                <Settings className={`${isVertical ? 'w-4 h-4' : 'w-4 h-4'} shrink-0`} />
                                 <span className={isVertical ? 'hidden' : 'hidden lg:inline'}>Ayarlar</span>
                                 {!isVertical && (
                                   <ChevronDown
@@ -5323,87 +5346,24 @@ export default function NetflixPlayer({
                                     transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
                                     data-netflix-control="true"
                                     onClick={(e) => e.stopPropagation()}
-                                    className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 w-76 z-[60] p-3 rounded-2xl bg-[#141414]/98 backdrop-blur-xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1.5 select-none transform-gpu origin-bottom"
+                                    className="absolute bottom-full mb-3 right-0 w-[276px] max-w-[calc(100vw-2rem)] z-[60] p-3 rounded-2xl bg-[#0d0e13]/95 backdrop-blur-2xl border border-white/[0.12] shadow-[0_24px_60px_rgba(0,0,0,0.92)] space-y-1.5 select-none transform-gpu origin-bottom-right"
                                   >
                                     <div className="flex items-center justify-between border-b border-white/10 pb-2 px-1">
-                                      <span className="text-white/80 font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
-                                        <Settings className="w-3.5 h-3.5 text-[#E50914] shrink-0" />
-                                        Oynatma Tercihleri
+                                      <span className="text-white/90 font-semibold text-xs tracking-wide flex items-center gap-1.5">
+                                        <Settings className="w-3.5 h-3.5 text-white/60 shrink-0" />
+                                        Oynatma Ayarları
                                       </span>
                                       <button
                                         type="button"
                                         onClick={() => setActivePanel(null)}
-                                        className="text-white/50 hover:text-white p-0.5 rounded cursor-pointer"
+                                        className="w-7 h-7 rounded-full hover:bg-white/10 flex items-center justify-center text-white/60 hover:text-white cursor-pointer"
                                         aria-label="Kapat"
                                       >
                                         <X className="w-3.5 h-3.5 shrink-0" />
                                       </button>
                                     </div>
 
-                                    <div
-                                      onClick={toggleAutoSkipIntro}
-                                      className="w-full px-2.5 py-2 rounded-xl text-left flex items-center justify-between gap-3 hover:bg-white/5 cursor-pointer transition-colors"
-                                    >
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <FastForward className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                        <span className="text-xs font-semibold text-white">Otomatik İntro Atla</span>
-                                      </div>
-                                      <div
-                                        className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
-                                          autoSkipIntro ? 'bg-[#E50914]' : 'bg-zinc-700'
-                                        }`}
-                                      >
-                                        <div
-                                          className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                                            autoSkipIntro ? 'translate-x-4' : 'translate-x-0'
-                                          }`}
-                                        />
-                                      </div>
-                                    </div>
-
-                                    {!isMovie && (
-                                      <div
-                                        onClick={toggleAutoNext}
-                                        className="w-full px-2.5 py-2 rounded-xl text-left flex items-center justify-between gap-3 hover:bg-white/5 cursor-pointer transition-colors"
-                                      >
-                                        <div className="flex items-center gap-2 min-w-0">
-                                          <NetflixNextEpIcon className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                                          <span className="text-xs font-semibold text-white">Otomatik Sonraki Bölüm</span>
-                                        </div>
-                                        <div
-                                          className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
-                                            autoNextEnabled ? 'bg-[#E50914]' : 'bg-zinc-700'
-                                          }`}
-                                        >
-                                          <div
-                                            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                                              autoNextEnabled ? 'translate-x-4' : 'translate-x-0'
-                                            }`}
-                                          />
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    <div
-                                      onClick={toggleAmbientLighting}
-                                      className="w-full px-2.5 py-2 rounded-xl text-left flex items-center justify-between gap-3 hover:bg-white/5 cursor-pointer transition-colors"
-                                    >
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" />
-                                        <span className="text-xs font-semibold text-white">Sinematik Işıklandırma</span>
-                                      </div>
-                                      <div
-                                        className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
-                                          ambientLightingEnabled ? 'bg-[#E50914]' : 'bg-zinc-700'
-                                        }`}
-                                      >
-                                        <div
-                                          className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                                            ambientLightingEnabled ? 'translate-x-4' : 'translate-x-0'
-                                          }`}
-                                        />
-                                      </div>
-                                    </div>
+                                    {renderPlaybackSettingsRows(false, 'popover')}
                                   </motion.div>
                                 )}
                               </AnimatePresence>
@@ -5434,7 +5394,7 @@ export default function NetflixPlayer({
                           onClick={toggleFullscreen}
                           aria-label={isFullscreen ? 'Tam Ekrandan Çık (F)' : 'Tam Ekran (F)'}
                           className={`${
-                            isVertical ? 'min-w-[44px] min-h-[44px]' : 'w-8 h-8'
+                            isVertical ? 'w-9 h-9' : 'w-8 h-8'
                           } flex items-center justify-center rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-200 group/fs text-white/90 hover:text-white cursor-pointer shrink-0`}
                         >
                           <div className={`${
@@ -5629,7 +5589,7 @@ export default function NetflixPlayer({
                IN-PLAYER NETFLIX POPOVERS (Speed, Floating Episodes, Sources)
                ================================================================ */}
             <AnimatePresence>
-              {/* A1. VERTICAL PLAYBACK SPEED DROPDOWN (Matches quality dropdown inside 9:16 frame) */}
+              {/* A1. VERTICAL PLAYBACK SPEED DROPDOWN (Clears scrubber bar & fits inside 9:16 frame) */}
               {!isMobileInline && isVertical && activePanel === 'speed' && (
                 <motion.div
                   key="panel-speed-vertical"
@@ -5641,16 +5601,16 @@ export default function NetflixPlayer({
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
                   onPointerUp={(e) => e.stopPropagation()}
-                  className="absolute bottom-14 sm:bottom-16 left-2.5 z-[60] w-[min(196px,calc(100%-20px))] max-h-[calc(100%-88px)] overflow-y-auto no-scrollbar p-2.5 rounded-xl bg-[#181818]/98 backdrop-blur-sm border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1 select-none transform-gpu origin-bottom-left"
+                  className="absolute bottom-[78px] sm:bottom-[84px] left-2.5 z-[60] w-[min(196px,calc(100%-20px))] max-h-[calc(100%-110px)] overflow-y-auto no-scrollbar p-2.5 rounded-2xl bg-[#0d0e13]/95 backdrop-blur-2xl border border-white/[0.12] shadow-[0_24px_60px_rgba(0,0,0,0.92)] space-y-1 select-none transform-gpu origin-bottom-left"
                 >
-                  <div className="flex items-center justify-between border-b border-white/10 pb-1.5 mb-1 px-1">
-                    <span className="text-white/60 font-semibold text-[11px] uppercase tracking-wider">
+                  <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-1 px-1">
+                    <span className="text-white/90 font-semibold text-xs tracking-wide">
                       Oynatma Hızı
                     </span>
                     <button
                       type="button"
                       onClick={() => setActivePanel(null)}
-                      className="min-w-[44px] min-h-[44px] -my-2 -mr-2 rounded-full hover:bg-white/10 flex items-center justify-center text-white/60 hover:text-white cursor-pointer"
+                      className="w-7 h-7 rounded-full hover:bg-white/10 flex items-center justify-center text-white/60 hover:text-white cursor-pointer"
                       aria-label="Kapat"
                     >
                       <X className="w-3.5 h-3.5 shrink-0" />
@@ -5666,10 +5626,10 @@ export default function NetflixPlayer({
                           applySpeed(item.value);
                           setActivePanel(null);
                         }}
-                        className={`w-full min-h-[44px] px-2.5 py-1.5 rounded-lg text-left text-xs font-medium flex items-center justify-between gap-3 transition-colors cursor-pointer ${
+                        className={`w-full min-h-[44px] px-2.5 py-1.5 rounded-xl text-left text-xs font-medium flex items-center justify-between gap-3 transition-colors cursor-pointer ${
                           isSelected
-                            ? 'text-white font-bold bg-white/10'
-                            : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                            ? 'text-white font-semibold bg-white/10'
+                            : 'text-zinc-400 hover:text-white hover:bg-white/[0.06]'
                         }`}
                       >
                         <span>{item.label}</span>
@@ -5682,7 +5642,7 @@ export default function NetflixPlayer({
                 </motion.div>
               )}
 
-              {/* A2. VERTICAL PLAYBACK SETTINGS POPOVER (Constrained inside 9:16 frame with internal scroll) */}
+              {/* A2. VERTICAL PLAYBACK SETTINGS POPOVER (Clears scrubber bar & fits inside 9:16 frame) */}
               {!isMobileInline && isVertical && activePanel === 'playback_settings' && (
                 <motion.div
                   key="panel-settings-vertical"
@@ -5694,96 +5654,24 @@ export default function NetflixPlayer({
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
                   onPointerUp={(e) => e.stopPropagation()}
-                  className="absolute bottom-14 sm:bottom-16 right-2.5 z-[60] w-[min(264px,calc(100%-20px))] max-h-[calc(100%-88px)] overflow-y-auto no-scrollbar p-3 rounded-2xl bg-[#141414]/98 backdrop-blur-xl border border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.95)] space-y-1.5 select-none transform-gpu origin-bottom-right"
+                  className="absolute bottom-[78px] sm:bottom-[84px] right-2.5 z-[60] w-[min(264px,calc(100%-20px))] max-h-[calc(100%-110px)] overflow-y-auto no-scrollbar p-3 rounded-2xl bg-[#0d0e13]/95 backdrop-blur-2xl border border-white/[0.12] shadow-[0_24px_60px_rgba(0,0,0,0.92)] space-y-1.5 select-none transform-gpu origin-bottom-right"
                 >
                   <div className="flex items-center justify-between border-b border-white/10 pb-2 px-1">
-                    <span className="text-white/80 font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 min-w-0">
-                      <Settings className="w-3.5 h-3.5 text-[#E50914] shrink-0" />
-                      <span className="truncate">Oynatma Tercihleri</span>
+                    <span className="text-white/90 font-semibold text-xs tracking-wide flex items-center gap-1.5 min-w-0">
+                      <Settings className="w-3.5 h-3.5 text-white/60 shrink-0" />
+                      <span className="truncate">Oynatma Ayarları</span>
                     </span>
                     <button
                       type="button"
                       onClick={() => setActivePanel(null)}
-                      className="min-w-[44px] min-h-[44px] -my-2 -mr-2 text-white/50 hover:text-white rounded-full hover:bg-white/10 flex items-center justify-center cursor-pointer shrink-0"
+                      className="w-7 h-7 text-white/60 hover:text-white rounded-full hover:bg-white/10 flex items-center justify-center cursor-pointer shrink-0"
                       aria-label="Kapat"
                     >
                       <X className="w-3.5 h-3.5 shrink-0" />
                     </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={toggleAutoSkipIntro}
-                    className="w-full min-h-[44px] px-2.5 py-2 rounded-xl text-left flex items-center justify-between gap-2.5 hover:bg-white/5 active:bg-white/10 cursor-pointer transition-colors"
-                  >
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <FastForward className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                      <span className="text-xs font-semibold text-white leading-tight">
-                        Otomatik İntro Atla
-                      </span>
-                    </div>
-                    <div
-                      className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
-                        autoSkipIntro ? 'bg-[#E50914]' : 'bg-zinc-700'
-                      }`}
-                    >
-                      <div
-                        className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                          autoSkipIntro ? 'translate-x-4' : 'translate-x-0'
-                        }`}
-                      />
-                    </div>
-                  </button>
-
-                  {!isMovie && (
-                    <button
-                      type="button"
-                      onClick={toggleAutoNext}
-                      className="w-full min-h-[44px] px-2.5 py-2 rounded-xl text-left flex items-center justify-between gap-2.5 hover:bg-white/5 active:bg-white/10 cursor-pointer transition-colors"
-                    >
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <NetflixNextEpIcon className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                        <span className="text-xs font-semibold text-white leading-tight">
-                          Otomatik Sonraki Bölüm
-                        </span>
-                      </div>
-                      <div
-                        className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
-                          autoNextEnabled ? 'bg-[#E50914]' : 'bg-zinc-700'
-                        }`}
-                      >
-                        <div
-                          className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                            autoNextEnabled ? 'translate-x-4' : 'translate-x-0'
-                          }`}
-                        />
-                      </div>
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={toggleAmbientLighting}
-                    className="w-full min-h-[44px] px-2.5 py-2 rounded-xl text-left flex items-center justify-between gap-2.5 hover:bg-white/5 active:bg-white/10 cursor-pointer transition-colors"
-                  >
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <Sparkles className="w-3.5 h-3.5 text-sky-300 shrink-0" />
-                      <span className="text-xs font-semibold text-white leading-tight">
-                        Sinematik Işıklandırma
-                      </span>
-                    </div>
-                    <div
-                      className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
-                        ambientLightingEnabled ? 'bg-[#E50914]' : 'bg-zinc-700'
-                      }`}
-                    >
-                      <div
-                        className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                          ambientLightingEnabled ? 'translate-x-4' : 'translate-x-0'
-                        }`}
-                      />
-                    </div>
-                  </button>
+                  {renderPlaybackSettingsRows(true, 'popover')}
                 </motion.div>
               )}
 
@@ -5852,17 +5740,17 @@ export default function NetflixPlayer({
                     onClick={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
                     onPointerUp={(e) => e.stopPropagation()}
-                    className="absolute bottom-16 sm:bottom-20 left-1/2 -translate-x-1/2 sm:left-6 md:left-8 sm:translate-x-0 z-[60] w-[90vw] sm:w-[480px] max-w-[500px] p-3.5 sm:p-6 rounded-xl bg-[#222222] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.9)] select-none"
+                    className="absolute bottom-16 sm:bottom-20 left-1/2 -translate-x-1/2 sm:left-6 md:left-8 sm:translate-x-0 z-[60] w-[90vw] sm:w-[480px] max-w-[500px] p-3.5 sm:p-6 rounded-2xl bg-[#0d0e13]/95 backdrop-blur-2xl border border-white/[0.12] shadow-[0_24px_60px_rgba(0,0,0,0.92)] select-none"
                   >
                     {/* Header: Title + Close Button */}
                     <div className="flex items-center justify-between mb-5 sm:mb-8">
-                      <div className="text-white font-bold text-sm sm:text-[17px] tracking-normal">
+                      <div className="text-white/95 font-semibold text-sm sm:text-base tracking-wide">
                         Oynatma Hızı
                       </div>
                       <button
                         type="button"
                         onClick={() => setActivePanel(null)}
-                        className="w-6 h-6 rounded-full hover:bg-white/10 flex items-center justify-center text-white/70 hover:text-white cursor-pointer"
+                        className="w-7 h-7 rounded-full hover:bg-white/10 flex items-center justify-center text-white/60 hover:text-white cursor-pointer"
                         aria-label="Kapat"
                       >
                         <X className="w-4 h-4" />
@@ -5883,7 +5771,7 @@ export default function NetflixPlayer({
                       {/* Active Indicator: Gray-Bordered Ring with White Center Dot */}
                       <div
                         style={{ left: `${activePercent}%` }}
-                        className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 rounded-full border-2 border-[#a3a3a3] bg-[#222222] shadow-md flex items-center justify-center transition-[left] duration-150 ease-out pointer-events-none z-10"
+                        className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 rounded-full border-2 border-[#a3a3a3] bg-[#0d0e13] shadow-md flex items-center justify-center transition-[left] duration-150 ease-out pointer-events-none z-10"
                       >
                         <div className="w-2.5 h-2.5 rounded-full bg-white" />
                       </div>
@@ -5955,7 +5843,7 @@ export default function NetflixPlayer({
 
 
 
-              {/* D. NETFLIX AUDIO & SUBTITLES POPOVER (Matched to Reference Screenshots) */}
+              {/* D. NETFLIX AUDIO & SUBTITLES POPOVER (Unified dark glass, clears scrubber in vertical) */}
               {!isMobileInline && activePanel === 'audio_subtitles' && (
                 <motion.div
                   key="panel-audio-subtitles"
@@ -5967,18 +5855,18 @@ export default function NetflixPlayer({
                   onClick={(e) => e.stopPropagation()}
                   className={`absolute ${
                     isVertical
-                      ? 'bottom-14 sm:bottom-16 w-[calc(100%-20px)] max-w-[340px] max-h-[calc(100%-88px)] p-3.5'
+                      ? 'bottom-[78px] sm:bottom-[84px] w-[calc(100%-20px)] max-w-[340px] max-h-[calc(100%-110px)] p-3.5'
                       : 'bottom-14 sm:bottom-20 w-[92vw] max-w-md sm:max-w-xl max-h-[85%] p-4 sm:p-6'
-                  } left-1/2 -translate-x-1/2 z-[60] rounded-xl bg-[#181818]/98 backdrop-blur-sm border border-white/10 shadow-[0_24px_60px_rgba(0,0,0,0.95)] overflow-y-auto custom-scrollbar select-none transform-gpu`}
+                  } left-1/2 -translate-x-1/2 z-[60] rounded-2xl bg-[#0d0e13]/95 backdrop-blur-2xl border border-white/[0.12] shadow-[0_24px_60px_rgba(0,0,0,0.92)] overflow-y-auto custom-scrollbar select-none transform-gpu`}
                 >
                   <div className="flex items-center justify-between mb-3 pb-2 border-b border-white/10">
-                    <div className="text-white font-bold text-sm sm:text-base tracking-wide">
-                      Ses & Altyazı
+                    <div className="text-white/95 font-semibold text-sm sm:text-base tracking-wide">
+                      Ses ve Altyazı
                     </div>
                     <button
                       type="button"
                       onClick={() => setActivePanel(null)}
-                      className="w-6 h-6 rounded-full hover:bg-white/10 flex items-center justify-center text-white/70 hover:text-white cursor-pointer"
+                      className="w-7 h-7 rounded-full hover:bg-white/10 flex items-center justify-center text-white/60 hover:text-white cursor-pointer"
                       aria-label="Kapat"
                     >
                       <X className="w-4 h-4" />
@@ -6416,31 +6304,31 @@ export default function NetflixPlayer({
                 exit={{ y: '100%' }}
                 transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
                 onClick={(e) => e.stopPropagation()}
-                className="fixed inset-x-0 bottom-0 z-[99999] rounded-t-3xl bg-[#181818]/98 backdrop-blur-md border-t border-white/15 px-4 pt-3 pb-6 max-h-[75vh] flex flex-col shadow-[0_-12px_40px_rgba(0,0,0,0.85)] select-none"
+                className="fixed inset-x-0 bottom-0 z-[99999] rounded-t-3xl bg-[#0d0e13]/96 backdrop-blur-2xl border-t border-white/[0.12] px-4 pt-3 pb-6 max-h-[75vh] flex flex-col shadow-[0_-12px_40px_rgba(0,0,0,0.85)] select-none"
               >
                 {/* Pull Handle */}
                 <div className="w-10 h-1 rounded-full bg-white/20 mx-auto mb-3 shrink-0" />
 
                 {/* Header */}
                 <div className="flex items-center justify-between pb-3 mb-3 border-b border-white/10 shrink-0">
-                  <div className="text-white font-bold text-sm tracking-wide flex items-center gap-2">
+                  <div className="text-white/95 font-semibold text-sm tracking-wide flex items-center gap-2">
                     {activePanel === 'speed' && (
                       <>
-                        <NetflixSpeedIcon className="w-4 h-4 text-[#E50914]" />
+                        <NetflixSpeedIcon className="w-4 h-4 text-white/70" />
                         <span>Oynatma Hızı</span>
                         <span className="text-xs font-normal text-white/50">({playbackRate}x)</span>
                       </>
                     )}
                     {activePanel === 'audio_subtitles' && (
                       <>
-                        <NetflixAudioSubtitleIcon className="w-4 h-4 text-[#E50914]" />
+                        <NetflixAudioSubtitleIcon className="w-4 h-4 text-white/70" />
                         <span>Ses ve Altyazı</span>
                       </>
                     )}
                     {activePanel === 'playback_settings' && (
                       <>
-                        <Settings className="w-4 h-4 text-[#E50914]" />
-                        <span>Oynatma Tercihleri</span>
+                        <Settings className="w-4 h-4 text-white/70" />
+                        <span>Oynatma Ayarları</span>
                       </>
                     )}
                   </div>
@@ -6579,70 +6467,7 @@ export default function NetflixPlayer({
                 {/* Panel 3: Playback Settings */}
                 {activePanel === 'playback_settings' && (
                   <div className="space-y-2 py-1">
-                    <div
-                      onClick={toggleAutoSkipIntro}
-                      className="w-full p-3.5 rounded-2xl bg-white/5 flex items-center justify-between gap-3 cursor-pointer hover:bg-white/10 active:bg-white/15 transition-colors"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                        <FastForward className="w-4 h-4 text-amber-400 shrink-0" />
-                        <span className="text-sm font-semibold text-white">Otomatik İntro Atla</span>
-                      </div>
-                      <div
-                        className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
-                          autoSkipIntro ? 'bg-[#E50914]' : 'bg-zinc-700'
-                        }`}
-                      >
-                        <div
-                          className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                            autoSkipIntro ? 'translate-x-5' : 'translate-x-0'
-                          }`}
-                        />
-                      </div>
-                    </div>
-
-                    {!isMovie && (
-                      <div
-                        onClick={toggleAutoNext}
-                        className="w-full p-3.5 rounded-2xl bg-white/5 flex items-center justify-between gap-3 cursor-pointer hover:bg-white/10 active:bg-white/15 transition-colors"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                          <NetflixNextEpIcon className="w-4 h-4 text-cyan-400 shrink-0" />
-                          <span className="text-sm font-semibold text-white">Otomatik Sonraki Bölüm</span>
-                        </div>
-                        <div
-                          className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
-                            autoNextEnabled ? 'bg-[#E50914]' : 'bg-zinc-700'
-                          }`}
-                        >
-                          <div
-                            className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                              autoNextEnabled ? 'translate-x-5' : 'translate-x-0'
-                            }`}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    <div
-                      onClick={toggleAmbientLighting}
-                      className="w-full p-3.5 rounded-2xl bg-white/5 flex items-center justify-between gap-3 cursor-pointer hover:bg-white/10 active:bg-white/15 transition-colors"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                        <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
-                        <span className="text-sm font-semibold text-white">Sinematik Işıklandırma</span>
-                      </div>
-                      <div
-                        className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
-                          ambientLightingEnabled ? 'bg-[#E50914]' : 'bg-zinc-700'
-                        }`}
-                      >
-                        <div
-                          className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                            ambientLightingEnabled ? 'translate-x-5' : 'translate-x-0'
-                          }`}
-                        />
-                      </div>
-                    </div>
+                    {renderPlaybackSettingsRows(isVertical, 'sheet')}
                   </div>
                 )}
               </motion.div>

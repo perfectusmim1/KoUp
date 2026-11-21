@@ -199,6 +199,7 @@ def sync_episodes(include_short_drama: bool = False, drama_id: int = None):
         is_pending = (src_status == "pending")
         ep_srcs = [] if is_pending else sources_by_ep.get(eid, [])
         ep_status = "pending_source" if is_pending else ("published" if ep_srcs else "broken")
+        has_r2_bundle = os.path.exists(os.path.join(_ROOT, "r2_bundles", "sources", f"{did}.json"))
         clean_name = clean_episode_title(ep_name, s_num or 1, ep_num or 1)
         current_chunk.append({
             "media_id": did,
@@ -207,7 +208,7 @@ def sync_episodes(include_short_drama: bool = False, drama_id: int = None):
             "episode_name": clean_name,
             "episode_type": ep_type or "bolum",
             "status": ep_status,
-            "video_sources": ep_srcs,
+            "video_sources": None if (is_pending or has_r2_bundle) else ep_srcs,
             # Historical/bulk sync must never stamp now() or trigger new-episode notifications.
             # Existing published_at is preserved by sync_episodes_items ON CONFLICT.
             "published_at": None,

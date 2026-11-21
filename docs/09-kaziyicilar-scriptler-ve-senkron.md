@@ -620,6 +620,20 @@ Proje kökünde ve uygulama dizininde yer alan statik veri ve denetim klasörler
 
 ---
 
+### 2026-11 Kazıyıcı, Otomasyon & Kurtarma Güncellemeleri
+
+- **Otomasyon ve Çekirdek Sertleştirme:**
+  - [`database.py`](../database.py): `row_to_dict()` yardımcısıyla SQLite tuple/Row dönüşüm çökmeleri giderildi.
+  - [`scrapers/multisite.py`](../scrapers/multisite.py): URL normalizasyonu, kaynak tekilleştirme, ön-kayıt HTTP sağlık önbelleği, işbirlikçi `threading.Event` durdurma sinyali ve Turnstile/CF/403 engellerinde anında `SiteBlockedError` hızlı duruşu eklendi.
+  - [`scrapers/shortdrama/common.py`](../scrapers/shortdrama/common.py) & [`koredizi.py`](../scrapers/shortdrama/koredizi.py): `content_type='kisa_drama'` zorlaması ve KoreDizi yinelenen hash ayrıştırma hatası düzeltildi; kontrol noktaları SQLite `scraper_checkpoints` tablosuna taşındı.
+- **Bakım ve Tam Arşiv Onarım Scriptleri:**
+  - [`scripts/audit_and_heal_catalog.py`](../scripts/audit_and_heal_catalog.py): Yanlış `kisa_drama` etiketleri, sahte slug türevli bölüm numaraları ve eski `pending://gap` kalıntılarını temizler.
+  - [`scripts/purge_dead_sources_full.py`](../scripts/purge_dead_sources_full.py): Sağlayıcı bazlı asenkron canlılık taraması yapar; Vidmoly burst-404 ayna yeniden deneme koruması, Mail.ru/OK.ru 404 doğrulaması ve `%50 [SAFETY_GUARD]` sigortası içerir.
+  - [`scripts/sync_cast_hierarchy.py`](../scripts/sync_cast_hierarchy.py): `--rebalance-anomalies` ve `apply_cast_for_batch` ile eksik AniList/TMDB kadrolarını doldurur ve tüm başrol/yardımcı rol dengesizliklerini sıfırlar.
+  - [`scripts/recover_and_heal_sources.py`](../scripts/recover_and_heal_sources.py): Kategori bazlı eksik bölüm ve boşluk kurtarma motoru (35 sn kısa-drama daemon zaman aşımı, `--max-minutes` süre tavanı ve `unfillable_gaps` raporlaması; Cloudflare Turnstile sitelerini atlar).
+
+---
+
 ## 7. İlgili Dokümanlar
 
 - **[01-genel-bakis-ve-mimari.md](./01-genel-bakis-ve-mimari.md):** Üç katmanlı hibrit mimari ve veri akış şemaları.

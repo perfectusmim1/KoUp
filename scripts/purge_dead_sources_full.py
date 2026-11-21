@@ -344,22 +344,26 @@ async def probe_vidmoly(session: aiohttp.ClientSession, sem: asyncio.Semaphore, 
     if "vidmoly" not in u.lower():
         return "alive", "non_vidmoly_host_kept"
     mirrors = ["vidmoly.biz", "vidmoly.org"]
-    for attempt in range(3):
+    saw_404_status = None
+    for attempt in range(2):
         mirror = mirrors[(idx + attempt) % len(mirrors)]
         fetch_url = re.sub(r"//(?:www\.)?vidmoly\.(?:biz|org|net|to)/", f"//{mirror}/", u, flags=re.I)
         headers = {"User-Agent": COMMON_UA, "Referer": f"https://{mirror}/"}
+        if attempt > 0:
+            await asyncio.sleep(0.5)
         async with sem:
-            await asyncio.sleep(0.05 if attempt == 0 else 0.25 * attempt)
+            await asyncio.sleep(0.05)
             try:
                 async with session.get(fetch_url, headers=headers, timeout=aiohttp.ClientTimeout(total=10, connect=5), allow_redirects=True) as resp:
                     st = resp.status
                     body = await resp.text(errors="ignore")
                     blow = body.lower()
                     if st in (404, 410):
-                        return "dead", f"http_{st}"
+                        saw_404_status = st
+                        continue
                     if st in (403, 429) or st >= 500:
                         continue
-                    if any(
+                    if st == 200 and any(
                         k in blow
                         for k in (
                             "no video found", "this video not found", "file was deleted",
@@ -372,8 +376,10 @@ async def probe_vidmoly(session: aiohttp.ClientSession, sem: asyncio.Semaphore, 
                         return "alive", "hls_stream_present"
                     return "unknown", f"unrecognized_len_{len(body)}"
             except Exception as e:
-                if attempt == 2:
+                if attempt == 1 and saw_404_status is None:
                     return "unknown", f"err_{type(e).__name__}"
+    if saw_404_status is not None:
+        return "unknown", f"vidmoly_http_{saw_404_status}_unconfirmed"
     return "unknown", "http_503_or_rate_limited"
 
 
@@ -408,39 +414,45 @@ async def probe_mailru(session: aiohttp.ClientSession, sem: asyncio.Semaphore, u
     if "/embed/" not in cu.lower():
         return "dead", "mailru_non_embed_xfo_deny"
     headers = {"User-Agent": COMMON_UA, "Referer": "https://my.mail.ru/"}
-    async with sem:
-        try:
-            async with session.get(cu, headers=headers, timeout=aiohttp.ClientTimeout(total=10, connect=5), allow_redirects=True) as resp:
-                if resp.status in (404, 410):
-                    return "dead", f"http_{resp.status}"
-                if resp.status != 200:
-                    return "unknown", f"http_{resp.status}"
-                body = await resp.text(errors="ignore")
-                blow = body.lower()
-                if "video not found" in blow or "видео не найдено" in blow or "видео удалено" in blow:
-                    return "dead", "mailru_deleted_marker"
-                m = re.search(r'metadataUrl"\s*:\s*"([^"]+)"', body)
-                if not m:
-                    if "flashvars" in blow:
-                        return "alive", "mailru_flashvars_present"
-                    return "dead", "mailru_no_metadata_url"
-                mu = m.group(1)
-                if mu.startswith("//"):
-                    mu = "https:" + mu
-                elif mu.startswith("/"):
-                    mu = "https://my.mail.ru" + mu
-                async with session.get(mu, headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as mr:
-                    if mr.status in (404, 410):
-                        return "dead", f"mailru_meta_{mr.status}"
-                    if mr.status == 200:
-                        data = await mr.json(content_type=None)
-                        vids = data.get("videos") if isinstance(data, dict) else None
-                        if isinstance(vids, list) and len(vids) > 0:
-                            return "alive", "mailru_videos_ok"
-                        return "dead", "mailru_empty_videos"
-                    return "unknown", f"mailru_meta_{mr.status}"
-        except Exception as e:
-            return "unknown", f"err_{type(e).__name__}"
+    for attempt in range(2):
+        if attempt > 0:
+            await asyncio.sleep(0.5)
+        async with sem:
+            try:
+                async with session.get(cu, headers=headers, timeout=aiohttp.ClientTimeout(total=10, connect=5), allow_redirects=True) as resp:
+                    if resp.status in (404, 410):
+                        if attempt == 0:
+                            continue
+                        return "dead", f"http_{resp.status}"
+                    if resp.status != 200:
+                        return "unknown", f"http_{resp.status}"
+                    body = await resp.text(errors="ignore")
+                    blow = body.lower()
+                    if "video not found" in blow or "видео не найдено" in blow or "видео удалено" in blow:
+                        return "dead", "mailru_deleted_marker"
+                    m = re.search(r'metadataUrl"\s*:\s*"([^"]+)"', body)
+                    if not m:
+                        if "flashvars" in blow:
+                            return "alive", "mailru_flashvars_present"
+                        return "unknown", "mailru_no_metadata_url_or_challenge"
+                    mu = m.group(1)
+                    if mu.startswith("//"):
+                        mu = "https:" + mu
+                    elif mu.startswith("/"):
+                        mu = "https://my.mail.ru" + mu
+                    async with session.get(mu, headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as mr:
+                        if mr.status in (404, 410):
+                            return "dead", f"mailru_meta_{mr.status}"
+                        if mr.status == 200:
+                            data = await mr.json(content_type=None)
+                            vids = data.get("videos") if isinstance(data, dict) else None
+                            if isinstance(vids, list) and len(vids) > 0:
+                                return "alive", "mailru_videos_ok"
+                            return "dead", "mailru_empty_videos"
+                        return "unknown", f"mailru_meta_{mr.status}"
+            except Exception as e:
+                return "unknown", f"err_{type(e).__name__}"
+    return "unknown", "max_retries"
 
 
 async def probe_okru(session: aiohttp.ClientSession, sem: asyncio.Semaphore, url: str) -> tuple[str, str]:
@@ -448,22 +460,28 @@ async def probe_okru(session: aiohttp.ClientSession, sem: asyncio.Semaphore, url
     if mal:
         return "dead", f"malformed:{reason}"
     headers = {"User-Agent": COMMON_UA, "Referer": "https://ok.ru/"}
-    async with sem:
-        try:
-            async with session.get(url.strip(), headers=headers, timeout=aiohttp.ClientTimeout(total=10, connect=5), allow_redirects=True) as resp:
-                if resp.status in (404, 410):
-                    return "dead", f"http_{resp.status}"
-                if resp.status in (403, 429) or resp.status >= 500:
-                    return "unknown", f"http_{resp.status}"
-                body = await resp.text(errors="ignore")
-                blow = body.lower()
-                if any(k in blow for k in ("video has been blocked", "video has not been found", "this video has been deleted", "copyrighted", "видео недоступно", "видео удалено")):
-                    return "dead", "okru_deleted_marker"
-                if "data-options" in blow or "flashvars" in blow:
-                    return "alive", "okru_metadata_ok"
-                return "unknown", f"unrecognized_len_{len(body)}"
-        except Exception as e:
-            return "unknown", f"err_{type(e).__name__}"
+    for attempt in range(2):
+        if attempt > 0:
+            await asyncio.sleep(0.5)
+        async with sem:
+            try:
+                async with session.get(url.strip(), headers=headers, timeout=aiohttp.ClientTimeout(total=10, connect=5), allow_redirects=True) as resp:
+                    if resp.status in (404, 410):
+                        if attempt == 0:
+                            continue
+                        return "dead", f"http_{resp.status}"
+                    if resp.status in (403, 429) or resp.status >= 500:
+                        return "unknown", f"http_{resp.status}"
+                    body = await resp.text(errors="ignore")
+                    blow = body.lower()
+                    if any(k in blow for k in ("video has been blocked", "video has not been found", "this video has been deleted", "copyrighted", "видео недоступно", "видео удалено")):
+                        return "dead", "okru_deleted_marker"
+                    if "data-options" in blow or "flashvars" in blow:
+                        return "alive", "okru_metadata_ok"
+                    return "unknown", f"unrecognized_len_{len(body)}"
+            except Exception as e:
+                return "unknown", f"err_{type(e).__name__}"
+    return "unknown", "max_retries"
 
 
 async def probe_vk(session: aiohttp.ClientSession, sem: asyncio.Semaphore, url: str) -> tuple[str, str]:
@@ -833,10 +851,14 @@ async def run_pipeline(args):
     print("=== SAĞLAYICI BAZLI ALIVE / DEAD / UNKNOWN RAPORU ===")
     print("=" * 72)
 
+    active_live_guards = {"vidmoly", "mail.ru", "ok.ru", "uqload", "mp4upload", "filemoon", "vk.com"}
     for g in group_order:
         if not rows_by_group.get(g):
             continue
         c = Counter()
+        group_dead: list[tuple] = []
+        group_dramas: set[int] = set()
+        group_episodes: set[int] = set()
         for r in rows_by_group[g]:
             sid, eid, did, *_ = r
             u = (r[6] or "").strip()
@@ -844,15 +866,22 @@ async def run_pipeline(args):
             c[st] += 1
             reasons_by_group[g][f"{st}:{rsn}"] += 1
             if st == "dead":
-                dead_rows.append((*r, g, rsn))
+                group_dead.append((*r, g, rsn))
                 if did is not None:
-                    affected_dramas.add(int(did))
+                    group_dramas.add(int(did))
                 if eid is not None:
-                    affected_episodes.add(int(eid))
+                    group_episodes.add(int(eid))
 
         tot_g = len(rows_by_group[g])
         breakdown[g] = {"total": tot_g, "alive": c["alive"], "dead": c["dead"], "unknown": c["unknown"], "reasons": dict(reasons_by_group[g])}
         print(f"  • {g:16s} | Toplam: {tot_g:7,d} | ALIVE: {c['alive']:7,d} | DEAD: {c['dead']:7,d} | UNKNOWN: {c['unknown']:7,d}")
+        if g in active_live_guards and tot_g >= 200 and (c["dead"] / tot_g) > 0.50:
+            print(f"[SAFETY_GUARD] {g}: {c['dead']:,}/{tot_g:,} ({c['dead']/tot_g*100:.1f}%) DEAD oranı %50 sınırını aştı -> toplu silme engellendi!")
+            breakdown[g]["safety_guard_skipped"] = True
+            continue
+        dead_rows.extend(group_dead)
+        affected_dramas.update(group_dramas)
+        affected_episodes.update(group_episodes)
 
     is_apply = bool(args.apply and not args.dry_run and args.sample == 0)
     if not is_apply:

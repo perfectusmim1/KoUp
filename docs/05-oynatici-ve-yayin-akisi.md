@@ -684,6 +684,20 @@ Bu sayede TLS Client Hello el sıkışması, cipher suite sırası ve HTTP/2 fra
 
 ---
 
+## 10B. Kısa Drama, Dikey Oynatıcı (9:16) & Kaynak Kararlılığı (2026-11 Güncellemesi)
+
+- **Dikey Oynatıcı (`NetflixPlayer.tsx` `variant="vertical"` & `ShortsWatchClient.tsx`):**
+  - Kısa dramalar için 9:16 alanda gereksiz kalabalık kaldırıldı: ekran ortası durdurma/oynatma & ileri-geri sarma katmanı, fragman katmanı, Cast/AirPlay butonu ve dikeyde gereksiz olan "Otomatik İntro Atla" satırı gizlenir.
+  - Hız seçici (`VERTICAL_SPEED_RATES`), kalite menüsü (`Oto` kompakt etiketi), ses/altyazı ve ayar panelleri tek tip KoUp koyu cam yüzey (`#0d0e13/95`, birleşik ikon kutusu ve anahtarlar) ile birleştirildi; dikey popover'lar ilerleme çubuğunun üstünde (`bottom-[78px]` / `mb-10`) konumlanır ve ses kaydırıcısı üzerine gelindiğinde alt çubuğu kaydırmayan yüzen hap olarak açılır.
+  - Yatay masaüstü oynatıcıda `panel-settings-pc` ve `panel-quality-pc` sağa hizalanarak (`right-0`) oynatıcı sağ kenarından taşması engellendi; `ShortsWatchClient` bölüm aralık sekmeleri (`1-50` vb.) `flex-wrap` ile taşmasız sarıldı ve kaynak butonları monokrom cam paletle hizalandı.
+- **Kaynak Seçim Kararlılığı & Arıza Bildirimi:**
+  - `selectPreferredSourceForEpisode` ref tabanlı (`appliedPreferredEpRef`) kararlı hale getirildi; açılan kaynak listesinin sonradan küçülmesi engellendi. Başarısız/ölü olduğu doğrulanan kaynaklar arayüzdeki açılır menülerden, kaynak haplarından ve hata ekranından otomatik olarak gizlenir; arka planda `POST /api/report-dead-source` (URL sınırı `4000` karakter) ile raporlanır ve oynatıcı bir sonraki çalışan kaynağa geçer.
+- **Çoklu Kısa Drama Çözümleyici Şemaları & SSRF Sertleştirmesi ([`resolve-stream`](../koup-app/src/app/api/resolve-stream/route.ts), [`stream-proxy`](../koup-app/src/app/api/stream-proxy/route.ts), [`stream_resolver.py`](../scrapers/stream_resolver.py)):**
+  - `dramavadisi:`, `dramabox:`, `wdt:` ve `pilavyer:` özel akış şemaları tam desteklenir (DramaVadisi göreli `src`, DramaBox `c.id`, Shortİzle Inertia v1/v2 + `gateway_bootstrap` + `mbdp` + rekürsif `vidmoly`, `dtpasn.asia` `fireplayer_player` çerez oturumu, `b-cdn.net` Referer tünelleme).
+  - DNS, CIDR ve IPv6 dahil yönlendirme-sonrası SSRF yeniden doğrulaması ve HTTP 502 HTML/güvenlik-hatası yanıtlarını reddetme kuralı uygulanır.
+
+---
+
 ## 11. Kısıtlar, Yasaklar ve Mimari Kararlar
 
 1. **Rastgele URL Tünelleme Yasağı (Strict SSRF & Host Whitelist):**

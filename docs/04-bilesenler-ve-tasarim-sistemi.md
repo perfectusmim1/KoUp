@@ -372,7 +372,7 @@ KoUp tasarım tutarlılığını korumak için buton, girdi, modal ve sayfalama 
   - **Anlık Canlı Arama:** Arama kutusuna odaklanıldığında çubuk genişler (`.navbar-search-bar:focus-within`), yazılan sorguyu Türkçe karakter duyarsızlaştırarak anında Supabase önbelleğinde arar ve açılır pencerede sonuçları listeler.
   - **Bildirim Rozeti ve Çekmecesi:** Okunmamış bildirim sayısını gösterir, tıklandığında son bildirimleri ses efektiyle listeler.
   - **Kullanıcı Menüsü:** Giriş yapılmamışsa "Giriş Yap" butonu (`AuthModal`), giriş yapılmışsa avatar, kütüphane kısayolları ve çıkış yap seçeneği sunar.
-  - **Mobil Çekmece:** Mobilde hamburger menü ve ekranın altına oturan dokunmatik gezinme barı açar.
+  - **Mobil Çekmece & Duyarlı Kırılımlar:** Mobilde hamburger menü ve ekranın altına oturan dokunmatik gezinme barı açar. Masaüstü `lg`/`xl` ara genişliklerinde (`1024px–1279px`) marka alt metni ve kullanıcı adı gizlenip kompakt bağlantı/arama boşlukları kullanılır; `ResizeObserver` ile kayan aktif hap konumu her yeniden boyutlandırmada güncellenir.
 
 ### Footer
 - **Dosya:** [`koup-app/src/components/Footer.tsx`](../koup-app/src/components/Footer.tsx)
@@ -441,7 +441,11 @@ KoUp tasarım tutarlılığını korumak için buton, girdi, modal ve sayfalama 
 - **Dosyalar:** [`koup-app/src/components/home/ShortsRail.tsx`](../koup-app/src/components/home/ShortsRail.tsx) ve [`koup-app/src/components/shorts/ShortsCard.tsx`](../koup-app/src/components/shorts/ShortsCard.tsx)
 - **Amaç:** Dikey kısa drama yapımlarını 9:16 oranında sinematik afişlerle vitrinde ve arama sonuçlarında sergiler.
 - **Nerede Kullanılır:** `HomeClient.tsx`, `kesfet/page.tsx`.
-- **Önemli Davranış:** `ShortsCard` tıklandığında doğrudan ilgili kısa dramanın dikey oynatıcı rotasına (`/seri/[slug]/1`) atlar.
+- **Önemli Davranış:** `ShortsCard` tıklandığında doğrudan ilgili kısa dramanın dikey oynatıcı rotasına (`/seri/[slug]/1`) atlar. `ShortsCard`, `ShortsRail` ve `ShortsWatchClient` Apple TV+ estetiğine uygun sade kart geçişleri ve `motion` / `prefers-reduced-motion` uyumuyla çalışır.
+
+### 4 Kademeli Performans & Kart Optimizasyonları
+- **Kart Bileşenleri ([DirectMediaCard.tsx](../koup-app/src/components/DirectMediaCard.tsx), [AccordionMediaCard.tsx](../koup-app/src/components/AccordionMediaCard.tsx)):** `React.memo`, gecikmeli görsel çözme (`decoding="async"` / `loading="lazy"`) ve `.cv-auto` (`content-visibility: auto`) ile düşük/orta seviye mobil cihazlarda (`4x`/`6x` CPU profili) ana iş parçacığı yükü azaltılır.
+- **Kök Yerleşim & CSS ([layout.tsx](../koup-app/src/app/layout.tsx), [globals.css](../koup-app/src/app/globals.css)):** Kırpılmış font ağırlıkları, `preconnect` / `dns-prefetch` kaynak ipuçları ve `@media (prefers-reduced-motion: reduce)` desteği bulunur.
 
 ---
 

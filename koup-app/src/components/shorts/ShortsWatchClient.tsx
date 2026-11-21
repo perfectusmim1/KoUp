@@ -138,6 +138,24 @@ export default function ShortsWatchClient({
     return currentEp?.sources || [];
   }, [currentEp]);
 
+  const liveSourceEntries = useMemo(
+    () =>
+      availableSources
+        .map((source, idx) => ({ source, idx }))
+        .filter(({ source }) => !isSourceDead(source)),
+    [availableSources, isSourceDead]
+  );
+
+  useEffect(() => {
+    const cur = availableSources[selectedSourceIdx];
+    if (cur && isSourceDead(cur) && liveSourceEntries.length > 0) {
+      const nextLiveIdx = liveSourceEntries[0].idx;
+      if (nextLiveIdx !== selectedSourceIdx) {
+        handleSelectSourceIdx(nextLiveIdx);
+      }
+    }
+  }, [availableSources, selectedSourceIdx, isSourceDead, liveSourceEntries, handleSelectSourceIdx]);
+
   // Handle switching to a specific episode
   const handleGoToEpisode = useCallback(
     (epNum: number) => {
@@ -336,14 +354,14 @@ export default function ShortsWatchClient({
             onClick={goToPrev}
             disabled={!prevEp}
             aria-label="Önceki Bölüm (Yukarı Ok)"
-            className={`w-12 h-12 rounded-2xl flex flex-col items-center justify-center transition-all cursor-pointer border ${
+            className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer border ${
               prevEp
                 ? 'bg-white/10 hover:bg-white/20 text-white border-white/15 hover:scale-105 active:scale-95 shadow-lg'
                 : 'bg-white/[0.03] text-white/20 border-white/5 cursor-not-allowed'
             }`}
           >
             <ChevronUp className="w-5 h-5" />
-            <span className="text-[9px] font-mono font-bold">Önceki</span>
+            <span className="text-[10px] font-mono font-bold">Önceki</span>
           </button>
 
           <div className="w-px h-8 bg-white/10" />
@@ -353,14 +371,14 @@ export default function ShortsWatchClient({
             onClick={goToNext}
             disabled={!nextEp}
             aria-label="Sonraki Bölüm (Aşağı Ok)"
-            className={`w-12 h-12 rounded-2xl flex flex-col items-center justify-center transition-all cursor-pointer border ${
+            className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer border ${
               nextEp
                 ? 'bg-gradient-to-b from-[#E50914] to-rose-600 hover:from-red-600 hover:to-rose-700 text-white border-red-500/40 hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(229,9,20,0.4)]'
                 : 'bg-white/[0.03] text-white/20 border-white/5 cursor-not-allowed'
             }`}
           >
             <ChevronDown className="w-5 h-5" />
-            <span className="text-[9px] font-mono font-bold">Sonraki</span>
+            <span className="text-[10px] font-mono font-bold">Sonraki</span>
           </button>
         </aside>
 
@@ -497,14 +515,14 @@ export default function ShortsWatchClient({
             </button>
 
             {/* Sources sheet trigger */}
-            {availableSources.length > 1 && (
+            {liveSourceEntries.length > 1 && (
               <button
                 type="button"
                 onClick={() => setShowMobileSourcesSheet(true)}
                 aria-label="Kaynak Seçimi"
                 className="min-h-[44px] min-w-[44px] px-2.5 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 border border-white/10 text-white flex items-center justify-center gap-1.5 font-mono text-xs font-bold transition-all cursor-pointer"
               >
-                <Layers className="w-4 h-4 text-sky-400" />
+                <Layers className="w-4 h-4 text-white/75" />
                 <span className="hidden xs:inline">Kaynak</span>
               </button>
             )}
@@ -528,7 +546,7 @@ export default function ShortsWatchClient({
         </section>
 
         {/* DESKTOP RIGHT: Elegant Glass Side Panel (Meta, Sources, 1..N Episode Grid) */}
-        <section className="hidden lg:flex flex-col w-full max-w-sm h-[calc(100dvh-116px)] max-h-[calc(100dvh-116px)] rounded-3xl bg-white/[0.04] backdrop-blur-2xl border border-white/10 p-5 overflow-hidden shadow-2xl">
+        <section className="hidden lg:flex flex-col min-w-0 w-full max-w-[360px] xl:max-w-sm h-[calc(100dvh-116px)] max-h-[calc(100dvh-116px)] rounded-3xl bg-white/[0.04] backdrop-blur-2xl border border-white/10 p-5 overflow-hidden shadow-2xl">
           {/* Header & Meta */}
           <div className="pb-4 border-b border-white/[0.08]">
             {/* Desktop Back to Detail Link */}
@@ -567,39 +585,27 @@ export default function ShortsWatchClient({
           </div>
 
           {/* Source Selector (Pill / Custom select) */}
-          {availableSources.length > 1 && (
+          {liveSourceEntries.length > 1 && (
             <div className="py-3.5 border-b border-white/[0.08]">
               <div className="text-[10px] font-mono uppercase tracking-wider text-white/50 mb-2 flex items-center gap-1.5">
-                <Layers className="w-3 h-3 text-sky-400" />
-                <span>Yayın Kaynağı ({availableSources.length})</span>
+                <Layers className="w-3 h-3 text-white/60" />
+                <span>Yayın Kaynağı ({liveSourceEntries.length})</span>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {availableSources.map((s, idx) => {
+                {liveSourceEntries.map(({ source: s, idx }) => {
                   const isSelected = selectedSourceIdx === idx;
-                  const isDead = isSourceDead(s);
                   return (
                     <button
                       key={`src-pill-${idx}`}
                       type="button"
-                      disabled={isDead}
-                      onClick={() => {
-                        if (isDead) return;
-                        handleSelectSourceIdx(idx);
-                      }}
-                      className={`min-h-[40px] px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border inline-flex items-center gap-1.5 ${
-                        isDead
-                          ? 'bg-white/[0.02] border-white/10 text-white/35 opacity-65 cursor-not-allowed'
-                          : isSelected
-                          ? 'bg-gradient-to-r from-sky-500 to-blue-600 text-white border-sky-400/40 shadow-[0_0_12px_rgba(56,189,248,0.35)] cursor-pointer'
-                          : 'bg-white/[0.05] border-white/10 text-white/70 hover:bg-white/10 hover:text-white cursor-pointer'
+                      onClick={() => handleSelectSourceIdx(idx)}
+                      className={`min-h-[40px] max-w-full px-3 py-1.5 rounded-xl text-xs transition-all border inline-flex items-center gap-1.5 cursor-pointer ${
+                        isSelected
+                          ? 'bg-white text-black border-white/80 shadow-[0_4px_16px_rgba(255,255,255,0.16)] font-bold'
+                          : 'bg-white/[0.05] border-white/10 text-white/75 hover:bg-white/10 hover:text-white font-semibold'
                       }`}
                     >
-                      <span>{s.source_name || `Kaynak ${idx + 1}`}</span>
-                      {isDead && (
-                        <span className="px-1.5 py-0.5 rounded bg-red-500/15 border border-red-400/25 text-[10px] font-medium text-red-300">
-                          Çalışmıyor
-                        </span>
-                      )}
+                      <span className="truncate max-w-full">{s.source_name || `Kaynak ${idx + 1}`}</span>
                     </button>
                   );
                 })}
@@ -609,7 +615,7 @@ export default function ShortsWatchClient({
 
           {/* Episode Range Tabs (e.g. 1-50, 51-100) if > 50 episodes */}
           {totalChunks > 1 && (
-            <div className="py-2.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+            <div className="py-2.5 flex flex-wrap items-center gap-1.5 shrink-0">
               {Array.from({ length: totalChunks }, (_, i) => {
                 const start = i * CHUNK_SIZE + 1;
                 const end = Math.min((i + 1) * CHUNK_SIZE, sortedEpisodes.length);
@@ -619,7 +625,7 @@ export default function ShortsWatchClient({
                     key={`chunk-tab-${i}`}
                     type="button"
                     onClick={() => setSelectedChunk(i)}
-                    className={`px-3 py-1 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold transition-all cursor-pointer whitespace-nowrap ${
                       isSelected
                         ? 'bg-white text-black shadow-md'
                         : 'bg-white/5 text-white/60 hover:text-white hover:bg-white/10'
@@ -714,7 +720,7 @@ export default function ShortsWatchClient({
 
               {/* Chunk Tabs if > 50 */}
               {totalChunks > 1 && (
-                <div className="py-2.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+                <div className="py-2.5 flex flex-wrap items-center gap-1.5 shrink-0">
                   {Array.from({ length: totalChunks }, (_, i) => {
                     const start = i * CHUNK_SIZE + 1;
                     const end = Math.min((i + 1) * CHUNK_SIZE, sortedEpisodes.length);
@@ -724,7 +730,7 @@ export default function ShortsWatchClient({
                         key={`mob-chunk-${i}`}
                         type="button"
                         onClick={() => setSelectedChunk(i)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer whitespace-nowrap ${
+                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-mono font-bold transition-all cursor-pointer whitespace-nowrap ${
                           isSelected
                             ? 'bg-white text-black shadow-md'
                             : 'bg-white/5 text-white/60 hover:text-white'
@@ -808,35 +814,24 @@ export default function ShortsWatchClient({
                 </button>
               </div>
               <div className="flex flex-col gap-2 mt-4">
-                {availableSources.map((s, idx) => {
+                {liveSourceEntries.map(({ source: s, idx }) => {
                   const isSelected = selectedSourceIdx === idx;
-                  const isDead = isSourceDead(s);
                   return (
                     <button
                       key={`mob-src-${idx}`}
                       type="button"
-                      disabled={isDead}
                       onClick={() => {
-                        if (isDead) return;
                         handleSelectSourceIdx(idx);
                         setShowMobileSourcesSheet(false);
                       }}
-                      className={`w-full min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between gap-2 transition-colors border ${
-                        isDead
-                          ? 'bg-white/[0.02] text-white/35 border-white/10 opacity-65 cursor-not-allowed'
-                          : isSelected
-                          ? 'bg-sky-500/20 text-sky-300 border-sky-400/40 font-bold cursor-pointer'
-                          : 'bg-white/5 text-white/80 border-white/10 cursor-pointer'
+                      className={`w-full min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between gap-2 transition-colors border cursor-pointer ${
+                        isSelected
+                          ? 'bg-white/15 text-white border-white/30 font-bold'
+                          : 'bg-white/5 text-white/80 border-white/10 hover:bg-white/10'
                       }`}
                     >
                       <span className="truncate">{s.source_name || `Kaynak ${idx + 1}`}</span>
-                      {isDead ? (
-                        <span className="px-2 py-0.5 rounded bg-red-500/15 border border-red-400/25 text-[10px] font-medium text-red-300 shrink-0">
-                          Çalışmıyor
-                        </span>
-                      ) : (
-                        isSelected && <Check className="w-4 h-4 text-sky-400 shrink-0" />
-                      )}
+                      {isSelected && <Check className="w-4 h-4 text-white shrink-0" />}
                     </button>
                   );
                 })}
@@ -1034,7 +1029,7 @@ export function ShortsDetailClient({
 
             {/* Range Tabs if > 50 */}
             {totalChunks > 1 && (
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {Array.from({ length: totalChunks }, (_, i) => {
                   const start = i * CHUNK_SIZE + 1;
                   const end = Math.min((i + 1) * CHUNK_SIZE, sortedEpisodes.length);
@@ -1044,7 +1039,7 @@ export function ShortsDetailClient({
                       key={`detail-chunk-${i}`}
                       type="button"
                       onClick={() => setSelectedChunk(i)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer whitespace-nowrap ${
                         isSelected
                           ? 'bg-white text-black shadow-md'
                           : 'bg-white/5 text-white/60 hover:text-white hover:bg-white/10'

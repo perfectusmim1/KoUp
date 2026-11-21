@@ -425,28 +425,50 @@ def _sync_wdt_slow_target(conn, cur, drama, wdt_slow: bool):
 
 
 def _sync_shortdrama_target(conn, cur, drama):
+    import threading
+
     surl = (drama.get("source_url") or "").lower()
-    if "shortizle" in surl:
+    did = drama["id"]
+    if "shortizle" not in surl and "dramavadisi" not in surl:
+        return 0, 0
+
+    conn.commit()
+    ep_before = cur.execute("SELECT COUNT(*) FROM episodes WHERE drama_id = ?", (did,)).fetchone()[0]
+    src_before = cur.execute(
+        "SELECT COUNT(*) FROM episode_sources es JOIN episodes e ON e.id = es.episode_id WHERE e.drama_id = ?",
+        (did,),
+    ).fetchone()[0]
+
+    done_ev = threading.Event()
+
+    def _run_scrape():
         try:
-            from scrapers.shortdrama.shortizle import ShortizleScraper
-            sc = ShortizleScraper()
+            if "shortizle" in surl:
+                from scrapers.shortdrama.shortizle import ShortizleScraper
+                sc = ShortizleScraper()
+            else:
+                from scrapers.shortdrama.dramavadisi import DramaVadisiScraper
+                sc = DramaVadisiScraper()
             if hasattr(sc, "scrape_drama"):
-                res = sc.scrape_drama(drama["source_url"])
-                if isinstance(res, dict):
-                    return int(res.get("episodes_added", 0)), int(res.get("sources_added", 0))
+                sc.scrape_drama(drama["source_url"], sync_cloud=False)
         except Exception:
             pass
-    elif "dramavadisi" in surl:
-        try:
-            from scrapers.shortdrama.dramavadisi import DramaVadisiScraper
-            sc = DramaVadisiScraper()
-            if hasattr(sc, "scrape_drama"):
-                res = sc.scrape_drama(drama["source_url"])
-                if isinstance(res, dict):
-                    return int(res.get("episodes_added", 0)), int(res.get("sources_added", 0))
-        except Exception:
-            pass
-    return 0, 0
+        finally:
+            done_ev.set()
+
+    t = threading.Thread(target=_run_scrape, daemon=True)
+    t.start()
+    if not done_ev.wait(timeout=35):
+        log("TIMEOUT", f"#{did} kısa drama zaman aşımı (35s) -> {drama.get('source_url')}")
+        return 0, 0
+
+    conn.commit()
+    ep_after = cur.execute("SELECT COUNT(*) FROM episodes WHERE drama_id = ?", (did,)).fetchone()[0]
+    src_after = cur.execute(
+        "SELECT COUNT(*) FROM episode_sources es JOIN episodes e ON e.id = es.episode_id WHERE e.drama_id = ?",
+        (did,),
+    ).fetchone()[0]
+    return max(0, ep_after - ep_before), max(0, src_after - src_before)
 
 
 def heal_drama(conn, cur, drama_item, sync_remote=True, wdt_slow=False, unfillable_log=None):
@@ -559,6 +581,7 @@ def run_recovery(
     db_path=None,
     check_external=False,
     wdt_slow=False,
+    max_minutes=0.0,
 ):
     if db_path:
         conn = sqlite3.connect(db_path, timeout=60.0)
@@ -623,6 +646,9 @@ def run_recovery(
     start_time = time.time()
 
     for idx, item in enumerate(candidates, 1):
+        if max_minutes and max_minutes > 0 and (time.time() - start_time) >= max_minutes * 60.0:
+            log("TIME_CAP", f"Maksimum çalışma süresi ({max_minutes:.1f} dk) doldu -> {idx-1}/{len(candidates)} işlenip güvenle durduruluyor.")
+            break
         did = item["id"]
         title = item["title"]
         provider = choose_provider(item)
@@ -680,6 +706,7 @@ def main():
     parser.add_argument("--no-remote-sync", action="store_true", help="Skip R2 and Supabase sync (local SQLite only)")
     parser.add_argument("--check-external", action="store_true", help="Cross-reference TMDB/AniList expected episode_count")
     parser.add_argument("--wdt-slow", action="store_true", help="Optional slow throttle for webdramaturkey2 (aborts on first Turnstile)")
+    parser.add_argument("--max-minutes", type=float, default=0.0, help="Time cap in minutes (0 = unlimited)")
     args = parser.parse_args()
 
     run_recovery(
@@ -692,6 +719,7 @@ def main():
         db_path=args.db,
         check_external=args.check_external,
         wdt_slow=args.wdt_slow,
+        max_minutes=args.max_minutes,
     )
     sys.exit(0)
 

@@ -208,7 +208,7 @@ function RecentEpisodesContent() {
         try {
           let countQuery = supabase
             .from('episodes')
-            .select('id', { count: 'exact', head: true })
+            .select('id', { count: 'estimated', head: true })
             .eq('status', 'published')
             .not('published_at', 'is', null);
 
@@ -278,7 +278,7 @@ function RecentEpisodesContent() {
           </div>
 
           {/* Content Type Filter Pills */}
-          <div className="inline-flex w-max items-center gap-1.5 sm:gap-2 p-1.5 rounded-2xl glass-pill-dark shrink-0 overflow-x-auto no-scrollbar max-w-full overflow-hidden">
+          <div className="flex flex-wrap sm:inline-flex w-full sm:w-auto items-center justify-center gap-1 sm:gap-2 p-1.5 rounded-2xl glass-pill-dark shrink-0 max-w-full">
             {TYPE_FILTERS.map((f) => {
               const active = typeFilter === f.id;
               const Icon = f.icon;
@@ -286,7 +286,7 @@ function RecentEpisodesContent() {
                 <button
                   key={f.id}
                   onClick={() => handleTypeChange(f.id)}
-                  className={`relative flex items-center gap-2 px-4 h-9 rounded-xl text-xs font-semibold cursor-pointer transition-colors duration-200 shrink-0 select-none ${
+                  className={`relative flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 h-9 rounded-xl text-[11px] sm:text-xs font-semibold cursor-pointer transition-colors duration-200 shrink-0 select-none ${
                     active ? f.activeTextClass : 'text-white/70 hover:text-white'
                   }`}
                 >
@@ -311,7 +311,11 @@ function RecentEpisodesContent() {
         <div className="flex items-center gap-2">
           <Sparkles className="w-3.5 h-3.5 text-sky-400" />
           <span>
-            Toplam <span className="text-white font-bold">{totalCount.toLocaleString('tr-TR')}</span> bölüm
+            {totalCount > 0 ? (
+              <>Toplam <span className="text-white font-bold">{totalCount.toLocaleString('tr-TR')}</span> bölüm</>
+            ) : episodes.length > 0 ? (
+              <><span className="text-white font-bold">{episodes.length}</span> bölüm listeleniyor</>
+            ) : null}
           </span>
         </div>
         <div>

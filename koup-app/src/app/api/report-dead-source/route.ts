@@ -147,7 +147,7 @@ async function safeFetch(
 function isAllowedStreamInput(rawUrl: string): { valid: boolean; isCustomScheme: boolean } {
   const u = rawUrl.trim();
   const low = u.toLowerCase();
-  if (!u || u.length > 1500) return { valid: false, isCustomScheme: false };
+  if (!u || u.length > 4000) return { valid: false, isCustomScheme: false };
   if (
     low === 'dead' ||
     low.startsWith('javascript:') ||

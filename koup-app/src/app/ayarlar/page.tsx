@@ -38,6 +38,8 @@ import {
   Library,
   MessageSquare,
   ShieldAlert,
+  FastForward,
+  SkipForward,
 } from 'lucide-react';
 import { useKoUpSelector } from '@/context/KoUpContext';
 import { supabase } from '@/lib/supabase';
@@ -99,6 +101,139 @@ export default function SettingsPage() {
 
   // Blocked users search
   const [blockedSearchQuery, setBlockedSearchQuery] = useState('');
+
+  // Synchronized NetflixPlayer preferences (stored in shared localStorage keys)
+  const [autoSkipIntro, setAutoSkipIntro] = useState(false);
+  const [autoNextEnabled, setAutoNextEnabled] = useState(true);
+  const [ambientLightingEnabled, setAmbientLightingEnabled] = useState(true);
+
+  useEffect(() => {
+    try {
+      const skip = localStorage.getItem('koup_auto_skip_intro');
+      if (skip !== null) setAutoSkipIntro(skip === 'true');
+      const next = localStorage.getItem('koup_auto_next');
+      if (next !== null) setAutoNextEnabled(next === 'true');
+      const ambient = localStorage.getItem('koup_ambient_lighting');
+      if (ambient !== null) setAmbientLightingEnabled(ambient === 'true');
+    } catch {}
+  }, []);
+
+  const togglePlayerPref = (
+    storageKey: 'koup_auto_skip_intro' | 'koup_auto_next' | 'koup_ambient_lighting',
+    setter: React.Dispatch<React.SetStateAction<boolean>>
+  ) => {
+    triggerSound('click');
+    setter((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(storageKey, String(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const renderPlayerPreferencesCard = () => (
+    <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-4">
+      <div>
+        <div className="text-sm font-bold text-white flex items-center gap-2">
+          <Play className="w-4 h-4 text-sky-400" />
+          <span>Oynatıcı Tercihleri</span>
+        </div>
+        <div className="text-xs text-white/55 mt-0.5">
+          Video oynatıcıdaki otomatik geçiş ve sinematik atmosfer ayarlarını cihazınız için varsayılan olarak belirleyin.
+        </div>
+      </div>
+
+      <div className="space-y-2.5">
+        <div className="flex items-center justify-between gap-4 p-3 rounded-xl bg-black/30 border border-white/[0.06]">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-white/80 shrink-0">
+              <FastForward className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs sm:text-sm font-semibold text-white">Otomatik İntro Atla</div>
+              <div className="text-[11px] text-white/50">Bölüm jeneriği algılandığında otomatik atla.</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => togglePlayerPref('koup_auto_skip_intro', setAutoSkipIntro)}
+            role="switch"
+            aria-checked={autoSkipIntro}
+            aria-label="Otomatik İntro Atla"
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+              autoSkipIntro ? 'bg-[#E50914]' : 'bg-white/20'
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                autoSkipIntro ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between gap-4 p-3 rounded-xl bg-black/30 border border-white/[0.06]">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-white/80 shrink-0">
+              <SkipForward className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs sm:text-sm font-semibold text-white">Otomatik Sonraki Bölüm</div>
+              <div className="text-[11px] text-white/50">Bölüm bittiğinde sıradaki bölümü otomatik başlat.</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => togglePlayerPref('koup_auto_next', setAutoNextEnabled)}
+            role="switch"
+            aria-checked={autoNextEnabled}
+            aria-label="Otomatik Sonraki Bölüm"
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+              autoNextEnabled ? 'bg-[#E50914]' : 'bg-white/20'
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                autoNextEnabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between gap-4 p-3 rounded-xl bg-black/30 border border-white/[0.06]">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-white/80 shrink-0">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs sm:text-sm font-semibold text-white">Sinematik Işıklandırma</div>
+              <div className="text-[11px] text-white/50">Oynatıcı çevresine sahne tonunda arka plan ışığı yay.</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => togglePlayerPref('koup_ambient_lighting', setAmbientLightingEnabled)}
+            role="switch"
+            aria-checked={ambientLightingEnabled}
+            aria-label="Sinematik Işıklandırma"
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+              ambientLightingEnabled ? 'bg-[#E50914]' : 'bg-white/20'
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                ambientLightingEnabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 
   // Initial populate from user
   useEffect(() => {
@@ -533,6 +668,8 @@ export default function SettingsPage() {
                 </button>
               </div>
             </div>
+
+            {renderPlayerPreferencesCard()}
           </div>
         </div>
       </div>
@@ -1291,6 +1428,8 @@ export default function SettingsPage() {
                 </button>
               </div>
             </div>
+
+            {renderPlayerPreferencesCard()}
           </div>
         </div>
 

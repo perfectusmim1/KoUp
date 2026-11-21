@@ -429,6 +429,8 @@ export default function Navbar() {
     return activePath === href || activePath.startsWith(`${href}/`);
   };
 
+  const navContainerRef = useRef<HTMLElement>(null);
+
   useEffect(() => {
     const updatePill = () => {
       const activeItem = NAV_LINKS.find((item) => {
@@ -451,7 +453,15 @@ export default function Navbar() {
     };
     updatePill();
     window.addEventListener('resize', updatePill);
-    return () => window.removeEventListener('resize', updatePill);
+    let ro: ResizeObserver | null = null;
+    if (navContainerRef.current && typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(updatePill);
+      ro.observe(navContainerRef.current);
+    }
+    return () => {
+      window.removeEventListener('resize', updatePill);
+      ro?.disconnect();
+    };
   }, [activePath]);
 
   return (
@@ -463,21 +473,21 @@ export default function Navbar() {
         }`}
       >
         <header
-          className={`pointer-events-auto flex items-center justify-between outline-none transition-[width,max-width,margin-top,padding,border-radius,background-color,box-shadow,border-color] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+          className={`pointer-events-auto flex items-center justify-between gap-2 lg:gap-3 xl:gap-5 outline-none transition-[width,max-width,margin-top,padding,border-radius,background-color,box-shadow,border-color] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)] ${
             navbarBehavior === 'floating'
               ? isScrolled
-                ? 'mt-2 sm:mt-3 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-[28px] bg-[#0a0b10]/95 backdrop-blur-xl border-0 shadow-[0_20px_50px_rgba(0,0,0,0.85)] py-2 sm:py-2.5 px-4 sm:px-6'
-                : 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-0 shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+                ? 'mt-2 sm:mt-3 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-[28px] bg-[#0a0b10]/95 backdrop-blur-xl border-0 shadow-[0_20px_50px_rgba(0,0,0,0.85)] py-2 sm:py-2.5 px-3 sm:px-5 lg:px-6'
+                : 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-0 shadow-none py-3.5 sm:py-5 px-3.5 sm:px-6 lg:px-6 xl:px-10 2xl:px-14'
               : navbarBehavior === 'sticky'
               ? isScrolled
-                ? 'mt-0 w-full max-w-[2560px] rounded-none bg-[#0a0b10]/95 backdrop-blur-xl border-0 shadow-[0_12px_32px_rgba(0,0,0,0.85)] py-3 sm:py-4 px-4 sm:px-8 lg:px-14'
-                : 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-0 shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+                ? 'mt-0 w-full max-w-[2560px] rounded-none bg-[#0a0b10]/95 backdrop-blur-xl border-0 shadow-[0_12px_32px_rgba(0,0,0,0.85)] py-3 sm:py-4 px-3.5 sm:px-6 lg:px-6 xl:px-10 2xl:px-14'
+                : 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-0 shadow-none py-3.5 sm:py-5 px-3.5 sm:px-6 lg:px-6 xl:px-10 2xl:px-14'
               : /* static: sitenin üstünde kalır, sayfa kayınca bizle gelmez */
-                'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-0 shadow-none py-3.5 sm:py-5 px-4 sm:px-8 lg:px-14'
+                'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-0 shadow-none py-3.5 sm:py-5 px-3.5 sm:px-6 lg:px-6 xl:px-10 2xl:px-14'
           }`}
         >
       {/* LEFT: Brand Mark (Original KU Logo — No Circle or Box Wrapper) */}
-      <div className="pointer-events-auto flex items-center gap-2 sm:gap-3">
+      <div className="pointer-events-auto flex items-center gap-2 sm:gap-3 shrink-0">
         <button
           type="button"
           onClick={() => setMobileMenuOpen((v) => !v)}
@@ -491,7 +501,7 @@ export default function Navbar() {
           href="/"
           prefetch={true}
           onClick={() => triggerSound('click')}
-          className="hidden sm:flex items-center gap-2 sm:gap-3 group select-none"
+          className="hidden sm:flex items-center gap-2 sm:gap-3 group select-none shrink-0"
         >
           <img
             src="/logo-dark.png"
@@ -499,13 +509,13 @@ export default function Navbar() {
             className="h-8 sm:h-9 w-auto object-contain transition-opacity duration-300 group-hover:opacity-90 drop-shadow-[0_4px_16px_rgba(255,255,255,0.2)]"
           />
           <div className="flex flex-col">
-            <span className="text-[15px] sm:text-[16px] font-bold tracking-wider text-white leading-none">
+            <span className="text-[15px] sm:text-[16px] font-bold tracking-wider text-white leading-none whitespace-nowrap">
               KoUp
-              <span className="text-white/55 font-light ml-1 text-[13px] hidden sm:inline">
+              <span className="text-white/55 font-light ml-1 text-[13px] hidden xl:inline">
                 TV+
               </span>
             </span>
-            <span className="text-[9px] tracking-[0.22em] font-medium uppercase text-white/40 mt-1 hidden sm:block">
+            <span className="text-[9px] tracking-[0.22em] font-medium uppercase text-white/40 mt-1 hidden xl:block whitespace-nowrap">
               Cinema Studio
             </span>
           </div>
@@ -513,7 +523,7 @@ export default function Navbar() {
       </div>
 
       {/* CENTER: Liquid Glass Pill Menu + Fluid Sliding Translucent Pill */}
-      <nav className="relative pointer-events-auto hidden lg:flex items-center shrink-0 p-1.5 rounded-full liquid-glass-bar">
+      <nav ref={navContainerRef} className="relative pointer-events-auto hidden lg:flex items-center shrink-0 p-1.5 rounded-full liquid-glass-bar">
         <span
           aria-hidden="true"
           style={{
@@ -551,7 +561,7 @@ export default function Navbar() {
                 triggerSound('hover');
                 router.prefetch(item.href);
               }}
-              className={`relative px-5 py-2 rounded-full text-[13px] font-semibold transition-colors duration-200 select-none ${
+              className={`relative px-2.5 lg:px-3 xl:px-4 2xl:px-5 py-2 rounded-full text-[12px] xl:text-[13px] font-semibold whitespace-nowrap transition-colors duration-200 select-none ${
                 active
                   ? 'text-white'
                   : 'text-white/65 hover:text-white'
@@ -564,7 +574,7 @@ export default function Navbar() {
       </nav>
 
       {/* RIGHT: Quick Actions (Search, Sound, Notifications, Admin, Profile) */}
-      <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2.5">
+      <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2.5 shrink-0">
         {/* Mobile Sleek Magnifying Glass Button (< md) */}
         <button
           onClick={() => {
@@ -582,8 +592,8 @@ export default function Navbar() {
           <div
             className={`navbar-search-bar flex items-center gap-2 px-3.5 py-2 rounded-full backdrop-blur-md transition-all duration-150 ease-out ${
               isSearchFocused
-                ? 'w-60 lg:w-72 bg-[#121318] border border-white/30 shadow-[0_0_16px_rgba(255,255,255,0.12)]'
-                : 'w-44 lg:w-64 bg-black/40 hover:bg-black/60 border border-white/[0.10] hover:border-white/[0.18]'
+                ? 'w-44 lg:w-48 xl:w-64 2xl:w-72 bg-[#121318] border border-white/30 shadow-[0_0_16px_rgba(255,255,255,0.12)]'
+                : 'w-36 lg:w-40 xl:w-52 2xl:w-64 bg-black/40 hover:bg-black/60 border border-white/[0.10] hover:border-white/[0.18]'
             }`}
           >
             <Search className={`w-4 h-4 shrink-0 transition-colors duration-150 ${isSearchFocused ? 'text-white' : 'text-white/75'}`} />
@@ -1014,7 +1024,7 @@ export default function Navbar() {
                   <User className="w-3.5 h-3.5 text-white" />
                 )}
               </div>
-              <span className="hidden md:inline text-xs font-semibold text-white/90 group-hover:text-white max-w-[110px] truncate transition-colors">
+              <span className="hidden xl:inline text-xs font-semibold text-white/90 group-hover:text-white max-w-[110px] truncate transition-colors">
                 {user.display_name || user.username || 'Profilim'}
               </span>
             </button>
