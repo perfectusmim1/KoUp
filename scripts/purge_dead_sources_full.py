@@ -3,12 +3,22 @@
 """
 scripts/purge_dead_sources_full.py
 
-Phase 2: Full-scale asynchronous dead video source verifier & purger for webdrama_archive.db.
-- Covers target providers: mp4upload, uqload, vidmoly/molystream, vk.com, upns, and broken/XFO-DENY URLs.
-- Strict three-way classification: alive / dead / unknown (ONLY confirmed dead sources are ever deleted).
-- Per-host concurrency throttling with realistic browser headers & Referer.
-- Resumable URL classification checkpoint and full JSONL backup of deleted rows before deletion.
-- Short write transactions (chunks of <= 500 IDs, commit each chunk, no VACUUM) safe for concurrent DB writers.
+Full-scale asynchronous dead video source verifier & purger for webdrama_archive.db.
+- Strict three-way classification: alive / dead / unknown (ONLY confirmed dead rows are deleted).
+- Preserves ALL live working providers & custom schemes:
+  * dramavadisi:, dramabox:, wdt:, pilavyer: (custom schemes)
+  * tau-video.xyz/embed/... (200 OK)
+  * vz-*.b-cdn.net/.../playlist.m3u8 (200 OK w/ Referer: https://shortizle.com/)
+  * shortizle.com/media/... & /embed/... & /hk/...
+  * www.hdfilmcehennemi.nl/rplayer/... (200 OK via TLS chrome)
+  * hdfilmcehennemi.mobi/video/embed/... (CF WAF 403 -> treated as unknown, never blindly purged)
+- Targets genuinely dead/404/deleted/expired-token/XFO-DENY sources across:
+  upns (incl. dplayer82.site), rapidrame_hls2 (expired ?t= tokens), uqload, vidmoly,
+  mp4upload, vk.com, filemoon, mail.ru (non-embed or 404/empty meta), ok.ru (deleted/404),
+  tau_ephemeral (*.cfd/*.asia mp4), dtpasn_dup & playerdkorea.xyz ('security error' / duplicated hash),
+  and malformed / ROUTE_DEAD_DOMAINS / CONFIRMED_XFO_NO_RESOLVER_HOSTS.
+- Concurrent worker pools with per-host semaphores, --resume checkpointing, JSONL backup,
+  live progress output, and exact deletion counts per provider.
 """
 
 import argparse
@@ -20,6 +30,7 @@ import sqlite3
 import sys
 import time
 from collections import Counter, defaultdict
+from datetime import datetime
 from urllib.parse import urlparse
 
 import aiohttp
@@ -33,19 +44,13 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from database import get_connection
-
-SCRATCH_DIR = r"C:\Users\Cagan\.gemini\antigravity\brain\f680d6a2-b722-434a-b62d-dcfbf2e65025\scratch\purge"
-CHECKPOINT_FILE = os.path.join(SCRATCH_DIR, "url_checkpoint.jsonl")
-BACKUP_FILE = os.path.join(SCRATCH_DIR, "deleted_sources_backup.jsonl")
-AFFECTED_DRAMAS_FILE = os.path.join(SCRATCH_DIR, "affected_drama_ids.json")
-SUMMARY_REPORT_FILE = os.path.join(SCRATCH_DIR, "purge_summary.json")
-
 COMMON_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/131.0.0.0 Safari/537.36"
 )
+
+SAFE_CUSTOM_SCHEMES = ("dramavadisi:", "dramabox:", "wdt:", "pilavyer:")
 
 # Dead domains explicitly rejected with 410 in koup-app/src/app/api/resolve-stream/route.ts
 ROUTE_DEAD_DOMAINS = (
@@ -70,16 +75,14 @@ ROUTE_DEAD_DOMAINS = (
     "optraco.top",
     "abyssplayer.com",
     "uqload.to",
-    "sendvid",
     "sendvid.com",
     "drive.google.com",
     "docs.google.com",
-    "pixeldrain.com",
-    "pixeldrain",
     "4meplayer",
     "uns.bio",
     "p2pplay",
     "rpmplay",
+    "rpmvid.com",
     "parklogic",
     "vtube.to",
     "highload.to",
@@ -92,6 +95,7 @@ ROUTE_DEAD_DOMAINS = (
     "embedgram.com",
     "openload.co",
     "streamango.com",
+    "streammango.com",
     "rapidvideo.com",
     "estream.to",
     "vid.me",
@@ -107,9 +111,9 @@ ROUTE_DEAD_DOMAINS = (
     "supervideo.tv",
     "upstream.to",
     "mixdrop",
+    "pixeldrain.com",
 )
 
-# Hosts confirmed to return X-Frame-Options: DENY/SAMEORIGIN (or 404/ad) with NO native resolver in route.ts
 CONFIRMED_XFO_NO_RESOLVER_HOSTS = {
     "hxfile.co",
     "www.twine.fm",
@@ -125,10 +129,22 @@ VK_MEDIA_RE = re.compile(
 VK_ERR_DIV_RE = re.compile(r'<div[^>]*id=["\']video_ext_msg["\'][^>]*>(.*?)</div>', re.I | re.S)
 
 
+def _ts() -> str:
+    return datetime.now().strftime("%H:%M:%S")
+
+
+def _resolve_db_path(cli_db: str | None) -> str:
+    if cli_db:
+        return cli_db
+    return os.environ.get("ARCHIVE_DB_PATH") or os.path.join(_ROOT, "webdrama_archive.db")
+
+
 def is_malformed_url(raw_url: str) -> tuple[bool, str]:
     u = (raw_url or "").strip()
     if not u:
         return True, "empty_url"
+    if any(u.lower().startswith(s) for s in SAFE_CUSTOM_SCHEMES):
+        return False, ""
     if u.startswith("javascript:") or "void(0)" in u or u.startswith("about:") or u == "#":
         return True, "javascript_or_dummy_url"
     if not (u.startswith("http://") or u.startswith("https://") or u.startswith("//")):
@@ -152,63 +168,91 @@ def is_malformed_url(raw_url: str) -> tuple[bool, str]:
     if low.endswith("/e/") or low.endswith("/embed/video/") or low.endswith("/embed/"):
         return True, "empty_embed_slug"
 
-    # Mail.ru or Vidmoly URLs with raw unencoded release filenames instead of embed IDs
     if " " in u and ("vidmoly" in host or "mail.ru" in host):
         return True, "unencoded_filename_in_embed_url"
 
     return False, ""
 
 
-def classify_target_group(row: tuple) -> str | None:
+def classify_target_group(row: tuple, dup_dtpasn_keys: set[tuple[int, str]] | None = None) -> str | None:
     """
-    Assigns each row in episode_sources to one of our target groups, or None if not a target.
+    Assigns each row in episode_sources to a target verification group, or None to keep untouched.
     row = (id, episode_id, drama_id, source_name, embed_id, ajax_embed_url, direct_url, provider, fansub, site)
     """
-    _, _, _, sname, _, aurl, durl, prov, _, _ = row
+    _, _, did, sname, _, aurl, durl, prov, _, _ = row
     p = (prov or "").strip().lower()
     u = (durl or "").strip()
     ulow = u.lower()
     slow = (sname or "").strip().lower()
     alow = (aurl or "").strip().lower()
 
-    # 1. UPNS (69 rows: provider LIKE '%upns%' OR direct_url LIKE '%upns%')
-    if "upns" in p or "upns" in ulow:
+    # Preserve safe custom schemes & known live CDN/embed hosts
+    if any(ulow.startswith(s) for s in SAFE_CUSTOM_SCHEMES):
+        return None
+    if "b-cdn.net" in ulow or "shortizle.com" in ulow or "tau-video.xyz" in ulow or "hdfilmcehennemi.nl/rplayer/" in ulow:
+        return None
+
+    # 1. UPNS & dplayer82.site
+    if "upns" in p or "upns" in ulow or "dplayer82.site" in ulow:
         return "upns"
 
-    # 2. MP4Upload (~87,409 rows)
+    # 2. Rapidrame expired signed /hls2/ tokens (NOT /rplayer/)
+    if "/hls2/" in ulow and "rapidrame.com" in ulow:
+        return "rapidrame_hls2"
+
+    # 3. dtpasn.asia & playerdkorea.xyz
+    if "playerdkorea.xyz" in ulow:
+        return "playerdkorea"
+    if "dtpasn.asia" in ulow:
+        if dup_dtpasn_keys and did is not None and (int(did), u) in dup_dtpasn_keys:
+            return "dtpasn_dup"
+        return "dtpasn"
+
+    # 4. Ephemeral tau-video CDN MP4s (*.cfd/*.asia)
+    if (p == "tau-video" or "tau-video" in ulow) and "tau-video.xyz" not in ulow:
+        return "tau_ephemeral"
+
+    # 5. MP4Upload
     if p == "mp4upload" or "mp4upload" in ulow:
         return "mp4upload"
 
-    # 3. Uqload (~7,665 rows)
+    # 6. Uqload
     if p == "uqload" or "uqload" in ulow:
         return "uqload"
 
-    # 4. Vidmoly (~5,045 rows)
+    # 7. Vidmoly
     if "vidmoly" in p or "vidmoly" in ulow or "vidmoly" in slow or "vidmoly" in alow:
-        return "vidmoly"
+        if "filemoon" not in ulow and "dailymotion" not in ulow and "molystream" not in ulow:
+            return "vidmoly"
 
-    # 5. VK.com (~104 rows: 101 vk.com + 1 broken vk + 2 filemoon tagged vk)
+    # 8. Filemoon (excluding molystream/anizm proxies)
+    if ("filemoon" in p or "filemoon." in ulow or "bysedikamoum.com" in ulow) and "molystream" not in ulow:
+        return "filemoon"
+
+    # 9. VK.com
     if p == "vk" or "vk.com" in ulow:
         return "vk.com"
 
-    # 6. Broken/empty embed URLs, route.ts deadDomains, or X-Frame-Options: DENY hosts with no native resolver
+    # 10. Mail.ru
+    if "mail.ru" in ulow or p in ("mail.ru", "mailru"):
+        return "mail.ru"
+
+    # 11. OK.ru (direct ok.ru/odnoklassniki.ru only, skip anizm CF wrapper)
+    if ("ok.ru" in ulow or "odnoklassniki.ru" in ulow) and "anizm.net" not in ulow:
+        return "ok.ru"
+
+    # 12. Broken/malformed, dead domains, or XFO-DENY
     malformed, _ = is_malformed_url(u)
     if malformed:
         return "broken_or_deny"
 
-    if p == "sibnet" or any(dd in ulow for dd in ROUTE_DEAD_DOMAINS):
+    if p in ("sibnet", "sendvid", "pixeldrain") or any(dd in ulow for dd in ROUTE_DEAD_DOMAINS):
         return "broken_or_deny"
 
     cu = ("https:" + u) if u.startswith("//") else u
     host = urlparse(cu).netloc.lower()
     if host in CONFIRMED_XFO_NO_RESOLVER_HOSTS:
         return "broken_or_deny"
-
-    # Non-embed my.mail.ru pages (/video/_myvideo/*.html without /embed/) return X-Frame-Options: DENY and lack metadataUrl
-    if "mail.ru" in host and "/embed/" not in ulow:
-        return "broken_or_deny"
-
-    # Non-embed Dailymotion watch links (dai.ly/* or dailymotion.com/video/* without /embed/) return X-Frame-Options: DENY
     if host == "dai.ly" or ("dailymotion.com" in host and "/video/" in ulow and "/embed/" not in ulow):
         return "broken_or_deny"
 
@@ -219,28 +263,16 @@ async def probe_mp4upload(session: aiohttp.ClientSession, sem: asyncio.Semaphore
     mal, reason = is_malformed_url(url)
     if mal:
         return "dead", f"malformed:{reason}"
-
     embed_url = url.strip()
     if "/embed-" not in embed_url and "mp4upload.com/" in embed_url:
         m = re.search(r"mp4upload\.com/([a-zA-Z0-9]+)", embed_url)
         if m:
             embed_url = f"https://www.mp4upload.com/embed-{m.group(1)}.html"
-
-    headers = {
-        "User-Agent": COMMON_UA,
-        "Referer": "https://www.mp4upload.com/",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    }
-
+    headers = {"User-Agent": COMMON_UA, "Referer": "https://www.mp4upload.com/"}
     for attempt in range(2):
         async with sem:
             try:
-                async with session.get(
-                    embed_url,
-                    headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=10, connect=5),
-                    allow_redirects=True,
-                ) as resp:
+                async with session.get(embed_url, headers=headers, timeout=aiohttp.ClientTimeout(total=10, connect=5), allow_redirects=True) as resp:
                     st = resp.status
                     if st in (404, 410):
                         return "dead", f"http_{st}"
@@ -249,26 +281,14 @@ async def probe_mp4upload(session: aiohttp.ClientSession, sem: asyncio.Semaphore
                             await asyncio.sleep(0.5)
                             continue
                         return "unknown", f"http_{st}"
-
-                    body = await resp.text(errors="ignore")
-                    blow = body.lower()
+                    blow = (await resp.text(errors="ignore")).lower()
                     if "just a moment..." in blow or "cf-browser-verification" in blow:
                         return "unknown", "cloudflare_challenge"
-
-                    if (
-                        "file was deleted" in blow
-                        or "file not found" in blow
-                        or "document.fl.login" in blow
-                        or "file is no longer available" in blow
-                        or "video not found" in blow
-                        or "no video found" in blow
-                    ):
+                    if any(k in blow for k in ("file was deleted", "file not found", "document.fl.login", "file is no longer available", "video not found", "no video found")):
                         return "dead", "explicit_deleted_marker"
-
-                    if "player.src" in blow or ".mp4" in blow:
+                    if "player.src" in blow or ".mp4" in blow or "rapids" in blow:
                         return "alive", "mp4_stream_present"
-
-                    return "unknown", f"unrecognized_body_len_{len(body)}"
+                    return "unknown", f"unrecognized_len_{len(blow)}"
             except Exception as e:
                 if attempt == 0:
                     await asyncio.sleep(0.4)
@@ -281,28 +301,15 @@ async def probe_uqload(session: aiohttp.ClientSession, sem: asyncio.Semaphore, u
     mal, reason = is_malformed_url(url)
     if mal:
         return "dead", f"malformed:{reason}"
-
     u = url.strip()
     if "uqload.to" in u.lower():
         return "dead", "route_dead_domain:uqload.to"
-
-    # Normalize mirror domains directly to uqload.vc to avoid 301 redirect overhead
     fetch_url = re.sub(r"//(?:www\.)?uqload\.(?:com|io|co|is|org)/", "//uqload.vc/", u, flags=re.I)
-    headers = {
-        "User-Agent": COMMON_UA,
-        "Referer": "https://uqload.vc/",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    }
-
+    headers = {"User-Agent": COMMON_UA, "Referer": "https://uqload.vc/"}
     for attempt in range(2):
         async with sem:
             try:
-                async with session.get(
-                    fetch_url,
-                    headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=12, connect=6),
-                    allow_redirects=True,
-                ) as resp:
+                async with session.get(fetch_url, headers=headers, timeout=aiohttp.ClientTimeout(total=12, connect=6), allow_redirects=True) as resp:
                     st = resp.status
                     if st in (404, 410):
                         return "dead", f"http_{st}"
@@ -311,24 +318,14 @@ async def probe_uqload(session: aiohttp.ClientSession, sem: asyncio.Semaphore, u
                             await asyncio.sleep(0.6)
                             continue
                         return "unknown", f"http_{st}"
-
-                    body = await resp.text(errors="ignore")
-                    blow = body.lower()
+                    blow = (await resp.text(errors="ignore")).lower()
                     if "just a moment..." in blow or "cf-browser-verification" in blow:
                         return "unknown", "cloudflare_challenge"
-
-                    if (
-                        "file was deleted" in blow
-                        or "file is no longer available" in blow
-                        or "file was locked" in blow
-                        or "video not found" in blow
-                    ):
+                    if any(k in blow for k in ("file was deleted", "file is no longer available", "file was locked", "video not found")):
                         return "dead", "explicit_deleted_marker"
-
                     if "vplayer" in blow or "jwplayer" in blow or "eval(function" in blow or "sources:" in blow:
                         return "alive", "player_present"
-
-                    return "unknown", f"unrecognized_body_len_{len(body)}"
+                    return "unknown", f"unrecognized_len_{len(blow)}"
             except Exception as e:
                 if attempt == 0:
                     await asyncio.sleep(0.5)
@@ -341,123 +338,160 @@ async def probe_vidmoly(session: aiohttp.ClientSession, sem: asyncio.Semaphore, 
     mal, reason = is_malformed_url(url)
     if mal:
         return "dead", f"malformed:{reason}"
-
     u = url.strip()
-    ulow = u.lower()
-    if "vidmoly.me" in ulow:
+    if "vidmoly.me" in u.lower():
         return "dead", "route_dead_domain:vidmoly.me"
-
-    # Some rows tagged provider='vidmoly' point to filemoon.sx or geo.dailymotion.com or storage.googleapis.com
-    if "vidmoly" not in ulow and "molystream" not in ulow:
+    if "vidmoly" not in u.lower():
         return "alive", "non_vidmoly_host_kept"
-
     mirrors = ["vidmoly.biz", "vidmoly.org"]
     for attempt in range(3):
         mirror = mirrors[(idx + attempt) % len(mirrors)]
-        fetch_url = re.sub(
-            r"//(?:www\.)?vidmoly\.(?:biz|org|net|to)/",
-            f"//{mirror}/",
-            u,
-            flags=re.I,
-        )
-        headers = {
-            "User-Agent": COMMON_UA,
-            "Referer": f"https://{mirror}/",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        }
+        fetch_url = re.sub(r"//(?:www\.)?vidmoly\.(?:biz|org|net|to)/", f"//{mirror}/", u, flags=re.I)
+        headers = {"User-Agent": COMMON_UA, "Referer": f"https://{mirror}/"}
         async with sem:
-            await asyncio.sleep(0.06 if attempt == 0 else 0.25 * attempt)
+            await asyncio.sleep(0.05 if attempt == 0 else 0.25 * attempt)
             try:
-                async with session.get(
-                    fetch_url,
-                    headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=10, connect=5),
-                    allow_redirects=True,
-                ) as resp:
+                async with session.get(fetch_url, headers=headers, timeout=aiohttp.ClientTimeout(total=10, connect=5), allow_redirects=True) as resp:
                     st = resp.status
                     body = await resp.text(errors="ignore")
                     blow = body.lower()
-
                     if st in (404, 410):
                         return "dead", f"http_{st}"
                     if st in (403, 429) or st >= 500:
                         continue
-
-                    if (
-                        "no video found" in blow
-                        or "this video not found" in blow
-                        or "file was deleted" in blow
-                        or "video not found" in blow
-                        or "file not found" in blow
-                        or "deleted by owner" in blow
-                        or "404 not found" in blow
-                        or '{"status":"error"}' in body
+                    if any(
+                        k in blow
+                        for k in (
+                            "no video found", "this video not found", "file was deleted",
+                            "video not found", "file not found", "deleted by owner",
+                            "404 not found", '{"status":"error"}',
+                        )
                     ):
                         return "dead", "explicit_deleted_marker"
-
                     if "sources:" in blow or ".m3u8" in blow or "jwplayer" in blow or "eval(function" in blow:
                         return "alive", "hls_stream_present"
-
-                    return "unknown", f"unrecognized_body_len_{len(body)}"
+                    return "unknown", f"unrecognized_len_{len(body)}"
             except Exception as e:
                 if attempt == 2:
                     return "unknown", f"err_{type(e).__name__}"
     return "unknown", "http_503_or_rate_limited"
 
 
+async def probe_filemoon(session: aiohttp.ClientSession, sem: asyncio.Semaphore, url: str) -> tuple[str, str]:
+    mal, reason = is_malformed_url(url)
+    if mal:
+        return "dead", f"malformed:{reason}"
+    headers = {"User-Agent": COMMON_UA, "Referer": "https://filemoon.sx/"}
+    async with sem:
+        try:
+            async with session.get(url.strip(), headers=headers, timeout=aiohttp.ClientTimeout(total=10, connect=5), allow_redirects=True) as resp:
+                if resp.status in (404, 410):
+                    return "dead", f"http_{resp.status}"
+                if resp.status in (403, 429) or resp.status >= 500:
+                    return "unknown", f"http_{resp.status}"
+                blow = (await resp.text(errors="ignore")).lower()
+                if any(k in blow for k in ("file was deleted", "file is no longer available", "file not found", "page not found", "video was deleted")):
+                    return "dead", "explicit_deleted_marker"
+                if "embed" in blow or "jwplayer" in blow or "eval(" in blow or "iframe" in blow:
+                    return "alive", "filemoon_embed_ok"
+                return "unknown", f"unrecognized_len_{len(blow)}"
+        except Exception as e:
+            return "unknown", f"err_{type(e).__name__}"
+
+
+async def probe_mailru(session: aiohttp.ClientSession, sem: asyncio.Semaphore, url: str) -> tuple[str, str]:
+    mal, reason = is_malformed_url(url)
+    if mal:
+        return "dead", f"malformed:{reason}"
+    u = url.strip()
+    cu = ("https:" + u) if u.startswith("//") else u
+    if "/embed/" not in cu.lower():
+        return "dead", "mailru_non_embed_xfo_deny"
+    headers = {"User-Agent": COMMON_UA, "Referer": "https://my.mail.ru/"}
+    async with sem:
+        try:
+            async with session.get(cu, headers=headers, timeout=aiohttp.ClientTimeout(total=10, connect=5), allow_redirects=True) as resp:
+                if resp.status in (404, 410):
+                    return "dead", f"http_{resp.status}"
+                if resp.status != 200:
+                    return "unknown", f"http_{resp.status}"
+                body = await resp.text(errors="ignore")
+                blow = body.lower()
+                if "video not found" in blow or "видео не найдено" in blow or "видео удалено" in blow:
+                    return "dead", "mailru_deleted_marker"
+                m = re.search(r'metadataUrl"\s*:\s*"([^"]+)"', body)
+                if not m:
+                    if "flashvars" in blow:
+                        return "alive", "mailru_flashvars_present"
+                    return "dead", "mailru_no_metadata_url"
+                mu = m.group(1)
+                if mu.startswith("//"):
+                    mu = "https:" + mu
+                elif mu.startswith("/"):
+                    mu = "https://my.mail.ru" + mu
+                async with session.get(mu, headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as mr:
+                    if mr.status in (404, 410):
+                        return "dead", f"mailru_meta_{mr.status}"
+                    if mr.status == 200:
+                        data = await mr.json(content_type=None)
+                        vids = data.get("videos") if isinstance(data, dict) else None
+                        if isinstance(vids, list) and len(vids) > 0:
+                            return "alive", "mailru_videos_ok"
+                        return "dead", "mailru_empty_videos"
+                    return "unknown", f"mailru_meta_{mr.status}"
+        except Exception as e:
+            return "unknown", f"err_{type(e).__name__}"
+
+
+async def probe_okru(session: aiohttp.ClientSession, sem: asyncio.Semaphore, url: str) -> tuple[str, str]:
+    mal, reason = is_malformed_url(url)
+    if mal:
+        return "dead", f"malformed:{reason}"
+    headers = {"User-Agent": COMMON_UA, "Referer": "https://ok.ru/"}
+    async with sem:
+        try:
+            async with session.get(url.strip(), headers=headers, timeout=aiohttp.ClientTimeout(total=10, connect=5), allow_redirects=True) as resp:
+                if resp.status in (404, 410):
+                    return "dead", f"http_{resp.status}"
+                if resp.status in (403, 429) or resp.status >= 500:
+                    return "unknown", f"http_{resp.status}"
+                body = await resp.text(errors="ignore")
+                blow = body.lower()
+                if any(k in blow for k in ("video has been blocked", "video has not been found", "this video has been deleted", "copyrighted", "видео недоступно", "видео удалено")):
+                    return "dead", "okru_deleted_marker"
+                if "data-options" in blow or "flashvars" in blow:
+                    return "alive", "okru_metadata_ok"
+                return "unknown", f"unrecognized_len_{len(body)}"
+        except Exception as e:
+            return "unknown", f"err_{type(e).__name__}"
+
+
 async def probe_vk(session: aiohttp.ClientSession, sem: asyncio.Semaphore, url: str) -> tuple[str, str]:
     mal, reason = is_malformed_url(url)
     if mal:
         return "dead", f"malformed:{reason}"
-
     u = url.strip()
     if "vk.com" not in u.lower():
         return "alive", "non_vk_host_kept"
-
-    headers = {
-        "User-Agent": COMMON_UA,
-        "Referer": "https://vk.com/",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9,tr;q=0.8",
-    }
-
+    headers = {"User-Agent": COMMON_UA, "Referer": "https://vk.com/", "Accept-Language": "en-US,en;q=0.9,tr;q=0.8"}
     for attempt in range(3):
         async with sem:
             await asyncio.sleep(0.35 if attempt == 0 else 1.0 * attempt)
             try:
-                async with session.get(
-                    u,
-                    headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=10, connect=5),
-                    allow_redirects=True,
-                ) as resp:
-                    st = resp.status
-                    if st in (404, 410):
-                        return "dead", f"http_{st}"
-                    if st in (403, 429) or st >= 500:
+                async with session.get(u, headers=headers, timeout=aiohttp.ClientTimeout(total=10, connect=5), allow_redirects=True) as resp:
+                    if resp.status in (404, 410):
+                        return "dead", f"http_{resp.status}"
+                    if resp.status in (403, 429) or resp.status >= 500:
                         continue
-
                     body = await resp.text(errors="ignore")
                     unesc = body.replace("\\/", "/")
-                    err_match = VK_ERR_DIV_RE.search(body)
-                    if err_match or any(
+                    if VK_ERR_DIV_RE.search(body) or any(
                         m in body
-                        for m in (
-                            "This video has been removed",
-                            "Video not found",
-                            "Видеозапись удалена",
-                            "Видео недоступно",
-                            "Video dosyası bulunamadı",
-                            "Video dosyas&#305; bulunamad&#305;",
-                            "gizlilik ayarlar&#305;yla gizlenmi&#351;tir",
-                        )
+                        for m in ("This video has been removed", "Video not found", "Видеозапись удалена", "Видео недоступно", "Video dosyası bulunamadı")
                     ):
                         return "dead", "explicit_vk_video_ext_msg_error"
-
                     if VK_MEDIA_RE.search(unesc):
                         return "alive", "vk_media_url_present"
-
-                    # 22KB anti-bot/challenge page without video_ext_msg or media stream -> retry then unknown
                     continue
             except Exception as e:
                 if attempt == 2:
@@ -465,40 +499,96 @@ async def probe_vk(session: aiohttp.ClientSession, sem: asyncio.Semaphore, url: 
     return "unknown", "vk_challenge_or_unknown"
 
 
+async def probe_upns_or_rapidrame_hls2(session: aiohttp.ClientSession, sem: asyncio.Semaphore, url: str, group: str) -> tuple[str, str]:
+    headers = {"User-Agent": COMMON_UA}
+    if group == "rapidrame_hls2":
+        headers["Referer"] = "https://www.hdfilmcehennemi.nl/"
+    async with sem:
+        try:
+            async with session.get(url.strip(), headers=headers, timeout=aiohttp.ClientTimeout(total=8, connect=4), allow_redirects=True) as resp:
+                body = await resp.text(errors="ignore")
+                if resp.status in (404, 410):
+                    return "dead", f"{group}_http_{resp.status}"
+                if group == "rapidrame_hls2" and resp.status == 403 and len(body) < 512:
+                    return "dead", "rapidrame_expired_token_403"
+                if resp.status == 200 and "#extm3u" in body.lower():
+                    return "alive", "hls_ok"
+                if group == "upns" and ("not found" in body.lower() or len(body) == 0):
+                    return "dead", f"upns_empty_or_404_{resp.status}"
+                return "unknown", f"http_{resp.status}"
+        except Exception as e:
+            return "unknown", f"err_{type(e).__name__}"
+
+
+async def probe_dtpasn_or_playerdkorea(session: aiohttp.ClientSession, sem: asyncio.Semaphore, url: str, group: str) -> tuple[str, str]:
+    if group == "dtpasn_dup":
+        return "dead", "identical_dtpasn_hash_across_episodes"
+    parsed = urlparse(url.strip())
+    host = parsed.netloc.lower()
+    vid = parsed.path.rstrip("/").split("/")[-1]
+    if not vid:
+        return "dead", "missing_video_id"
+    api_url = f"https://{host}/player/index.php?data={vid}&do=getVideo"
+    headers = {"User-Agent": COMMON_UA, "Referer": url.strip(), "Origin": f"https://{host}", "X-Requested-With": "XMLHttpRequest"}
+    async with sem:
+        try:
+            async with session.post(api_url, headers=headers, timeout=aiohttp.ClientTimeout(total=8, connect=4)) as resp:
+                if resp.status in (404, 410):
+                    return "dead", f"http_{resp.status}"
+                if resp.status != 200:
+                    return "unknown", f"http_{resp.status}"
+                data = await resp.json(content_type=None)
+                sec = data.get("securedLink") if isinstance(data, dict) else None
+                if not sec:
+                    return "dead", "no_secured_link"
+                async with session.get(sec, headers={"User-Agent": COMMON_UA, "Referer": f"https://{host}/", "Origin": f"https://{host}"}, timeout=aiohttp.ClientTimeout(total=6, connect=4)) as r2:
+                    txt = await r2.text(errors="ignore")
+                    if "security error" in txt.lower():
+                        return "dead", "security_error_html"
+                    if "#extm3u" in txt.lower():
+                        return "alive", "hls_ok"
+                    return "dead", f"invalid_master_http_{r2.status}"
+        except asyncio.TimeoutError:
+            return "dead", "cdn_timeout"
+        except Exception as e:
+            return "unknown", f"err_{type(e).__name__}"
+
+
+async def probe_tau_ephemeral(session: aiohttp.ClientSession, sem: asyncio.Semaphore, url: str) -> tuple[str, str]:
+    async with sem:
+        try:
+            async with session.head(url.strip(), headers={"User-Agent": COMMON_UA, "Referer": "https://tau-video.xyz/"}, timeout=aiohttp.ClientTimeout(total=6, connect=3), allow_redirects=True) as resp:
+                if resp.status in (404, 410):
+                    return "dead", f"http_{resp.status}"
+                if resp.status in (200, 206):
+                    return "alive", "mp4_ok"
+                return "unknown", f"http_{resp.status}"
+        except (asyncio.TimeoutError, aiohttp.ClientConnectorError):
+            return "dead", "ephemeral_cdn_unreachable"
+        except Exception as e:
+            return "unknown", f"err_{type(e).__name__}"
+
+
 async def probe_broken_or_deny(session: aiohttp.ClientSession, sem: asyncio.Semaphore, url: str, provider: str = "") -> tuple[str, str]:
     mal, reason = is_malformed_url(url)
     if mal:
         return "dead", f"malformed:{reason}"
-
     u = url.strip()
     ulow = u.lower()
     p = (provider or "").strip().lower()
-
-    if p == "sibnet" or any(dd in ulow for dd in ROUTE_DEAD_DOMAINS):
+    if p in ("sibnet", "sendvid", "pixeldrain") or any(dd in ulow for dd in ROUTE_DEAD_DOMAINS):
         return "dead", "route_dead_domain"
-
     cu = ("https:" + u) if u.startswith("//") else u
     host = urlparse(cu).netloc.lower()
-
     if host in CONFIRMED_XFO_NO_RESOLVER_HOSTS:
         return "dead", f"xfo_deny_no_resolver:{host}"
-
-    if "mail.ru" in host and "/embed/" not in ulow:
-        return "dead", "mailru_non_embed_xfo_deny"
-
-    # Dailymotion non-embed watch URLs (dai.ly or dailymotion.com/video/)
     if host == "dai.ly" or ("dailymotion.com" in host and "/video/" in ulow and "/embed/" not in ulow):
         m = re.search(r"(?:/video/|dai\.ly/)([a-zA-Z0-9]+)", u)
         if not m:
             return "dead", "dailymotion_invalid_watch_url"
-        dm_id = m.group(1)
         async with sem:
             try:
-                async with session.get(
-                    f"https://www.dailymotion.com/player/metadata/video/{dm_id}",
-                    headers={"User-Agent": COMMON_UA, "Referer": "https://www.dailymotion.com/"},
-                    timeout=aiohttp.ClientTimeout(total=8),
-                ) as resp:
+                async with session.get(f"https://www.dailymotion.com/player/metadata/video/{m.group(1)}", headers={"User-Agent": COMMON_UA, "Referer": "https://www.dailymotion.com/"}, timeout=aiohttp.ClientTimeout(total=8)) as resp:
                     if resp.status in (404, 410):
                         return "dead", f"dailymotion_http_{resp.status}"
                     if resp.status == 200:
@@ -510,25 +600,21 @@ async def probe_broken_or_deny(session: aiohttp.ClientSession, sem: asyncio.Sema
                     return "unknown", f"dailymotion_http_{resp.status}"
             except Exception as e:
                 return "unknown", f"err_{type(e).__name__}"
-
     return "unknown", "unclassified"
 
 
-def load_checkpoint() -> dict[str, tuple[str, str]]:
-    """Returns {raw_url_stripped: (status, reason)} for already-verified URLs."""
+def load_checkpoint(ckpt_file: str) -> dict[str, tuple[str, str]]:
     cache: dict[str, tuple[str, str]] = {}
-    if not os.path.exists(CHECKPOINT_FILE):
+    if not os.path.exists(ckpt_file):
         return cache
     try:
-        with open(CHECKPOINT_FILE, "r", encoding="utf-8") as f:
+        with open(ckpt_file, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
                 obj = json.loads(line)
-                u = obj.get("url")
-                st = obj.get("status")
-                reason = obj.get("reason", "")
+                u, st, reason = obj.get("url"), obj.get("status"), obj.get("reason", "")
                 if u is not None and st in ("alive", "dead"):
                     cache[u] = (st, reason)
     except Exception as e:
@@ -537,29 +623,48 @@ def load_checkpoint() -> dict[str, tuple[str, str]]:
 
 
 async def run_pipeline(args):
-    os.makedirs(SCRATCH_DIR, exist_ok=True)
+    scratch_dir = args.scratch_dir or os.path.join(_ROOT, "scratch", "purge")
+    os.makedirs(scratch_dir, exist_ok=True)
+    ckpt_file = os.path.join(scratch_dir, "url_checkpoint.jsonl")
+    backup_file = os.path.join(scratch_dir, "deleted_sources_backup.jsonl")
+    affected_file = os.path.join(scratch_dir, "affected_drama_ids.json")
+    summary_file = os.path.join(scratch_dir, "purge_summary.json")
 
-    conn = get_connection()
+    db_path = _resolve_db_path(args.db)
+    conn = sqlite3.connect(db_path, timeout=120.0)
+    conn.execute("PRAGMA busy_timeout = 120000;")
     cur = conn.cursor()
 
-    cur.execute("SELECT COUNT(*) FROM episode_sources")
-    total_before = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM episodes WHERE source_status = 'pending'")
-    pending_before = cur.fetchone()[0]
+    total_before = cur.execute("SELECT COUNT(*) FROM episode_sources").fetchone()[0]
+    pending_before = cur.execute("SELECT COUNT(*) FROM episodes WHERE source_status = 'pending'").fetchone()[0]
+
+    # Precompute dtpasn.asia URLs shared across >= 3 episodes of the same drama
+    dup_dtpasn_keys = {
+        (int(r[0]), r[1])
+        for r in cur.execute(
+            """
+            SELECT e.drama_id, es.direct_url
+            FROM episode_sources es
+            JOIN episodes e ON e.id = es.episode_id
+            WHERE es.direct_url LIKE '%dtpasn.asia%'
+            GROUP BY e.drama_id, es.direct_url
+            HAVING COUNT(DISTINCT e.id) >= 3
+            """
+        ).fetchall()
+    }
 
     print("=" * 72)
-    print("=== KOUP PHASE 2: FULL DEAD VIDEO SOURCE PURGE ENGINE ===")
-    print(f"Toplam başlangıç episode_sources: {total_before:,}")
-    print(f"Başlangıç pending bölümler      : {pending_before:,}")
+    print(f"=== KOUP GLOBAL DEAD VIDEO SOURCE PURGE ({db_path}) ===")
+    print(f"Toplam başlangıç episode_sources: {total_before:,} | pending: {pending_before:,}")
     mode_str = (
         f"CALIBRATION SAMPLE (--sample {args.sample})"
         if args.sample > 0
-        else ("APPLY (CANLI SİLME AKTİF)" if args.apply else "DRY-RUN (SİLME YOK)")
+        else ("APPLY (CANLI SİLME AKTİF)" if (args.apply and not args.dry_run) else "DRY-RUN (SİLME YOK)")
     )
-    print(f"Çalışma Modu                    : {mode_str}")
+    print(f"Çalışma Modu: {mode_str} | Shared dtpasn.asia grupları: {len(dup_dtpasn_keys)}")
     print("=" * 72)
 
-    cur.execute(
+    all_rows = cur.execute(
         """
         SELECT s.id, s.episode_id, e.drama_id, s.source_name, s.embed_id,
                s.ajax_embed_url, s.direct_url, s.provider, s.fansub, s.site
@@ -567,49 +672,67 @@ async def run_pipeline(args):
         LEFT JOIN episodes e ON e.id = s.episode_id
         ORDER BY s.id ASC
         """
-    )
-    all_rows = cur.fetchall()
+    ).fetchall()
     conn.close()
+
+    allowed_groups = (
+        {x.strip() for x in args.providers.split(",") if x.strip()}
+        if args.providers
+        else None
+    )
 
     rows_by_group: dict[str, list[tuple]] = defaultdict(list)
     for r in all_rows:
-        g = classify_target_group(r)
-        if g:
+        g = classify_target_group(r, dup_dtpasn_keys)
+        if g and (allowed_groups is None or g in allowed_groups):
             rows_by_group[g].append(r)
 
-    group_order = ["upns", "mp4upload", "uqload", "vidmoly", "vk.com", "broken_or_deny"]
+    group_order = [
+        "upns",
+        "rapidrame_hls2",
+        "playerdkorea",
+        "dtpasn_dup",
+        "dtpasn",
+        "tau_ephemeral",
+        "mp4upload",
+        "uqload",
+        "vidmoly",
+        "filemoon",
+        "vk.com",
+        "mail.ru",
+        "ok.ru",
+        "broken_or_deny",
+    ]
     print("\n[HEDEF KATEGORİ DAĞILIMI]")
     for g in group_order:
         rlist = rows_by_group.get(g, [])
-        u_set = set((x[6] or "").strip() for x in rlist)
-        print(f"  • {g:15s}: {len(rlist):7,d} kayıt ({len(u_set):7,d} tekil URL)")
+        if not rlist:
+            continue
+        u_set = {(x[6] or "").strip() for x in rlist}
+        print(f"  • {g:16s}: {len(rlist):7,d} kayıt ({len(u_set):7,d} tekil URL)")
 
     if args.sample > 0:
         for g in group_order:
             if len(rows_by_group[g]) > args.sample:
                 step = max(1, len(rows_by_group[g]) // args.sample)
                 rows_by_group[g] = [rows_by_group[g][i] for i in range(0, len(rows_by_group[g]), step)][: args.sample]
-        print(f"\n[CALIBRATION] Her grup için en fazla {args.sample} örnek seçildi.")
 
-    # Load checkpoint if not sampling and not --reset-checkpoint
     url_results: dict[str, tuple[str, str]] = {}
-    if args.sample == 0 and not args.reset_checkpoint:
-        url_results = load_checkpoint()
+    use_resume = args.resume and not args.reset_checkpoint and args.sample == 0
+    if use_resume:
+        url_results = load_checkpoint(ckpt_file)
         if url_results:
-            print(f"[CHECKPOINT] Önceki çalışmadan {len(url_results):,} doğrulanmış URL yüklendi.")
+            print(f"[RESUME] Checkpoint'ten {len(url_results):,} doğrulanmış URL yüklendi.")
 
-    # 1. Instant classification for upns (confirmed blocked X-Frame-Options: DENY / dead)
-    for r in rows_by_group["upns"]:
-        u = (r[6] or "").strip()
-        url_results[u] = ("dead", "upns_confirmed_blocked_xfo_deny")
-
-    # Prepare unique URLs to probe per network group
     to_probe: dict[str, list[tuple[str, str]]] = defaultdict(list)
-    for g in ["mp4upload", "uqload", "vidmoly", "vk.com", "broken_or_deny"]:
+    for g in group_order:
         seen_u = set()
         for r in rows_by_group[g]:
             u = (r[6] or "").strip()
             p = (r[7] or "").strip().lower()
+            if g == "dtpasn_dup":
+                url_results[u] = ("dead", "identical_dtpasn_hash_across_episodes")
+                continue
             if u not in seen_u and u not in url_results:
                 seen_u.add(u)
                 to_probe[g].append((u, p))
@@ -619,7 +742,7 @@ async def run_pipeline(args):
 
     ckpt_lock = asyncio.Lock()
     ckpt_buffer: list[str] = []
-    ckpt_fp = open(CHECKPOINT_FILE, "a", encoding="utf-8") if args.sample == 0 else None
+    ckpt_fp = open(ckpt_file, "a", encoding="utf-8") if args.sample == 0 else None
 
     async def record_result(group: str, url: str, status: str, reason: str):
         url_results[url] = (status, reason)
@@ -634,14 +757,18 @@ async def run_pipeline(args):
 
     if total_to_probe > 0:
         t_start = time.time()
-        # Independent per-host semaphores so no host is ever overwhelmed
-        sem_mp4 = asyncio.Semaphore(args.mp4_concurrency)
-        sem_uq = asyncio.Semaphore(args.uqload_concurrency)
-        sem_vm = asyncio.Semaphore(args.vidmoly_concurrency)
-        sem_vk = asyncio.Semaphore(2)
-        sem_misc = asyncio.Semaphore(10)
+        sems = {
+            "mp4upload": asyncio.Semaphore(args.mp4_concurrency),
+            "uqload": asyncio.Semaphore(args.uqload_concurrency),
+            "vidmoly": asyncio.Semaphore(args.vidmoly_concurrency),
+            "filemoon": asyncio.Semaphore(args.filemoon_concurrency),
+            "mail.ru": asyncio.Semaphore(args.mailru_concurrency),
+            "ok.ru": asyncio.Semaphore(args.okru_concurrency),
+            "vk.com": asyncio.Semaphore(2),
+            "default": asyncio.Semaphore(12),
+        }
 
-        connector = aiohttp.TCPConnector(limit=120, limit_per_host=64, ssl=False, ttl_dns_cache=600)
+        connector = aiohttp.TCPConnector(limit=120, limit_per_host=48, ssl=False, ttl_dns_cache=600)
         async with aiohttp.ClientSession(connector=connector) as session:
             progress = Counter()
 
@@ -649,65 +776,54 @@ async def run_pipeline(args):
                 if not items:
                     return
                 g_total = len(items)
-                g_start = time.time()
+                sem = sems.get(g, sems["default"])
 
                 async def worker(idx: int, u: str, p: str):
                     if g == "mp4upload":
-                        st, rsn = await probe_mp4upload(session, sem_mp4, u)
+                        st, rsn = await probe_mp4upload(session, sem, u)
                     elif g == "uqload":
-                        st, rsn = await probe_uqload(session, sem_uq, u)
+                        st, rsn = await probe_uqload(session, sem, u)
                     elif g == "vidmoly":
-                        st, rsn = await probe_vidmoly(session, sem_vm, u, idx)
+                        st, rsn = await probe_vidmoly(session, sem, u, idx)
+                    elif g == "filemoon":
+                        st, rsn = await probe_filemoon(session, sem, u)
+                    elif g == "mail.ru":
+                        st, rsn = await probe_mailru(session, sem, u)
+                    elif g == "ok.ru":
+                        st, rsn = await probe_okru(session, sem, u)
                     elif g == "vk.com":
-                        st, rsn = await probe_vk(session, sem_vk, u)
+                        st, rsn = await probe_vk(session, sem, u)
+                    elif g in ("upns", "rapidrame_hls2"):
+                        st, rsn = await probe_upns_or_rapidrame_hls2(session, sem, u, g)
+                    elif g in ("playerdkorea", "dtpasn", "dtpasn_dup"):
+                        st, rsn = await probe_dtpasn_or_playerdkorea(session, sem, u, g)
+                    elif g == "tau_ephemeral":
+                        st, rsn = await probe_tau_ephemeral(session, sem, u)
                     else:
-                        st, rsn = await probe_broken_or_deny(session, sem_misc, u, p)
+                        st, rsn = await probe_broken_or_deny(session, sem, u, p)
 
                     await record_result(g, u, st, rsn)
                     progress[g] += 1
                     done = progress[g]
-                    step_log = 2500 if g == "mp4upload" else (1000 if g in ("uqload", "vidmoly") else 50)
+                    step_log = max(1, min(2000, g_total // 10 or 1))
                     if done % step_log == 0 or done == g_total:
-                        el = max(0.001, time.time() - g_start)
-                        rate = done / el
-                        eta = (g_total - done) / rate if rate > 0 else 0
-                        print(
-                            f"  [{g:14s}] {done:6,d}/{g_total:6,d} ({done/g_total*100:5.1f}%) | "
-                            f"{rate:5.1f} req/s | ETA: {int(eta//60)}m {int(eta%60)}s"
-                        )
+                        print(f"[{_ts()}] [{done:,}/{g_total:,}] ({done/g_total*100:.1f}%) - {g}", flush=True)
 
-                # Dispatch in manageable chunks per group to keep event loop responsive
-                chunk_sz = 2000 if g == "mp4upload" else 500
+                chunk_sz = 1000
                 for i in range(0, g_total, chunk_sz):
-                    batch = items[i : i + chunk_sz]
-                    await asyncio.gather(*(worker(i + j, u, p) for j, (u, p) in enumerate(batch)))
+                    await asyncio.gather(*(worker(i + j, u, p) for j, (u, p) in enumerate(items[i : i + chunk_sz])))
 
-                # Pass 2 retry for any transient 503/unknowns in vidmoly or vk.com
-                if g in ("vidmoly", "vk.com"):
-                    retry_items = [(u, p) for (u, p) in items if url_results.get(u, ("", ""))[0] == "unknown"]
-                    if retry_items:
-                        print(f"  [{g:14s}] Pass 2 Retry: {len(retry_items)} belirsiz URL daha yavaş hızla tekrar deneniyor...")
-                        sem_slow = asyncio.Semaphore(3 if g == "vidmoly" else 1)
-                        for idx2, (u, p) in enumerate(retry_items):
-                            if g == "vidmoly":
-                                st, rsn = await probe_vidmoly(session, sem_slow, u, idx2 + 1)
-                            else:
-                                st, rsn = await probe_vk(session, sem_slow, u)
-                            await record_result(g, u, st, rsn)
-
-            await asyncio.gather(*(run_group(g, to_probe[g]) for g in ["mp4upload", "uqload", "vidmoly", "vk.com", "broken_or_deny"]))
+            await asyncio.gather(*(run_group(g, to_probe[g]) for g in group_order if to_probe[g]))
 
         if ckpt_fp is not None:
             if ckpt_buffer:
                 ckpt_fp.write("\n".join(ckpt_buffer) + "\n")
                 ckpt_fp.flush()
-                ckpt_buffer.clear()
             ckpt_fp.close()
 
         print(f"\n[AĞ TARAMASI TAMAMLANDI] Toplam süre: {time.time() - t_start:.1f}s")
 
-    # Aggregate results per group
-    breakdown: dict[str, dict[str, int]] = {}
+    breakdown: dict[str, dict] = {}
     reasons_by_group: dict[str, Counter] = defaultdict(Counter)
     dead_rows: list[tuple] = []
     affected_dramas: set[int] = set()
@@ -718,10 +834,12 @@ async def run_pipeline(args):
     print("=" * 72)
 
     for g in group_order:
+        if not rows_by_group.get(g):
+            continue
         c = Counter()
         for r in rows_by_group[g]:
-            sid, eid, did, sname, embed_id, aurl, durl, prov, fsub, site = r
-            u = (durl or "").strip()
+            sid, eid, did, *_ = r
+            u = (r[6] or "").strip()
             st, rsn = url_results.get(u, ("unknown", "not_probed"))
             c[st] += 1
             reasons_by_group[g][f"{st}:{rsn}"] += 1
@@ -733,220 +851,135 @@ async def run_pipeline(args):
                     affected_episodes.add(int(eid))
 
         tot_g = len(rows_by_group[g])
-        breakdown[g] = {
-            "total": tot_g,
-            "alive": c["alive"],
-            "dead": c["dead"],
-            "unknown": c["unknown"],
-            "reasons": dict(reasons_by_group[g]),
-        }
-        print(
-            f"  • {g:15s} | Toplam: {tot_g:7,d} | "
-            f"ALIVE: {c['alive']:7,d} | DEAD: {c['dead']:7,d} | UNKNOWN: {c['unknown']:7,d}"
-        )
-        for rk, rv in reasons_by_group[g].most_common(5):
-            print(f"      - {rk}: {rv:,}")
+        breakdown[g] = {"total": tot_g, "alive": c["alive"], "dead": c["dead"], "unknown": c["unknown"], "reasons": dict(reasons_by_group[g])}
+        print(f"  • {g:16s} | Toplam: {tot_g:7,d} | ALIVE: {c['alive']:7,d} | DEAD: {c['dead']:7,d} | UNKNOWN: {c['unknown']:7,d}")
 
-    total_dead = len(dead_rows)
-    total_alive = sum(b["alive"] for b in breakdown.values())
-    total_unknown = sum(b["unknown"] for b in breakdown.values())
-    print("-" * 72)
-    print(
-        f"  GENEL TOPLAM      | Taranan: {total_dead + total_alive + total_unknown:7,d} | "
-        f"ALIVE: {total_alive:7,d} | DEAD: {total_dead:7,d} | UNKNOWN: {total_unknown:7,d}"
-    )
-    print(f"  Etkilenen Bölüm   : {len(affected_episodes):,}")
-    print(f"  Etkilenen Yapım   : {len(affected_dramas):,}")
-    print("=" * 72)
-
-    if args.sample > 0 or not args.apply:
-        print("\n[BİLGİ] Silme işlemi uygulanmadı (--apply parametresi verilmedi veya --sample modu).")
+    is_apply = bool(args.apply and not args.dry_run and args.sample == 0)
+    if not is_apply:
+        print(f"\n[DRY-RUN/SAMPLE] Silme uygulanmadı. Tespit edilen DEAD satır: {len(dead_rows):,}")
+        print(f"__RESULT__ {json.dumps({'ok': True, 'dryRun': True, 'deadCount': len(dead_rows), 'breakdown': {k: {kk: vv for kk, vv in v.items() if kk != 'reasons'} for k, v in breakdown.items()}}, ensure_ascii=False)}", flush=True)
         return
 
     if not dead_rows:
         print("\n[BİLGİ] Silinecek doğrulanmış ölü kaynak bulunamadı.")
         return
 
-    # Step 1: Backup all dead rows to JSONL before deleting
-    print(f"\n[YEDEKLEME] Silinecek {len(dead_rows):,} kayıt {BACKUP_FILE} dosyasına yedekleniyor...")
-    with open(BACKUP_FILE, "a", encoding="utf-8") as bf:
+    with open(backup_file, "a", encoding="utf-8") as bf:
         ts_now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         for dr in dead_rows:
             sid, eid, did, sname, embed_id, aurl, durl, prov, fsub, site, grp, rsn = dr
-            rec = {
-                "deleted_at": ts_now,
-                "id": sid,
-                "episode_id": eid,
-                "drama_id": did,
-                "source_name": sname,
-                "embed_id": embed_id,
-                "ajax_embed_url": aurl,
-                "direct_url": durl,
-                "provider": prov,
-                "fansub": fsub,
-                "site": site,
-                "target_group": grp,
-                "dead_reason": rsn,
-            }
-            bf.write(json.dumps(rec, ensure_ascii=False) + "\n")
-        bf.flush()
-    print("✓ JSONL yedekleme tamamlandı.")
+            bf.write(
+                json.dumps(
+                    {
+                        "deleted_at": ts_now, "id": sid, "episode_id": eid, "drama_id": did,
+                        "source_name": sname, "embed_id": embed_id, "direct_url": durl,
+                        "provider": prov, "target_group": grp, "dead_reason": rsn,
+                    },
+                    ensure_ascii=False,
+                ) + "\n"
+            )
 
-    # Step 2: Delete dead sources in short chunks of <= 500 IDs, committing each chunk
-    dead_ids = [dr[0] for dr in dead_rows]
-    print(f"\n[SİLME] {len(dead_ids):,} doğrulanmış ölü kaynak <=500'lük parçalar halinde siliniyor...")
-    conn = get_connection()
+    conn = sqlite3.connect(db_path, timeout=120.0)
+    conn.execute("PRAGMA busy_timeout = 120000;")
     cur = conn.cursor()
 
+    dead_ids = [dr[0] for dr in dead_rows]
     deleted_count = 0
     for i in range(0, len(dead_ids), 500):
         chunk = dead_ids[i : i + 500]
-        placeholders = ",".join("?" * len(chunk))
-        for attempt in range(5):
-            try:
-                cur.execute(f"DELETE FROM episode_sources WHERE id IN ({placeholders})", chunk)
-                deleted_count += cur.rowcount
-                conn.commit()
-                break
-            except sqlite3.OperationalError as e:
-                if attempt == 4:
-                    raise
-                time.sleep(0.3 * (attempt + 1))
+        ph = ",".join("?" * len(chunk))
+        cur.execute(f"DELETE FROM episode_sources WHERE id IN ({ph})", chunk)
+        deleted_count += cur.rowcount
+        conn.commit()
 
-    print(f"✓ {deleted_count:,} ölü kaynak episode_sources tablosundan silindi.")
-
-    # Step 3: Check affected episodes that dropped to 0 sources -> set source_status = 'pending'
     ep_list = sorted(affected_episodes)
-    dropped_to_zero_eps: list[int] = []
+    dropped_to_zero: list[int] = []
     for i in range(0, len(ep_list), 500):
         chunk = ep_list[i : i + 500]
-        placeholders = ",".join("?" * len(chunk))
+        ph = ",".join("?" * len(chunk))
         cur.execute(
-            f"""
-            SELECT e.id
-            FROM episodes e
-            LEFT JOIN episode_sources es ON es.episode_id = e.id
-            WHERE e.id IN ({placeholders})
-            GROUP BY e.id
-            HAVING COUNT(es.id) = 0
-            """,
+            f"SELECT e.id FROM episodes e LEFT JOIN episode_sources es ON es.episode_id = e.id "
+            f"WHERE e.id IN ({ph}) GROUP BY e.id HAVING COUNT(es.id) = 0",
             chunk,
         )
-        dropped_to_zero_eps.extend(r[0] for r in cur.fetchall())
+        dropped_to_zero.extend(r[0] for r in cur.fetchall())
 
-    newly_pending_count = 0
-    for i in range(0, len(dropped_to_zero_eps), 500):
-        chunk = dropped_to_zero_eps[i : i + 500]
-        placeholders = ",".join("?" * len(chunk))
-        for attempt in range(5):
-            try:
-                cur.execute(
-                    f"""
-                    UPDATE episodes
-                    SET source_status = 'pending',
-                        pending_since = COALESCE(pending_since, CURRENT_TIMESTAMP),
-                        last_source_check = CURRENT_TIMESTAMP
-                    WHERE id IN ({placeholders})
-                    """,
-                    chunk,
-                )
-                newly_pending_count += cur.rowcount
-                conn.commit()
-                break
-            except sqlite3.OperationalError:
-                if attempt == 4:
-                    raise
-                time.sleep(0.3 * (attempt + 1))
+    for i in range(0, len(dropped_to_zero), 500):
+        chunk = dropped_to_zero[i : i + 500]
+        ph = ",".join("?" * len(chunk))
+        cur.execute(
+            f"UPDATE episodes SET source_status = 'pending', pending_since = COALESCE(pending_since, CURRENT_TIMESTAMP), "
+            f"last_source_check = CURRENT_TIMESTAMP WHERE id IN ({ph})",
+            chunk,
+        )
+        conn.commit()
 
-    print(f"✓ 0 kaynağa düşen {len(dropped_to_zero_eps):,} bölüm 'pending' olarak işaretlendi.")
-
-    # Step 4: Update dramas.sources_count for affected dramas in chunks of <= 500
     drama_list = sorted(affected_dramas)
     for i in range(0, len(drama_list), 500):
         chunk = drama_list[i : i + 500]
-        placeholders = ",".join("?" * len(chunk))
-        for attempt in range(5):
+        ph = ",".join("?" * len(chunk))
+        cur.execute(
+            f"""
+            UPDATE dramas
+            SET sources_count = (SELECT COUNT(*) FROM episode_sources es JOIN episodes e ON e.id = es.episode_id WHERE e.drama_id = dramas.id),
+                episodes_available = (SELECT COUNT(*) FROM episodes e WHERE e.drama_id = dramas.id AND EXISTS(SELECT 1 FROM episode_sources es WHERE es.episode_id = e.id))
+            WHERE id IN ({ph})
+            """,
+            chunk,
+        )
+        conn.commit()
+
+    if args.sync_remote and drama_list:
+        from scrapers.supabase_sync_helper import sync_drama_bundle_and_counts
+
+        for idx, did in enumerate(drama_list, 1):
             try:
-                cur.execute(
-                    f"""
-                    UPDATE dramas
-                    SET sources_count = (
-                        SELECT COUNT(*)
-                        FROM episode_sources es
-                        JOIN episodes e ON e.id = es.episode_id
-                        WHERE e.drama_id = dramas.id
-                    )
-                    WHERE id IN ({placeholders})
-                    """,
-                    chunk,
-                )
-                conn.commit()
-                break
-            except sqlite3.OperationalError:
-                if attempt == 4:
-                    raise
-                time.sleep(0.3 * (attempt + 1))
+                sync_drama_bundle_and_counts(conn, cur, did)
+            except Exception as e:
+                print(f"[SYNC_ERR] drama #{did}: {e}")
+            if idx % 25 == 0 or idx == len(drama_list):
+                print(f"[{_ts()}] [{idx}/{len(drama_list)}] ({idx/len(drama_list)*100:.1f}%) - R2/Supabase senkronu", flush=True)
 
-    print(f"✓ {len(drama_list):,} etkilenen yapımın dramas.sources_count değeri güncellendi.")
-
-    cur.execute("SELECT COUNT(*) FROM episode_sources")
-    total_after = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM episodes WHERE source_status = 'pending'")
-    pending_after = cur.fetchone()[0]
     conn.close()
 
-    # Save affected drama IDs and summary JSON
-    existing_affected: set[int] = set()
-    if os.path.exists(AFFECTED_DRAMAS_FILE):
-        try:
-            with open(AFFECTED_DRAMAS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, list):
-                    existing_affected.update(int(x) for x in data)
-                elif isinstance(data, dict) and "affected_drama_ids" in data:
-                    existing_affected.update(int(x) for x in data["affected_drama_ids"])
-        except Exception:
-            pass
-
-    merged_affected = sorted(existing_affected | affected_dramas)
-    with open(AFFECTED_DRAMAS_FILE, "w", encoding="utf-8") as f:
-        json.dump(merged_affected, f, indent=2)
+    with open(affected_file, "w", encoding="utf-8") as f:
+        json.dump(drama_list, f, indent=2)
 
     summary_payload = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "total_sources_before": total_before,
-        "total_sources_after": total_after,
         "deleted_sources_count": deleted_count,
-        "pending_episodes_before": pending_before,
-        "pending_episodes_after": pending_after,
-        "episodes_dropped_to_zero_sources": len(dropped_to_zero_eps),
-        "affected_dramas_count": len(merged_affected),
+        "episodes_dropped_to_zero_sources": len(dropped_to_zero),
+        "affected_dramas_count": len(drama_list),
         "breakdown_by_provider": breakdown,
     }
-    with open(SUMMARY_REPORT_FILE, "w", encoding="utf-8") as f:
+    with open(summary_file, "w", encoding="utf-8") as f:
         json.dump(summary_payload, f, ensure_ascii=False, indent=2)
 
-    print("\n" + "=" * 72)
-    print("=== PURGE TAMAMLANDI - ÖZET METRİKLER ===")
-    print(f"  • Önceki Toplam Kaynak          : {total_before:,}")
-    print(f"  • Sonraki Toplam Kaynak         : {total_after:,}")
-    print(f"  • Silinen Doğrulanmış Ölü Kaynak: {deleted_count:,}")
-    print(f"  • 0 Kaynağa Düşen Bölüm Sayısı  : {len(dropped_to_zero_eps):,}")
-    print(f"  • Pending Bölüm (Önce -> Sonra) : {pending_before:,} -> {pending_after:,}")
-    print(f"  • Etkilenen Yapım (drama_id)    : {len(merged_affected):,} -> {AFFECTED_DRAMAS_FILE}")
-    print("=" * 72)
+    print(f"✓ Silinen: {deleted_count:,} | 0 kaynağa düşen bölüm: {len(dropped_to_zero):,} | Etkilenen yapım: {len(drama_list):,}")
+    print(f"__RESULT__ {json.dumps({'ok': True, 'dryRun': False, 'deletedCount': deleted_count, 'droppedToZero': len(dropped_to_zero), 'affectedDramas': len(drama_list)}, ensure_ascii=False)}", flush=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Full async dead video source purger for webdrama_archive.db")
+    parser.add_argument("--db", type=str, default=None, help="Path to SQLite DB")
+    parser.add_argument("--scratch-dir", type=str, default=None, help="Directory for checkpoints and backups")
     parser.add_argument("--sample", type=int, default=0, help="Calibration sample size per provider (0 = full dataset)")
     parser.add_argument("--apply", action="store_true", help="Apply deletions to SQLite database")
+    parser.add_argument("--dry-run", action="store_true", help="Preview dead sources without deleting")
+    parser.add_argument("--resume", action="store_true", default=True, help="Resume from URL checkpoint (default True)")
     parser.add_argument("--reset-checkpoint", action="store_true", help="Ignore existing URL checkpoint file")
-    parser.add_argument("--mp4-concurrency", type=int, default=56, help="Max concurrent requests to mp4upload (default 56)")
-    parser.add_argument("--uqload-concurrency", type=int, default=24, help="Max concurrent requests to uqload (default 24)")
-    parser.add_argument("--vidmoly-concurrency", type=int, default=8, help="Max concurrent requests to vidmoly (default 8)")
+    parser.add_argument("--sync-remote", action="store_true", help="Rebuild R2 bundles & Supabase counts for affected dramas")
+    parser.add_argument("--providers", type=str, default=None, help="Comma-separated target groups to check")
+    parser.add_argument("--mp4-concurrency", type=int, default=40)
+    parser.add_argument("--uqload-concurrency", type=int, default=20)
+    parser.add_argument("--vidmoly-concurrency", type=int, default=8)
+    parser.add_argument("--filemoon-concurrency", type=int, default=20)
+    parser.add_argument("--mailru-concurrency", type=int, default=24)
+    parser.add_argument("--okru-concurrency", type=int, default=24)
     args = parser.parse_args()
     asyncio.run(run_pipeline(args))
+    sys.exit(0)
 
 
 if __name__ == "__main__":
