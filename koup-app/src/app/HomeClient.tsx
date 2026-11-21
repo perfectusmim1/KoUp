@@ -100,6 +100,35 @@ const COUNTRY_OPTIONS: SelectOption[] = [
   { value: 'US', label: 'ABD & Global', icon: <CountryFlag code="US" size="sm" /> },
 ];
 
+const SLIM_HOME_MEDIA_COLUMNS = [
+  'id',
+  'slug',
+  'title',
+  'native_title',
+  'content_type',
+  'country_code',
+  'release_year',
+  'episode_count',
+  'episodes_available',
+  'duration_minutes',
+  'status_broadcast',
+  'cover_image',
+  'poster_fallback_url',
+  'backdrop_image',
+  'overview',
+  'tmdb_id',
+  'categories',
+  'tags',
+  'site_rating',
+  'site_rating_count',
+  'mdl_rating',
+  'anilist_rating',
+  'imdb_rating',
+  'views_total',
+  'is_featured',
+  'featured_order',
+].join(', ');
+
 // Module-level cache so navigating back to home in the same session is 0ms instant
 let memoryHomeBundle: HomeDataBundle | null = null;
 
@@ -336,33 +365,33 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
         ] = await Promise.all([
           supabase
             .from('media')
-            .select('*')
+            .select(SLIM_HOME_MEDIA_COLUMNS)
             .eq('is_featured', true)
             .not('backdrop_image', 'is', null)
             .order('featured_order', { ascending: true })
             .limit(10),
           supabase
             .from('media')
-            .select('*')
+            .select(SLIM_HOME_MEDIA_COLUMNS)
             .eq('country_code', 'KR')
             .order('mdl_rating', { ascending: false, nullsFirst: false })
             .limit(28),
           supabase
             .from('media')
-            .select('*')
+            .select(SLIM_HOME_MEDIA_COLUMNS)
             .eq('country_code', 'CN')
             .order('mdl_rating', { ascending: false, nullsFirst: false })
             .limit(28),
           supabase
             .from('media')
-            .select('*')
+            .select(SLIM_HOME_MEDIA_COLUMNS)
             .eq('content_type', 'anime')
             .not('anilist_rating', 'is', null)
             .order('anilist_rating', { ascending: false })
             .limit(28),
           supabase
             .from('media')
-            .select('*')
+            .select(SLIM_HOME_MEDIA_COLUMNS)
             .in('country_code', ['US', 'TH', 'TW', 'JP'])
             .neq('content_type', 'anime')
             .order('imdb_rating', { ascending: false, nullsFirst: false })
@@ -374,9 +403,10 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
               'id, media_id, season_number, episode_number, episode_name, published_at, status, scheduled_release_at, translation_note, react_fire'
             )
             .eq('status', 'published')
+            .not('published_at', 'is', null)
             .order('published_at', { ascending: false, nullsFirst: false })
             .order('id', { ascending: false })
-            .limit(2000),
+            .limit(180),
           supabase
             .from('people')
             .select('*')
@@ -401,23 +431,23 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
           }),
           supabase
             .from('media')
-            .select('*')
+            .select(SLIM_HOME_MEDIA_COLUMNS)
             .order('id', { ascending: false })
             .limit(16),
         ]);
 
-        let featItems = (featRes.data as MediaItem[]) || [];
+        let featItems = (featRes.data as unknown as MediaItem[]) || [];
         if (featItems.length < 5) {
           const { data: fallbackFeats } = await supabase
             .from('media')
-            .select('*')
+            .select(SLIM_HOME_MEDIA_COLUMNS)
             .not('backdrop_image', 'is', null)
             .order('mdl_rating', { ascending: false, nullsFirst: false })
             .order('imdb_rating', { ascending: false, nullsFirst: false })
             .limit(8);
           if (fallbackFeats) {
             const seen = new Set(featItems.map((f) => f.id));
-            const extra = fallbackFeats.filter((f) => !seen.has(f.id));
+            const extra = (fallbackFeats as unknown as MediaItem[]).filter((f) => !seen.has(f.id));
             featItems = [...featItems, ...extra];
           }
         }
@@ -428,7 +458,7 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
         if (movieItems.length < 10) {
           const { data: fallbackMovies } = await supabase
             .from('media')
-            .select('*')
+            .select(SLIM_HOME_MEDIA_COLUMNS)
             .eq('content_type', 'film')
             .not('cover_image', 'is', null)
             .order('imdb_rating', { ascending: false, nullsFirst: false })
@@ -436,7 +466,7 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
             .limit(10);
           if (fallbackMovies && fallbackMovies.length > 0) {
             const seen = new Set(movieItems.map((m) => m.id));
-            const extra = fallbackMovies.filter((m) => !seen.has(m.id));
+            const extra = (fallbackMovies as unknown as MediaItem[]).filter((m) => !seen.has(m.id));
             movieItems = [...movieItems, ...extra].slice(0, 10);
           }
         }
@@ -447,26 +477,32 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
           const seenMedia = new Set<number>();
           const uniqueEps: any[] = [];
           for (const ep of rawEpisodes) {
-            if (!seenMedia.has(ep.media_id)) {
+            if (ep?.media_id && ep?.published_at && !seenMedia.has(ep.media_id)) {
               seenMedia.add(ep.media_id);
               uniqueEps.push(ep);
+              if (uniqueEps.length >= 24) break;
             }
           }
-          const targetEps = uniqueEps.slice(0, 24);
+          const targetEps = uniqueEps;
           const mIds = targetEps.map((e: any) => e.media_id);
-          const { data: mRows } = await supabase.from('media').select('*').in('id', mIds);
-          const mMap = new Map(((mRows as MediaItem[]) || []).map((m) => [m.id, m]));
-          processedEps = targetEps
-            .map((e: any) => ({ ...e, media: mMap.get(e.media_id) }))
-            .filter((e: any) => e.media);
+          if (mIds.length > 0) {
+            const { data: mRows } = await supabase
+              .from('media')
+              .select(SLIM_HOME_MEDIA_COLUMNS)
+              .in('id', mIds);
+            const mMap = new Map(((mRows as unknown as MediaItem[]) || []).map((m) => [m.id, m]));
+            processedEps = targetEps
+              .map((e: any) => ({ ...e, media: mMap.get(e.media_id) }))
+              .filter((e: any) => e.media);
+          }
         }
 
         return {
           feats: featItems,
-          kds: (kdRes.data as MediaItem[]) || [],
-          cds: (cdRes.data as MediaItem[]) || [],
-          ans: (anRes.data as MediaItem[]) || [],
-          gls: (glRes.data as MediaItem[]) || [],
+          kds: (kdRes.data as unknown as MediaItem[]) || [],
+          cds: (cdRes.data as unknown as MediaItem[]) || [],
+          ans: (anRes.data as unknown as MediaItem[]) || [],
+          gls: (glRes.data as unknown as MediaItem[]) || [],
           episodes: rawEpisodes,
           recentEpsProcessed: processedEps,
           people: (peopRes.data as PersonItem[]) || [],
@@ -475,7 +511,7 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
             ? []
             : ((top10SeriesRes.data as MediaItem[]) || []),
           top10Movies: movieItems,
-          recentMedia: (recentMediaRes.data as MediaItem[]) || [],
+          recentMedia: (recentMediaRes.data as unknown as MediaItem[]) || [],
         };
       }, (freshBundle) => {
         applyBundle(freshBundle);
@@ -1113,7 +1149,7 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
 
       setIsLoadingCountryMedia(true);
       try {
-        let query = supabase.from('media').select('*');
+        let query = supabase.from('media').select(SLIM_HOME_MEDIA_COLUMNS);
         if (countryCode === 'US') {
           query = query.in('country_code', ['US', 'GB', 'CA', 'FR', 'DE', 'AU', 'IT', 'ES']);
         } else if (countryCode !== 'ALL') {
@@ -1121,7 +1157,7 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
         }
         const { data, error } = await query.order('id', { ascending: false }).limit(16);
         if (!error && data) {
-          const items = data as MediaItem[];
+          const items = data as unknown as MediaItem[];
           recentMediaCacheRef.current[countryCode] = items;
           setRecentMediaItems(items);
           if (typeof window !== 'undefined') {

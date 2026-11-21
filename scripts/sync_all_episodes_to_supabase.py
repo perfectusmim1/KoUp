@@ -160,14 +160,14 @@ def sync_episodes(include_short_drama: bool = False, drama_id: int = None):
     # Fetch all episodes belonging to valid Supabase media
     if drama_id:
         cur.execute("""
-            SELECT id, drama_id, season_number, episode_number, episode_name, episode_type
+            SELECT id, drama_id, season_number, episode_number, episode_name, episode_type, source_status
             FROM episodes
             WHERE drama_id = ?
             ORDER BY drama_id, season_number, episode_number
         """, (drama_id,))
     else:
         cur.execute("""
-            SELECT id, drama_id, season_number, episode_number, episode_name, episode_type
+            SELECT id, drama_id, season_number, episode_number, episode_name, episode_type, source_status
             FROM episodes
             ORDER BY drama_id, season_number, episode_number
         """)
@@ -190,13 +190,15 @@ def sync_episodes(include_short_drama: bool = False, drama_id: int = None):
     seen_keys = set()
 
     for ep in valid_episodes:
-        eid, did, s_num, ep_num, ep_name, ep_type = ep
+        eid, did, s_num, ep_num, ep_name, ep_type, src_status = ep
         key = (did, s_num or 1, ep_num or 1)
         if key in seen_keys:
             continue
         seen_keys.add(key)
 
-        ep_srcs = sources_by_ep.get(eid, [])
+        is_pending = (src_status == "pending")
+        ep_srcs = [] if is_pending else sources_by_ep.get(eid, [])
+        ep_status = "pending_source" if is_pending else ("published" if ep_srcs else "broken")
         clean_name = clean_episode_title(ep_name, s_num or 1, ep_num or 1)
         current_chunk.append({
             "media_id": did,
@@ -204,8 +206,11 @@ def sync_episodes(include_short_drama: bool = False, drama_id: int = None):
             "episode_number": ep_num or 1,
             "episode_name": clean_name,
             "episode_type": ep_type or "bolum",
-            "status": "published",
+            "status": ep_status,
             "video_sources": ep_srcs,
+            # Historical/bulk sync must never stamp now() or trigger new-episode notifications.
+            # Existing published_at is preserved by sync_episodes_items ON CONFLICT.
+            "published_at": None,
         })
 
         if len(current_chunk) >= chunk_size:
@@ -220,6 +225,7 @@ def sync_episodes(include_short_drama: bool = False, drama_id: int = None):
 
     def send_batch(idx_batch):
         idx, batch = idx_batch
+        last_err = ""
         for attempt in range(3):
             try:
                 r = requests.post(
@@ -230,17 +236,22 @@ def sync_episodes(include_short_drama: bool = False, drama_id: int = None):
                 )
                 if r.status_code in (200, 201, 204):
                     return len(batch)
+                last_err = f"HTTP {r.status_code}: {r.text[:160]}"
                 time.sleep(1)
-            except Exception:
+            except Exception as exc:
+                last_err = str(exc)
                 time.sleep(2)
+        if last_err:
+            print(f"⚠️ Batch #{idx + 1}/{total_batches} başarısız: {last_err}", flush=True)
         return 0
 
     total_synced = 0
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        for idx, res in enumerate(executor.map(send_batch, enumerate(batches))):
-            total_synced += res
-            if (idx + 1) % 50 == 0 or idx + 1 == total_batches:
-                print(f"✅ Supabase Bölüm İlerlemesi: {total_synced}/{len(seen_keys)} bölüm senkronize edildi ({((idx+1)/total_batches)*100:.1f}%).")
+    if total_batches > 0:
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            for idx, res in enumerate(executor.map(send_batch, enumerate(batches))):
+                total_synced += res
+                if (idx + 1) % 50 == 0 or idx + 1 == total_batches:
+                    print(f"✅ Supabase Bölüm İlerlemesi: {total_synced}/{len(seen_keys)} bölüm senkronize edildi ({((idx+1)/total_batches)*100:.1f}%).")
 
     print(f"🎉 Tamamlandı! Toplam {total_synced} bölüm ve video kaynakları Supabase `public.episodes` tablosuna aktarıldı.")
 
@@ -250,3 +261,4 @@ if __name__ == "__main__":
     parser.add_argument("--drama-id", type=int, default=None, help="Specific drama ID to sync episodes for")
     args = parser.parse_args()
     sync_episodes(include_short_drama=args.include_short_drama, drama_id=args.drama_id)
+    sys.exit(0)

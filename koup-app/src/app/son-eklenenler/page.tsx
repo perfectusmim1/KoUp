@@ -165,6 +165,7 @@ function RecentEpisodesContent() {
           `
           )
           .eq('status', 'published')
+          .not('published_at', 'is', null)
           .order('published_at', { ascending: false, nullsFirst: false })
           .order('id', { ascending: false });
 
@@ -208,7 +209,8 @@ function RecentEpisodesContent() {
           let countQuery = supabase
             .from('episodes')
             .select('id', { count: 'exact', head: true })
-            .eq('status', 'published');
+            .eq('status', 'published')
+            .not('published_at', 'is', null);
 
           if (typeFilter !== 'ALL') {
             countQuery = countQuery.eq('content_type', typeFilter);

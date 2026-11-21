@@ -169,7 +169,7 @@ def backup_db_to_r2() -> bool:
     return False
 
 
-def sb_request(method: str, path: str, body=None, prefer: str = "return=representation"):
+def sb_request(method: str, path: str, body=None, prefer: str = "return=representation", extra_headers: dict = None):
     if not SUPABASE_URL or not SUPABASE_KEY:
         return None
     url = f"{SUPABASE_URL}{path}"
@@ -179,10 +179,12 @@ def sb_request(method: str, path: str, body=None, prefer: str = "return=represen
         "Content-Type": "application/json",
         "Prefer": prefer,
     }
+    if extra_headers:
+        headers.update(extra_headers)
     data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
     try:
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
-        with urllib.request.urlopen(req, context=ctx, timeout=10) as resp:
+        with urllib.request.urlopen(req, context=ctx, timeout=12) as resp:
             raw = resp.read().decode("utf-8")
             return json.loads(raw) if raw else {"ok": True}
     except urllib.error.HTTPError as e:
@@ -1197,6 +1199,161 @@ def ensure_media_synced(conn, cur, drama_id: int):
         return False
 
 
+_RECENT_PUBLISH_MAX_AGE_SECONDS = 7 * 86400
+_FINISHED_BROADCAST_STATUSES = frozenset({
+    "final",
+    "tamamlandı",
+    "tamamlandi",
+    "completed",
+    "canceled",
+    "cancelled",
+    "bitti",
+})
+
+
+def _parse_sqlite_utc(ts_str) -> datetime | None:
+    """Parses a SQLite CURRENT_TIMESTAMP or ISO-8601 string into an aware UTC datetime."""
+    if not ts_str:
+        return None
+    s = str(ts_str).strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        pass
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
+        except Exception:
+            continue
+    return None
+
+
+def _parse_release_year(val) -> int | None:
+    if val is None:
+        return None
+    try:
+        m = re.search(r"(19\d{2}|20\d{2})", str(val))
+        if m:
+            return int(m.group(1))
+    except Exception:
+        pass
+    return None
+
+
+def _fetch_existing_supabase_episodes(drama_id: int, page_size: int = 1000, max_retries: int = 3) -> tuple[bool, dict]:
+    """
+    Fetches all existing Supabase episodes for `drama_id` with PostgREST pagination & retries.
+    Returns `(ok, existing_map)`. Never treats an API error/timeout as an empty map.
+    """
+    existing_map = {}
+    offset = 0
+    while True:
+        rows = None
+        for attempt in range(max_retries):
+            rows = sb_request(
+                "GET",
+                f"/rest/v1/episodes?media_id=eq.{drama_id}&select=id,season_number,episode_number,status,published_at&order=id.asc&limit={page_size}&offset={offset}",
+                extra_headers={
+                    "Range-Unit": "items",
+                    "Range": f"{offset}-{offset + page_size - 1}",
+                },
+            )
+            if isinstance(rows, list):
+                break
+            time.sleep(0.5 * (attempt + 1))
+
+        if not isinstance(rows, list):
+            print(f"[SUPABASE_FETCH_ERROR] Drama #{drama_id} offset={offset}: {rows}", flush=True)
+            return False, {}
+
+        for r in rows:
+            key = (int(r.get("season_number") or 1), int(r.get("episode_number") or 0))
+            prev = existing_map.get(key)
+            if not prev or (r.get("published_at") and not prev.get("published_at")):
+                existing_map[key] = r
+
+        if len(rows) < page_size:
+            break
+        offset += page_size
+
+    return True, existing_map
+
+
+def _is_old_finished_archive_drama(drama_release_year, drama_status_broadcast, now_dt: datetime) -> bool:
+    yr = _parse_release_year(drama_release_year)
+    if yr is None:
+        return False
+    status_low = str(drama_status_broadcast or "").strip().lower()
+    return yr < (now_dt.year - 1) and status_low in _FINISHED_BROADCAST_STATUSES
+
+
+def _resolve_episode_publish_state(
+    existing_ep: dict | None,
+    new_status: str,
+    season_num: int,
+    episode_num: int,
+    ep_created_at_str,
+    ep_pending_since_str,
+    max_existing_published_key: tuple[int, int],
+    max_sqlite_published_key: tuple[int, int],
+    total_published_in_sqlite: int,
+    drama_release_year,
+    drama_status_broadcast,
+    now_dt: datetime,
+    now_iso: str,
+) -> tuple[str | None, bool]:
+    """
+    Determines `(published_at, is_newly_published)` without ever surfacing
+    source additions on existing episodes or historical backfills.
+    """
+    if new_status != "published":
+        return (existing_ep.get("published_at") if existing_ep else None), False
+
+    is_archive_drama = _is_old_finished_archive_drama(drama_release_year, drama_status_broadcast, now_dt)
+
+    if existing_ep is not None:
+        ex_status = (existing_ep.get("status") or "").strip().lower()
+        ex_pub_at = existing_ep.get("published_at")
+
+        # Already published (or previously broken source repair): preserve existing published_at strictly
+        if ex_status in ("published", "broken") or ex_status not in ("pending_source", "placeholder", "scheduled"):
+            return ex_pub_at, False
+
+        # Pending/scheduled episode upgrading to published: only mark newly published if recent & at frontier
+        if is_archive_drama:
+            return ex_pub_at, False
+        ref_dt = _parse_sqlite_utc(ep_pending_since_str) or _parse_sqlite_utc(ep_created_at_str)
+        if ref_dt is None or (now_dt - ref_dt).total_seconds() > _RECENT_PUBLISH_MAX_AGE_SECONDS:
+            return ex_pub_at, False
+        if max_existing_published_key != (0, 0) and (season_num, episode_num) < max_existing_published_key:
+            return ex_pub_at, False
+        return now_iso, True
+
+    # Episode not yet in Supabase `existing_map` (new scrape vs historical/SQLite backfill)
+    created_dt = _parse_sqlite_utc(ep_created_at_str)
+    if created_dt is None or (now_dt - created_dt).total_seconds() > _RECENT_PUBLISH_MAX_AGE_SECONDS:
+        return None, False
+
+    if max_existing_published_key != (0, 0) and (season_num, episode_num) < max_existing_published_key:
+        return None, False
+
+    if is_archive_drama:
+        return None, False
+
+    # First-time multi-episode sync of a series: surface only the latest episode so backfills don't flood feeds
+    if max_existing_published_key == (0, 0) and total_published_in_sqlite > 3 and (season_num, episode_num) != max_sqlite_published_key:
+        return None, False
+
+    return now_iso, True
+
+
 def sync_drama_bundle_and_counts(conn, cur, drama_id: int, include_short_drama: bool = True) -> bool:
     """Updates SQLite episode_count/sources_count, uploads R2 bundle, and syncs Supabase media & episodes."""
     try:
@@ -1216,21 +1373,31 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int, include_short_drama: 
         )
         conn.commit()
 
-        cur.execute("SELECT id, title, slug, content_type, genres FROM dramas WHERE id = ?", (drama_id,))
+        cur.execute(
+            "SELECT id, title, slug, content_type, genres, release_year, status_broadcast FROM dramas WHERE id = ?",
+            (drama_id,),
+        )
         d_row = cur.fetchone()
         if not d_row:
             return False
 
-        ctype = (d_row[3] or "").lower()
-        genres_val = str(d_row[4] or "").lower()
+        drama_title = d_row[1]
+        drama_slug = d_row[2]
+        drama_ctype = d_row[3]
+        drama_genres = d_row[4]
+        drama_release_year = d_row[5]
+        drama_status_broadcast = d_row[6]
+
+        ctype = (drama_ctype or "").lower()
+        genres_val = str(drama_genres or "").lower()
         is_short = ctype in ("kisa_drama", "short", "short_drama") or "kısa drama" in genres_val or "kisa drama" in genres_val
         skip_supabase_episodes = is_short and not include_short_drama
         if skip_supabase_episodes:
-            print(f"[SHORT_DRAMA_SKIP_EPISODES] Drama #{drama_id} ({d_row[1]}) kısa drama: Supabase episodes tablosuna yazma atlandı (R2 bundle & public.media güncellendi).", flush=True)
+            print(f"[SHORT_DRAMA_SKIP_EPISODES] Drama #{drama_id} ({drama_title}) kısa drama: Supabase episodes tablosuna yazma atlandı (R2 bundle & public.media güncellendi).", flush=True)
 
         cur.execute(
             """
-            SELECT id, season_number, episode_number, episode_name, episode_type, source_status
+            SELECT id, season_number, episode_number, episode_name, episode_type, source_status, pending_since, created_at
             FROM episodes
             WHERE drama_id = ?
             ORDER BY COALESCE(season_number, 1) ASC, episode_number ASC
@@ -1239,8 +1406,17 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int, include_short_drama: 
         )
         eps = cur.fetchall()
         ep_out = []
+        sqlite_ep_keys = set()
+        zero_source_eps = {}
+        ep_meta_by_key = {}
+
         for ep in eps:
-            ep_id, s_num, e_num, ep_name, ep_type, src_status = ep
+            ep_id, s_num, e_num, ep_name, ep_type, src_status, pending_since, ep_created_at = ep
+            s_num_norm = int(s_num or 1)
+            e_num_norm = int(e_num or 1)
+            key = (s_num_norm, e_num_norm)
+            sqlite_ep_keys.add(key)
+
             cur.execute(
                 """
                 SELECT id, source_name, provider, direct_url, embed_id, fansub, site
@@ -1271,10 +1447,10 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int, include_short_drama: 
             seen = set()
             for sr in cur.fetchall():
                 sid, sname, prov, durl, eid, fsub, site = sr
-                key = f"{prov}::{durl}"
-                if key in seen:
+                skey = f"{prov}::{durl}"
+                if skey in seen:
                     continue
-                seen.add(key)
+                seen.add(skey)
                 c_sname = clean_source_name(sname or prov or "Kaynak")
                 srcs.append({
                     "id": sid,
@@ -1315,12 +1491,12 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int, include_short_drama: 
             is_pending = (src_status == "pending")
             if is_pending:
                 srcs = []
+            clean_name = clean_episode_title(ep_name, s_num_norm, e_num_norm, drama_title=drama_title)
             if srcs or is_pending:
-                clean_name = clean_episode_title(ep_name, s_num or 1, e_num, drama_title=d_row[1])
                 ep_obj = {
                     "id": ep_id,
-                    "season_number": s_num or 1,
-                    "episode_number": e_num,
+                    "season_number": s_num_norm,
+                    "episode_number": e_num_norm,
                     "episode_name": clean_name,
                     "episode_type": ep_type or "normal",
                     "status": "pending_source" if is_pending else "published",
@@ -1329,126 +1505,189 @@ def sync_drama_bundle_and_counts(conn, cur, drama_id: int, include_short_drama: 
                 if is_pending:
                     ep_obj["pending"] = True
                 ep_out.append(ep_obj)
+                # Prefer timestamps from the episode row that actually carries sources if duplicates exist in SQLite
+                if key not in ep_meta_by_key or len(srcs) > ep_meta_by_key[key][2]:
+                    ep_meta_by_key[key] = (ep_created_at, pending_since, len(srcs))
+            else:
+                if key not in zero_source_eps:
+                    zero_source_eps[key] = {
+                        "episode_name": clean_name,
+                        "episode_type": ep_type or "normal",
+                    }
 
-        if ep_out:
-            bundle_dir = os.path.join(_ROOT, "r2_bundles", "sources")
+        bundle_dir = os.path.join(_ROOT, "r2_bundles", "sources")
+        bundle_path = os.path.join(bundle_dir, f"{drama_id}.json")
+        if ep_out or os.path.exists(bundle_path):
             os.makedirs(bundle_dir, exist_ok=True)
-            bundle_path = os.path.join(bundle_dir, f"{drama_id}.json")
             payload = {
                 "media_id": drama_id,
-                "title": d_row[1],
-                "slug": d_row[2],
-                "content_type": d_row[3] or "dizi",
+                "title": drama_title,
+                "slug": drama_slug,
+                "content_type": drama_ctype or "dizi",
                 "episodes": ep_out,
             }
             with open(bundle_path, "w", encoding="utf-8") as f:
                 json.dump(payload, f, ensure_ascii=False)
-
             # 1. Immediately upload bundle to Cloudflare R2 bucket so Cloud and Edge CDN are 100% updated
             upload_to_r2(bundle_path, f"sources/{drama_id}.json")
 
-            now_iso = datetime.now(timezone.utc).isoformat()
-            max_ep = max((ep.get("episode_number") or 1 for ep in ep_out), default=1)
+        now_dt = datetime.now(timezone.utc)
+        now_iso = now_dt.isoformat()
 
-            # 2. Fetch existing episodes from Supabase to preserve real published_at timestamps
-            existing_ep_rows = sb_request(
-                "GET",
-                f"/rest/v1/episodes?media_id=eq.{drama_id}&select=id,season_number,episode_number,status,published_at",
+        # 2. Fetch ALL existing episodes from Supabase (paginated + retried).
+        #    NEVER treat a failed/errored GET as an empty map!
+        existing_ok, existing_map = _fetch_existing_supabase_episodes(drama_id)
+        if not existing_ok:
+            print(
+                f"[SUPABASE_SYNC_ABORT] Drama #{drama_id}: Mevcut Supabase bölümleri doğrulanamadığı için published_at korunarak episode upsert atlandı.",
+                flush=True,
             )
-            existing_map = {}
-            if isinstance(existing_ep_rows, list):
-                for r in existing_ep_rows:
-                    existing_map[(r.get("season_number") or 1, r.get("episode_number"))] = r
+            try:
+                cur.execute("PRAGMA wal_checkpoint(PASSIVE);")
+            except Exception:
+                pass
+            return False
 
-            has_newly_published = False
+        published_in_sqlite = [e for e in ep_out if not e.get("pending")]
+        max_sqlite_published_key = max(
+            ((int(e.get("season_number") or 1), int(e.get("episode_number") or 1)) for e in published_in_sqlite),
+            default=(0, 0),
+        )
+        max_existing_published_key = max(
+            (k for k, v in existing_map.items() if (v.get("status") or "").lower() == "published"),
+            default=(0, 0),
+        )
 
-            # 3. Upsert episodes into Supabase public.episodes table with their sources
-            sb_episodes_map = {}
-            for ep in ep_out:
-                s_num = ep.get("season_number") or 1
-                e_num = ep.get("episode_number")
-                key = (s_num, e_num)
-                is_pend = bool(ep.get("pending"))
-                new_status = "pending_source" if is_pend else "published"
+        has_newly_published = False
+        max_newly_published_ep = 0
 
-                existing_ep = existing_map.get(key)
-                ep_pub_at = None
-                if existing_ep:
-                    # If previously pending and now published, mark as newly published
-                    if existing_ep.get("status") in ("pending_source", "placeholder") and new_status == "published":
-                        ep_pub_at = now_iso
-                        has_newly_published = True
-                    else:
-                        # PRESERVE existing published_at! Never re-bump an already published episode to now()!
-                        ep_pub_at = existing_ep.get("published_at")
-                else:
-                    if new_status == "published":
-                        ep_pub_at = now_iso
-                        has_newly_published = True
+        # 3. Upsert episodes into Supabase public.episodes table with full source parity
+        sb_episodes_map = {}
+        for ep in ep_out:
+            s_num = int(ep.get("season_number") or 1)
+            e_num = int(ep.get("episode_number") or 1)
+            key = (s_num, e_num)
+            is_pend = bool(ep.get("pending"))
+            new_status = "pending_source" if is_pend else "published"
 
-                candidate = {
+            existing_ep = existing_map.get(key)
+            ep_created_at, ep_pending_since, _ = ep_meta_by_key.get(key, (None, None, 0))
+            ep_pub_at, is_new_pub = _resolve_episode_publish_state(
+                existing_ep=existing_ep,
+                new_status=new_status,
+                season_num=s_num,
+                episode_num=e_num,
+                ep_created_at_str=ep_created_at,
+                ep_pending_since_str=ep_pending_since,
+                max_existing_published_key=max_existing_published_key,
+                max_sqlite_published_key=max_sqlite_published_key,
+                total_published_in_sqlite=len(published_in_sqlite),
+                drama_release_year=drama_release_year,
+                drama_status_broadcast=drama_status_broadcast,
+                now_dt=now_dt,
+                now_iso=now_iso,
+            )
+            if is_new_pub:
+                has_newly_published = True
+                if e_num > max_newly_published_ep:
+                    max_newly_published_ep = e_num
+
+            candidate = {
+                "media_id": drama_id,
+                "season_number": s_num,
+                "episode_number": e_num,
+                "episode_name": ep.get("episode_name") or f"Bölüm {e_num}",
+                "episode_type": ep.get("episode_type") or "normal",
+                "status": new_status,
+                "video_sources": ep.get("sources") or [],
+                "published_at": ep_pub_at,
+            }
+
+            # If duplicate season/episode exists in SQLite, keep the one with more sources
+            if key not in sb_episodes_map or (len(candidate["video_sources"]) > len(sb_episodes_map[key]["video_sources"])):
+                sb_episodes_map[key] = candidate
+
+        # Parity cleanup: clear stale video_sources on Supabase episodes whose SQLite sources were purged,
+        # and delete episodes that were removed completely from SQLite.
+        stale_delete_ids = []
+        for ex_key, ex_row in existing_map.items():
+            if ex_key in sb_episodes_map:
+                continue
+            s_num, e_num = ex_key
+            if ex_key in zero_source_eps:
+                zmeta = zero_source_eps[ex_key]
+                sb_episodes_map[ex_key] = {
                     "media_id": drama_id,
                     "season_number": s_num,
                     "episode_number": e_num,
-                    "episode_name": ep.get("episode_name") or f"Bölüm {e_num}",
-                    "episode_type": ep.get("episode_type") or "normal",
-                    "status": new_status,
-                    "video_sources": ep.get("sources") or [],
-                    "published_at": ep_pub_at,
+                    "episode_name": zmeta["episode_name"] or f"Bölüm {e_num}",
+                    "episode_type": zmeta["episode_type"] or "normal",
+                    "status": "broken",
+                    "video_sources": [],
+                    "published_at": ex_row.get("published_at"),
                 }
+            elif ex_key not in sqlite_ep_keys and ex_row.get("id"):
+                stale_delete_ids.append(ex_row["id"])
 
-                # If duplicate season/episode exists in SQLite, keep the one with sources
-                if key not in sb_episodes_map or (len(candidate["video_sources"]) > len(sb_episodes_map[key]["video_sources"])):
-                    sb_episodes_map[key] = candidate
+        # 4. Update Supabase media counts and timestamps (only update last_published_at if a genuinely new episode published)
+        media_patch = {
+            "episode_count": len(ep_out),
+            "episodes_available": len(published_in_sqlite),
+            "updated_at": now_iso,
+        }
+        if has_newly_published and max_newly_published_ep > 0:
+            media_patch["last_published_episode"] = max_newly_published_ep
+            media_patch["last_published_at"] = now_iso
 
-            # 4. Update Supabase media counts and timestamps (only update last_published_at if a new episode was published)
-            media_patch = {
-                "episode_count": len(ep_out),
-                "episodes_available": len([e for e in ep_out if not e.get("pending")]),
-                "updated_at": now_iso,
-            }
-            if has_newly_published:
-                media_patch["last_published_episode"] = max_ep
-                media_patch["last_published_at"] = now_iso
+        sb_request(
+            "PATCH",
+            f"/rest/v1/media?id=eq.{drama_id}",
+            body=media_patch,
+            prefer="return=minimal",
+        )
 
-            sb_request(
-                "PATCH",
-                f"/rest/v1/media?id=eq.{drama_id}",
-                body=media_patch,
-                prefer="return=minimal",
-            )
-
-            sb_episodes = list(sb_episodes_map.values())
-            if not skip_supabase_episodes and sb_episodes:
-                for i in range(0, len(sb_episodes), 50):
-                    chunk = sb_episodes[i : i + 50]
-                    res = sb_request(
+        sb_episodes = list(sb_episodes_map.values())
+        if not skip_supabase_episodes:
+            for i in range(0, len(sb_episodes), 50):
+                chunk = sb_episodes[i : i + 50]
+                res = sb_request(
+                    "POST",
+                    "/rest/v1/episodes?on_conflict=media_id,season_number,episode_number",
+                    body=chunk,
+                    prefer="resolution=merge-duplicates,return=minimal",
+                )
+                # If check constraint doesn't allow 'pending_source' yet, fall back to 'published'
+                if isinstance(res, dict) and res.get("_error"):
+                    err_msg = str(res.get("message", ""))
+                    status_code = res.get("status")
+                    print(f"[SUPABASE_UPSERT_FALLBACK] Upsert with pending_source status failed (status: {status_code}, err: {err_msg[:120]}), falling back to published...", flush=True)
+                    fallback_chunk = []
+                    for ep_item in chunk:
+                        item_copy = dict(ep_item)
+                        if item_copy.get("status") == "pending_source":
+                            item_copy["status"] = "published"
+                            item_copy["published_at"] = None
+                        fallback_chunk.append(item_copy)
+                    fb_res = sb_request(
                         "POST",
                         "/rest/v1/episodes?on_conflict=media_id,season_number,episode_number",
-                        body=chunk,
+                        body=fallback_chunk,
                         prefer="resolution=merge-duplicates,return=minimal",
                     )
-                    # If check constraint doesn't allow 'pending_source' yet, fall back to 'published'
-                    if isinstance(res, dict) and res.get("_error"):
-                        err_msg = str(res.get("message", ""))
-                        status_code = res.get("status")
-                        print(f"[SUPABASE_UPSERT_FALLBACK] Upsert with pending_source status failed (status: {status_code}, err: {err_msg[:120]}), falling back to published...", flush=True)
-                        fallback_chunk = []
-                        for ep_item in chunk:
-                            item_copy = dict(ep_item)
-                            if item_copy.get("status") == "pending_source":
-                                item_copy["status"] = "published"
-                            fallback_chunk.append(item_copy)
-                        fb_res = sb_request(
-                            "POST",
-                            "/rest/v1/episodes?on_conflict=media_id,season_number,episode_number",
-                            body=fallback_chunk,
-                            prefer="resolution=merge-duplicates,return=minimal",
-                        )
-                        if isinstance(fb_res, dict) and fb_res.get("_error"):
-                            fb_code = fb_res.get("status")
-                            fb_err = fb_res.get("message", "")
-                            print(f"[SUPABASE HATA] Fallback episodes upsert failed (status: {fb_code}): {fb_err}", flush=True)
+                    if isinstance(fb_res, dict) and fb_res.get("_error"):
+                        fb_code = fb_res.get("status")
+                        fb_err = fb_res.get("message", "")
+                        print(f"[SUPABASE HATA] Fallback episodes upsert failed (status: {fb_code}): {fb_err}", flush=True)
+
+            if stale_delete_ids:
+                for i in range(0, len(stale_delete_ids), 50):
+                    del_chunk = stale_delete_ids[i : i + 50]
+                    id_list = ",".join(str(x) for x in del_chunk)
+                    sb_request(
+                        "DELETE",
+                        f"/rest/v1/episodes?media_id=eq.{drama_id}&id=in.({id_list})",
+                        prefer="return=minimal",
+                    )
 
         # Checkpoint SQLite WAL non-blocking so changes flush into webdrama_archive.db
         try:

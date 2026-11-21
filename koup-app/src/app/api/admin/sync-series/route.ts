@@ -173,7 +173,7 @@ async function runDirectAnimecixSync(
   }
   const { data: mediaRow } = await supabaseAdmin
     .from('media')
-    .select('id, title, slug, content_type, episode_count')
+    .select('id, title, slug, content_type, episode_count, release_year, status_broadcast')
     .eq('id', dramaId)
     .maybeSingle();
   if (!bundle || !Array.isArray(bundle.episodes)) {
@@ -315,42 +315,125 @@ async function runDirectAnimecixSync(
     log(`[R2] sources/${dramaId}.json güncellendi.`);
   }
 
-  // Supabase episodes upsert (preserve published_at of existing rows)
+  // Supabase episodes upsert (paginated fetch; NEVER treat an error as an empty map!)
   const nowIso = new Date().toISOString();
-  const { data: existingRows } = await supabaseAdmin
-    .from('episodes')
-    .select('season_number, episode_number, status, published_at')
-    .eq('media_id', dramaId);
+  const currentYear = new Date().getUTCFullYear();
   const existMap = new Map<string, any>();
-  for (const r of existingRows || []) existMap.set(`${r.season_number || 1}-${r.episode_number}`, r);
+  let existingFetchOk = true;
+  const pageSize = 1000;
+  for (let offset = 0; ; offset += pageSize) {
+    const { data: pageRows, error: existingErr } = await supabaseAdmin
+      .from('episodes')
+      .select('id, season_number, episode_number, status, published_at')
+      .eq('media_id', dramaId)
+      .order('id', { ascending: true })
+      .range(offset, offset + pageSize - 1);
+
+    if (existingErr || !Array.isArray(pageRows)) {
+      existingFetchOk = false;
+      log(
+        `[UYARI] Supabase mevcut bölümler okunamadı (${existingErr?.message || 'bilinmeyen hata'}); published_at koruması için episodes güncellemesi atlandı.`
+      );
+      break;
+    }
+
+    for (const r of pageRows) {
+      existMap.set(`${r.season_number || 1}-${r.episode_number}`, r);
+    }
+
+    if (pageRows.length < pageSize) break;
+  }
 
   let newlyPublished = false;
-  const rows = bundle.episodes
-    .filter((ep: any) => touched.has(`${ep.season_number || 1}-${ep.episode_number}`))
-    .map((ep: any) => {
-      const k = `${ep.season_number || 1}-${ep.episode_number}`;
-      const ex = existMap.get(k);
-      let publishedAt = ex?.published_at || null;
-      if (!ex || ex.status === 'pending_source' || ex.status === 'placeholder') {
-        publishedAt = nowIso;
-        newlyPublished = true;
+  let maxNewlyPublishedEp = 0;
+
+  if (existingFetchOk) {
+    let maxExistingSeason = 0;
+    let maxExistingEp = 0;
+    for (const r of existMap.values()) {
+      if (r.status === 'published') {
+        const rs = Number(r.season_number || 1);
+        const re = Number(r.episode_number || 0);
+        if (rs > maxExistingSeason || (rs === maxExistingSeason && re > maxExistingEp)) {
+          maxExistingSeason = rs;
+          maxExistingEp = re;
+        }
       }
+    }
+
+    const touchedEps = bundle.episodes.filter((ep: any) =>
+      touched.has(`${ep.season_number || 1}-${ep.episode_number}`)
+    );
+    let maxTouchedSeason = 0;
+    let maxTouchedEp = 0;
+    for (const ep of touchedEps) {
+      const es = Number(ep.season_number || 1);
+      const ee = Number(ep.episode_number || 0);
+      if (es > maxTouchedSeason || (es === maxTouchedSeason && ee > maxTouchedEp)) {
+        maxTouchedSeason = es;
+        maxTouchedEp = ee;
+      }
+    }
+
+    const broadcastLow = String(mediaRow?.status_broadcast || '').trim().toLowerCase();
+    const isFinishedArchive =
+      Boolean(mediaRow?.release_year) &&
+      Number(mediaRow?.release_year) < currentYear - 1 &&
+      ['final', 'tamamlandı', 'tamamlandi', 'completed', 'canceled', 'cancelled', 'bitti'].includes(
+        broadcastLow
+      );
+
+    const rows = touchedEps.map((ep: any) => {
+      const sNum = Number(ep.season_number || 1);
+      const eNum = Number(ep.episode_number || 1);
+      const k = `${sNum}-${eNum}`;
+      const ex = existMap.get(k);
+      let publishedAt: string | null = ex?.published_at ?? null;
+
+      if (ex) {
+        // Only promote pending_source/placeholder if it is at or ahead of the existing published frontier
+        const isPendingUpgrade = ex.status === 'pending_source' || ex.status === 'placeholder';
+        const isBehindFrontier =
+          maxExistingSeason > 0 &&
+          (sNum < maxExistingSeason || (sNum === maxExistingSeason && eNum < maxExistingEp));
+        if (isPendingUpgrade && !isBehindFrontier && !isFinishedArchive) {
+          publishedAt = nowIso;
+          newlyPublished = true;
+          if (eNum > maxNewlyPublishedEp) maxNewlyPublishedEp = eNum;
+        }
+      } else {
+        const isBehindFrontier =
+          maxExistingSeason > 0 &&
+          (sNum < maxExistingSeason || (sNum === maxExistingSeason && eNum < maxExistingEp));
+        const isBulkFirstImportNonLatest =
+          existMap.size === 0 &&
+          touchedEps.length > 3 &&
+          (sNum !== maxTouchedSeason || eNum !== maxTouchedEp);
+        if (!isBehindFrontier && !isFinishedArchive && !isBulkFirstImportNonLatest) {
+          publishedAt = nowIso;
+          newlyPublished = true;
+          if (eNum > maxNewlyPublishedEp) maxNewlyPublishedEp = eNum;
+        }
+      }
+
       return {
         media_id: dramaId,
-        season_number: ep.season_number || 1,
-        episode_number: ep.episode_number,
-        episode_name: ep.episode_name || `Bölüm ${ep.episode_number}`,
+        season_number: sNum,
+        episode_number: eNum,
+        episode_name: ep.episode_name || `Bölüm ${eNum}`,
         episode_type: ep.episode_type || 'normal',
         status: 'published',
         video_sources: ep.sources,
         published_at: publishedAt,
       };
     });
-  for (let i = 0; i < rows.length; i += 50) {
-    const { error } = await supabaseAdmin
-      .from('episodes')
-      .upsert(rows.slice(i, i + 50), { onConflict: 'media_id,season_number,episode_number' });
-    if (error) log(`[UYARI] Supabase episodes: ${error.message}`);
+
+    for (let i = 0; i < rows.length; i += 50) {
+      const { error } = await supabaseAdmin
+        .from('episodes')
+        .upsert(rows.slice(i, i + 50), { onConflict: 'media_id,season_number,episode_number' });
+      if (error) log(`[UYARI] Supabase episodes: ${error.message}`);
+    }
   }
 
   const upcomingEpisodes = bundle.episodes.filter((e: any) => {
@@ -387,7 +470,7 @@ async function runDirectAnimecixSync(
     updated_at: nowIso,
   };
   if (newlyPublished) {
-    mediaPatch.last_published_episode = maxEpInBundle || 1;
+    mediaPatch.last_published_episode = maxNewlyPublishedEp || maxEpInBundle || 1;
     mediaPatch.last_published_at = nowIso;
   }
   await supabaseAdmin.from('media').update(mediaPatch).eq('id', dramaId);
