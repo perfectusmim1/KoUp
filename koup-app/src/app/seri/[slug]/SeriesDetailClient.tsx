@@ -89,6 +89,24 @@ export interface SeriesDetailClientProps {
   initialFranchise?: FranchiseData | null;
 }
 
+const ALLOWED_CUSTOM_SCHEMES = ['dramavadisi:', 'dramabox:', 'wdt:', 'pilavyer:'] as const;
+
+function isAllowedSourceUrl(rawUrl?: string | null): boolean {
+  const u = (rawUrl || '').trim().toLowerCase();
+  if (!u || u === 'dead') return false;
+  if (
+    u.startsWith('javascript:') ||
+    u.includes('void(0)') ||
+    u.startsWith('data:') ||
+    u.startsWith('vbscript:') ||
+    u.startsWith('pending://')
+  ) {
+    return false;
+  }
+  if (u.startsWith('http://') || u.startsWith('https://')) return true;
+  return ALLOWED_CUSTOM_SCHEMES.some((scheme) => u.startsWith(scheme) && u.length > scheme.length);
+}
+
 function isEpisodePendingOrUpcoming(ep: any): boolean {
   if (!ep) return false;
   if (ep.pending === true) return true;
@@ -398,17 +416,12 @@ export default function SeriesDetailClient({
       ...ep,
       sources: (ep.sources || []).filter(
         (s) =>
-          s?.direct_url &&
-          s.direct_url.startsWith('http') &&
-          !s.direct_url.includes('javascript:') &&
-          !s.direct_url.includes('void(0)') &&
+          isAllowedSourceUrl(s?.direct_url) &&
           !s.direct_url.includes('embed-7fm0wb9yzf4m.html') &&
-          !s.direct_url.includes('playerdkorea.xyz') &&
           !s.direct_url.includes('asyaanim.upns.one') &&
           s.provider !== 'dead' &&
           s.provider !== 'sibnet' &&
-          s.provider !== 'sendvid' &&
-          s.provider !== 'pixeldrain'
+          s.provider !== 'sendvid'
       ),
     }));
 

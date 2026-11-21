@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import dns from 'node:dns';
+import net from 'node:net';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
@@ -35,30 +37,88 @@ function setCachedStream(key: string, data: any, ttlMs: number = 2 * 60 * 60 * 1
   streamResolutionCache.set(key, { data, expiresAt: Date.now() + ttlMs });
 }
 
+function stripIpv6ZoneAndBrackets(raw: string): string {
+  return raw.toLowerCase().trim().replace(/^\[|\]$/g, '').split('%')[0];
+}
+
+function isBlockedIpv4(ip: string): boolean {
+  const parts = ip.split('.').map((p) => Number(p));
+  if (parts.length !== 4 || parts.some((n) => Number.isNaN(n) || n < 0 || n > 255)) {
+    return true;
+  }
+  const [a, b, c] = parts;
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 0 && c === 0) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 198 && (b === 18 || b === 19)) return true;
+  if (a >= 224) return true;
+  return false;
+}
+
+function isBlockedIpAddress(rawIp: string): boolean {
+  const ip = stripIpv6ZoneAndBrackets(rawIp);
+  if (!ip) return true;
+
+  if (net.isIPv4(ip)) {
+    return isBlockedIpv4(ip);
+  }
+  if (!net.isIPv6(ip)) {
+    return true;
+  }
+
+  if (ip === '::' || ip === '::1' || ip === '0:0:0:0:0:0:0:0' || ip === '0:0:0:0:0:0:0:1') {
+    return true;
+  }
+
+  const v4Dotted = ip.match(/(?:^::(?:ffff:)?|:)([0-9]{1,3}(?:\.[0-9]{1,3}){3})$/);
+  if (v4Dotted?.[1]) {
+    return isBlockedIpv4(v4Dotted[1]);
+  }
+  const v4Hex = ip.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+  if (v4Hex) {
+    const hi = parseInt(v4Hex[1], 16);
+    const lo = parseInt(v4Hex[2], 16);
+    return isBlockedIpv4(`${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`);
+  }
+
+  const firstGroup = parseInt(ip.split(':')[0] || '0', 16);
+  if (Number.isNaN(firstGroup)) return true;
+  if ((firstGroup & 0xfe00) === 0xfc00) return true; // ULA fc00::/7
+  if ((firstGroup & 0xffc0) === 0xfe80) return true; // Link-local fe80::/10
+  if ((firstGroup & 0xff00) === 0xff00) return true; // Multicast
+  if (ip.startsWith('64:ff9b::') || ip.startsWith('64:ff9b:1::')) return true;
+
+  return false;
+}
+
 function isSafeExternalUrl(rawUrl: string): boolean {
   try {
     const parsed = new URL(rawUrl);
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       return false;
     }
-    const h = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    const h = stripIpv6ZoneAndBrackets(parsed.hostname);
     if (
       !h ||
       h === 'localhost' ||
-      h === '127.0.0.1' ||
-      h === '::1' ||
-      h === '0.0.0.0' ||
-      h.startsWith('127.') ||
-      h.startsWith('10.') ||
-      h.startsWith('192.168.') ||
-      h.startsWith('169.254.') ||
-      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(h) ||
-      h.startsWith('fe80:') ||
-      h.includes('::ffff:127.') ||
-      /^(0x[0-9a-f]+|\d+)$/i.test(h) ||
+      h === 'metadata' ||
+      h === 'metadata.google.internal' ||
+      h === 'instance-data' ||
       h.endsWith('.internal') ||
-      h.endsWith('.local')
+      h.endsWith('.local') ||
+      h.endsWith('.lan') ||
+      h.endsWith('.home') ||
+      h.endsWith('.arpa') ||
+      /^(?:0x[0-9a-f]+|0[0-7]+|\d+)$/i.test(h) ||
+      /^\d+\.\d+$/.test(h) ||
+      /^\d+\.\d+\.\d+$/.test(h)
     ) {
+      return false;
+    }
+    if (net.isIP(h) !== 0 && isBlockedIpAddress(h)) {
       return false;
     }
     return true;
@@ -67,10 +127,58 @@ function isSafeExternalUrl(rawUrl: string): boolean {
   }
 }
 
-function unpackDeanEdwards(packedJs: string): string {
-  const match = packedJs.match(/\}\s*\(\s*['"](.*?)['"]\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*['"](.*?)['"]\.split\(['"]\|['"]\)/s);
-  if (!match) return packedJs;
-  let [, p, aStr, cStr, kStr] = match;
+async function isSafeExternalUrlAsync(rawUrl: string): Promise<boolean> {
+  if (!isSafeExternalUrl(rawUrl)) return false;
+  try {
+    const parsed = new URL(rawUrl);
+    const h = stripIpv6ZoneAndBrackets(parsed.hostname);
+    if (net.isIP(h) !== 0) {
+      return !isBlockedIpAddress(h);
+    }
+    const records = await dns.promises.lookup(h, { all: true });
+    if (!records || records.length === 0) return false;
+    return !records.some((rec) => isBlockedIpAddress(rec.address));
+  } catch {
+    return false;
+  }
+}
+
+async function safeFetch(
+  initialUrl: string,
+  init: RequestInit = {},
+  maxRedirects = 5
+): Promise<{ response: Response; finalUrl: string }> {
+  let currentUrl = initialUrl;
+  let currentInit: RequestInit = { ...init, redirect: 'manual' };
+
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    if (!(await isSafeExternalUrlAsync(currentUrl))) {
+      throw new Error('Blocked SSRF target');
+    }
+    const res = await fetch(currentUrl, currentInit);
+    if ([301, 302, 303, 307, 308].includes(res.status)) {
+      const location = res.headers.get('location');
+      res.body?.cancel?.().catch(() => {});
+      if (!location || hop === maxRedirects) {
+        return { response: res, finalUrl: currentUrl };
+      }
+      currentUrl = new URL(location, currentUrl).toString();
+      if ([301, 302, 303].includes(res.status) && currentInit.method && currentInit.method !== 'GET' && currentInit.method !== 'HEAD') {
+        currentInit = { ...currentInit, method: 'GET', body: undefined };
+      }
+      continue;
+    }
+    return { response: res, finalUrl: currentUrl };
+  }
+
+  throw new Error('Too many redirects');
+}
+
+const PACKED_JS_REGEX = /\}\s*\(\s*['"](.*?)['"]\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*['"](.*?)['"]\.split\(['"]\|['"]\)/;
+const PACKED_JS_GLOBAL_REGEX = /\}\s*\(\s*['"](.*?)['"]\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*['"](.*?)['"]\.split\(['"]\|['"]\)/gs;
+
+function decodePackedBlock(pRaw: string, aStr: string, cStr: string, kStr: string): string {
+  let p = pRaw;
   const a = parseInt(aStr, 10);
   let c = parseInt(cStr, 10);
   const k = kStr.split('|');
@@ -90,6 +198,21 @@ function unpackDeanEdwards(packedJs: string): string {
     }
   }
   return p;
+}
+
+function unpackDeanEdwards(packedJs: string): string {
+  const match = PACKED_JS_REGEX.exec(packedJs);
+  if (!match) return packedJs;
+  return decodePackedBlock(match[1], match[2], match[3], match[4]);
+}
+
+function unpackHtmlWithAllDeanEdwards(rawHtml: string): string {
+  if (!rawHtml.includes('eval(function')) return rawHtml;
+  const chunks: string[] = [rawHtml];
+  for (const match of rawHtml.matchAll(new RegExp(PACKED_JS_GLOBAL_REGEX.source, 'gs'))) {
+    chunks.push(decodePackedBlock(match[1], match[2], match[3], match[4]));
+  }
+  return chunks.join('\n');
 }
 
 function decodeRapidvid(encStr: string): string | null {
@@ -316,6 +439,107 @@ function extractHdfilmSubtitles(
   }
 }
 
+async function resolveVidmolyStream(
+  rawUrl: string,
+  commonUA: string
+): Promise<
+  | { status: 'ok'; payload: any }
+  | { status: 'dead'; error: string }
+  | { status: 'miss' }
+> {
+  try {
+    const normalizedVidmoly = rawUrl
+      .replace(/^http:\/\//i, 'https://')
+      .replace(/embed-embed\.html-/gi, 'embed-')
+      .replace(/\/\/(?:www\.)?vidmoly\.(?:to|net|me)\//i, '//vidmoly.biz/')
+      .replace(/\/\/(?:www\.)?vidmolynet\//i, '//vidmoly.biz/');
+    const parsedVm = new URL(normalizedVidmoly);
+    const vmRef = `${parsedVm.protocol}//${parsedVm.host}/`;
+
+    const { response: resp } = await safeFetch(normalizedVidmoly, {
+      headers: {
+        'User-Agent': commonUA,
+        Referer: vmRef,
+      },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!resp.ok && (resp.status === 404 || resp.status === 410)) {
+      return {
+        status: 'dead',
+        error: 'Vidmoly videosu bulunamadı (404)',
+      };
+    }
+
+    const rawHtml = await resp.text();
+    const html = unpackHtmlWithAllDeanEdwards(rawHtml);
+    const lowHtml = html.toLowerCase();
+    if (
+      lowHtml.includes('no video found') ||
+      lowHtml.includes('this video not found') ||
+      lowHtml.includes('file was deleted') ||
+      lowHtml.includes('video not found') ||
+      lowHtml.includes('deleted by owner') ||
+      lowHtml.includes('file not found') ||
+      lowHtml.includes('404 not found') ||
+      html.includes('{"status":"error"}')
+    ) {
+      return {
+        status: 'dead',
+        error: 'Vidmoly / Molystream videosu silinmiş veya bulunamadı (404 No Video Found)',
+      };
+    }
+
+    const m3u8Match =
+      html.match(/sources\s*:\s*\[\s*\{\s*file\s*:\s*["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i) ||
+      html.match(/file\s*:\s*["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
+    if (m3u8Match?.[1]) {
+      const m3u8Url = m3u8Match[1];
+      const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(m3u8Url)}&ref=${encodeURIComponent(vmRef)}`;
+      const label = rawUrl.toLowerCase().includes('moly')
+        ? '1080p HLS (MolyStream)'
+        : '1080p HLS (Vidmoly)';
+
+      const subMatch =
+        html.match(/https?:\/\/srt\.vidmoly\.[a-z]+\/srt\/[^"'\s]+\.vtt/i) ||
+        html.match(/https?:\/\/[^"'\s]+\/(?:srt|subtitles?)\/[^"'\s]+\.(?:vtt|srt)/i);
+      let vttUrl = subMatch?.[0] || null;
+      if (!vttUrl) {
+        const tracksBlock = html.match(/tracks\s*:\s*\[([\s\S]*?)\]/i);
+        if (tracksBlock?.[1]) {
+          const trackFileMatch = tracksBlock[1].match(
+            /file\s*:\s*["'](https?:\/\/[^"']+\.(?:vtt|srt)[^"']*)["']/i
+          );
+          if (trackFileMatch?.[1]) vttUrl = trackFileMatch[1];
+        }
+      }
+
+      let subtitles:
+        | Array<{ label: string; lang: string; url: string; default?: boolean }>
+        | undefined;
+      if (vttUrl) {
+        const proxiedSub = `/api/stream-proxy?url=${encodeURIComponent(vttUrl)}&ref=${encodeURIComponent(vmRef)}`;
+        subtitles = [{ label: 'Türkçe', lang: 'tr', url: proxiedSub, default: true }];
+      }
+
+      return {
+        status: 'ok',
+        payload: {
+          mode: 'native_hls' as const,
+          streamType: 'hls' as const,
+          streamUrl: proxiedUrl,
+          directUrl: m3u8Url,
+          qualities: [{ label, url: proxiedUrl }],
+          subtitles,
+          fallbackIframe: normalizedVidmoly,
+        },
+      };
+    }
+    return { status: 'miss' };
+  } catch {
+    return { status: 'miss' };
+  }
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const rawUrl = searchParams.get('url') || '';
@@ -351,7 +575,7 @@ export async function GET(req: NextRequest) {
     url.startsWith('pilavyer:');
 
   if (!isCustomScheme) {
-    if (!isSafeExternalUrl(url)) {
+    if (!(await isSafeExternalUrlAsync(url))) {
       return NextResponse.json({ error: 'Geçersiz hedef adresi (SSRF koruması)' }, { status: 403 });
     }
   }
@@ -482,7 +706,7 @@ export async function GET(req: NextRequest) {
 
       if (seriesId) {
         const watchUrl = `https://dramavadisi.com/api/series/${encodeURIComponent(seriesId)}/watch`;
-        const apiResp = await fetch(watchUrl, {
+        const { response: apiResp } = await safeFetch(watchUrl, {
           headers: {
             'User-Agent': commonUA,
             Referer: 'https://dramavadisi.com/',
@@ -498,27 +722,82 @@ export async function GET(req: NextRequest) {
             : Array.isArray(data)
             ? data
             : [];
-          const targetEp =
+          const epNumInt = epNo ? parseInt(epNo, 10) : NaN;
+          let targetEp =
             episodes.find(
               (e: any) =>
-                String(e?.no) === String(epNo) ||
-                String(e?.episode_no) === String(epNo) ||
-                String(e?.id) === String(epNo)
-            ) || (epNo === '1' || !epNo ? episodes[0] : null);
+                String(e?.no ?? '') === String(epNo) ||
+                String(e?.episode_no ?? '') === String(epNo)
+            ) ||
+            episodes.find((e: any) => String(e?.id ?? '') === String(epNo));
+
+          if (!targetEp && Number.isFinite(epNumInt) && epNumInt >= 1 && epNumInt <= episodes.length) {
+            targetEp = episodes[epNumInt - 1];
+          }
+          if (!targetEp && (epNo === '1' || !epNo) && episodes.length > 0) {
+            targetEp = episodes[0];
+          }
 
           if (targetEp?.src) {
-            const streamUrl = targetEp.src;
-            const result = {
-              mode: 'native_mp4' as const,
-              streamType: 'mp4' as const,
-              streamUrl,
-              qualities: [{ label: '720p HD', url: streamUrl }],
-              fallbackIframe: url.startsWith('http')
-                ? url
-                : `https://dramavadisi.com/api/series/${seriesId}/watch`,
-            };
-            setCachedStream(url, result, 45 * 60 * 1000);
-            return NextResponse.json(result, { headers: CACHE_HEADERS });
+            const playUrl = String(targetEp.src).startsWith('http')
+              ? String(targetEp.src)
+              : new URL(String(targetEp.src), 'https://dramavadisi.com').toString();
+
+            const { response: mediaRes, finalUrl } = await safeFetch(playUrl, {
+              method: 'GET',
+              headers: {
+                'User-Agent': commonUA,
+                Referer: 'https://dramavadisi.com/',
+                Range: 'bytes=0-1023',
+              },
+              signal: AbortSignal.timeout(8000),
+            });
+            mediaRes.body?.cancel?.().catch(() => {});
+
+            if (mediaRes.ok || mediaRes.status === 206) {
+              const ct = (mediaRes.headers.get('content-type') || '').toLowerCase();
+              const acao = (mediaRes.headers.get('access-control-allow-origin') || '').trim();
+              const isHls =
+                finalUrl.toLowerCase().includes('.m3u8') ||
+                String(targetEp?.type || '').toLowerCase() === 'm3u8' ||
+                ct.includes('mpegurl');
+
+              const needsProxy = isHls || acao !== '*';
+              const playableUrl = needsProxy
+                ? `/api/stream-proxy?url=${encodeURIComponent(finalUrl)}&ref=${encodeURIComponent('https://dramavadisi.com/')}`
+                : finalUrl;
+
+              const subsList: Array<{ label: string; lang: string; url: string; default?: boolean }> = [];
+              if (targetEp.subBase && Array.isArray(targetEp.subs)) {
+                const subBaseAbs = String(targetEp.subBase).startsWith('http')
+                  ? String(targetEp.subBase)
+                  : `https://dramavadisi.com${String(targetEp.subBase).startsWith('/') ? '' : '/'}${targetEp.subBase}`;
+                for (const rawLang of targetEp.subs) {
+                  const code = String(rawLang || '').trim();
+                  if (!code) continue;
+                  const subVtt = `${subBaseAbs}${subBaseAbs.endsWith('/') ? '' : '/'}${encodeURIComponent(code)}.vtt`;
+                  const langLower = code.toLowerCase();
+                  subsList.push({
+                    label: langLower === 'tr' ? 'Türkçe' : langLower === 'en' ? 'İngilizce' : code.toUpperCase(),
+                    lang: langLower,
+                    url: `/api/stream-proxy?url=${encodeURIComponent(subVtt)}&ref=${encodeURIComponent('https://dramavadisi.com/')}`,
+                    default: langLower === 'tr',
+                  });
+                }
+              }
+
+              const result = {
+                mode: isHls ? ('native_hls' as const) : ('native_mp4' as const),
+                streamType: isHls ? ('hls' as const) : ('mp4' as const),
+                streamUrl: playableUrl,
+                directUrl: finalUrl,
+                qualities: [{ label: isHls ? '1080p HLS' : '720p HD', url: playableUrl }],
+                subtitles: subsList.length > 0 ? subsList : undefined,
+                fallbackIframe: url.startsWith('http') ? url : null,
+              };
+              setCachedStream(url, result, 20 * 60 * 1000);
+              return NextResponse.json(result, { headers: CACHE_HEADERS });
+            }
           }
         }
       }
@@ -550,9 +829,11 @@ export async function GET(req: NextRequest) {
 
       if (url.startsWith('dramabox:')) {
         const parts = url.slice('dramabox:'.length).split(':');
-        const bookId = parts[0];
-        targetChapterIndex = parts[1] || '1';
-        targetPageUrl = `https://www.dramabox.com/tr/video/${encodeURIComponent(bookId)}_play/${encodeURIComponent(targetChapterIndex)}_Episode-${encodeURIComponent(targetChapterIndex)}`;
+        const bookId = parts[0] || '';
+        const chapterToken = parts[1] || '1';
+        targetChapterId = chapterToken;
+        targetChapterIndex = chapterToken;
+        targetPageUrl = `https://www.dramabox.com/tr/video/${encodeURIComponent(bookId)}_play/${encodeURIComponent(chapterToken)}_Episode-1`;
       } else {
         const m =
           url.match(/\/(\d+)_Episode-(\d+)/i) ||
@@ -563,7 +844,7 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      const resp = await fetch(targetPageUrl, {
+      const { response: resp } = await safeFetch(targetPageUrl, {
         headers: {
           'User-Agent': commonUA,
           Referer: 'https://www.dramabox.com/tr',
@@ -600,31 +881,52 @@ export async function GET(req: NextRequest) {
           } catch {}
         }
 
-        let target = chapterList.find(
-          (c: any) =>
-            (targetChapterId &&
-              String(c?.chapterId ?? c?.id) === String(targetChapterId)) ||
-            (targetChapterIndex &&
-              String(c?.chapterIndex ?? c?.index ?? c?.chapterNo) ===
-                String(targetChapterIndex))
-        );
+        // 1. Match by exact chapter ID first (c.id or c.chapterId)
+        let target = targetChapterId
+          ? chapterList.find(
+              (c: any) => String(c?.id ?? c?.chapterId ?? '') === String(targetChapterId)
+            )
+          : undefined;
 
+        // 2. Fallback to chapterNo / 1-based index / 0-based index
+        if (!target && targetChapterIndex) {
+          const idxNum = parseInt(targetChapterIndex, 10);
+          target = chapterList.find((c: any) => {
+            if (c?.chapterNo != null && String(c.chapterNo) === String(targetChapterIndex)) {
+              return true;
+            }
+            if (c?.chapterIndex != null && String(c.chapterIndex) === String(targetChapterIndex)) {
+              return true;
+            }
+            if (Number.isFinite(idxNum) && c?.index != null) {
+              return Number(c.index) + 1 === idxNum || Number(c.index) === idxNum;
+            }
+            return false;
+          });
+        }
+
+        // 3. Fallback to currentChapter in pageProps
         if (!target && currentChapter) {
+          const ccId = String(currentChapter?.id ?? currentChapter?.chapterId ?? '');
+          const ccIdx = currentChapter?.index != null ? Number(currentChapter.index) : NaN;
+          const idxNum = targetChapterIndex ? parseInt(targetChapterIndex, 10) : NaN;
           if (
+            (targetChapterId && ccId === String(targetChapterId)) ||
             !targetChapterIndex ||
-            String(
-              currentChapter?.chapterIndex ??
-                currentChapter?.index ??
-                currentChapter?.chapterNo
-            ) === String(targetChapterIndex)
+            String(currentChapter?.chapterIndex ?? currentChapter?.chapterNo ?? '') ===
+              String(targetChapterIndex) ||
+            (Number.isFinite(idxNum) && (ccIdx + 1 === idxNum || ccIdx === idxNum))
           ) {
             target = currentChapter;
           }
         }
 
+        // 4. Positional fallback only for small 1-based episode numbers (never 9-digit chapterIds)
         if (!target && targetChapterIndex && chapterList.length > 0) {
           const idx = parseInt(targetChapterIndex, 10) - 1;
-          if (idx >= 0 && idx < chapterList.length) target = chapterList[idx];
+          if (Number.isFinite(idx) && idx >= 0 && idx < chapterList.length) {
+            target = chapterList[idx];
+          }
         }
 
         let mp4Url = target?.mp4 || target?.videoUrl || target?.url || null;
@@ -645,14 +947,33 @@ export async function GET(req: NextRequest) {
         }
 
         if (mp4Url && isUnlocked) {
+          let needsProxy = true;
+          try {
+            const { response: headRes } = await safeFetch(mp4Url, {
+              method: 'HEAD',
+              headers: { 'User-Agent': commonUA },
+              signal: AbortSignal.timeout(4000),
+            });
+            headRes.body?.cancel?.().catch(() => {});
+            const acao = (headRes.headers.get('access-control-allow-origin') || '').trim();
+            if (headRes.ok && acao === '*') {
+              needsProxy = false;
+            }
+          } catch {}
+
+          const playableUrl = needsProxy
+            ? `/api/stream-proxy?url=${encodeURIComponent(mp4Url)}&ref=${encodeURIComponent('https://www.dramabox.com/')}`
+            : mp4Url;
+
           const result = {
             mode: 'native_mp4' as const,
             streamType: 'mp4' as const,
-            streamUrl: mp4Url,
-            qualities: [{ label: '720p HD', url: mp4Url }],
+            streamUrl: playableUrl,
+            directUrl: mp4Url,
+            qualities: [{ label: '720p HD', url: playableUrl }],
             fallbackIframe: targetPageUrl,
           };
-          setCachedStream(url, result, 45 * 60 * 1000);
+          setCachedStream(url, result, 15 * 60 * 1000);
           return NextResponse.json(result, { headers: CACHE_HEADERS });
         }
       }
@@ -678,18 +999,19 @@ export async function GET(req: NextRequest) {
     provider === 'koredizi' ||
     url.startsWith('wdt:') ||
     lowerUrl.includes('webdramaturkey') ||
-    (lowerUrl.includes('dtpasn.asia') && !lowerUrl.includes('.m3u8'));
+    (lowerUrl.includes('dtpasn.asia') && !lowerUrl.includes('.m3u8') && !lowerUrl.includes('/cdn/hls/'));
 
   if (isWdtOrDtpasn) {
     try {
       let hash: string | null = null;
       const refererSite =
-        provider === 'koredizi' || lowerUrl.includes('koredizi')
-          ? 'https://koredizi.com/'
-          : provider === 'wdt' ||
-            provider === 'webdramaturkey' ||
-            lowerUrl.includes('webdramaturkey')
+        lowerUrl.includes('#r=wdt') ||
+        provider === 'wdt' ||
+        provider === 'webdramaturkey' ||
+        lowerUrl.includes('webdramaturkey')
           ? 'https://webdramaturkey2.com/'
+          : provider === 'koredizi' || lowerUrl.includes('koredizi') || lowerUrl.includes('dtpasn')
+          ? 'https://koredizi.com/'
           : 'https://dizikorea.pw/';
 
       // Case A: wdt:{embedId} or /ajax/embed?id={embedId}
@@ -704,7 +1026,7 @@ export async function GET(req: NextRequest) {
         }
 
         if (embedId) {
-          const postResp = await fetch('https://webdramaturkey2.com/ajax/embed', {
+          const { response: postResp } = await safeFetch('https://webdramaturkey2.com/ajax/embed', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
@@ -725,7 +1047,7 @@ export async function GET(req: NextRequest) {
 
             if (vMatch?.[1]) {
               const videoUrl = `https://webdramaturkey2.com/video.php?hash=${vMatch[1]}`;
-              const vpResp = await fetch(videoUrl, {
+              const { response: vpResp } = await safeFetch(videoUrl, {
                 headers: {
                   Referer: 'https://webdramaturkey2.com/',
                   'User-Agent': commonUA,
@@ -742,7 +1064,7 @@ export async function GET(req: NextRequest) {
         }
       } else if (lowerUrl.includes('video.php?hash=')) {
         // Case B: webdramaturkey video.php?hash=...
-        const vpResp = await fetch(url, {
+        const { response: vpResp } = await safeFetch(url, {
           headers: {
             Referer: 'https://webdramaturkey2.com/',
             'User-Agent': commonUA,
@@ -765,17 +1087,48 @@ export async function GET(req: NextRequest) {
       }
 
       if (hash) {
-        const dtResp = await fetch(
+        // Step 1: Establish FirePlayer PHP session cookie on /video/{hash}
+        let dtCookie = '';
+        try {
+          const { response: pageResp } = await safeFetch(`https://dtpasn.asia/video/${encodeURIComponent(hash)}`, {
+            headers: {
+              'User-Agent': commonUA,
+              Referer: refererSite,
+              Accept: 'text/html,application/xhtml+xml',
+            },
+            signal: AbortSignal.timeout(6000),
+          });
+          pageResp.body?.cancel?.().catch(() => {});
+          const rawCookies =
+            typeof (pageResp.headers as any).getSetCookie === 'function'
+              ? ((pageResp.headers as any).getSetCookie() as string[])
+              : (pageResp.headers.get('set-cookie') || '').split(/,(?=\s*[a-zA-Z0-9_-]+=)/);
+          for (const c of rawCookies) {
+            const cm = c.match(/fireplayer_player=([a-zA-Z0-9_-]{8,128})/i);
+            if (cm?.[1]) {
+              dtCookie = cm[1];
+              break;
+            }
+          }
+        } catch {}
+
+        // Step 2: Request getVideo JSON with session cookie
+        const getVideoHeaders: Record<string, string> = {
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'X-Requested-With': 'XMLHttpRequest',
+          Origin: 'https://dtpasn.asia',
+          Referer: `https://dtpasn.asia/video/${hash}`,
+          'User-Agent': commonUA,
+        };
+        if (dtCookie) {
+          getVideoHeaders['Cookie'] = `fireplayer_player=${dtCookie}`;
+        }
+
+        const { response: dtResp } = await safeFetch(
           `https://dtpasn.asia/player/index.php?data=${encodeURIComponent(hash)}&do=getVideo`,
           {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-              'X-Requested-With': 'XMLHttpRequest',
-              Origin: 'https://dtpasn.asia',
-              Referer: `https://dtpasn.asia/video/${hash}`,
-              'User-Agent': commonUA,
-            },
+            headers: getVideoHeaders,
             body: new URLSearchParams({ hash, r: refererSite }).toString(),
             signal: AbortSignal.timeout(6000),
           }
@@ -783,20 +1136,75 @@ export async function GET(req: NextRequest) {
 
         if (dtResp.ok) {
           const dtJson = await dtResp.json();
-          const securedLink = dtJson?.securedLink || dtJson?.videoSource;
-          if (securedLink) {
-            const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(securedLink)}&ref=${encodeURIComponent(refererSite)}`;
+          const linkCandidates = Array.from(
+            new Set([dtJson?.securedLink, dtJson?.videoSource].filter((v): v is string => typeof v === 'string' && v.startsWith('http')))
+          );
+          const refCandidates = Array.from(
+            new Set([
+              `https://dtpasn.asia/video/${hash}`,
+              refererSite,
+              'https://koredizi.com/',
+              'https://dizikorea3.com/',
+              'https://webdramaturkey2.com/',
+            ])
+          );
+
+          // Step 3: Probe upstream playlist before returning to hls.js (rejects 'security error' / HTML)
+          let verifiedUrl: string | null = null;
+          let verifiedRef: string = `https://dtpasn.asia/video/${hash}`;
+
+          outer: for (const candLink of linkCandidates) {
+            for (const candRef of refCandidates) {
+              try {
+                const probeHeaders: Record<string, string> = {
+                  'User-Agent': commonUA,
+                  Referer: candRef,
+                  Origin: new URL(candRef).origin,
+                };
+                if (dtCookie) probeHeaders['Cookie'] = `fireplayer_player=${dtCookie}`;
+                const { response: probeRes } = await safeFetch(candLink, {
+                  headers: probeHeaders,
+                  signal: AbortSignal.timeout(5000),
+                });
+                if (!probeRes.ok) {
+                  probeRes.body?.cancel?.().catch(() => {});
+                  continue;
+                }
+                const probeText = await probeRes.text();
+                const lowText = probeText.trim().toLowerCase();
+                if (
+                  !lowText.includes('security error') &&
+                  !lowText.startsWith('<!doctype') &&
+                  !lowText.startsWith('<html') &&
+                  (probeText.includes('#EXTM3U') || probeText.includes('#EXTINF'))
+                ) {
+                  verifiedUrl = candLink;
+                  verifiedRef = candRef;
+                  break outer;
+                }
+              } catch {}
+            }
+          }
+
+          if (verifiedUrl) {
+            const dtCookieParam = dtCookie ? `&dt_cookie=${encodeURIComponent(dtCookie)}` : '';
+            const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(verifiedUrl)}&ref=${encodeURIComponent(verifiedRef)}${dtCookieParam}`;
             const result = {
               mode: 'native_hls' as const,
               streamType: 'hls' as const,
               streamUrl: proxiedStream,
-              directUrl: securedLink,
+              directUrl: verifiedUrl,
               qualities: [{ label: '1080p (Full HD)', url: proxiedStream }],
               fallbackIframe: null,
             };
-            setCachedStream(url, result, 30 * 60 * 1000);
+            setCachedStream(url, result, 15 * 60 * 1000);
             return NextResponse.json(result, { headers: CACHE_HEADERS });
           }
+
+          return NextResponse.json(
+            { error: 'DTPASN video akışı güvenlik doğrulamasından geçemedi', isDead: true },
+            { status: 410, headers: CACHE_HEADERS }
+          );
         }
       }
 
@@ -1188,7 +1596,8 @@ export async function GET(req: NextRequest) {
     provider === 'shortizle' ||
     lowerUrl.includes('shortizle.com/media/') ||
     lowerUrl.includes('shortizle.com/watch/') ||
-    lowerUrl.includes('shortizle.com/embed/')
+    lowerUrl.includes('shortizle.com/embed/') ||
+    lowerUrl.includes('shortizle.com/hk/')
   ) {
     try {
       const parsed = new URL(url);
@@ -1208,8 +1617,16 @@ export async function GET(req: NextRequest) {
         watchUrl = `https://shortizle.com${parsed.pathname.replace(/^\/embed\//i, '/watch/')}`;
       }
 
+      const toShortizleSubUrl = (rawSub?: string | null): string | null => {
+        if (!rawSub) return null;
+        const absSub = rawSub.startsWith('http')
+          ? rawSub
+          : `https://shortizle.com${rawSub.startsWith('/') ? '' : '/'}${rawSub}`;
+        return `/api/stream-proxy?url=${encodeURIComponent(absSub)}&ref=${encodeURIComponent('https://shortizle.com/')}`;
+      };
+
       if (watchUrl) {
-        const watchResp = await fetch(watchUrl, {
+        const { response: watchResp } = await safeFetch(watchUrl, {
           headers: {
             'User-Agent': commonUA,
             Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -1231,22 +1648,33 @@ export async function GET(req: NextRequest) {
           const watchHtml = await watchResp.text();
           let inertiaProps: any = null;
 
-          // 1. Check inline script containing externalSources
-          const scriptMatches = watchHtml.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi);
-          for (const sm of scriptMatches) {
-            const body = (sm[1] || '').trim();
-            if (body.startsWith('{') && body.includes('"externalSources"')) {
-              try {
-                inertiaProps = JSON.parse(body)?.props;
-                if (inertiaProps) break;
-              } catch {}
+          // 1. Check Inertia v2 <script data-page="app"> or inline JSON containing externalSources
+          const appScriptMatch = watchHtml.match(
+            /<script[^>]*data-page=["']app["'][^>]*>([\s\S]*?)<\/script>/i
+          );
+          if (appScriptMatch?.[1]) {
+            try {
+              inertiaProps = JSON.parse(appScriptMatch[1].trim())?.props;
+            } catch {}
+          }
+
+          if (!inertiaProps) {
+            const scriptMatches = watchHtml.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi);
+            for (const sm of scriptMatches) {
+              const body = (sm[1] || '').trim();
+              if (body.startsWith('{') && body.includes('"externalSources"')) {
+                try {
+                  inertiaProps = JSON.parse(body)?.props;
+                  if (inertiaProps) break;
+                } catch {}
+              }
             }
           }
 
-          // 2. Fallback to data-page attribute
+          // 2. Fallback to Inertia v1 data-page attribute
           if (!inertiaProps) {
             const dpMatch = watchHtml.match(/data-page="([^"]+)"/i);
-            if (dpMatch?.[1]) {
+            if (dpMatch?.[1] && dpMatch[1].trim().startsWith('{')) {
               try {
                 const unescaped = dpMatch[1]
                   .replace(/&quot;/g, '"')
@@ -1273,16 +1701,15 @@ export async function GET(req: NextRequest) {
 
           for (const cand of evalList) {
             if (!cand) continue;
-            const subUrl = cand.subtitle_url || null;
+            const candSubProxied = toShortizleSubUrl(cand.subtitle_url);
 
-            // Direct m3u8 or mp4 (e.g. b-cdn.net)
+            // 1. Direct m3u8 or mp4 (e.g. b-cdn.net)
             if (cand.url && (cand.url.includes('.m3u8') || cand.url.includes('.mp4'))) {
               const isHls = cand.url.includes('.m3u8');
               const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(cand.url)}&ref=${encodeURIComponent('https://shortizle.com/')}`;
-              let subtitles: Array<{ label: string; lang: string; url: string; default?: boolean }> | undefined;
-              if (subUrl) {
-                subtitles = [{ label: 'Türkçe', lang: 'tr', url: subUrl, default: true }];
-              }
+              const subtitles = candSubProxied
+                ? [{ label: 'Türkçe', lang: 'tr', url: candSubProxied, default: true }]
+                : undefined;
               const result = {
                 mode: isHls ? ('native_hls' as const) : ('native_mp4' as const),
                 streamType: isHls ? ('hls' as const) : ('mp4' as const),
@@ -1296,14 +1723,14 @@ export async function GET(req: NextRequest) {
               return NextResponse.json(result, { headers: CACHE_HEADERS });
             }
 
-            // Signed resolve_url
+            // 2. Signed resolve_url (mbdp, shortizle-live, gateway_bootstrap)
             if (cand.resolve_url) {
               const resolveFullUrl = cand.resolve_url.startsWith('http')
                 ? cand.resolve_url
                 : `https://shortizle.com${cand.resolve_url}`;
 
               try {
-                const resResp = await fetch(resolveFullUrl, {
+                const { response: resResp } = await safeFetch(resolveFullUrl, {
                   headers: {
                     'User-Agent': commonUA,
                     Accept: 'application/json, text/plain, */*',
@@ -1320,7 +1747,7 @@ export async function GET(req: NextRequest) {
                   let shzMediaCookie = '';
 
                   if (resJson?.gateway_bootstrap?.url && resJson?.gateway_bootstrap?.token) {
-                    const authResp = await fetch(resJson.gateway_bootstrap.url, {
+                    const { response: authResp } = await safeFetch(resJson.gateway_bootstrap.url, {
                       method: 'POST',
                       headers: {
                         'User-Agent': commonUA,
@@ -1364,11 +1791,10 @@ export async function GET(req: NextRequest) {
                       ? `&shz_cookie=${encodeURIComponent(shzMediaCookie)}`
                       : '';
                     const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(finalM3u8)}&ref=${encodeURIComponent('https://shortizle.com/')}${cookieParam}`;
-                    const effectiveSub = subUrl || resJson.subtitle_url;
-                    let subtitles: Array<{ label: string; lang: string; url: string; default?: boolean }> | undefined;
-                    if (effectiveSub) {
-                      subtitles = [{ label: 'Türkçe', lang: 'tr', url: effectiveSub, default: true }];
-                    }
+                    const effectiveSubProxied = candSubProxied || toShortizleSubUrl(resJson.subtitle_url);
+                    const subtitles = effectiveSubProxied
+                      ? [{ label: 'Türkçe', lang: 'tr', url: effectiveSubProxied, default: true }]
+                      : undefined;
                     const isDub = (cand.selection_key && kindParam === 'dublaj') || finalM3u8.includes('cut=dub');
                     const result = {
                       mode: 'native_hls' as const,
@@ -1385,6 +1811,26 @@ export async function GET(req: NextRequest) {
                 }
               } catch {
                 continue;
+              }
+            }
+
+            // 3. Recursive embed extraction (vidmoly.net / vidmoly.biz / etc.)
+            const candUrlStr = typeof cand.url === 'string' ? cand.url.trim() : '';
+            if (candUrlStr && candUrlStr.toLowerCase().includes('vidmoly')) {
+              const vmResult = await resolveVidmolyStream(candUrlStr, commonUA);
+              if (vmResult.status === 'ok') {
+                const mergedSubs =
+                  vmResult.payload.subtitles && vmResult.payload.subtitles.length > 0
+                    ? vmResult.payload.subtitles
+                    : candSubProxied
+                    ? [{ label: 'Türkçe', lang: 'tr', url: candSubProxied, default: true }]
+                    : undefined;
+                const result = {
+                  ...vmResult.payload,
+                  subtitles: mergedSubs,
+                };
+                setCachedStream(url, result, 30 * 60 * 1000);
+                return NextResponse.json(result, { headers: CACHE_HEADERS });
               }
             }
           }
@@ -2251,12 +2697,38 @@ export async function GET(req: NextRequest) {
     let customRef = '';
     if (url.includes('rapidrame') || url.includes('hdfilm')) {
       customRef = 'https://www.hdfilmcehennemi.nl/';
-    } else if (url.includes('dtpasn') || url.includes('dizikorea')) {
+    } else if (url.includes('b-cdn.net') || url.includes('mybigdramapool.com') || url.includes('shortizle') || provider.includes('shortizle')) {
+      customRef = 'https://shortizle.com/';
+    } else if (url.includes('dtpasn')) {
+      customRef = 'https://dtpasn.asia/';
+    } else if (url.includes('dizikorea')) {
       customRef = 'https://dizikorea3.com/';
     } else if (url.includes('molystream') || url.includes('dizibox')) {
       customRef = 'https://dbx.molystream.org/';
     } else if (url.includes('animecix') || url.includes('tau-video')) {
       customRef = 'https://animecix.net/';
+    }
+
+    if (url.includes('dtpasn')) {
+      try {
+        const { response: probeRes } = await safeFetch(url, {
+          headers: { 'User-Agent': commonUA, Referer: 'https://dtpasn.asia/' },
+          signal: AbortSignal.timeout(5000),
+        });
+        const probeText = probeRes.ok ? await probeRes.text() : '';
+        const lowProbe = probeText.trim().toLowerCase();
+        if (!probeRes.ok || lowProbe.includes('security error') || (!probeText.includes('#EXTM3U') && !probeText.includes('#EXTINF'))) {
+          return NextResponse.json(
+            { error: 'DTPASN video akışı güvenlik doğrulamasından geçemedi', isDead: true },
+            { status: 410, headers: CACHE_HEADERS }
+          );
+        }
+      } catch {
+        return NextResponse.json(
+          { error: 'DTPASN servisine erişilemedi', isDead: true },
+          { status: 410, headers: CACHE_HEADERS }
+        );
+      }
     }
 
     const finalStreamUrl = `/api/stream-proxy?url=${encodeURIComponent(url)}${customRef ? `&ref=${encodeURIComponent(customRef)}` : ''}`;
@@ -2266,7 +2738,7 @@ export async function GET(req: NextRequest) {
         mode: 'native_hls',
         streamUrl: finalStreamUrl,
         qualities: [{ label: '1080p', url: finalStreamUrl }],
-        fallbackIframe: url,
+        fallbackIframe: url.includes('dtpasn') ? null : url,
       },
       { headers: CACHE_HEADERS }
     );
@@ -2282,7 +2754,9 @@ export async function GET(req: NextRequest) {
     const needsProxy =
       url.includes('vmcdn.ciner.com.tr') ||
       url.includes('downloader.disk.yandex') ||
-      url.includes('yadi.sk');
+      url.includes('yadi.sk') ||
+      url.includes('dramaboxdb.com') ||
+      url.includes('dramavadisi.com');
 
     let streamUrl = url;
     if (needsProxy) {
@@ -2290,6 +2764,10 @@ export async function GET(req: NextRequest) {
         ? 'https://www.showtv.com.tr/'
         : url.includes('yandex')
         ? 'https://disk.yandex.com.tr/'
+        : url.includes('dramaboxdb')
+        ? 'https://www.dramabox.com/'
+        : url.includes('dramavadisi')
+        ? 'https://dramavadisi.com/'
         : '';
       streamUrl = `/api/stream-proxy?url=${encodeURIComponent(url)}${ref ? `&ref=${encodeURIComponent(ref)}` : ''}`;
     }
@@ -2677,90 +3155,16 @@ export async function GET(req: NextRequest) {
     lowerUrl.includes('vidmoly') ||
     lowerUrl.includes('molystream')
   ) {
-    try {
-      const normalizedVidmoly = url
-        .replace(/embed-embed\.html-/gi, 'embed-')
-        .replace(/\/\/(?:www\.)?vidmoly\.(?:to|net|me)\//i, '//vidmoly.biz/')
-        .replace(/\/\/(?:www\.)?vidmolynet\//i, '//vidmoly.biz/');
-      const parsedVm = new URL(normalizedVidmoly);
-      const vmRef = `${parsedVm.protocol}//${parsedVm.host}/`;
-
-      const resp = await fetch(normalizedVidmoly, {
-        headers: {
-          'User-Agent': commonUA,
-          Referer: vmRef,
-        },
-        signal: AbortSignal.timeout(5000),
-      });
-      if (!resp.ok && (resp.status === 404 || resp.status === 410)) {
-        return NextResponse.json(
-          { error: 'Vidmoly videosu bulunamadı (404)', isDead: true },
-          { status: 410 }
-        );
-      }
-
-      const html = await resp.text();
-      const lowHtml = html.toLowerCase();
-      if (
-        lowHtml.includes('no video found') ||
-        lowHtml.includes('this video not found') ||
-        lowHtml.includes('file was deleted') ||
-        lowHtml.includes('video not found') ||
-        lowHtml.includes('deleted by owner') ||
-        lowHtml.includes('file not found') ||
-        lowHtml.includes('404 not found') ||
-        html.includes('{"status":"error"}')
-      ) {
-        return NextResponse.json(
-          { error: 'Vidmoly / Molystream videosu silinmiş veya bulunamadı (404 No Video Found)', isDead: true },
-          { status: 410 }
-        );
-      }
-        const m3u8Match =
-          html.match(/sources\s*:\s*\[\s*\{\s*file\s*:\s*["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i) ||
-          html.match(/file\s*:\s*["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i);
-        if (m3u8Match?.[1]) {
-          const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(m3u8Match[1])}&ref=${encodeURIComponent(vmRef)}`;
-          const label = lowerUrl.includes('moly') ? '1080p HLS (MolyStream)' : '1080p HLS (Vidmoly)';
-
-          // Extract WebVTT / SRT subtitles (Shortizle & DiziFon support)
-          const subMatch =
-            html.match(/https?:\/\/srt\.vidmoly\.[a-z]+\/srt\/[^"'\s]+\.vtt/i) ||
-            html.match(/https?:\/\/[^"'\s]+\/(?:srt|subtitles?)\/[^"'\s]+\.(?:vtt|srt)/i);
-          let vttUrl = subMatch?.[0] || null;
-          if (!vttUrl) {
-            const tracksBlock = html.match(/tracks\s*:\s*\[([\s\S]*?)\]/i);
-            if (tracksBlock?.[1]) {
-              const trackFileMatch = tracksBlock[1].match(
-                /file\s*:\s*["'](https?:\/\/[^"']+\.(?:vtt|srt)[^"']*)["']/i
-              );
-              if (trackFileMatch?.[1]) vttUrl = trackFileMatch[1];
-            }
-          }
-
-          let subtitles:
-            | Array<{ label: string; lang: string; url: string; default?: boolean }>
-            | undefined;
-          if (vttUrl) {
-            const proxiedSub = `/api/stream-proxy?url=${encodeURIComponent(vttUrl)}&ref=${encodeURIComponent(vmRef)}`;
-            subtitles = [
-              { label: 'Türkçe', lang: 'tr', url: proxiedSub, default: true },
-            ];
-          }
-
-          const result = {
-            mode: 'native_hls' as const,
-            streamType: 'hls' as const,
-            streamUrl: proxiedUrl,
-            qualities: [{ label, url: proxiedUrl }],
-            subtitles,
-            fallbackIframe: normalizedVidmoly,
-          };
-          setCachedStream(url, result, 30 * 60 * 1000);
-          return NextResponse.json(result, { headers: CACHE_HEADERS });
-        }
-    } catch {
-      // fall through to iframe
+    const vmRes = await resolveVidmolyStream(url, commonUA);
+    if (vmRes.status === 'dead') {
+      return NextResponse.json(
+        { error: vmRes.error, isDead: true },
+        { status: 410 }
+      );
+    }
+    if (vmRes.status === 'ok') {
+      setCachedStream(url, vmRes.payload, 30 * 60 * 1000);
+      return NextResponse.json(vmRes.payload, { headers: CACHE_HEADERS });
     }
   }
 

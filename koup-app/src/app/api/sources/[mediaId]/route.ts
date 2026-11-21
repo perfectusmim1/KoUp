@@ -52,6 +52,29 @@ function getArchiveDb(): any {
   return null;
 }
 
+const ALLOWED_CUSTOM_SCHEMES = ['dramavadisi:', 'dramabox:', 'wdt:', 'pilavyer:'] as const;
+
+function isAllowedSourceUrl(rawUrl?: string | null): boolean {
+  const u = (rawUrl || '').trim().toLowerCase();
+  if (!u || u === 'dead') return false;
+  if (
+    u.startsWith('javascript:') ||
+    u.includes('void(0)') ||
+    u.startsWith('data:') ||
+    u.startsWith('vbscript:') ||
+    u.startsWith('pending://') ||
+    u.startsWith('https://https:') ||
+    u.startsWith('http://http') ||
+    u.startsWith('https:///')
+  ) {
+    return false;
+  }
+  if (u.startsWith('http://') || u.startsWith('https://')) {
+    return true;
+  }
+  return ALLOWED_CUSTOM_SCHEMES.some((scheme) => u.startsWith(scheme) && u.length > scheme.length);
+}
+
 function classifyStreamType(
   provider: string,
   directUrl: string
@@ -83,9 +106,14 @@ function classifyStreamType(
     p === 'shortizle' ||
     p === 'wdt' ||
     p === 'dtpasn' ||
+    p === 'koredizi' ||
     p === 'pilavyer' ||
     p === 'diziizle' ||
+    u.startsWith('wdt:') ||
+    u.startsWith('pilavyer:') ||
     u.includes('shortizle.com') ||
+    u.includes('b-cdn.net') ||
+    u.includes('mybigdramapool.com') ||
     u.includes('morencius') ||
     u.includes('filemoon') ||
     u.includes('bysesukior') ||
@@ -115,6 +143,12 @@ function classifyStreamType(
     return 'hls';
   }
   if (
+    p === 'dramavadisi' ||
+    p === 'dramabox' ||
+    u.startsWith('dramavadisi:') ||
+    u.startsWith('dramabox:') ||
+    u.includes('dramavadisi.com') ||
+    u.includes('dramabox.com') ||
     p === 'mp4upload' ||
     u.includes('mp4upload') ||
     u.endsWith('.mp4') ||
@@ -153,26 +187,30 @@ function classifyStreamType(
 
 function isDeadSource(provider?: string | null, directUrl?: string | null, sourceName?: string | null): boolean {
   const p = (provider || '').toLowerCase();
-  const u = (directUrl || '').toLowerCase();
+  const u = (directUrl || '').trim().toLowerCase();
   const n = (sourceName || '').toLowerCase();
-  if (!u || u === 'dead' || !u.startsWith('http') || u.startsWith('javascript:') || u.includes('void(0)')) return true;
+  if (!isAllowedSourceUrl(directUrl)) return true;
+
+  let hostname = '';
+  if (u.startsWith('http://') || u.startsWith('https://')) {
+    try {
+      hostname = new URL(u).hostname.toLowerCase();
+    } catch {
+      return true;
+    }
+  }
+
   if (
-    p === 'rapidrame' ||
-    u.includes('hdfilmcehennemi.nl/rplayer/') ||
-    u.includes('/rplayer/') ||
     p === 'dead' ||
     p === 'sibnet' ||
     p === 'sendvid' ||
-    p === 'pixeldrain' ||
     n.includes('sibnet') ||
     u.includes('sibnet.ru') ||
     u.includes('sendvid') ||
-    u.includes('pixeldrain.com') ||
-    u.includes('asyaanim.upns.one') ||
-    u.includes('upns.one') ||
-    u.includes('upns.live') ||
+    hostname === 'asyaanim.upns.one' ||
+    hostname === 'upns.one' ||
+    hostname === 'upns.live' ||
     u.includes('embed-7fm0wb9yzf4m.html') ||
-    u.includes('playerdkorea.xyz') ||
     p.includes('gdrive') ||
     p.includes('google') ||
     u.includes('drive.google.com') ||
@@ -181,7 +219,6 @@ function isDeadSource(provider?: string | null, directUrl?: string | null, sourc
     u.includes('p2pplay') ||
     u.includes('rpmplay') ||
     u.includes('uns.bio') ||
-    u.includes('playerdkorea.xyz') ||
     u.includes('video.diziasya.com') ||
     u.includes('parklogic') ||
     u.includes('vtube.to') ||
@@ -208,7 +245,9 @@ function isDeadSource(provider?: string | null, directUrl?: string | null, sourc
     u.includes('jetload.net') ||
     u.includes('supervideo.tv') ||
     u.includes('upstream.to') ||
-    u.includes('mixdrop')
+    u.includes('mixdrop') ||
+    u.endsWith('/e/') ||
+    u.endsWith('/embed/video/')
   ) {
     return true;
   }
@@ -254,6 +293,22 @@ function getDisplaySourceName(
     return 'Orijinal (Altyazılı)';
   }
   if (p.includes('dizikorea') || u.includes('dizikorea') || p.includes('hdfilm')) {
+    return 'Orijinal';
+  }
+  // 3b. Short drama providers
+  if (p === 'dramavadisi' || u.startsWith('dramavadisi:') || u.includes('dramavadisi')) {
+    if (raw && (raw.includes('Altyaz') || raw.includes('Dublaj'))) return raw;
+    return 'DramaVadisi';
+  }
+  if (p === 'dramabox' || u.startsWith('dramabox:') || u.includes('dramabox')) {
+    if (raw && (raw.includes('Altyaz') || raw.includes('Dublaj'))) return raw;
+    return 'DramaBox';
+  }
+  if (p === 'shortizle' || u.includes('shortizle') || u.includes('mybigdramapool')) {
+    if (raw && (raw.includes('Altyaz') || raw.includes('Dublaj'))) return raw;
+    return 'Shortİzle';
+  }
+  if (p === 'koredizi' || p === 'dtpasn' || u.includes('dtpasn')) {
     return 'Orijinal';
   }
   // 4. Tau Video
@@ -667,6 +722,8 @@ export async function GET(
            AND direct_url IS NOT NULL
            AND direct_url != 'dead'
            AND direct_url != ''
+           AND direct_url NOT LIKE 'pending://%'
+           AND direct_url NOT LIKE 'javascript:%'
            AND provider != 'dead'
            AND provider != 'sibnet'
            AND provider != 'sendvid'
@@ -680,11 +737,9 @@ export async function GET(
            AND direct_url NOT LIKE '%4meplayer%'
            AND direct_url NOT LIKE '%p2pplay%'
            AND direct_url NOT LIKE '%rpmplay%'
-            AND direct_url NOT LIKE '%uns.bio%'
-            AND direct_url NOT LIKE '%video.diziasya.com%'
-            AND direct_url NOT LIKE '%upns.one%'
-            AND direct_url NOT LIKE '%upns.live%'
-            AND direct_url NOT LIKE '%embed-7fm0wb9yzf4m.html%'`
+           AND direct_url NOT LIKE '%uns.bio%'
+           AND direct_url NOT LIKE '%video.diziasya.com%'
+           AND direct_url NOT LIKE '%embed-7fm0wb9yzf4m.html%'`
       );
 
       episodes = epRows.map((ep) => {
