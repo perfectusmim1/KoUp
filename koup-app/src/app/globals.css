@@ -653,9 +653,16 @@ textarea.koup-input {
   box-shadow: 0 0 12px rgba(99, 102, 241, 0.2);
 }
 
-/* Performance: Smooth render optimizations without discarding GPU textures on Alt-Tab */
+/* Performance: Skip offscreen subtree layout/paint while reserving intrinsic block height */
 .cv-auto {
-  contain: layout style;
+  content-visibility: auto;
+  contain-intrinsic-size: 0 360px;
+}
+
+@supports not (content-visibility: auto) {
+  .cv-auto {
+    contain: layout style paint;
+  }
 }
 
 .cv-card {
@@ -773,10 +780,17 @@ textarea.koup-input {
   html {
     scroll-behavior: auto;
   }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
   .koup-projection-card,
   .koup-accordion-card,
   .apple-glass-pill {
-    transition-duration: 0.01ms !important;
     transform: none !important;
   }
 }

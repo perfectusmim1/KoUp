@@ -2,11 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import path from 'node:path';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { supabase, supabaseAdmin, cleanOverviewText, cleanScrapedSlug } from '@/lib/supabase';
+import { cleanOverviewText, cleanScrapedSlug } from '@/lib/supabase';
+import {
+  verifyAdminAuth,
+  getServiceSupabase,
+  checkAdminRateLimit,
+} from '@/lib/adminAuth';
 
 export const dynamic = 'force-dynamic';
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY || '';
+const ENRICH_COOLDOWN_MS = 15 * 60_000;
+const MAX_COOLDOWN_ENTRIES = 1000;
+const enrichCooldownMap = new Map<number, number>();
+const IMDB_ID_REGEX = /^tt\d{5,12}$/;
+const ALLOWED_IMAGE_HOSTS = new Set(['image.tmdb.org', 's4.anilist.co']);
 
 let archiveDb: DatabaseSync | null = null;
 function getArchiveDb(): DatabaseSync | null {
@@ -14,11 +24,44 @@ function getArchiveDb(): DatabaseSync | null {
   const dbPath = process.env.ARCHIVE_DB_PATH || path.resolve(process.cwd(), '..', 'webdrama_archive.db');
   if (!fs.existsSync(dbPath)) return null;
   try {
-    archiveDb = new DatabaseSync(dbPath);
+    // Strictly read-only so HTTP lookups never hold write locks against offline archive scripts.
+    archiveDb = new DatabaseSync(dbPath, { readOnly: true });
     return archiveDb;
   } catch {
     return null;
   }
+}
+
+function getClientIp(req: NextRequest): string {
+  return (
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    req.headers.get('x-real-ip')?.trim() ||
+    'unknown-ip'
+  );
+}
+
+function isAllowedMetadataUrl(rawUrl: string | null | undefined, allowedHosts: Set<string>): boolean {
+  if (!rawUrl) return false;
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.protocol === 'https:' && allowedHosts.has(parsed.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+function isOnEnrichCooldown(mediaId: number): boolean {
+  const now = Date.now();
+  const last = enrichCooldownMap.get(mediaId);
+  return Boolean(last && now - last < ENRICH_COOLDOWN_MS);
+}
+
+function recordEnrichCooldown(mediaId: number): void {
+  if (enrichCooldownMap.size >= MAX_COOLDOWN_ENTRIES) {
+    const oldest = enrichCooldownMap.keys().next().value;
+    if (oldest !== undefined) enrichCooldownMap.delete(oldest);
+  }
+  enrichCooldownMap.set(mediaId, Date.now());
 }
 
 function cleanHtmlText(htmlStr: string): string {
@@ -197,35 +240,73 @@ function formatContentTypeTR(contentType?: string, countryCode?: string): string
   return 'Dizi';
 }
 
-export async function GET(req: NextRequest) {
+async function runAutoEnrich(
+  req: NextRequest,
+  params: { idRaw: string | null; slugRaw: string | null; force: boolean; requireAuth: boolean }
+) {
   try {
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get('id');
-    const slug = searchParams.get('slug');
-    const force = searchParams.get('force') === 'true';
+    const ip = getClientIp(req);
+    const rate = checkAdminRateLimit(`auto-enrich:${ip}`, 20, 60_000);
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: `Çok fazla zenginleştirme isteği gönderildi. Lütfen ${rate.retryAfterSec} saniye bekleyin.` },
+        { status: 429 }
+      );
+    }
 
-    if (!id && !slug) {
+    if (params.force || params.requireAuth) {
+      const auth = await verifyAdminAuth(req, { allowModerator: !params.force });
+      if (!auth.authorized) return auth.response!;
+    }
+
+    const { idRaw, slugRaw, force } = params;
+    if (!idRaw && !slugRaw) {
       return NextResponse.json({ error: 'id veya slug belirtilmelidir' }, { status: 400 });
     }
 
+    let parsedId: number | null = null;
+    if (idRaw !== null && idRaw !== '') {
+      const n = Number(idRaw);
+      if (!Number.isInteger(n) || n <= 0 || n > 10_000_000) {
+        return NextResponse.json({ error: 'Geçersiz id parametresi' }, { status: 400 });
+      }
+      parsedId = n;
+    }
+
+    let safeSlug: string | null = null;
+    if (slugRaw !== null && slugRaw !== '') {
+      const trimmed = slugRaw.trim();
+      if (trimmed.length > 200 || /[\u0000-\u001F\u007F%*,()]/.test(trimmed)) {
+        return NextResponse.json({ error: 'Geçersiz slug parametresi' }, { status: 400 });
+      }
+      safeSlug = trimmed;
+    }
+
+    if (!parsedId && !safeSlug) {
+      return NextResponse.json({ error: 'id veya slug belirtilmelidir' }, { status: 400 });
+    }
+
+    const dbClient = getServiceSupabase();
+
     let media: any = null;
-    if (id) {
-      const { data } = await supabase.from('media').select('*').eq('id', Number(id)).single();
+    if (parsedId) {
+      const { data } = await dbClient.from('media').select('*').eq('id', parsedId).maybeSingle();
       media = data;
-    } else if (slug) {
-      const { data } = await supabase.from('media').select('*').eq('slug', slug).single();
+    } else if (safeSlug) {
+      const { data } = await dbClient.from('media').select('*').eq('slug', safeSlug).maybeSingle();
       media = data;
       if (!media) {
-        const cleaned = cleanScrapedSlug(slug);
-        if (cleaned && cleaned !== slug) {
-          const { data: fallbackData } = await supabase.from('media').select('*').eq('slug', cleaned).single();
+        const cleaned = cleanScrapedSlug(safeSlug);
+        if (cleaned && cleaned !== safeSlug && !/[%*(),]/.test(cleaned)) {
+          const { data: fallbackData } = await dbClient.from('media').select('*').eq('slug', cleaned).maybeSingle();
           media = fallbackData;
         }
         if (!media) {
-          const { data: urlData } = await supabase
+          const escapedPattern = safeSlug.replace(/[%_\\]/g, '\\$&');
+          const { data: urlData } = await dbClient
             .from('media')
             .select('*')
-            .ilike('source_url', `%/${slug}%`)
+            .ilike('source_url', `%/${escapedPattern}%`)
             .limit(1)
             .maybeSingle();
           media = urlData;
@@ -243,7 +324,7 @@ export async function GET(req: NextRequest) {
         media.cover_image.includes('s4.anilist.co'));
     const hasBadOverview = isBadOverview(media.overview);
     const hasImages = !!(isOfficialHighResCover && media.backdrop_image);
-    const hasValidImdbId = !!media.imdb_id && /^tt\d+$/.test(media.imdb_id);
+    const hasValidImdbId = !!media.imdb_id && IMDB_ID_REGEX.test(media.imdb_id);
     const hasImdbRating = (media.imdb_rating && Number(media.imdb_rating) > 0) || (media.content_type === 'anime' && media.anilist_rating);
     const hasMatching = !!(media.tmdb_id || media.anilist_id || (media.mdl_id && hasImdbRating));
 
@@ -267,6 +348,29 @@ export async function GET(req: NextRequest) {
         },
       });
     }
+
+    if (!force && isOnEnrichCooldown(Number(media.id))) {
+      return NextResponse.json({
+        alreadyEnriched: true,
+        cooldown: true,
+        media: {
+          id: media.id,
+          title: media.title,
+          overview: media.overview,
+          tmdb_id: media.tmdb_id,
+          imdb_id: media.imdb_id,
+          imdb_rating: media.imdb_rating,
+          mdl_id: media.mdl_id,
+          mdl_rating: media.mdl_rating,
+          anilist_id: media.anilist_id,
+          anilist_rating: media.anilist_rating,
+          cover_image: media.cover_image,
+          backdrop_image: media.backdrop_image,
+        },
+      });
+    }
+
+    recordEnrichCooldown(Number(media.id));
 
     const patch: any = {
       p_media_id: media.id,
@@ -369,7 +473,9 @@ export async function GET(req: NextRequest) {
             }
           }
         `;
-        const vars = media.anilist_id ? { id: Number(media.anilist_id) } : { search: rawClean };
+        const validAnilistId = Number(media.anilist_id);
+        const hasAnilistId = Number.isInteger(validAnilistId) && validAnilistId > 0;
+        const vars = hasAnilistId ? { id: validAnilistId } : { search: rawClean };
         const alResp = await fetch('https://graphql.anilist.co', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -380,17 +486,21 @@ export async function GET(req: NextRequest) {
           const alJson = await alResp.json();
           anilistHit = alJson.data?.Media;
           if (anilistHit) {
-            if (!media.anilist_id) {
-              patch.p_anilist_id = anilistHit.id;
+            if (!media.anilist_id && Number.isInteger(Number(anilistHit.id))) {
+              patch.p_anilist_id = Number(anilistHit.id);
             }
-            patch.p_anilist_url = anilistHit.siteUrl || `https://anilist.co/anime/${anilistHit.id}`;
+            const candidateSiteUrl = anilistHit.siteUrl || `https://anilist.co/anime/${Number(anilistHit.id)}`;
+            if (isAllowedMetadataUrl(candidateSiteUrl, new Set(['anilist.co']))) {
+              patch.p_anilist_url = candidateSiteUrl;
+            }
             if (anilistHit.averageScore) {
               patch.p_anilist_rating = Number(anilistHit.averageScore);
             }
-            if (!media.cover_image && (anilistHit.coverImage?.extraLarge || anilistHit.coverImage?.large)) {
-              patch.p_cover_image = anilistHit.coverImage?.extraLarge || anilistHit.coverImage?.large;
+            const alCover = anilistHit.coverImage?.extraLarge || anilistHit.coverImage?.large;
+            if (!media.cover_image && isAllowedMetadataUrl(alCover, ALLOWED_IMAGE_HOSTS)) {
+              patch.p_cover_image = alCover;
             }
-            if (!media.backdrop_image && anilistHit.bannerImage) {
+            if (!media.backdrop_image && isAllowedMetadataUrl(anilistHit.bannerImage, ALLOWED_IMAGE_HOSTS)) {
               patch.p_backdrop_image = anilistHit.bannerImage;
             }
           }
@@ -403,9 +513,10 @@ export async function GET(req: NextRequest) {
     let tmdbType: 'tv' | 'movie' = media.content_type === 'film' ? 'movie' : 'tv';
 
     // A0. If tmdb_id is ALREADY set on media, fetch that exact TMDB ID directly!
-    if (media.tmdb_id) {
+    const existingTmdbId = Number(media.tmdb_id);
+    if (TMDB_API_KEY && Number.isInteger(existingTmdbId) && existingTmdbId > 0) {
       try {
-        const directUrl = `https://api.themoviedb.org/3/${tmdbType}/${media.tmdb_id}?language=tr-TR&api_key=${TMDB_API_KEY}`;
+        const directUrl = `https://api.themoviedb.org/3/${tmdbType}/${existingTmdbId}?language=tr-TR&api_key=${TMDB_API_KEY}`;
         const dResp = await fetch(directUrl, { signal: AbortSignal.timeout(5000) });
         if (dResp.ok) {
           tmdbHit = await dResp.json();
@@ -415,7 +526,7 @@ export async function GET(req: NextRequest) {
 
     // A. If imdb_id is available, find directly by IMDb ID
     const effectiveImdb = patch.p_imdb_id || media.imdb_id;
-    if (!tmdbHit && effectiveImdb && effectiveImdb.startsWith('tt')) {
+    if (TMDB_API_KEY && !tmdbHit && typeof effectiveImdb === 'string' && IMDB_ID_REGEX.test(effectiveImdb)) {
       try {
         const findUrl = `https://api.themoviedb.org/3/find/${effectiveImdb}?external_source=imdb_id&language=tr-TR&api_key=${TMDB_API_KEY}`;
         const fResp = await fetch(findUrl, { signal: AbortSignal.timeout(6000) });
@@ -431,7 +542,7 @@ export async function GET(req: NextRequest) {
     }
 
     // B. Search by candidate titles ONLY if media does not already have a tmdb_id
-    if (!tmdbHit && !media.tmdb_id) {
+    if (TMDB_API_KEY && !tmdbHit && !media.tmdb_id) {
       const endpoints = media.content_type === 'film' ? ['search/movie', 'search/tv'] : ['search/tv', 'search/movie'];
       let bestScore = 0;
       for (const qTitle of searchQueries) {
@@ -471,28 +582,29 @@ export async function GET(req: NextRequest) {
     }
 
     // Process TMDB Hit
-    if (tmdbHit) {
+    if (tmdbHit && Number.isInteger(Number(tmdbHit.id)) && Number(tmdbHit.id) > 0) {
+      const tmdbHitId = Number(tmdbHit.id);
       if (!media.tmdb_id) {
-        patch.p_tmdb_id = tmdbHit.id;
+        patch.p_tmdb_id = tmdbHitId;
       }
 
       // Turkish Overview: Try TMDB tr-TR first, otherwise fetch English and translate to Turkish!
       const trOv = cleanOverviewText(tmdbHit.overview);
       if (trOv.length > 30 && !isBadOverview(trOv)) {
-        patch.p_overview = trOv;
-      } else if (!patch.p_overview && hasBadOverview) {
+        patch.p_overview = trOv.slice(0, 2500);
+      } else if (!patch.p_overview && hasBadOverview && TMDB_API_KEY) {
         try {
-          const enUrl = `https://api.themoviedb.org/3/${tmdbType}/${tmdbHit.id}?api_key=${TMDB_API_KEY}&language=en-US`;
+          const enUrl = `https://api.themoviedb.org/3/${tmdbType}/${tmdbHitId}?api_key=${TMDB_API_KEY}&language=en-US`;
           const enResp = await fetch(enUrl, { signal: AbortSignal.timeout(4000) });
           if (enResp.ok) {
             const enData = await enResp.json();
             const cleanEn = cleanOverviewText(enData.overview);
             if (cleanEn.length > 20) {
-              const translated = await translateToTurkish(cleanEn);
+              const translated = await translateToTurkish(cleanEn.slice(0, 1800));
               if (translated && translated.length > 20) {
-                patch.p_overview = translated;
+                patch.p_overview = translated.slice(0, 2500);
               } else {
-                patch.p_overview = cleanEn;
+                patch.p_overview = cleanEn.slice(0, 2500);
               }
             }
           }
@@ -501,10 +613,10 @@ export async function GET(req: NextRequest) {
 
       // Title & Native Title
       if (tmdbHit.title || tmdbHit.name) {
-        patch.p_title_tr = tmdbHit.title || tmdbHit.name;
+        patch.p_title_tr = String(tmdbHit.title || tmdbHit.name).trim().slice(0, 300);
       }
       if (tmdbHit.original_title || tmdbHit.original_name) {
-        patch.p_native_title = tmdbHit.original_title || tmdbHit.original_name;
+        patch.p_native_title = String(tmdbHit.original_title || tmdbHit.original_name).trim().slice(0, 300);
       }
 
       // Origin Country & Year correction (fix Asian titles erroneously marked as US)
@@ -541,16 +653,20 @@ export async function GET(req: NextRequest) {
       // Backdrop Image
       if (
         (!media.backdrop_image || !media.backdrop_image.includes('image.tmdb.org')) &&
-        tmdbHit.backdrop_path
+        typeof tmdbHit.backdrop_path === 'string' &&
+        tmdbHit.backdrop_path.startsWith('/')
       ) {
-        patch.p_backdrop_image = `https://image.tmdb.org/t/p/w1280${tmdbHit.backdrop_path}`;
+        const candidateBackdrop = `https://image.tmdb.org/t/p/w1280${tmdbHit.backdrop_path}`;
+        if (isAllowedMetadataUrl(candidateBackdrop, ALLOWED_IMAGE_HOSTS)) {
+          patch.p_backdrop_image = candidateBackdrop;
+        }
       }
 
       // Cover Poster Image — check for season-specific poster first if this is a multi-season show!
       let resolvedPosterPath = tmdbHit.poster_path;
-      if (tmdbType === 'tv' && targetSeasonNum) {
+      if (TMDB_API_KEY && tmdbType === 'tv' && targetSeasonNum) {
         try {
-          const showDetUrl = `https://api.themoviedb.org/3/tv/${tmdbHit.id}?api_key=${TMDB_API_KEY}&language=tr-TR`;
+          const showDetUrl = `https://api.themoviedb.org/3/tv/${tmdbHitId}?api_key=${TMDB_API_KEY}&language=tr-TR`;
           const showResp = await fetch(showDetUrl, { signal: AbortSignal.timeout(3500) });
           if (showResp.ok) {
             const showData = await showResp.json();
@@ -562,18 +678,21 @@ export async function GET(req: NextRequest) {
         } catch {}
       }
 
-      if (!isOfficialHighResCover && resolvedPosterPath) {
-        patch.p_cover_image = `https://image.tmdb.org/t/p/w780${resolvedPosterPath}`;
+      if (!isOfficialHighResCover && typeof resolvedPosterPath === 'string' && resolvedPosterPath.startsWith('/')) {
+        const candidatePoster = `https://image.tmdb.org/t/p/w780${resolvedPosterPath}`;
+        if (isAllowedMetadataUrl(candidatePoster, ALLOWED_IMAGE_HOSTS)) {
+          patch.p_cover_image = candidatePoster;
+        }
       }
 
       // Fetch external IDs (IMDb ID) from TMDB
-      if ((!media.imdb_id || !/^tt\d+$/.test(media.imdb_id)) && !patch.p_imdb_id) {
+      if (TMDB_API_KEY && (!media.imdb_id || !IMDB_ID_REGEX.test(media.imdb_id)) && !patch.p_imdb_id) {
         try {
-          const extUrl = `https://api.themoviedb.org/3/${tmdbType}/${tmdbHit.id}/external_ids?api_key=${TMDB_API_KEY}`;
+          const extUrl = `https://api.themoviedb.org/3/${tmdbType}/${tmdbHitId}/external_ids?api_key=${TMDB_API_KEY}`;
           const extResp = await fetch(extUrl, { signal: AbortSignal.timeout(4000) });
           if (extResp.ok) {
             const extData = await extResp.json();
-            if (extData.imdb_id && /^tt\d+$/.test(extData.imdb_id)) {
+            if (typeof extData.imdb_id === 'string' && IMDB_ID_REGEX.test(extData.imdb_id)) {
               patch.p_imdb_id = extData.imdb_id;
             }
           }
@@ -582,7 +701,9 @@ export async function GET(req: NextRequest) {
     }
 
     // 3.5. Authoritative IMDb Rating from Cinemeta (NEVER from TMDB vote_average!)
-    const effectiveImdbId = patch.p_imdb_id || (media.imdb_id && /^tt\d+$/.test(media.imdb_id) ? media.imdb_id : null);
+    const effectiveImdbId =
+      patch.p_imdb_id ||
+      (typeof media.imdb_id === 'string' && IMDB_ID_REGEX.test(media.imdb_id) ? media.imdb_id : null);
     if (effectiveImdbId) {
       const typesToTry = media.content_type === 'film' ? ['movie', 'series'] : ['series', 'movie'];
       for (const cmType of typesToTry) {
@@ -597,7 +718,7 @@ export async function GET(req: NextRequest) {
             if (text.startsWith('{')) {
               const cmData = JSON.parse(text);
               const cmRating = cmData?.meta?.imdbRating;
-              if (cmRating && Number(cmRating) > 0) {
+              if (cmRating && Number(cmRating) > 0 && Number(cmRating) <= 10) {
                 patch.p_imdb_rating = Number(Number(cmRating).toFixed(1));
                 break;
               }
@@ -618,75 +739,55 @@ export async function GET(req: NextRequest) {
       const yearStr = media.release_year ? `${media.release_year} çıkışlı, ` : '';
       const catStr = media.categories && media.categories.length > 0 ? `${media.categories.slice(0, 3).join(', ').toLowerCase()} türündeki ` : '';
       const typeStr = formatContentTypeTR(media.content_type, media.country_code);
-      patch.p_overview = `${media.title}; ${yearStr}${catStr}${typeStr} yapımıdır.`;
+      patch.p_overview = `${media.title}; ${yearStr}${catStr}${typeStr} yapımıdır.`.slice(0, 2500);
     }
 
-    // 5. Apply to Supabase DB via patch_media_metadata RPC with defensive direct fallback
-    let rpcSuccess = false;
-    try {
-      const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc('patch_media_metadata', patch);
-      if (!rpcErr) {
-        rpcSuccess = true;
-      }
-    } catch {}
-
-    if (!rpcSuccess) {
-      // Direct defensive fallback update to Supabase
-      const directUpdate: Record<string, any> = { updated_at: new Date().toISOString() };
-      if (patch.p_overview && patch.p_overview.length > 20) directUpdate.overview = patch.p_overview;
-      if (patch.p_tmdb_id) directUpdate.tmdb_id = patch.p_tmdb_id;
-      if (patch.p_imdb_id) directUpdate.imdb_id = patch.p_imdb_id;
-      if (patch.p_imdb_rating) directUpdate.imdb_rating = patch.p_imdb_rating;
-      if (patch.p_mdl_id) {
-        if (patch.p_mdl_id === '__CLEAR__') {
-          directUpdate.mdl_id = null;
-          directUpdate.mydramalist_url = null;
-        } else {
-          directUpdate.mdl_id = patch.p_mdl_id;
-          directUpdate.mydramalist_url = `https://mydramalist.com/${patch.p_mdl_id}`;
-        }
-      }
-      if (patch.p_mdl_rating) directUpdate.mdl_rating = patch.p_mdl_rating;
-      if (patch.p_anilist_id) directUpdate.anilist_id = patch.p_anilist_id;
-      if (patch.p_anilist_rating) directUpdate.anilist_rating = patch.p_anilist_rating;
-      if (patch.p_anilist_url) directUpdate.anilist_url = patch.p_anilist_url;
-      if (patch.p_cover_image) {
-        directUpdate.cover_image = patch.p_cover_image;
-        directUpdate.poster_fallback_url = patch.p_cover_image;
-      }
-      if (patch.p_backdrop_image) directUpdate.backdrop_image = patch.p_backdrop_image;
-      if (patch.p_country_code) directUpdate.country_code = patch.p_country_code;
-      if (patch.p_country_name) directUpdate.country_name = patch.p_country_name;
-      if (patch.p_release_year) directUpdate.release_year = patch.p_release_year;
-      if (patch.p_title_tr) directUpdate.title_tr = patch.p_title_tr;
-      if (patch.p_native_title) directUpdate.native_title = patch.p_native_title;
-
-      await supabaseAdmin.from('media').update(directUpdate).eq('id', media.id);
+    if (patch.p_overview) {
+      patch.p_overview = String(patch.p_overview).slice(0, 2500);
     }
 
-    // 6. Also persist directly to local SQLite archive for instant offline/local speed
-    if (db) {
+    // 5. Apply bounded patch to Supabase DB via patch_media_metadata RPC with defensive direct fallback
+    if (Object.keys(patch).length > 1) {
+      let rpcSuccess = false;
       try {
-        db.prepare(`
-          UPDATE dramas
-          SET cover_image = COALESCE(?, cover_image),
-              backdrop_image = COALESCE(?, backdrop_image),
-              overview = COALESCE(?, overview),
-              imdb_id = COALESCE(?, imdb_id),
-              tmdb_id = COALESCE(?, tmdb_id),
-              imdb_rating = COALESCE(?, imdb_rating),
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `).run(
-          patch.p_cover_image || null,
-          patch.p_backdrop_image || null,
-          patch.p_overview || null,
-          patch.p_imdb_id || null,
-          patch.p_tmdb_id || null,
-          patch.p_imdb_rating || null,
-          media.id
-        );
+        const { error: rpcErr } = await dbClient.rpc('patch_media_metadata', patch);
+        if (!rpcErr) {
+          rpcSuccess = true;
+        }
       } catch {}
+
+      if (!rpcSuccess) {
+        const directUpdate: Record<string, any> = { updated_at: new Date().toISOString() };
+        if (patch.p_overview && patch.p_overview.length > 20) directUpdate.overview = patch.p_overview;
+        if (patch.p_tmdb_id) directUpdate.tmdb_id = patch.p_tmdb_id;
+        if (patch.p_imdb_id) directUpdate.imdb_id = patch.p_imdb_id;
+        if (patch.p_imdb_rating) directUpdate.imdb_rating = patch.p_imdb_rating;
+        if (patch.p_mdl_id) {
+          if (patch.p_mdl_id === '__CLEAR__') {
+            directUpdate.mdl_id = null;
+            directUpdate.mydramalist_url = null;
+          } else {
+            directUpdate.mdl_id = patch.p_mdl_id;
+            directUpdate.mydramalist_url = `https://mydramalist.com/${patch.p_mdl_id}`;
+          }
+        }
+        if (patch.p_mdl_rating) directUpdate.mdl_rating = patch.p_mdl_rating;
+        if (patch.p_anilist_id) directUpdate.anilist_id = patch.p_anilist_id;
+        if (patch.p_anilist_rating) directUpdate.anilist_rating = patch.p_anilist_rating;
+        if (patch.p_anilist_url) directUpdate.anilist_url = patch.p_anilist_url;
+        if (patch.p_cover_image) {
+          directUpdate.cover_image = patch.p_cover_image;
+          directUpdate.poster_fallback_url = patch.p_cover_image;
+        }
+        if (patch.p_backdrop_image) directUpdate.backdrop_image = patch.p_backdrop_image;
+        if (patch.p_country_code) directUpdate.country_code = patch.p_country_code;
+        if (patch.p_country_name) directUpdate.country_name = patch.p_country_name;
+        if (patch.p_release_year) directUpdate.release_year = patch.p_release_year;
+        if (patch.p_title_tr) directUpdate.title_tr = patch.p_title_tr;
+        if (patch.p_native_title) directUpdate.native_title = patch.p_native_title;
+
+        await dbClient.from('media').update(directUpdate).eq('id', media.id);
+      }
     }
 
     return NextResponse.json({
@@ -712,23 +813,38 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err?.message || 'Beklenmeyen hata.' }, { status: 500 });
   }
 }
 
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  return runAutoEnrich(req, {
+    idRaw: searchParams.get('id'),
+    slugRaw: searchParams.get('slug'),
+    force: searchParams.get('force') === 'true',
+    requireAuth: false,
+  });
+}
+
 export async function POST(req: NextRequest) {
+  let body: Record<string, unknown> = {};
   try {
-    const body = await req.json().catch(() => ({}));
-    const id = body.id || body.mediaId;
-    const slug = body.slug;
-    const force = body.force === true;
-    const url = new URL(req.url);
-    if (id) url.searchParams.set('id', String(id));
-    if (slug) url.searchParams.set('slug', String(slug));
-    if (force) url.searchParams.set('force', 'true');
-    return GET(new NextRequest(url, { headers: req.headers }));
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    const parsed = await req.json();
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      body = parsed as Record<string, unknown>;
+    }
+  } catch {
+    return NextResponse.json({ error: 'Geçersiz JSON gövdesi.' }, { status: 400 });
   }
+
+  const rawId = body.id ?? body.mediaId ?? null;
+  const rawSlug = typeof body.slug === 'string' ? body.slug : null;
+  return runAutoEnrich(req, {
+    idRaw: rawId !== null && rawId !== undefined ? String(rawId) : null,
+    slugRaw: rawSlug,
+    force: body.force === true,
+    requireAuth: true,
+  });
 }
 

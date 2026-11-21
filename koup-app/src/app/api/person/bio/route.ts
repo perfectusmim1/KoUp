@@ -1,23 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase';
-import path from 'node:path';
-import fs from 'node:fs';
-import { DatabaseSync } from 'node:sqlite';
+import { getServiceSupabase, checkAdminRateLimit } from '@/lib/adminAuth';
 
-export const revalidate = 3600; // Cache 1 hour
+export const dynamic = 'force-dynamic';
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY || '';
+const ALLOWED_PERSON_TYPES = new Set(['actor', 'character', 'seiyuu', 'director']);
+const MAX_BIO_CACHE_ENTRIES = 500;
+const BIO_CACHE_TTL_MS = 6 * 60 * 60_000;
+const PERSON_WRITE_COOLDOWN_MS = 15 * 60_000;
 
-let archiveDb: DatabaseSync | null = null;
-function getArchiveDb(): DatabaseSync | null {
-  if (archiveDb) return archiveDb;
-  const dbPath = path.resolve(process.cwd(), '..', 'webdrama_archive.db');
-  if (fs.existsSync(dbPath)) {
-    try {
-      archiveDb = new DatabaseSync(dbPath);
-    } catch (_) {}
-  }
-  return archiveDb;
+function getClientIp(req: NextRequest): string {
+  return (
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    req.headers.get('x-real-ip')?.trim() ||
+    'unknown-ip'
+  );
 }
 
 // Country normalization map for places of birth
@@ -132,27 +129,86 @@ function cleanAniListBio(desc: string): string {
     .trim();
 }
 
-const inMemoryBioCache = new Map<string, any>();
+const inMemoryBioCache = new Map<string, { payload: any; ts: number }>();
+const personWriteCooldownMap = new Map<number, number>();
+
+function isPersonWriteOnCooldown(personId: number): boolean {
+  const last = personWriteCooldownMap.get(personId);
+  return Boolean(last && Date.now() - last < PERSON_WRITE_COOLDOWN_MS);
+}
+
+function recordPersonWriteCooldown(personId: number): void {
+  if (personWriteCooldownMap.size >= MAX_BIO_CACHE_ENTRIES) {
+    const oldest = personWriteCooldownMap.keys().next().value;
+    if (oldest !== undefined) personWriteCooldownMap.delete(oldest);
+  }
+  personWriteCooldownMap.set(personId, Date.now());
+}
+
+function setBioCache(key: string, payload: any): void {
+  if (inMemoryBioCache.size >= MAX_BIO_CACHE_ENTRIES) {
+    const oldest = inMemoryBioCache.keys().next().value;
+    if (oldest !== undefined) inMemoryBioCache.delete(oldest);
+  }
+  inMemoryBioCache.set(key, { payload, ts: Date.now() });
+}
 
 export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get('id') || searchParams.get('personId');
-    const name = searchParams.get('name');
-    const personType = searchParams.get('type') || 'actor';
-    const paramTmdbId = searchParams.get('tmdbId') ? Number(searchParams.get('tmdbId')) : null;
+    const ip = getClientIp(req);
+    const rate = checkAdminRateLimit(`person-bio:${ip}`, 30, 60_000);
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { success: false, error: `Çok fazla biyografi isteği. Lütfen ${rate.retryAfterSec} saniye bekleyin.` },
+        { status: 429 }
+      );
+    }
 
-    if (!name || name.trim().length < 2) {
+    const { searchParams } = new URL(req.url);
+    const idRaw = searchParams.get('id') || searchParams.get('personId');
+    const name = searchParams.get('name');
+    const rawType = searchParams.get('type');
+    const personType = rawType ? rawType.trim() : 'actor';
+    const rawTmdbId = searchParams.get('tmdbId');
+
+    if (!ALLOWED_PERSON_TYPES.has(personType)) {
+      return NextResponse.json({ success: false, error: 'Geçersiz kişi türü' }, { status: 400 });
+    }
+
+    if (!name || name.trim().length < 2 || name.trim().length > 120) {
+      return NextResponse.json({ success: false, error: 'Geçerli isim gerekli (2-120 karakter)' }, { status: 400 });
+    }
+
+    let cleanId: number | null = null;
+    if (idRaw !== null && idRaw !== '') {
+      const parsedId = Number(idRaw);
+      if (!Number.isInteger(parsedId) || parsedId <= 0 || parsedId > 10_000_000) {
+        return NextResponse.json({ success: false, error: 'Geçersiz id parametresi' }, { status: 400 });
+      }
+      cleanId = parsedId;
+    }
+
+    let paramTmdbId: number | null = null;
+    if (rawTmdbId !== null && rawTmdbId !== '') {
+      const parsedTmdb = Number(rawTmdbId);
+      if (!Number.isInteger(parsedTmdb) || parsedTmdb <= 0 || parsedTmdb > 99_999_999) {
+        return NextResponse.json({ success: false, error: 'Geçersiz tmdbId parametresi' }, { status: 400 });
+      }
+      paramTmdbId = parsedTmdb;
+    }
+
+    const cleanName = name.replace(/[\u0000-\u001F\u007F]/g, '').replace(/\s+/g, ' ').trim();
+    if (cleanName.length < 2) {
       return NextResponse.json({ success: false, error: 'İsim gerekli' }, { status: 400 });
     }
 
-    const cleanName = name.replace(/\s+/g, ' ').trim();
-    const cleanId = id ? Number(id) : null;
-    const cacheKey = `${cleanId || ''}_${cleanName.toLowerCase()}`;
+    const cacheKey = `${cleanId || ''}_${personType}_${cleanName.toLowerCase()}`;
+    const db = getServiceSupabase();
 
-    // Fast in-memory hit
-    if (inMemoryBioCache.has(cacheKey)) {
-      return NextResponse.json(inMemoryBioCache.get(cacheKey), {
+    // Fast in-memory hit (bounded & TTL-checked)
+    const cachedEntry = inMemoryBioCache.get(cacheKey);
+    if (cachedEntry && Date.now() - cachedEntry.ts < BIO_CACHE_TTL_MS) {
+      return NextResponse.json(cachedEntry.payload, {
         headers: { 'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=604800' },
       });
     }
@@ -160,11 +216,11 @@ export async function GET(req: NextRequest) {
     // 1. Check if DB already has full customized info
     let dbPerson: any = null;
     if (cleanId) {
-      const { data } = await supabaseAdmin
+      const { data } = await db
         .from('people')
         .select('*')
         .eq('id', cleanId)
-        .single();
+        .maybeSingle();
       dbPerson = data;
 
       if (
@@ -193,7 +249,7 @@ export async function GET(req: NextRequest) {
           },
           bio_tr: dbPerson.bio_tr,
         };
-        inMemoryBioCache.set(cacheKey, payload);
+        setBioCache(cacheKey, payload);
         return NextResponse.json(payload, {
           headers: { 'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=604800' },
         });
@@ -320,8 +376,9 @@ export async function GET(req: NextRequest) {
           const sData = await tmdbSearch.json();
           const sorted = (sData?.results || []).sort((a: any, b: any) => (b.popularity || 0) - (a.popularity || 0));
           const firstPerson = sorted[0];
-          if (firstPerson?.id) {
-            tmdbId = firstPerson.id;
+          const resolvedTmdbId = Number(firstPerson?.id);
+          if (Number.isInteger(resolvedTmdbId) && resolvedTmdbId > 0) {
+            tmdbId = resolvedTmdbId;
 
             // Fetch details in TR and EN
             const [trRes, enRes] = await Promise.all([
@@ -340,9 +397,9 @@ export async function GET(req: NextRequest) {
             const det = trData || enData || {};
 
             if (trData?.biography && trData.biography.trim().length > 30) {
-              turkishBio = trData.biography.trim();
+              turkishBio = trData.biography.trim().slice(0, 4000);
             } else if (enData?.biography && enData.biography.trim().length > 20) {
-              englishBio = enData.biography.trim();
+              englishBio = enData.biography.trim().slice(0, 4000);
             }
 
             if (det.birthday && !birthDate) birthDate = det.birthday;
@@ -380,7 +437,7 @@ export async function GET(req: NextRequest) {
     // 3b. If countryCode is still KR or null, verify against their drama credits
     if (cleanId && (!countryCode || countryCode === 'KR')) {
       try {
-        const { data: castRows } = await supabaseAdmin
+        const { data: castRows } = await db
           .from('media_cast')
           .select('media:media_id(country_code)')
           .eq('person_id', cleanId)
@@ -401,65 +458,44 @@ export async function GET(req: NextRequest) {
 
     // 4. Translate English bio to Turkish if needed
     if (!turkishBio && englishBio) {
-      turkishBio = await translateToTurkish(englishBio);
+      const translated = await translateToTurkish(englishBio);
+      turkishBio = translated ? translated.slice(0, 4000) : null;
     }
 
     if (!turkishBio && dbPerson?.bio_tr) {
       turkishBio = dbPerson.bio_tr;
     }
 
-    // 5. Update Supabase and SQLite in background
-    if (cleanId) {
+    // 5. Bounded Supabase update only for verified DB rows outside cooldown
+    if (cleanId && dbPerson && !isPersonWriteOnCooldown(cleanId)) {
       const updatePayload: Record<string, any> = {};
-      if (turkishBio) updatePayload.bio_tr = turkishBio;
-      if (genderStr) updatePayload.gender = genderStr;
-      if (birthDate) updatePayload.birth_date = birthDate;
-      if (deathDate) updatePayload.death_date = deathDate;
-      if (placeOfBirth) updatePayload.place_of_birth = placeOfBirth;
-      if (countryCode) updatePayload.country_code = countryCode;
-      if (nativeName) updatePayload.native_name = nativeName;
-      if (alsoKnownAs.length > 0) updatePayload.also_known_as = alsoKnownAs;
-      if (bloodType) updatePayload.blood_type = bloodType;
-      if (height) updatePayload.height = height;
-      if (race) updatePayload.race = race;
-      if (tmdbId) updatePayload.tmdb_id = tmdbId;
-      if (anilistId) updatePayload.anilist_id = anilistId;
+      if (turkishBio) updatePayload.bio_tr = turkishBio.slice(0, 4000);
+      if (genderStr) updatePayload.gender = String(genderStr).slice(0, 32);
+      if (birthDate) updatePayload.birth_date = String(birthDate).slice(0, 64);
+      if (deathDate) updatePayload.death_date = String(deathDate).slice(0, 64);
+      if (placeOfBirth) updatePayload.place_of_birth = String(placeOfBirth).slice(0, 200);
+      if (countryCode) updatePayload.country_code = String(countryCode).slice(0, 8);
+      if (nativeName) updatePayload.native_name = String(nativeName).slice(0, 120);
+      if (alsoKnownAs.length > 0) updatePayload.also_known_as = alsoKnownAs.slice(0, 12);
+      if (bloodType) updatePayload.blood_type = String(bloodType).slice(0, 16);
+      if (height) updatePayload.height = String(height).slice(0, 32);
+      if (race) updatePayload.race = String(race).slice(0, 64);
+      if (tmdbId && Number.isInteger(tmdbId) && tmdbId > 0) updatePayload.tmdb_id = tmdbId;
+      if (anilistId && Number.isInteger(anilistId) && anilistId > 0) updatePayload.anilist_id = anilistId;
 
       if (Object.keys(updatePayload).length > 0) {
+        recordPersonWriteCooldown(cleanId);
         try {
-          const { error: upErr } = await supabaseAdmin
+          const { error: upErr } = await db
             .from('people')
             .update(updatePayload)
             .eq('id', cleanId);
           if (upErr) {
             console.warn('[api/person/bio] Supabase update warning:', upErr.message);
-          } else {
-            console.log(`[api/person/bio] Successfully saved enriched metadata for person ${cleanId} (${cleanName}) to Supabase!`);
           }
         } catch (e) {
           console.warn('[api/person/bio] Supabase update exception:', e);
         }
-
-        // SQLite local actors sync
-        try {
-          const db = getArchiveDb();
-          if (db) {
-            const updates: string[] = [];
-            const params: any[] = [];
-            if (genderStr) { updates.push('gender = ?'); params.push(genderStr); }
-            if (birthDate) { updates.push('birth_date = ?'); params.push(birthDate); }
-            if (deathDate) { updates.push('death_date = ?'); params.push(deathDate); }
-            if (placeOfBirth) { updates.push('place_of_birth = ?'); params.push(placeOfBirth); }
-            if (nativeName) { updates.push('native_name = ?'); params.push(nativeName); }
-            if (turkishBio) { updates.push('bio_tr = ?'); params.push(turkishBio); }
-            if (tmdbId) { updates.push('tmdb_id = ?'); params.push(tmdbId); }
-            if (anilistId) { updates.push('anilist_id = ?'); params.push(anilistId); }
-            if (updates.length > 0) {
-              params.push(cleanId);
-              db.prepare(`UPDATE actors SET ${updates.join(', ')} WHERE id = ?`).run(...params);
-            }
-          }
-        } catch (_) {}
       }
     }
 
@@ -484,11 +520,11 @@ export async function GET(req: NextRequest) {
       source: 'live_enriched',
     };
 
-    inMemoryBioCache.set(cacheKey, finalPayload);
+    setBioCache(cacheKey, finalPayload);
     return NextResponse.json(finalPayload, {
       headers: { 'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=604800' },
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: err?.message || 'Beklenmeyen hata' }, { status: 500 });
   }
 }

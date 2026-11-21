@@ -1,6 +1,6 @@
 'use client';
 
-import React, { memo } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import { Star, Eye, Sparkles } from 'lucide-react';
 import {
@@ -93,12 +93,14 @@ function DirectMediaCardComponent({
     <Link
       href={`/seri/${item.slug}`}
       aria-label={displayTitle}
-      className="group relative block w-full aspect-[2/3] rounded-xl sm:rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 hover:border-white/30 shadow-[0_12px_28px_rgba(0,0,0,0.6)] hover:shadow-[0_18px_36px_rgba(0,0,0,0.85)] hover:scale-[1.03] active:scale-[0.98] transition-all duration-200 ease-out select-none cursor-pointer"
+      className="cv-card group relative block w-full aspect-[2/3] rounded-xl sm:rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 hover:border-white/30 shadow-md sm:shadow-[0_12px_28px_rgba(0,0,0,0.6)] md:hover:shadow-[0_18px_36px_rgba(0,0,0,0.85)] md:hover:scale-[1.03] active:scale-[0.98] transition-[transform,border-color] duration-200 ease-out select-none cursor-pointer"
     >
       {/* Poster Image */}
       <img
         src={posterSrc}
         alt={displayTitle}
+        width={240}
+        height={360}
         loading={priority ? 'eager' : 'lazy'}
         decoding="async"
         onError={(e) => {
@@ -126,7 +128,7 @@ function DirectMediaCardComponent({
             target.src = '/logo-dark.png';
           }
         }}
-        className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 ease-out group-hover:scale-105"
+        className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 ease-out md:group-hover:scale-105"
       />
 
       {/* Top Gradient for badges */}
@@ -136,12 +138,12 @@ function DirectMediaCardComponent({
       <div className="absolute top-2 sm:top-2.5 left-2 sm:left-2.5 right-2 sm:right-2.5 z-20 flex items-center justify-between gap-1.5 pointer-events-none">
         <div className="flex items-center gap-1.5">
           {countryCode && (
-            <span className="inline-flex items-center justify-center filter drop-shadow-[0_2px_5px_rgba(0,0,0,0.95)]">
+            <span className="inline-flex items-center justify-center sm:drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
               <CountryFlag code={countryCode} size="md" className="rounded-[3px]" />
             </span>
           )}
           {isShortDrama(item) ? (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-black tracking-wider uppercase bg-gradient-to-r from-amber-500/90 to-rose-500/90 text-white border border-white/20 shadow-[0_2px_8px_rgba(245,158,11,0.4)]">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-black tracking-wider uppercase bg-gradient-to-r from-amber-500/90 to-rose-500/90 text-white border border-white/20 sm:shadow-[0_2px_8px_rgba(245,158,11,0.4)]">
               <Sparkles className="w-2.5 h-2.5 text-amber-200 fill-amber-200" />
               <span>KISA DRAMA</span>
             </span>
@@ -153,13 +155,13 @@ function DirectMediaCardComponent({
         </div>
 
         {ratingInfo && (
-          <div className="inline-flex items-center gap-1 filter drop-shadow-[0_2px_5px_rgba(0,0,0,0.95)]">
+          <div className="inline-flex items-center gap-1 [text-shadow:0_1px_3px_rgba(0,0,0,0.95)] sm:drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
             {ratingInfo.isKoUp ? (
               <>
                 <span className="text-[9px] font-black tracking-wider uppercase text-sky-400 bg-sky-500/20 px-1 py-0.5 rounded border border-sky-400/30">
                   KoUp
                 </span>
-                <Star className="w-3.5 h-3.5 fill-sky-400 text-sky-400 shrink-0 drop-shadow-[0_0_6px_rgba(56,189,248,0.8)]" />
+                <Star className="w-3.5 h-3.5 fill-sky-400 text-sky-400 shrink-0 sm:drop-shadow-[0_0_6px_rgba(56,189,248,0.8)]" />
               </>
             ) : (
               <Star className="w-3.5 h-3.5 fill-[#f5c518] text-[#f5c518] shrink-0" />
@@ -211,4 +213,4 @@ function DirectMediaCardComponent({
   );
 }
 
-export default memo(DirectMediaCardComponent);
+export default React.memo(DirectMediaCardComponent);

@@ -2,7 +2,7 @@
 
 import React, { useRef, memo } from 'react';
 import Link from 'next/link';
-import { Sparkles, ChevronRight, ChevronLeft } from 'lucide-react';
+import { ChevronRight, ChevronLeft } from 'lucide-react';
 import { MediaItem } from '@/lib/supabase';
 import ShortsCard from '@/components/shorts/ShortsCard';
 
@@ -24,21 +24,13 @@ function ShortsRailComponent({
   return (
     <section className={className}>
       <div className="flex items-center justify-between mb-4 sm:mb-6">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] sm:text-[11px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-500/90 via-orange-500/90 to-rose-500/90 text-white border border-white/20 shadow-[0_0_14px_rgba(245,158,11,0.35)]">
-              <Sparkles className="w-3 h-3 text-amber-200 fill-amber-200" />
-              <span>SHORTS</span>
-            </span>
-          </div>
-          <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white mt-1.5">
-            {title}
-          </h2>
-        </div>
+        <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white">
+          {title}
+        </h2>
         <div className="flex items-center gap-3">
           <Link
             href="/kesfet?type=kisa_drama"
-            className="text-xs sm:text-sm font-semibold text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1 cursor-pointer"
+            className="text-[11px] sm:text-[12px] tracking-wider uppercase font-semibold text-white/60 hover:text-white transition-colors flex items-center gap-1 cursor-pointer min-h-[44px]"
           >
             <span>Tümünü Keşfet</span>
             <ChevronRight className="w-4 h-4" />
@@ -50,7 +42,7 @@ function ShortsRailComponent({
                 scrollRef.current?.scrollBy({ left: -320, behavior: 'smooth' })
               }
               aria-label="Geri"
-              className="w-8 h-8 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+              className="w-11 h-11 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
@@ -60,7 +52,7 @@ function ShortsRailComponent({
                 scrollRef.current?.scrollBy({ left: 320, behavior: 'smooth' })
               }
               aria-label="İleri"
-              className="w-8 h-8 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+              className="w-11 h-11 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
             >
               <ChevronRight className="w-4 h-4" />
             </button>

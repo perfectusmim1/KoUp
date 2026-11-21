@@ -6,11 +6,11 @@ import Navbar from '@/components/Navbar';
 import CookieConsentBanner from '@/components/CookieConsentBanner';
 import ScrollRestoration from '@/components/ScrollRestoration';
 import PageTransition from '@/components/PageTransition';
-import Link from 'next/link';
+import Footer from '@/components/Footer';
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700', '800'],
+  weight: ['400', '500', '600', '700', '800'],
   variable: '--font-sans',
   display: 'swap',
   preload: true,
@@ -18,13 +18,28 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 
 const jetbrainsMono = JetBrains_Mono({
   subsets: ['latin'],
-  weight: ['400', '500', '700', '800'],
+  weight: ['400', '500', '700'],
   variable: '--font-mono',
   display: 'swap',
   preload: false,
 });
 
-import Footer from '@/components/Footer';
+function resolveSafeOrigin(rawUrl?: string): string | null {
+  if (!rawUrl) return null;
+  try {
+    const parsed = new URL(rawUrl.trim());
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+      return parsed.origin;
+    }
+  } catch {
+    // Ignore malformed env origin
+  }
+  return null;
+}
+
+const r2PublicOrigin = resolveSafeOrigin(
+  process.env.NEXT_PUBLIC_R2_PUBLIC_URL || process.env.R2_PUBLIC_URL
+);
 
 export const viewport: Viewport = {
   themeColor: '#080808',
@@ -66,6 +81,14 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
+        <link rel="preconnect" href="https://image.tmdb.org" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://image.tmdb.org" />
+        {r2PublicOrigin && (
+          <>
+            <link rel="preconnect" href={r2PublicOrigin} crossOrigin="anonymous" />
+            <link rel="dns-prefetch" href={r2PublicOrigin} />
+          </>
+        )}
         <script
           dangerouslySetInnerHTML={{
             __html: `if(typeof window!=='undefined'&&'scrollRestoration' in history){history.scrollRestoration='manual';}`,
