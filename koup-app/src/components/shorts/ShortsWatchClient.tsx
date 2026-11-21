@@ -10,7 +10,6 @@ import {
   ChevronLeft,
   Layers,
   List,
-  Sparkles,
   Play,
   Check,
   X,
@@ -72,14 +71,51 @@ export default function ShortsWatchClient({
 
   const [activeEpNum, setActiveEpNum] = useState<number>(currentEpisode);
   const [selectedSourceIdx, setSelectedSourceIdx] = useState<number>(initialSourceIdx);
+  const [deadSourceUrls, setDeadSourceUrls] = useState<Set<string>>(() => new Set());
   const [showMobileEpisodesSheet, setShowMobileEpisodesSheet] = useState<boolean>(false);
   const [showMobileSourcesSheet, setShowMobileSourcesSheet] = useState<boolean>(false);
   const [isOverviewExpanded, setIsOverviewExpanded] = useState<boolean>(false);
 
-  // Sync internal active episode when prop changes
+  // Sync internal active episode and source index when props change
   useEffect(() => {
     setActiveEpNum(currentEpisode);
   }, [currentEpisode]);
+
+  useEffect(() => {
+    setSelectedSourceIdx(initialSourceIdx);
+  }, [initialSourceIdx]);
+
+  const handleSelectSourceIdx = useCallback(
+    (idx: number) => {
+      setSelectedSourceIdx(idx);
+      if (onSelectSourceIdx) onSelectSourceIdx(idx);
+    },
+    [onSelectSourceIdx]
+  );
+
+  const handlePlayerSourceDead = useCallback(
+    (deadUrl: string) => {
+      if (deadUrl) {
+        setDeadSourceUrls((prev) => {
+          if (prev.has(deadUrl)) return prev;
+          const next = new Set(prev);
+          next.add(deadUrl);
+          return next;
+        });
+      }
+      if (onSourceDead) onSourceDead(deadUrl);
+    },
+    [onSourceDead]
+  );
+
+  const isSourceDead = useCallback(
+    (src: EpisodeSource | undefined) => {
+      if (!src) return false;
+      if ((src as any).isDead || (src as any).status === 'dead') return true;
+      return Boolean(src.direct_url && deadSourceUrls.has(src.direct_url));
+    },
+    [deadSourceUrls]
+  );
 
   // Sort episodes in ascending order (1..N)
   const sortedEpisodes = useMemo(() => {
@@ -270,7 +306,7 @@ export default function ShortsWatchClient({
         <div className="flex items-center gap-2 min-w-0">
           <Link
             href={`/seri/${media.slug}`}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white/90 text-xs font-semibold transition-all cursor-pointer min-h-[38px] justify-center shrink-0"
+            className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/90 text-xs font-semibold transition-all cursor-pointer min-h-[44px] min-w-[44px] justify-center shrink-0"
             aria-label="Dizi Detayına Dön"
           >
             <ChevronLeft className="w-4 h-4" />
@@ -346,9 +382,8 @@ export default function ShortsWatchClient({
 
                 {/* Top Bar inside player */}
                 <div className="relative z-10 w-full flex items-center justify-between pt-1">
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-500/90 to-rose-500/90 text-white border border-white/20 shadow-[0_0_12px_rgba(245,158,11,0.35)]">
-                    <Sparkles className="w-2.5 h-2.5 text-amber-200 fill-amber-200" />
-                    <span>SHORTS</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-black/75 border border-white/15 text-white/90">
+                    KISA DRAMA
                   </span>
                   <span className="text-[11px] font-mono text-white/60 font-semibold px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
                     {activeEpNum}. Bölüm
@@ -357,11 +392,11 @@ export default function ShortsWatchClient({
 
                 {/* Center Content */}
                 <div className="relative z-10 flex flex-col items-center my-auto px-3 max-w-[280px]">
-                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-[0_0_24px_rgba(245,158,11,0.25)] mb-3.5">
-                    <Film className="w-7 h-7 text-amber-400" />
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white/[0.06] border border-white/15 flex items-center justify-center text-sky-300 shadow-[0_12px_28px_rgba(0,0,0,0.6)] mb-3.5">
+                    <Film className="w-7 h-7 text-sky-300" />
                   </div>
 
-                  <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 font-mono text-[10px] sm:text-[11px] font-bold mb-2">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-black/75 border border-white/15 text-white/90 font-mono text-[10px] sm:text-[11px] font-bold mb-2">
                     Yakında
                   </span>
 
@@ -380,7 +415,7 @@ export default function ShortsWatchClient({
                     <button
                       type="button"
                       onClick={goToPrev}
-                      className="w-full py-2.5 px-3 rounded-xl bg-white/10 hover:bg-white/15 active:scale-98 border border-white/15 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                      className="w-full min-h-[44px] py-2.5 px-3 rounded-xl bg-white/10 hover:bg-white/15 active:scale-98 border border-white/15 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                     >
                       <ChevronLeft className="w-4 h-4" />
                       <span>Önceki Bölüm ({prevEp.episode_number}. Bölüm)</span>
@@ -392,15 +427,15 @@ export default function ShortsWatchClient({
                       <button
                         type="button"
                         onClick={() => setShowMobileEpisodesSheet(true)}
-                        className="flex-1 py-2.5 px-2 rounded-xl bg-white/10 hover:bg-white/15 active:scale-98 border border-white/15 text-white text-xs font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer"
+                        className="flex-1 min-h-[44px] py-2.5 px-2 rounded-xl bg-white/10 hover:bg-white/15 active:scale-98 border border-white/15 text-white text-xs font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer"
                       >
-                        <List className="w-4 h-4 text-amber-300" />
+                        <List className="w-4 h-4 text-sky-400" />
                         <span>Bölümler</span>
                       </button>
                     )}
                     <Link
                       href={`/seri/${media.slug}`}
-                      className="flex-1 py-2.5 px-2 rounded-xl bg-gradient-to-r from-[#E50914] to-rose-600 hover:from-red-600 hover:to-rose-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-98 shadow-[0_0_16px_rgba(229,9,20,0.4)] cursor-pointer"
+                      className="flex-1 min-h-[44px] py-2.5 px-2 rounded-xl bg-gradient-to-r from-[#E50914] to-rose-600 hover:from-red-600 hover:to-rose-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-98 shadow-[0_0_16px_rgba(229,9,20,0.4)] cursor-pointer"
                     >
                       <Film className="w-4 h-4" />
                       <span>Dizi Detayı</span>
@@ -420,11 +455,9 @@ export default function ShortsWatchClient({
                 onNextEpisode={goToNext}
                 onPrevEpisode={goToPrev}
                 selectedSourceIdx={selectedSourceIdx}
-                onSelectSourceIdx={(idx) => {
-                  setSelectedSourceIdx(idx);
-                  if (onSelectSourceIdx) onSelectSourceIdx(idx);
-                }}
-                onSourceDead={onSourceDead}
+                onSelectSourceIdx={handleSelectSourceIdx}
+                onSourceDead={handlePlayerSourceDead}
+                deadSourceUrls={deadSourceUrls}
                 ambientLightingEnabled={ambientLightingEnabled}
                 onToggleAmbientLighting={onToggleAmbientLighting}
                 autoNextEnabled={autoNextEnabled}
@@ -442,7 +475,7 @@ export default function ShortsWatchClient({
               onClick={goToPrev}
               disabled={!prevEp}
               aria-label="Önceki Bölüm"
-              className={`h-10 px-2.5 rounded-xl flex items-center justify-center gap-1 font-mono text-xs font-bold transition-all min-h-[40px] cursor-pointer ${
+              className={`min-h-[44px] min-w-[44px] px-2.5 rounded-xl flex items-center justify-center gap-1 font-mono text-xs font-bold transition-all cursor-pointer ${
                 prevEp
                   ? 'bg-white/10 hover:bg-white/20 text-white active:scale-95 border border-white/10'
                   : 'bg-white/[0.03] text-white/20 border border-white/5 cursor-not-allowed'
@@ -457,9 +490,9 @@ export default function ShortsWatchClient({
               type="button"
               onClick={() => setShowMobileEpisodesSheet(true)}
               aria-label="Bölümler Listesi"
-              className="flex-1 h-10 px-2.5 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 border border-white/10 text-white flex items-center justify-center gap-1.5 font-mono text-xs font-bold transition-all min-h-[40px] cursor-pointer"
+              className="flex-1 min-h-[44px] px-2.5 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 border border-white/10 text-white flex items-center justify-center gap-1.5 font-mono text-xs font-bold transition-all cursor-pointer"
             >
-              <List className="w-4 h-4 text-amber-300" />
+              <List className="w-4 h-4 text-sky-400" />
               <span>Bölüm: {activeEpNum}/{sortedEpisodes.length || 1}</span>
             </button>
 
@@ -469,7 +502,7 @@ export default function ShortsWatchClient({
                 type="button"
                 onClick={() => setShowMobileSourcesSheet(true)}
                 aria-label="Kaynak Seçimi"
-                className="h-10 px-2.5 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 border border-white/10 text-white flex items-center justify-center gap-1.5 font-mono text-xs font-bold transition-all min-h-[40px] min-w-[40px] cursor-pointer"
+                className="min-h-[44px] min-w-[44px] px-2.5 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 border border-white/10 text-white flex items-center justify-center gap-1.5 font-mono text-xs font-bold transition-all cursor-pointer"
               >
                 <Layers className="w-4 h-4 text-sky-400" />
                 <span className="hidden xs:inline">Kaynak</span>
@@ -482,7 +515,7 @@ export default function ShortsWatchClient({
               onClick={goToNext}
               disabled={!nextEp}
               aria-label="Sonraki Bölüm"
-              className={`h-10 px-2.5 rounded-xl flex items-center justify-center gap-1 font-mono text-xs font-bold transition-all min-h-[40px] cursor-pointer ${
+              className={`min-h-[44px] min-w-[44px] px-2.5 rounded-xl flex items-center justify-center gap-1 font-mono text-xs font-bold transition-all cursor-pointer ${
                 nextEp
                   ? 'bg-gradient-to-r from-[#E50914] to-rose-600 hover:from-red-600 hover:to-rose-700 text-white active:scale-95 shadow-[0_0_12px_rgba(229,9,20,0.5)] border border-red-500/40'
                   : 'bg-white/[0.03] text-white/20 border border-white/5 cursor-not-allowed'
@@ -510,9 +543,8 @@ export default function ShortsWatchClient({
             </div>
 
             <div className="flex items-center justify-between gap-2 mb-1.5">
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 border border-amber-400/30 text-amber-300">
-                <Sparkles className="w-2.5 h-2.5" />
-                <span>Kısa Drama</span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-black/75 border border-white/15 text-white/90">
+                Kısa Drama
               </span>
               <span className="text-[11px] font-mono text-white/50">
                 Toplam {sortedEpisodes.length} Bölüm
@@ -544,18 +576,30 @@ export default function ShortsWatchClient({
               <div className="flex flex-wrap gap-1.5">
                 {availableSources.map((s, idx) => {
                   const isSelected = selectedSourceIdx === idx;
+                  const isDead = isSourceDead(s);
                   return (
                     <button
                       key={`src-pill-${idx}`}
                       type="button"
-                      onClick={() => setSelectedSourceIdx(idx)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
-                        isSelected
-                          ? 'bg-gradient-to-r from-sky-500 to-blue-600 text-white border-sky-400/40 shadow-[0_0_12px_rgba(56,189,248,0.35)]'
-                          : 'bg-white/[0.05] border-white/10 text-white/70 hover:bg-white/10 hover:text-white'
+                      disabled={isDead}
+                      onClick={() => {
+                        if (isDead) return;
+                        handleSelectSourceIdx(idx);
+                      }}
+                      className={`min-h-[40px] px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border inline-flex items-center gap-1.5 ${
+                        isDead
+                          ? 'bg-white/[0.02] border-white/10 text-white/35 opacity-65 cursor-not-allowed'
+                          : isSelected
+                          ? 'bg-gradient-to-r from-sky-500 to-blue-600 text-white border-sky-400/40 shadow-[0_0_12px_rgba(56,189,248,0.35)] cursor-pointer'
+                          : 'bg-white/[0.05] border-white/10 text-white/70 hover:bg-white/10 hover:text-white cursor-pointer'
                       }`}
                     >
-                      {s.source_name || `Kaynak ${idx + 1}`}
+                      <span>{s.source_name || `Kaynak ${idx + 1}`}</span>
+                      {isDead && (
+                        <span className="px-1.5 py-0.5 rounded bg-red-500/15 border border-red-400/25 text-[10px] font-medium text-red-300">
+                          Çalışmıyor
+                        </span>
+                      )}
                     </button>
                   );
                 })}
@@ -661,7 +705,7 @@ export default function ShortsWatchClient({
                 <button
                   type="button"
                   onClick={() => setShowMobileEpisodesSheet(false)}
-                  className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer"
+                  className="w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer"
                   aria-label="Kapat"
                 >
                   <X className="w-4 h-4" />
@@ -757,7 +801,7 @@ export default function ShortsWatchClient({
                 <button
                   type="button"
                   onClick={() => setShowMobileSourcesSheet(false)}
-                  className="w-9 h-9 rounded-full bg-white/10 text-white flex items-center justify-center cursor-pointer"
+                  className="w-11 h-11 rounded-full bg-white/10 text-white flex items-center justify-center cursor-pointer"
                   aria-label="Kapat"
                 >
                   <X className="w-4 h-4" />
@@ -766,22 +810,33 @@ export default function ShortsWatchClient({
               <div className="flex flex-col gap-2 mt-4">
                 {availableSources.map((s, idx) => {
                   const isSelected = selectedSourceIdx === idx;
+                  const isDead = isSourceDead(s);
                   return (
                     <button
                       key={`mob-src-${idx}`}
                       type="button"
+                      disabled={isDead}
                       onClick={() => {
-                        setSelectedSourceIdx(idx);
+                        if (isDead) return;
+                        handleSelectSourceIdx(idx);
                         setShowMobileSourcesSheet(false);
                       }}
-                      className={`w-full min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors border ${
-                        isSelected
-                          ? 'bg-sky-500/20 text-sky-300 border-sky-400/40 font-bold'
-                          : 'bg-white/5 text-white/80 border-white/10'
+                      className={`w-full min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between gap-2 transition-colors border ${
+                        isDead
+                          ? 'bg-white/[0.02] text-white/35 border-white/10 opacity-65 cursor-not-allowed'
+                          : isSelected
+                          ? 'bg-sky-500/20 text-sky-300 border-sky-400/40 font-bold cursor-pointer'
+                          : 'bg-white/5 text-white/80 border-white/10 cursor-pointer'
                       }`}
                     >
-                      <span>{s.source_name || `Kaynak ${idx + 1}`}</span>
-                      {isSelected && <Check className="w-4 h-4 text-sky-400" />}
+                      <span className="truncate">{s.source_name || `Kaynak ${idx + 1}`}</span>
+                      {isDead ? (
+                        <span className="px-2 py-0.5 rounded bg-red-500/15 border border-red-400/25 text-[10px] font-medium text-red-300 shrink-0">
+                          Çalışmıyor
+                        </span>
+                      ) : (
+                        isSelected && <Check className="w-4 h-4 text-sky-400 shrink-0" />
+                      )}
                     </button>
                   );
                 })}
@@ -907,14 +962,16 @@ export function ShortsDetailClient({
             <img
               src={posterUrl}
               alt={displayTitle}
-              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+              loading="eager"
+              decoding="async"
+              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
             />
           </div>
 
           {/* Details & Actions */}
           <div className="flex-1 flex flex-col text-center md:text-left">
             <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-2.5">
-              <span className="px-3 py-0.5 rounded-full text-xs font-black uppercase tracking-wider bg-gradient-to-r from-amber-500/80 to-rose-500/80 text-white border border-white/20 shadow-[0_0_12px_rgba(245,158,11,0.25)]">
+              <span className="px-2.5 py-0.5 rounded text-xs font-bold uppercase tracking-wider bg-black/75 border border-white/15 text-white/90">
                 Kısa Drama
               </span>
               {media.country_code && (
@@ -966,7 +1023,7 @@ export function ShortsDetailClient({
         <section className="mt-8 pt-8 border-t border-white/10">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
             <div className="flex items-center gap-2.5">
-              <Film className="w-5 h-5 text-amber-400" />
+              <Film className="w-5 h-5 text-sky-400" />
               <h2 className="text-lg sm:text-xl font-bold text-white">
                 Bölümler
               </h2>
@@ -1007,7 +1064,7 @@ export function ShortsDetailClient({
               <Link
                 key={`detail-ep-${ep.episode_number}`}
                 href={`/seri/${media.slug}/${ep.episode_number}`}
-                className="h-11 rounded-xl bg-white/[0.05] hover:bg-white/15 border border-white/10 hover:border-amber-400/40 text-white font-mono font-bold text-sm flex items-center justify-center transition-all hover:scale-105 active:scale-95 shadow-sm min-h-[44px]"
+                className="h-11 rounded-xl bg-white/[0.05] hover:bg-white/15 border border-white/10 hover:border-white/30 text-white font-mono font-bold text-sm flex items-center justify-center transition-all hover:scale-105 active:scale-95 shadow-sm min-h-[44px]"
               >
                 <span>{ep.episode_number}</span>
               </Link>
