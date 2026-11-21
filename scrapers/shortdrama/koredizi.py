@@ -14,7 +14,14 @@ import sys
 import time
 from bs4 import BeautifulSoup
 
-from scrapers.multisite import add_source
+from scrapers.multisite import (
+    SiteBlockedError,
+    add_source,
+    bind_stop_event,
+    get_step_stop_event,
+    is_blocked_response,
+    is_step_stopped,
+)
 from scrapers.shortdrama.common import (
     CHECKPOINT_DIR,
     clean_cover_image,
@@ -23,6 +30,7 @@ from scrapers.shortdrama.common import (
     get_or_create_episode,
     get_session,
     load_checkpoint,
+    load_checkpoint_counts,
     load_env,
     safe_request,
     save_checkpoint,
@@ -49,6 +57,11 @@ class KoreDiziScraper:
 
         try:
             resp = self.session.get(f"{BASE_URL}/", timeout=15)
+            if resp:
+                blocked, reason = is_blocked_response(resp.status_code, resp.text)
+                if blocked:
+                    print(f"[KOREDIZI_BLOCKED] Login/homepage blocked ({reason}); aborting KoreDizi.", flush=True)
+                    raise SiteBlockedError(reason)
             if not resp or resp.status_code != 200:
                 print(f"[KOREDIZI_LOGIN_ERROR] Cannot fetch homepage: {resp.status_code if resp else 'None'}")
                 return False
@@ -114,6 +127,11 @@ class KoreDiziScraper:
     def get_catalog(self) -> list[dict]:
         """Fetches all short dramas from KoreDizi directory."""
         resp = safe_request(self.session, "GET", f"{BASE_URL}/diziler", delay=0.5)
+        if resp is not None:
+            blocked, reason = is_blocked_response(resp.status_code, resp.text)
+            if blocked:
+                print(f"[KOREDIZI_BLOCKED] {reason} on /diziler; fail-fast abort.", flush=True)
+                raise SiteBlockedError(reason)
         if not resp or resp.status_code != 200:
             return []
 
@@ -167,13 +185,48 @@ class KoreDiziScraper:
             pass
         return False
 
+    @staticmethod
+    def _extract_dtpasn_hash(url_str: str) -> str | None:
+        m = re.search(r"dtpasn\.asia/video/([A-Za-z0-9_-]+)", url_str or "")
+        return m.group(1) if m else None
+
+    @staticmethod
+    def _extract_embed_links(soup_obj, slug: str) -> dict[int, str]:
+        """Extract distinct per-episode dtpasn/player embed URLs from a[data-embed-url] elements."""
+        ep_map: dict[int, str] = {}
+        for a in soup_obj.find_all("a", attrs={"data-embed-url": True}):
+            embed_url = (a.get("data-embed-url") or "").strip()
+            if not embed_url:
+                continue
+            ep_raw = (a.get("data-episode") or "").strip()
+            ep_no = None
+            if ep_raw.isdigit():
+                ep_no = int(ep_raw)
+            else:
+                href = a.get("href") or ""
+                m = re.search(rf"/dizi/{re.escape(slug)}/(\d+)", href)
+                if m:
+                    ep_no = int(m.group(1))
+            if ep_no and ep_no > 0:
+                ep_map[ep_no] = embed_url
+        return ep_map
+
     def scrape_drama(self, item: dict, sync_cloud: bool = True) -> int | None:
-        """Scrapes full details, all episodes, and sources for a single drama."""
+        """Scrapes full details, all episodes, and distinct sources for a single drama."""
+        self._last_drama_stats = {"dramas_added": 0, "episodes_added": 0, "sources_added": 0}
+        if is_step_stopped():
+            return None
+
         url = item["url"]
         slug = item["slug"]
 
         # 1. Network I/O phase (No DB connection held during HTTP)
         resp = safe_request(self.session, "GET", url, delay=0.5)
+        if resp is not None:
+            blocked, reason = is_blocked_response(resp.status_code, resp.text)
+            if blocked:
+                print(f"[KOREDIZI_BLOCKED] {reason} on {url}; fail-fast abort.", flush=True)
+                raise SiteBlockedError(reason)
         if not resp or resp.status_code != 200:
             print(f"[KOREDIZI_WARN] Failed to fetch drama page {url}")
             return None
@@ -190,8 +243,11 @@ class KoreDiziScraper:
         if cover and not cover.startswith("http"):
             cover = f"{BASE_URL}{cover}"
 
+        # Extract per-episode embed URLs directly from data-embed-url attributes when present
+        ep_embed_map = self._extract_embed_links(soup, slug)
+
         # Extract episode numbers from links like /dizi/{slug}/{ep_no}
-        ep_numbers = []
+        ep_numbers = list(ep_embed_map.keys())
         for a in soup.find_all("a", href=re.compile(rf"/dizi/{re.escape(slug)}/\d+")):
             href = a.get("href", "")
             m = re.search(rf"/dizi/{re.escape(slug)}/(\d+)", href)
@@ -209,35 +265,142 @@ class KoreDiziScraper:
         ep_numbers = sorted(list(set(ep_numbers)))
         ep_count = max(ep_numbers) if ep_numbers else 0
 
-        from concurrent.futures import ThreadPoolExecutor
+        # If data-embed-url list only renders inside episode watch pages, fetch episode 1 once
+        if ep_numbers and not ep_embed_map:
+            ep1_url = f"{BASE_URL}/dizi/{slug}/{ep_numbers[0]}"
+            ep1_resp = safe_request(self.session, "GET", ep1_url, delay=0.1)
+            if ep1_resp is not None:
+                blocked, reason = is_blocked_response(ep1_resp.status_code, ep1_resp.text)
+                if blocked:
+                    raise SiteBlockedError(reason)
+                if ep1_resp.status_code == 200:
+                    ep1_soup = BeautifulSoup(ep1_resp.text, "html.parser")
+                    ep_embed_map = self._extract_embed_links(ep1_soup, slug)
 
-        def _fetch_ep(ep_no):
-            ep_url = f"{BASE_URL}/dizi/{slug}/{ep_no}"
-            ep_resp = safe_request(self.session, "GET", ep_url, delay=0.05)
-            if not ep_resp or ep_resp.status_code != 200:
+        # Check DB upfront for episodes that already have a valid koredizi dtpasn source
+        existing_eps_with_src = set()
+        try:
+            conn_chk = get_db_connection()
+            try:
+                cur_chk = conn_chk.cursor()
+                cur_chk.execute(
+                    "SELECT id FROM dramas WHERE content_type = 'kisa_drama' AND slug = ?",
+                    (slug,),
+                )
+                drow = cur_chk.fetchone()
+                if drow:
+                    cur_chk.execute("""
+                        SELECT DISTINCT e.episode_number
+                        FROM episodes e
+                        JOIN episode_sources es ON es.episode_id = e.id
+                        WHERE e.drama_id = ? AND es.site = 'koredizi' AND es.direct_url LIKE '%dtpasn.asia/video/%'
+                    """, (drow[0],))
+                    existing_eps_with_src = {int(r[0]) for r in cur_chk.fetchall() if r[0] is not None}
+            finally:
+                conn_chk.close()
+        except Exception:
+            pass
+
+        missing_eps = [ep for ep in ep_numbers if ep not in existing_eps_with_src]
+        if not missing_eps and ep_numbers:
+            self._last_drama_stats["already_complete"] = True
+            self._last_drama_stats["total_eps"] = ep_count
+            print(f"[KOREDIZI_SKIP] {slug}: all {len(ep_numbers)} episodes already present.")
+            return None
+
+        # Reject duplicate identical hashes across distinct episodes in the same drama
+        candidates: list[tuple[int, str, str, str]] = []
+        if ep_embed_map:
+            hash_counts: dict[str, int] = {}
+            parsed_map: dict[int, tuple[str, str]] = {}
+            for ep_no, emb_u in sorted(ep_embed_map.items()):
+                vh = self._extract_dtpasn_hash(emb_u)
+                if vh:
+                    hash_counts[vh] = hash_counts.get(vh, 0) + 1
+                    parsed_map[ep_no] = (vh, f"https://dtpasn.asia/video/{vh}")
+
+            dup_hashes = {h for h, cnt in hash_counts.items() if cnt > 1 and len(parsed_map) > 1}
+            if dup_hashes:
+                print(
+                    f"[KOREDIZI_DUP_HASH] {slug}: detected {len(dup_hashes)} duplicate dtpasn hash(es) across episodes; rejecting duplicates.",
+                    flush=True,
+                )
+            for ep_no in missing_eps:
+                if ep_no in parsed_map:
+                    vh, canon_u = parsed_map[ep_no]
+                    if vh in dup_hashes:
+                        continue
+                    candidates.append((ep_no, f"{BASE_URL}/dizi/{slug}/{ep_no}", vh, canon_u))
+        else:
+            # Legacy fallback if site page lacks data-embed-url; still guard strictly against identical hashes
+            from concurrent.futures import ThreadPoolExecutor
+            step_ev = get_step_stop_event()
+
+            def _fetch_ep(ep_no):
+                bind_stop_event(step_ev)
+                if is_step_stopped(step_ev):
+                    return None
+                ep_url = f"{BASE_URL}/dizi/{slug}/{ep_no}"
+                ep_resp = safe_request(self.session, "GET", ep_url, delay=0.05)
+                if not ep_resp or ep_resp.status_code != 200:
+                    return None
+                ep_soup = BeautifulSoup(ep_resp.text, "html.parser")
+                for iframe in ep_soup.find_all("iframe"):
+                    src = iframe.get("src") or ""
+                    vh = self._extract_dtpasn_hash(src)
+                    if vh:
+                        return (ep_no, ep_url, vh, f"https://dtpasn.asia/video/{vh}")
                 return None
-            ep_soup = BeautifulSoup(ep_resp.text, "html.parser")
-            for iframe in ep_soup.find_all("iframe"):
-                src = iframe.get("src") or ""
-                if "dtpasn.asia/video/" in src:
-                    v_hash = src.split("video/")[-1].split("?")[0].split("/")[0].strip()
-                    if self.verify_dtpasn_video(v_hash):
-                        return (ep_no, ep_url, f"https://dtpasn.asia/video/{v_hash}")
+
+            with ThreadPoolExecutor(max_workers=6) as executor:
+                raw_results = [r for r in executor.map(_fetch_ep, missing_eps) if r is not None]
+
+            hash_counts: dict[str, int] = {}
+            for _, _, vh, _ in raw_results:
+                hash_counts[vh] = hash_counts.get(vh, 0) + 1
+            dup_hashes = {h for h, cnt in hash_counts.items() if cnt > 1 and len(raw_results) > 1}
+            if dup_hashes:
+                print(
+                    f"[KOREDIZI_DUP_HASH] {slug}: fallback iframe returned duplicate dtpasn hash(es) across episodes; skipping duplicates.",
+                    flush=True,
+                )
+            candidates = [c for c in raw_results if c[2] not in dup_hashes]
+
+        if not candidates:
+            print(f"[KOREDIZI_WARN] {slug}: no unique verified episode hashes found.")
+            return None
+
+        from concurrent.futures import ThreadPoolExecutor
+        step_ev = get_step_stop_event()
+
+        def _verify_candidate(cand):
+            bind_stop_event(step_ev)
+            if is_step_stopped(step_ev):
+                return None
+            ep_no, ep_url, vh, canon_u = cand
+            if self.verify_dtpasn_video(vh):
+                return (ep_no, ep_url, canon_u)
             return None
 
         with ThreadPoolExecutor(max_workers=6) as executor:
-            results = executor.map(_fetch_ep, ep_numbers)
-            verified_episodes = [r for r in results if r is not None]
+            verified_episodes = [r for r in executor.map(_verify_candidate, candidates) if r is not None]
+
+        if not verified_episodes:
+            return None
 
         # 2. Fast atomic database transaction phase with retry
         did = None
         sources_added = 0
+        eps_added = 0
+        is_new_drama = False
         for attempt in range(10):
+            sources_added = 0
+            eps_added = 0
             try:
                 conn = get_db_connection()
                 cur = conn.cursor()
 
-                did, final_slug, is_new = upsert_short_drama(
+                did, final_slug, is_new_drama = upsert_short_drama(
                     conn=conn,
                     cur=cur,
                     title=title,
@@ -252,6 +415,7 @@ class KoreDiziScraper:
                     country_name="Güney Kore",
                 )
 
+                ep_before = cur.execute("SELECT COUNT(id) FROM episodes WHERE drama_id = ?", (did,)).fetchone()[0]
                 for ep_no, ep_url, embed_url in verified_episodes:
                     ep_id = get_or_create_episode(
                         cur=cur,
@@ -271,6 +435,8 @@ class KoreDiziScraper:
                     )
                     if added:
                         sources_added += 1
+                ep_after = cur.execute("SELECT COUNT(id) FROM episodes WHERE drama_id = ?", (did,)).fetchone()[0]
+                eps_added = max(0, ep_after - ep_before)
 
                 conn.commit()
                 conn.close()
@@ -280,39 +446,97 @@ class KoreDiziScraper:
                     raise
                 time.sleep(1.0)
 
-        print(f"[KOREDIZI_INGESTED] #{did} {title}: {len(ep_numbers)} eps, {sources_added} verified sources.")
+        self._last_drama_stats = {
+            "dramas_added": 1 if is_new_drama else 0,
+            "episodes_added": eps_added,
+            "sources_added": sources_added,
+        }
+        print(f"[KOREDIZI_INGESTED] #{did} {title}: {len(ep_numbers)} eps, {eps_added} new eps, {sources_added} verified sources.")
 
         # 3. Cloud sync phase
-        if sync_cloud and did:
+        if sync_cloud and did and (eps_added > 0 or sources_added > 0):
             sync_short_drama_to_cloud(did)
 
         return did
 
-    def run(self, limit: int = None, resume: bool = True, sync_cloud: bool = True):
+    def run(self, limit: int = None, resume: bool = True, sync_cloud: bool = True) -> dict:
         """Runs the KoreDizi scraping pipeline with authentication, checkpointing, and sync."""
-        self.login()
+        try:
+            self.login()
+            catalog = self.get_catalog()
+        except SiteBlockedError as e:
+            print(f"[KOREDIZI_ABORT] Stopped cleanly due to block: {e}")
+            return {"processed": 0, "dramas_added": 0, "episodes_added": 0, "sources_added": 0, "blocked": True}
 
-        catalog = self.get_catalog()
         print(f"[KOREDIZI_CATALOG] Found {len(catalog)} short dramas on KoreDizi.")
         if not catalog:
-            return
+            return {"processed": 0, "dramas_added": 0, "episodes_added": 0, "sources_added": 0}
 
-        done = load_checkpoint("koredizi") if resume else set()
+        done_counts = load_checkpoint_counts("koredizi") if resume else {}
+        if resume and not done_counts:
+            # Bootstrap checkpoints from already-synced SQLite koredizi dramas so ephemeral runners never start at 0
+            try:
+                conn_seed = get_db_connection()
+                try:
+                    cur_seed = conn_seed.cursor()
+                    cur_seed.execute("""
+                        SELECT d.slug, COUNT(DISTINCT e.id)
+                        FROM dramas d
+                        JOIN episodes e ON e.drama_id = d.id
+                        JOIN episode_sources es ON es.episode_id = e.id
+                        WHERE d.content_type = 'kisa_drama' AND es.site = 'koredizi'
+                        GROUP BY d.id
+                    """)
+                    for s_slug, cnt in cur_seed.fetchall():
+                        if s_slug:
+                            done_counts[str(s_slug)] = int(cnt or 0)
+                    if done_counts:
+                        save_checkpoint("koredizi", set(done_counts.keys()), done_counts)
+                finally:
+                    conn_seed.close()
+            except Exception:
+                pass
+
+        done = set(done_counts.keys())
         pending = [item for item in catalog if item["slug"] not in done]
 
         if limit:
             pending = pending[:limit]
 
         print(f"[KOREDIZI_PROGRESS] Processing {len(pending)} dramas (Already processed: {len(done)})...")
+        processed_cnt = 0
+        dramas_added = 0
+        eps_added = 0
+        sources_added = 0
         for idx, item in enumerate(pending, 1):
+            if is_step_stopped():
+                print("[KOREDIZI_STOP] Cooperative stop event set; halting KoreDizi cleanly.", flush=True)
+                break
             slug = item["slug"]
             print(f"[{idx}/{len(pending)}] Scraping KoreDizi: {slug}...")
             try:
-                self.scrape_drama(item, sync_cloud=sync_cloud)
-                done.add(slug)
-                save_checkpoint("koredizi", done)
+                did = self.scrape_drama(item, sync_cloud=sync_cloud)
+                st = getattr(self, "_last_drama_stats", {})
+                dramas_added += st.get("dramas_added", 0)
+                eps_added += st.get("episodes_added", 0)
+                sources_added += st.get("sources_added", 0)
+                processed_cnt += 1
+                if did or st.get("already_complete"):
+                    done.add(slug)
+                    done_counts[slug] = max(done_counts.get(slug, 0), st.get("total_eps", st.get("episodes_added", 0)))
+                    save_checkpoint("koredizi", done, done_counts)
+            except SiteBlockedError as e:
+                print(f"[KOREDIZI_ABORT] Blocked mid-run ({e}); saving checkpoint and stopping.")
+                break
             except Exception as e:
                 print(f"[KOREDIZI_ITEM_ERROR] {slug}: {e}", file=sys.stderr)
+
+        return {
+            "processed": processed_cnt,
+            "dramas_added": dramas_added,
+            "episodes_added": eps_added,
+            "sources_added": sources_added,
+        }
 
 
 if __name__ == "__main__":

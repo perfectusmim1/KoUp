@@ -31,13 +31,21 @@ except ImportError:
 import requests
 from bs4 import BeautifulSoup
 
+from database import get_db_path
 from scrapers.domain_resolver import get_site_base_url
 from scrapers.multisite import (
+    SiteBlockedError,
     add_source,
+    bind_stop_event,
     build_drama_index,
     clean_episode_title,
     clean_scraped_slug,
+    done_urls,
     find_in_index,
+    get_step_stop_event,
+    is_blocked_response,
+    is_step_stopped,
+    mark_done,
     match_or_create_episode,
 )
 from scrapers.supabase_sync_helper import (
@@ -49,7 +57,7 @@ from scrapers.supabase_sync_helper import (
     sync_drama_bundle_and_counts,
 )
 
-DEFAULT_BASE_URL = "https://diziizle.cafe"
+DEFAULT_BASE_URL = "https://diziizle2.icu"
 DAY_MAP = {
     "pazartesi": 1,
     "salı": 2,
@@ -100,7 +108,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 def get_diziizle_db():
     """Returns an isolated, high-timeout SQLite connection with WAL mode."""
     import sqlite3
-    db_path = os.path.join(_ROOT, "webdrama_archive.db")
+    db_path = get_db_path()
     conn = sqlite3.connect(db_path, timeout=120)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
@@ -112,7 +120,9 @@ def _get_base() -> str:
     return get_site_base_url("diziizle", DEFAULT_BASE_URL)
 
 
-def _safe_fetch(url: str, headers: dict = None, timeout: int = 12) -> str:
+def _safe_fetch(url: str, headers: dict = None, timeout: int = 8) -> str:
+    if is_step_stopped():
+        return ""
     h = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -124,15 +134,26 @@ def _safe_fetch(url: str, headers: dict = None, timeout: int = 12) -> str:
     if cfr_sess:
         try:
             r = cfr_sess.get(url, headers=h, timeout=timeout)
+            blocked, reason = is_blocked_response(r.status_code, r.text)
+            if blocked:
+                raise SiteBlockedError(reason)
             if r.status_code == 200:
                 return r.text
+            return ""
+        except SiteBlockedError:
+            raise
         except Exception:
             pass
 
     try:
         r = req_sess.get(url, headers=h, timeout=timeout)
+        blocked, reason = is_blocked_response(r.status_code, r.text)
+        if blocked:
+            raise SiteBlockedError(reason)
         if r.status_code == 200:
             return r.text
+    except SiteBlockedError:
+        raise
     except Exception:
         pass
     return ""
@@ -467,6 +488,8 @@ def fetch_diziizle_series_data(
     if season_nums:
         season_nums.sort(reverse=True)
         for s_n in season_nums:
+            if is_step_stopped():
+                break
             s_url = f"{full_series_url}?sezon={s_n}"
             s_html = _safe_fetch(s_url) if (s_n != 1 or "?sezon=1" in full_series_url) else html
             if s_html:
@@ -498,6 +521,8 @@ def fetch_diziizle_series_data(
     # Fetch and verify episode streams in memory
     verified_episodes = []
     for ep_href in ep_links:
+        if is_step_stopped():
+            break
         full_ep_url = urljoin(base_url, ep_href)
         s_m = re.search(r"sezon-(\d+)", ep_href)
         e_m = re.search(r"bolum-(\d+)", ep_href)
@@ -626,48 +651,57 @@ def crawl_diziizle_recent(
     Aşama 2: Kısa Atomik SQLite Yazımı — 20 dizilik paketi ~50ms içinde tek işlemde yaz ve kapat!
     Aşama 3: Toplu Bulut Senkronu — R2 bundle & Supabase güncellemesi
     """
+    if max_episodes_per_series == 0 and limit and limit > 0:
+        max_episodes_per_series = 25
+
     base_url = _get_base()
     candidates = list(target_urls) if target_urls else []
     seen = set(candidates)
 
-    # 1. Discover all anime from sitemap-anime.xml first (high priority)
-    anime_sitemap = _safe_fetch(f"{base_url}/sitemap-anime.xml")
-    if anime_sitemap:
-        for line in anime_sitemap.splitlines():
-            if "<loc>" in line:
-                m = re.search(r"<loc>(https?://[^<]+)</loc>", line)
-                if m:
-                    u = m.group(1).strip()
-                    if u not in seen and u.endswith((".xml", "/animes")) is False:
-                        candidates.append(u)
-                        seen.add(u)
+    try:
+        # 1. Discover all anime from sitemap-anime.xml first (high priority)
+        anime_sitemap = _safe_fetch(f"{base_url}/sitemap-anime.xml")
+        if anime_sitemap:
+            for line in anime_sitemap.splitlines():
+                if "<loc>" in line:
+                    m = re.search(r"<loc>(https?://[^<]+)</loc>", line)
+                    if m:
+                        u = m.group(1).strip()
+                        if u not in seen and u.endswith((".xml", "/animes")) is False:
+                            candidates.append(u)
+                            seen.add(u)
 
-    # 2. Discover candidate series from homepage
-    home_html = _safe_fetch(base_url)
-    if home_html:
-        soup = BeautifulSoup(home_html, "html.parser")
-        for a in soup.find_all("a", href=True):
-            href = a["href"]
-            if ("/dizi/" in href or "/anime/" in href) and "/sezon-" not in href:
-                full_u = urljoin(base_url, href)
-                if full_u not in seen:
-                    candidates.append(full_u)
-                    seen.add(full_u)
+        # 2. Discover candidate series from homepage
+        if not is_step_stopped():
+            home_html = _safe_fetch(base_url)
+            if home_html:
+                soup = BeautifulSoup(home_html, "html.parser")
+                for a in soup.find_all("a", href=True):
+                    href = a["href"]
+                    if ("/dizi/" in href or "/anime/" in href) and "/sezon-" not in href:
+                        full_u = urljoin(base_url, href)
+                        if full_u not in seen:
+                            candidates.append(full_u)
+                            seen.add(full_u)
 
-    # 3. Discover all series from sitemap-series.xml
-    sitemap_html = _safe_fetch(f"{base_url}/sitemap-series.xml")
-    if sitemap_html:
-        for line in sitemap_html.splitlines():
-            if "<loc>" in line:
-                m = re.search(r"<loc>(https?://[^<]+)</loc>", line)
-                if m:
-                    u = m.group(1).strip()
-                    if ("/dizi/" in u or "/anime/" in u) and u not in seen:
-                        candidates.append(u)
-                        seen.add(u)
+        # 3. Discover all series from sitemap-series.xml
+        if not is_step_stopped():
+            sitemap_html = _safe_fetch(f"{base_url}/sitemap-series.xml")
+            if sitemap_html:
+                for line in sitemap_html.splitlines():
+                    if "<loc>" in line:
+                        m = re.search(r"<loc>(https?://[^<]+)</loc>", line)
+                        if m:
+                            u = m.group(1).strip()
+                            if ("/dizi/" in u or "/anime/" in u) and u not in seen:
+                                candidates.append(u)
+                                seen.add(u)
+    except SiteBlockedError as e:
+        print(f"[DIZIIZLE ABORT] Cloudflare/WAF engeli ({e}); tarama durduruldu.", flush=True)
+        return []
 
     if resume:
-        # Quick query for already completed pilavyer series
+        # Quick query for already completed pilavyer series + site_done checkpoint
         q_conn = get_diziizle_db()
         q_cur = q_conn.cursor()
         q_cur.execute(
@@ -680,16 +714,17 @@ def crawl_diziizle_recent(
             """
         )
         done_slugs = {row[0] for row in q_cur.fetchall() if row[0]}
+        done_set = done_urls(q_cur, "diziizle")
         q_conn.close()
 
         filtered_candidates = []
         for u in candidates:
             m = re.search(r"/(?:dizi|anime)/([^/]+)", u)
             slug_cand = m.group(1) if m else u.strip("/").split("/")[-1]
-            if slug_cand in done_slugs:
+            if slug_cand in done_slugs or u in done_set:
                 continue
             filtered_candidates.append(u)
-        print(f"[DIZIIZLE RESUME] {len(candidates) - len(filtered_candidates)} yapım zaten Pilavyer kaynağına sahip olduğu için atlandı.", flush=True)
+        print(f"[DIZIIZLE RESUME] {len(candidates) - len(filtered_candidates)} yapım zaten işlenmiş/Pilavyer kaynağına sahip olduğu için atlandı.", flush=True)
         candidates = filtered_candidates
 
     to_process = candidates[:limit] if (limit and limit > 0) else candidates
@@ -697,25 +732,45 @@ def crawl_diziizle_recent(
     print(f"[DIZIIZLE ARCHIVE] Toplam {len(candidates)} yapım adayı keşfedildi. Çekilecek: {'TÜMÜ (' + str(total_count) + ')' if not (limit and limit > 0) else limit}", flush=True)
 
     all_results = []
+    step_ev = get_step_stop_event()
 
     # 3-Aşamalı Paket Döngüsü (Her paket 20 yapım)
     for batch_start in range(0, total_count, batch_size):
+        if is_step_stopped(step_ev):
+            print("[DIZIIZLE STOP] Kooperatif durdurma sinyali alındı; Diziİzle temizce durduruluyor.", flush=True)
+            break
         batch_urls = to_process[batch_start:batch_start + batch_size]
         current_batch_size = len(batch_urls)
         print(f"\n--- [DIZIIZLE PAKET {batch_start + 1}-{batch_start + current_batch_size}/{total_count}] Paralel ağ taraması başlatılıyor ({current_batch_size} yapım) ---", flush=True)
 
         # AŞAMA 1: Saf Ağ / Bellek-İçi (16 worker paralel HTTP, DB kapalı!)
         def _fetch_worker(u):
+            bind_stop_event(step_ev)
+            if is_step_stopped(step_ev):
+                return None
             is_anime = "/anime/" in u
             return fetch_diziizle_series_data(u, base_url, is_anime, max_episodes_per_series)
 
-        with ThreadPoolExecutor(max_workers=16) as executor:
-            batch_parsed = list(executor.map(_fetch_worker, batch_urls))
+        try:
+            with ThreadPoolExecutor(max_workers=16) as executor:
+                batch_parsed = list(executor.map(_fetch_worker, batch_urls))
+        except SiteBlockedError as e:
+            print(f"[DIZIIZLE ABORT] Paket sırasında engel ({e}); durduruluyor.", flush=True)
+            break
 
         valid_items = [b for b in batch_parsed if b]
         print(f"[DIZIIZLE AĞ TAMAMLANDI] {len(valid_items)}/{current_batch_size} yapım geçerli Pilavyer kaynağına sahip.", flush=True)
 
         if not valid_items:
+            if not is_step_stopped(step_ev):
+                mark_conn = get_diziizle_db()
+                try:
+                    m_cur = mark_conn.cursor()
+                    for bu in batch_urls:
+                        mark_done(m_cur, "diziizle", bu)
+                    mark_conn.commit()
+                finally:
+                    mark_conn.close()
             continue
 
         # AŞAMA 2: Kısa Atomik SQLite Yazımı (~50ms işlem, anında commit & close!)
@@ -764,6 +819,8 @@ def crawl_diziizle_recent(
 
             saved_dramas.append((drama_id, d_title, d_slug, eps_added, srcs_added, sample_src, item["episodes_total"]))
 
+        for bu in batch_urls:
+            mark_done(write_cur, "diziizle", bu)
         write_conn.commit()
         write_conn.close()
         print(f"[DIZIIZLE SQLITE OK] {len(saved_dramas)} yapım SQLite'a atomik olarak yazıldı.", flush=True)

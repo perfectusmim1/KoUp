@@ -30,10 +30,15 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from database import get_connection
+from database import get_connection, get_db_path, row_to_dict
 from scrapers.multisite import (
+    SiteBlockedError,
+    clear_step_stop_event,
+    get_step_blocked,
+    is_step_stopped,
     pop_recent_added_episodes,
     pop_recent_added_sources,
+    set_step_stop_event,
 )
 from scrapers.supabase_sync_helper import (
     _load_supabase_creds,
@@ -75,7 +80,7 @@ def strip_html_tags(text: str) -> str:
 
 def ensure_database_ready():
     """Cloud ortamında veya yerelde SQLite DB yoksa R2'den indirir."""
-    db_path = os.path.join(_ROOT, "webdrama_archive.db")
+    db_path = get_db_path()
     if not os.path.exists(db_path) or os.path.getsize(db_path) < 10_000_000:
         print("[DB Init] webdrama_archive.db bulunamadı veya boyutu küçük. Cloudflare R2'den indiriliyor...", flush=True)
         ok = download_db_from_r2(db_path)
@@ -528,6 +533,8 @@ def run_gap_backfill(limit: int = 30) -> int:
             JOIN episodes e ON e.drama_id = d.id
             WHERE d.status_broadcast != 'Final'
               AND d.content_type IN ('dizi', 'anime')
+              AND e.episode_number > 0
+              AND e.episode_number <= 1500
             GROUP BY d.id
             HAVING (MIN(e.episode_number) > 1 OR (MAX(e.episode_number) - MIN(e.episode_number) + 1) > COUNT(e.id))
             ORDER BY MAX(e.episode_number) DESC
@@ -549,13 +556,20 @@ def run_gap_backfill(limit: int = 30) -> int:
 
         resolved_count = 0
         for did, dtitle, dsrc, min_e, max_e, cnt_e in gap_dramas:
+            if is_step_stopped():
+                print("[Eksik Bölüm Otomasyonu] Kooperatif durdurma sinyali alındı, sonlandırılıyor.", flush=True)
+                break
             missing_est = (max_e - min_e + 1) - cnt_e + (min_e - 1)
+            # Ignore obvious date/year-numbered specials/clips (e.g. ep 2008/1923/1899 with <=5 entries)
+            if (max_e >= 1800 and cnt_e <= 10) or (missing_est > 500 and cnt_e <= 3):
+                print(f"[Eksik Bölüm Otomasyonu] #{did} '{dtitle}' tarih/özel bölüm numarası ({min_e}..{max_e}, {cnt_e} kayıt) atlandı.", flush=True)
+                continue
             print(f"[Eksik Bölüm Otomasyonu] #{did} '{dtitle}' -> Min Ep: {min_e}, Max Ep: {max_e}, Mevcut: {cnt_e} (~{missing_est} eksik bölüm). Tam senkronizasyon tetikleniyor...", flush=True)
             cur.execute("SELECT * FROM dramas WHERE id = ?", (did,))
             d_row = cur.fetchone()
             if not d_row:
                 continue
-            drama_dict = dict(d_row)
+            drama_dict = row_to_dict(cur, d_row)
 
             eps_add = 0
             src_low = (dsrc or '').lower()
@@ -713,28 +727,36 @@ def main():
         err_msg = None
         status = "healthy"
         processed = 0
-        box = {"res": None, "err": None}
+        box = {"res": None, "err": None, "blocked_reason": None}
+        stop_ev = threading.Event()
 
         def _target_worker():
+            set_step_stop_event(stop_ev)
             try:
                 box["res"] = fn(*fn_args, **fn_kwargs)
             except Exception as ex:
                 box["err"] = ex
+            finally:
+                box["blocked_reason"] = get_step_blocked(stop_ev)
+                clear_step_stop_event(stop_ev)
 
         try:
             worker = threading.Thread(target=_target_worker, daemon=True)
             worker.start()
             worker.join(timeout=timeout_sec)
             if worker.is_alive():
-                err_msg = f"{timeout_sec}s zaman aşımı sınırı aşıldı, sonraki adıma geçildi"
+                stop_ev.set()
+                worker.join(timeout=5)
+                status = "timeout"
+                err_msg = f"{timeout_sec}s zaman aşımı sınırı aşıldı, kooperatif durdurma sinyali gönderildi"
                 record_log(f"[{label}] ZAMAN AŞIMI UYARISI: {err_msg}.")
             elif box["err"] is not None:
                 err_obj = box["err"]
                 err_str = str(err_obj).lower()
-                if bot_id in ("tranimaci", "anizm") and any(k in err_str for k in ("cloudflare", "turnstile", "challenge", "just a moment", "403", "protected")):
-                    status = "healthy"
-                    err_msg = None
-                    record_log(f"[{label}] Cloudflare koruması devrede. 0 yeni açık kaynakla sağlıklı tamamlandı.")
+                if isinstance(err_obj, SiteBlockedError) or any(k in err_str for k in ("cloudflare", "turnstile", "challenge", "just a moment", "403", "protected")):
+                    status = "blocked"
+                    err_msg = str(err_obj)
+                    record_log(f"[{label}] Cloudflare/WAF koruması devrede ({err_obj}). İlk engelde durduruldu.")
                 else:
                     status = "error"
                     err_msg = str(err_obj)
@@ -744,8 +766,17 @@ def main():
                 if isinstance(res, (int, float)):
                     processed = int(res)
                 elif isinstance(res, dict):
-                    processed = res.get("resolved", 0)
+                    processed = int(res.get("processed", res.get("resolved", res.get("sources_added", 0))) or 0)
+                    if res.get("blocked"):
+                        status = "blocked"
+                        err_msg = err_msg or "WAF/Cloudflare blocked"
+                        record_log(f"[{label}] Cloudflare/WAF engeli nedeniyle ilk istekte sonlandırıldı.")
+                if box.get("blocked_reason") and status == "healthy":
+                    status = "blocked"
+                    err_msg = box["blocked_reason"]
+                    record_log(f"[{label}] Cloudflare/WAF engeli ({err_msg}) — ilk engelde durduruldu.")
         except Exception as e:
+            stop_ev.set()
             status = "error"
             err_msg = str(e)
             record_log(f"[{label}] HATA: {e}")
@@ -811,11 +842,14 @@ def main():
                 from scrapers.sites.diziizle import crawl_diziizle_recent
                 conn_d = get_connection(); cur_d = conn_d.cursor()
                 try:
-                    res = crawl_diziizle_recent(cur=cur_d, conn=conn_d, limit=50)
-                    return sum(r.get("sources_added", 0) for r in (res or []))
+                    res = crawl_diziizle_recent(cur=cur_d, conn=conn_d, limit=50, max_episodes_per_series=25, resume=True)
+                    return {
+                        "processed": len(res or []),
+                        "sources_added": sum(r.get("sources_added", 0) for r in (res or [])),
+                    }
                 finally:
                     conn_d.close()
-            run_scraper_step("diziizle", "Diziİzle", _sync_diziizle, timeout_sec=300)
+            run_scraper_step("diziizle", "Diziİzle", _sync_diziizle, timeout_sec=240)
 
         if target in ("all", "webdramaturkey", "webdramaturkey2"):
             def _sync_wdt():
@@ -952,6 +986,13 @@ def main():
         if target in ("all", "watchdog_24h"):
             run_scraper_step("watchdog_24h", "24h Watchdog", run_watchdog_check, timeout_sec=120)
 
+        # Read-Back Doğrulaması: Eklenen bölümlerin arşiv ve bundle teyidi (run_merge öncesinde çalışır!)
+        try:
+            if all_sources:
+                verify_recent_additions(all_sources, record_log)
+        except Exception as e:
+            record_log(f"[Read-Back Doğrulama] Uyarı: {e}")
+
         # Otomasyon sirasinda yeni seriler eklendiyse otomatik duplicate kontrolu ve birlestirme
         if all_dramas:
             try:
@@ -986,44 +1027,38 @@ def main():
             except Exception as e:
                 record_log(f"[Seri Otomasyonu] Yeni seri otomasyon kaydı uyarısı: {e}")
 
-        # Final yapan serileri seri otomasyonundan otomatik temizle
+        # Final yapan ve yetim (orphan) kalan serileri seri otomasyonundan otomatik temizle
+        pruned_sa_ids = []
         try:
+            from scripts.series_automation_runner import prune_orphan_series_automations
             conn_sa = get_connection()
             cur_sa = conn_sa.cursor()
-            cur_sa.execute("""
-                SELECT sa.media_id, sa.title 
-                FROM series_automations sa 
-                JOIN dramas d ON sa.media_id = d.id 
-                WHERE d.status_broadcast IN ('Final', 'Tamamlandı', 'Canceled')
-            """)
-            final_rows = cur_sa.fetchall()
-            if final_rows:
-                for f_id, f_title in final_rows:
-                    cur_sa.execute("DELETE FROM series_automations WHERE media_id = ?", (f_id,))
-                    try:
-                        sb_request("DELETE", f"/rest/v1/series_automations?media_id=eq.{f_id}")
-                    except Exception:
-                        pass
-                    record_log(f"[Seri Otomasyonu] Final yapan dizi otomatik kaldırıldı: #{f_id} {f_title}")
-                conn_sa.commit()
-            conn_sa.close()
+            try:
+                pruned_sa_ids = prune_orphan_series_automations(conn_sa, cur_sa)
+                if pruned_sa_ids:
+                    record_log(f"[Seri Otomasyonu] {len(pruned_sa_ids)} yetim/Final kayıt temizlendi: {pruned_sa_ids}")
+            finally:
+                conn_sa.close()
         except Exception as e:
-            record_log(f"[Seri Otomasyonu] Final temizleme uyarısı: {e}")
+            record_log(f"[Seri Otomasyonu] Yetim/Final temizleme uyarısı: {e}")
 
-        # Read-Back Doğrulaması: Eklenen bölümlerin arşiv ve bundle teyidi
-        try:
-            if all_sources:
-                verify_recent_additions(all_sources, record_log)
-        except Exception as e:
-            record_log(f"[Read-Back Doğrulama] Uyarı: {e}")
-
-        # Database Checkpoint & R2 Backup
+        # Database Checkpoint & R2 Backup (Sadece veri/checkpoint değişikliği varsa yedekle)
+        has_db_writes = bool(
+            all_dramas
+            or all_episodes
+            or all_sources
+            or pruned_sa_ids
+            or any((v or {}).get("items_processed", 0) > 0 for v in scrapers_summary.values())
+        )
         try:
             conn = get_connection()
             conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
             conn.close()
-            backup_db_to_r2()
-            record_log("[R2 Sync] Veritabanı Cloudflare R2'ye başarıyla yedeklendi.")
+            if has_db_writes:
+                backup_db_to_r2()
+                record_log("[R2 Sync] Veritabanı Cloudflare R2'ye başarıyla yedeklendi.")
+            else:
+                record_log("[R2 Sync] Değişiklik olmadığı için gereksiz R2 tam veritabanı yüklemesi atlandı.")
         except Exception as e:
             record_log(f"[R2 Sync] Yedekleme uyarısı: {e}")
 
@@ -1034,8 +1069,14 @@ def main():
     total_duration = int(time.time() - start_time)
     final_status = "failed" if fatal_error else "completed"
 
+    healthy_n = sum(1 for v in scrapers_summary.values() if v.get("status") == "healthy")
+    blocked_n = sum(1 for v in scrapers_summary.values() if v.get("status") == "blocked")
+    timeout_n = sum(1 for v in scrapers_summary.values() if v.get("status") == "timeout")
+    error_n = sum(1 for v in scrapers_summary.values() if v.get("status") == "error")
     record_log(
-        f"KoUp Otomasyon Pipeline tamamlandı ({total_duration}s) — Genel Toplam: +{len(all_dramas)} Seri | +{len(all_episodes)} Bölüm | +{len(all_sources)} Kaynak."
+        f"[ÖZET] KoUp Otomasyon Pipeline tamamlandı ({total_duration}s) — "
+        f"Botlar: {healthy_n} sağlıklı, {blocked_n} engelli(CF/WAF), {timeout_n} zaman aşımı, {error_n} hata | "
+        f"Toplam: +{len(all_dramas)} Seri, +{len(all_episodes)} Bölüm, +{len(all_sources)} Kaynak."
     )
 
     run_finished = True

@@ -20,7 +20,15 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-from scrapers.multisite import add_source, norm_title, tag_site
+from database import row_to_dict
+from scrapers.multisite import (
+    SiteBlockedError,
+    add_source,
+    is_blocked_response,
+    is_step_stopped,
+    norm_title,
+    tag_site,
+)
 from scrapers.shortdrama.common import (
     clean_cover_image,
     clean_drama_overview,
@@ -79,7 +87,14 @@ class DramaBoxScraper:
         # 1. Main endpoints
         main_pages = ["/tr", "/tr/browse", "/tr/more/trending", "/tr/more/must-sees", "/tr/more/hidden-gems"]
         for p in main_pages:
+            if is_step_stopped():
+                break
             resp = safe_request(sess, "GET", f"{BASE_URL}{p}", delay=0.2)
+            if resp is not None:
+                blocked, reason = is_blocked_response(resp.status_code, resp.text)
+                if blocked:
+                    print(f"[DRAMABOX_BLOCKED] {reason} on {p}; fail-fast abort.", flush=True)
+                    raise SiteBlockedError(reason)
             if resp and resp.status_code == 200:
                 soup = BeautifulSoup(resp.text, "html.parser")
                 nxt = soup.find("script", id="__NEXT_DATA__")
@@ -91,7 +106,15 @@ class DramaBoxScraper:
                         pass
 
         # 2. Browse category endpoints
+        if is_step_stopped():
+            self._cached_catalog = books
+            return books
         browse_resp = safe_request(sess, "GET", f"{BASE_URL}/tr/browse", delay=0.2)
+        if browse_resp is not None:
+            blocked, reason = is_blocked_response(browse_resp.status_code, browse_resp.text)
+            if blocked:
+                print(f"[DRAMABOX_BLOCKED] {reason} on /tr/browse; fail-fast abort.", flush=True)
+                raise SiteBlockedError(reason)
         if browse_resp and browse_resp.status_code == 200:
             soup = BeautifulSoup(browse_resp.text, "html.parser")
             cat_paths = set()
@@ -131,6 +154,11 @@ class DramaBoxScraper:
         # 2. Search endpoint
         search_url = f"{BASE_URL}/tr/search?q={quote_plus(query)}"
         resp = safe_request(self._get_sess(), "GET", search_url, delay=0.3)
+        if resp is not None:
+            blocked, reason = is_blocked_response(resp.status_code, resp.text)
+            if blocked:
+                print(f"[DRAMABOX_BLOCKED] {reason} on /tr/search; fail-fast abort.", flush=True)
+                raise SiteBlockedError(reason)
         if not resp or resp.status_code != 200:
             return []
 
@@ -174,6 +202,11 @@ class DramaBoxScraper:
         """Fetches the chapter list and filters for unlocked episodes with MP4 streams."""
         play_url = f"{BASE_URL}/tr/video/{book_id}_play/1_Episode-1"
         resp = safe_request(self._get_sess(), "GET", play_url, delay=0.4)
+        if resp is not None:
+            blocked, reason = is_blocked_response(resp.status_code, resp.text)
+            if blocked:
+                print(f"[DRAMABOX_BLOCKED] {reason} on {play_url}; fail-fast abort.", flush=True)
+                raise SiteBlockedError(reason)
         if not resp or resp.status_code != 200:
             return []
 
@@ -360,18 +393,18 @@ class DramaBoxScraper:
 
         return did
 
-    def run(self, limit: int = 300, resume: bool = True, sync_cloud: bool = True):
+    def run(self, limit: int = 300, resume: bool = True, sync_cloud: bool = True) -> dict:
         """Runs match & backfill against existing short dramas and ingests catalog books."""
-        # 1. Match against existing dramas in DB
+        # 1. Match against existing short dramas in DB
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("""
             SELECT id, title, slug, content_type
             FROM dramas
-            WHERE content_type = 'kisa_drama' OR categories LIKE '%Kısa Drama%'
+            WHERE content_type = 'kisa_drama'
             ORDER BY id ASC
         """)
-        dramas = [dict(r) for r in cur.fetchall()]
+        dramas = [row_to_dict(cur, r) for r in cur.fetchall()]
         conn.close()
 
         print(f"[DRAMABOX_SCAN] Found {len(dramas)} existing short dramas in database to match.")
@@ -382,38 +415,81 @@ class DramaBoxScraper:
             pending = pending[:limit]
 
         total_matched = 0
+        processed_cnt = 0
+        blocked_abort = False
         for idx, d in enumerate(pending, 1):
+            if is_step_stopped():
+                print("[DRAMABOX_STOP] Cooperative stop event set; halting DramaBox cleanly.", flush=True)
+                break
             did = str(d["id"])
             try:
                 added = self.match_and_backfill_drama(d, sync_cloud=sync_cloud)
                 total_matched += added
+                processed_cnt += 1
                 done.add(did)
                 save_checkpoint("dramabox", done)
+            except SiteBlockedError as e:
+                print(f"[DRAMABOX_ABORT] Blocked on {did} ({e}); failing fast cleanly.")
+                blocked_abort = True
+                break
             except Exception as e:
                 print(f"[DRAMABOX_MATCH_ERROR] #{did}: {e}", file=sys.stderr)
 
         print(f"[DRAMABOX_MATCH_COMPLETE] Backfilled {total_matched} sources across existing dramas.")
+        if blocked_abort or is_step_stopped():
+            return {
+                "processed": processed_cnt,
+                "dramas_added": 0,
+                "episodes_added": 0,
+                "sources_added": total_matched,
+                "blocked": blocked_abort,
+            }
 
         # 2. Ingest catalog books directly from dramabox.com/tr
         print("[DRAMABOX_CATALOG] Fetching Turkish catalog from dramabox.com/tr...")
-        catalog_books = self.get_catalog_books()
+        try:
+            catalog_books = self.get_catalog_books()
+        except SiteBlockedError as e:
+            print(f"[DRAMABOX_ABORT] Catalog blocked ({e}); failing fast cleanly.")
+            return {
+                "processed": processed_cnt,
+                "dramas_added": 0,
+                "episodes_added": 0,
+                "sources_added": total_matched,
+                "blocked": True,
+            }
         print(f"[DRAMABOX_CATALOG] Found {len(catalog_books)} Turkish short drama books.")
 
         standalone_added = 0
         for b in catalog_books:
+            if is_step_stopped():
+                print("[DRAMABOX_STOP] Cooperative stop event set; halting DramaBox catalog.", flush=True)
+                break
             b_key = f"db_{b['book_id']}"
             if b_key in done:
                 continue
             try:
                 res = self.ingest_standalone_dramabox(b, sync_cloud=sync_cloud)
+                processed_cnt += 1
                 if res:
                     standalone_added += 1
                 done.add(b_key)
                 save_checkpoint("dramabox", done)
+            except SiteBlockedError as e:
+                print(f"[DRAMABOX_ABORT] Standalone blocked ({e}); failing fast cleanly.")
+                blocked_abort = True
+                break
             except Exception as e:
                 print(f"[DRAMABOX_STANDALONE_ERROR] {b['title']}: {e}", file=sys.stderr)
 
         print(f"[DRAMABOX_COMPLETE] Ingested {standalone_added} standalone Turkish short dramas.")
+        return {
+            "processed": processed_cnt,
+            "dramas_added": standalone_added,
+            "episodes_added": 0,
+            "sources_added": total_matched,
+            "blocked": blocked_abort,
+        }
 
 
 if __name__ == "__main__":

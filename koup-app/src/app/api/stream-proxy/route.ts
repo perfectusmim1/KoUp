@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dns from 'node:dns';
+import net from 'node:net';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,33 +28,159 @@ const BLOCKED_HOST_PATTERNS = [
   /^instance-data$/i,
 ];
 
+function stripIpv6ZoneAndBrackets(raw: string): string {
+  return raw.toLowerCase().trim().replace(/^\[|\]$/g, '').split('%')[0];
+}
+
+function isBlockedIpv4(ip: string): boolean {
+  const parts = ip.split('.').map((p) => Number(p));
+  if (parts.length !== 4 || parts.some((n) => Number.isNaN(n) || n < 0 || n > 255)) {
+    return true;
+  }
+  const [a, b, c] = parts;
+  if (a === 0) return true; // 0.0.0.0/8
+  if (a === 10) return true; // 10.0.0.0/8 RFC1918
+  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 CGNAT
+  if (a === 127) return true; // 127.0.0.0/8 loopback
+  if (a === 169 && b === 254) return true; // 169.254.0.0/16 link-local / IMDS
+  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12 RFC1918
+  if (a === 192 && b === 0 && c === 0) return true; // 192.0.0.0/24 IETF protocol
+  if (a === 192 && b === 168) return true; // 192.168.0.0/16 RFC1918
+  if (a === 198 && (b === 18 || b === 19)) return true; // 198.18.0.0/15 benchmarking
+  if (a >= 224) return true; // Multicast & reserved (224.0.0.0/4+)
+  return false;
+}
+
+function isBlockedIpAddress(rawIp: string): boolean {
+  const ip = stripIpv6ZoneAndBrackets(rawIp);
+  if (!ip) return true;
+
+  if (net.isIPv4(ip)) {
+    return isBlockedIpv4(ip);
+  }
+  if (!net.isIPv6(ip)) {
+    return true;
+  }
+
+  // Unspecified / Loopback
+  if (ip === '::' || ip === '::1' || ip === '0:0:0:0:0:0:0:0' || ip === '0:0:0:0:0:0:0:1') {
+    return true;
+  }
+
+  // IPv4-mapped / IPv4-compatible IPv6 (e.g. ::ffff:127.0.0.1, ::ffff:7f00:1, ::127.0.0.1)
+  const v4Dotted = ip.match(/(?:^::(?:ffff:)?|:)([0-9]{1,3}(?:\.[0-9]{1,3}){3})$/);
+  if (v4Dotted?.[1]) {
+    return isBlockedIpv4(v4Dotted[1]);
+  }
+  const v4Hex = ip.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+  if (v4Hex) {
+    const hi = parseInt(v4Hex[1], 16);
+    const lo = parseInt(v4Hex[2], 16);
+    const v4 = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+    return isBlockedIpv4(v4);
+  }
+
+  // Extract first 16-bit group for CIDR prefix checks
+  const firstGroupHex = ip.split(':')[0] || '0';
+  const firstGroup = parseInt(firstGroupHex, 16);
+  if (Number.isNaN(firstGroup)) return true;
+
+  // ULA fc00::/7 (0xfc00 .. 0xfdff)
+  if ((firstGroup & 0xfe00) === 0xfc00) return true;
+  // Link-local fe80::/10 (0xfe80 .. 0xfebf)
+  if ((firstGroup & 0xffc0) === 0xfe80) return true;
+  // Multicast ff00::/8
+  if ((firstGroup & 0xff00) === 0xff00) return true;
+  // NAT64 well-known prefix 64:ff9b::/96
+  if (ip.startsWith('64:ff9b::') || ip.startsWith('64:ff9b:1::')) return true;
+
+  return false;
+}
+
 function isBlockedIpOrHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().trim();
+  const host = stripIpv6ZoneAndBrackets(hostname);
+  if (!host) return true;
   for (const pattern of BLOCKED_HOST_PATTERNS) {
     if (pattern.test(host)) return true;
   }
   if (['127.0.0.1', '0.0.0.0', '::1', '169.254.169.254', 'metadata'].includes(host)) {
     return true;
   }
-  const ipv4PrivateRegex =
-    /^(?:127\.|10\.|192\.168\.|172\.(?:1[6-9]|2[0-9]|3[0-1])\.|169\.254\.|100\.(?:6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\.|0\.)/;
-  if (ipv4PrivateRegex.test(host)) return true;
-  if (host.startsWith('::') || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80')) {
-    return true;
+  if (net.isIP(host) !== 0) {
+    return isBlockedIpAddress(host);
   }
-  if (/^(?:0x[0-9a-f]+|\d+)$/i.test(host)) return true;
+  // Block integer/hex/octal IP shorthands
+  if (/^(?:0x[0-9a-f]+|0[0-7]+|\d+)$/i.test(host)) return true;
+  if (/^\d+\.\d+$/.test(host) || /^\d+\.\d+\.\d+$/.test(host)) return true;
   return false;
 }
 
 async function isBlockedAfterDnsLookup(hostname: string): Promise<boolean> {
-  if (isBlockedIpOrHost(hostname)) return true;
+  const host = stripIpv6ZoneAndBrackets(hostname);
+  if (isBlockedIpOrHost(host)) return true;
+  if (net.isIP(host) !== 0) {
+    return isBlockedIpAddress(host);
+  }
   try {
-    const records = await dns.promises.lookup(hostname, { all: true });
+    const records = await dns.promises.lookup(host, { all: true });
     if (!records || records.length === 0) return true;
-    return records.some((rec) => isBlockedIpOrHost(rec.address));
+    return records.some((rec) => isBlockedIpAddress(rec.address));
   } catch {
     return true;
   }
+}
+
+class SsrfBlockedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SsrfBlockedError';
+  }
+}
+
+async function safeFetchWithRedirects(
+  initialUrl: string,
+  init: RequestInit,
+  maxRedirects = 5
+): Promise<{ response: Response; finalUrl: string }> {
+  let currentUrl = initialUrl;
+  let currentInit: RequestInit = { ...init, redirect: 'manual' };
+
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    const parsed = new URL(currentUrl);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      throw new SsrfBlockedError('Blocked protocol');
+    }
+    if (await isBlockedAfterDnsLookup(parsed.hostname)) {
+      throw new SsrfBlockedError('Blocked SSRF target');
+    }
+
+    const res = await fetch(currentUrl, currentInit);
+    if ([301, 302, 303, 307, 308].includes(res.status)) {
+      const location = res.headers.get('location');
+      res.body?.cancel?.().catch(() => {});
+      if (!location || hop === maxRedirects) {
+        return { response: res, finalUrl: currentUrl };
+      }
+      currentUrl = new URL(location, currentUrl).toString();
+      if ([301, 302, 303].includes(res.status) && currentInit.method && currentInit.method !== 'GET' && currentInit.method !== 'HEAD') {
+        currentInit = { ...currentInit, method: 'GET', body: undefined };
+      }
+      continue;
+    }
+
+    return { response: res, finalUrl: currentUrl };
+  }
+
+  throw new Error('Too many redirects');
+}
+
+function isInvalidPlaylistBody(body: string): boolean {
+  const trimmed = body.trim();
+  const low = trimmed.toLowerCase();
+  if (!trimmed) return true;
+  if (low.includes('security error')) return true;
+  if (low.startsWith('<!doctype') || low.startsWith('<html')) return true;
+  return !body.includes('#EXTM3U') && !body.includes('#EXTINF');
 }
 
 export async function GET(req: NextRequest) {
@@ -63,6 +190,7 @@ export async function GET(req: NextRequest) {
   const embedUrl = searchParams.get('embed');
   const requestedQuality = searchParams.get('q') || 'hd';
   const shzCookie = searchParams.get('shz_cookie') || '';
+  const dtCookie = searchParams.get('dt_cookie') || '';
 
   if (targetUrl && !targetUrl.startsWith('http')) {
     if (targetUrl.startsWith('//')) {
@@ -233,6 +361,7 @@ export async function GET(req: NextRequest) {
     } else if (
       targetUrl.includes('dtpasn.asia') ||
       targetUrl.includes('dtpasn') ||
+      targetUrl.includes('dtlux') ||
       targetUrl.includes('webdramaturkey')
     ) {
       if (customRef) {
@@ -244,6 +373,12 @@ export async function GET(req: NextRequest) {
         referer = 'https://dtpasn.asia/';
         origin = 'https://dtpasn.asia';
       }
+    } else if (targetUrl.includes('dramavadisi')) {
+      referer = customRef || 'https://dramavadisi.com/';
+      origin = 'https://dramavadisi.com';
+    } else if (targetUrl.includes('dramabox')) {
+      referer = customRef || 'https://www.dramabox.com/';
+      origin = 'https://www.dramabox.com';
     } else if (
       targetUrl.includes('rapidvid') ||
       targetUrl.includes('cdnimage') ||
@@ -286,12 +421,18 @@ export async function GET(req: NextRequest) {
       origin = 'https://shortizle.com';
       upstreamHeaders['Referer'] = 'https://shortizle.com/';
       upstreamHeaders['Origin'] = 'https://shortizle.com';
-      upstreamHeaders['Sec-Fetch-Site'] = 'cross-site';
+      upstreamHeaders['Sec-Fetch-Site'] = targetUrl.includes('shortizle.com') ? 'same-site' : 'cross-site';
       upstreamHeaders['Sec-Fetch-Mode'] = 'cors';
       upstreamHeaders['Sec-Fetch-Dest'] = 'empty';
       if (shzCookie && /^[a-f0-9]+$/i.test(shzCookie)) {
         upstreamHeaders['Cookie'] = `__Host-shortizle_media=${shzCookie}`;
       }
+    } else if (
+      (targetUrl.includes('dtpasn.asia') || targetUrl.includes('dtlux')) &&
+      dtCookie &&
+      /^[a-zA-Z0-9_-]{8,128}$/.test(dtCookie)
+    ) {
+      upstreamHeaders['Cookie'] = `fireplayer_player=${dtCookie}`;
     }
 
     const isMediaChunk =
@@ -303,29 +444,35 @@ export async function GET(req: NextRequest) {
       targetUrl.includes('stream.shortizle.com/v1/') ||
       targetUrl.includes('mybigdramapool.com') ||
       targetUrl.includes('b-cdn.net') ||
+      targetUrl.includes('dramaboxdb.com') ||
       targetUrl.includes('okcdn.ru') ||
       targetUrl.includes('mycdn.me') ||
+      (targetUrl.includes('.js') && (targetUrl.includes('/f/') || targetUrl.includes('dtlux'))) ||
       (targetUrl.includes('.jpg') && (targetUrl.includes('/f/') || targetUrl.includes('/o/a/') || targetUrl.includes('/m/a/') || targetUrl.includes('/dual')));
     const fetchTimeoutMs = isMediaChunk ? 60000 : 20000;
 
     let upstreamRes: Response | null = null;
     try {
-      upstreamRes = await fetch(targetUrl, {
+      const fetched = await safeFetchWithRedirects(targetUrl, {
         headers: upstreamHeaders,
-        redirect: 'follow',
         signal: AbortSignal.timeout(fetchTimeoutMs),
       });
-    } catch {}
+      upstreamRes = fetched.response;
+    } catch (err) {
+      if (err instanceof SsrfBlockedError) throw err;
+    }
 
     // 1-time retry for media chunks if initial connection was interrupted
     if (!upstreamRes && isMediaChunk) {
       try {
-        upstreamRes = await fetch(targetUrl, {
+        const retried = await safeFetchWithRedirects(targetUrl, {
           headers: upstreamHeaders,
-          redirect: 'follow',
           signal: AbortSignal.timeout(fetchTimeoutMs),
         });
-      } catch {}
+        upstreamRes = retried.response;
+      } catch (err) {
+        if (err instanceof SsrfBlockedError) throw err;
+      }
     }
 
     // Self-healing for OK.ru / okcdn.ru on HTTP 400 (IP mismatch between Lambdas or token rotation)
@@ -335,7 +482,7 @@ export async function GET(req: NextRequest) {
       embedUrl
     ) {
       try {
-        const embedRes = await fetch(embedUrl, {
+        const { response: embedRes } = await safeFetchWithRedirects(embedUrl, {
           headers: {
             'User-Agent': upstreamHeaders['User-Agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
             Referer: 'https://ok.ru/',
@@ -364,15 +511,16 @@ export async function GET(req: NextRequest) {
             const freshUrl = matched?.url || meta?.ondemandHls;
 
             if (freshUrl && typeof freshUrl === 'string') {
-              upstreamRes = await fetch(freshUrl, {
+              const healed = await safeFetchWithRedirects(freshUrl, {
                 headers: upstreamHeaders,
-                redirect: 'follow',
                 signal: AbortSignal.timeout(fetchTimeoutMs),
               });
+              upstreamRes = healed.response;
             }
           }
         }
       } catch (err) {
+        if (err instanceof SsrfBlockedError) throw err;
         console.warn('Self-healing okcdn fetch error:', err);
       }
     }
@@ -445,7 +593,7 @@ export async function GET(req: NextRequest) {
                 (err, stdout) => (err ? reject(err) : resolve(stdout))
               );
             });
-            if (curlOutput && (curlOutput.includes('#EXTM3U') || curlOutput.includes('#EXTINF'))) {
+            if (curlOutput && !isInvalidPlaylistBody(curlOutput)) {
               return rewritePlaylist(curlOutput, targetUrl, req, referer);
             }
           } catch {}
@@ -470,6 +618,7 @@ export async function GET(req: NextRequest) {
       contentType.includes('text/plain') ||
       targetUrl.includes('.m3u8') ||
       targetUrl.includes('master.txt') ||
+      (targetUrl.includes('dtpasn.asia') && targetUrl.includes('/hls/')) ||
       targetUrl.includes('/m.php') ||
       targetUrl.includes('/l.php') ||
       targetUrl.includes('/ld.php');
@@ -477,22 +626,37 @@ export async function GET(req: NextRequest) {
     if (isPlaylist) {
       const text = await upstreamRes.text();
 
-      // Check if upstream actually returned a security error string
-      if (text.trim().toLowerCase().includes('security error')) {
-        // Retry with alternative referer variations
-        const altRes = await fetch(targetUrl, {
-          headers: {
-            ...upstreamHeaders,
-            Referer: 'https://dizikorea3.com/',
-            Origin: 'https://dizikorea3.com',
-          },
-        });
-        if (altRes.ok) {
-          const altText = await altRes.text();
-          if (!altText.trim().toLowerCase().includes('security error')) {
-            return rewritePlaylist(altText, targetUrl, req, referer);
-          }
+      // Detect 'security error', HTML error pages, or any non-EXTM3U payload; never forward garbage to hls.js
+      if (isInvalidPlaylistBody(text)) {
+        const retryRefs =
+          targetUrl.includes('dtpasn') || targetUrl.includes('dizikorea')
+            ? ['https://dtpasn.asia/', 'https://koredizi.com/', 'https://dizikorea3.com/', 'https://webdramaturkey2.com/']
+            : ['https://dizikorea3.com/'];
+
+        for (const altRef of retryRefs) {
+          try {
+            const altOrigin = new URL(altRef).origin;
+            const { response: altRes } = await safeFetchWithRedirects(targetUrl, {
+              headers: {
+                ...upstreamHeaders,
+                Referer: altRef,
+                Origin: altOrigin,
+              },
+              signal: AbortSignal.timeout(fetchTimeoutMs),
+            });
+            if (altRes.ok) {
+              const altText = await altRes.text();
+              if (!isInvalidPlaylistBody(altText)) {
+                return rewritePlaylist(altText, targetUrl, req, altRef);
+              }
+            }
+          } catch {}
         }
+
+        return new NextResponse('Upstream returned invalid playlist or security error', {
+          status: 502,
+          headers: { 'Access-Control-Allow-Origin': '*' },
+        });
       }
 
       return rewritePlaylist(text, targetUrl, req, referer);
@@ -519,11 +683,12 @@ export async function GET(req: NextRequest) {
     if (
       targetUrl.includes('.ts') ||
       targetUrl.includes('.dts') ||
+      (targetUrl.includes('.js') && (targetUrl.includes('/f/') || targetUrl.includes('dtlux'))) ||
       (targetUrl.includes('.png') && (targetUrl.includes('/1080p/') || targetUrl.includes('/720p/') || targetUrl.includes('/480p/') || targetUrl.includes('/sheila') || targetUrl.includes('/v/'))) ||
       (targetUrl.includes('.jpg') && (targetUrl.includes('/f/') || targetUrl.includes('/o/a/') || targetUrl.includes('/m/a/') || targetUrl.includes('/dual')))
     ) {
       responseHeaders.set('content-type', 'video/mp2t');
-    } else if (targetUrl.includes('.mp4') || targetUrl.includes('okcdn.ru') || targetUrl.includes('mycdn.me')) {
+    } else if (targetUrl.includes('.mp4') || targetUrl.includes('okcdn.ru') || targetUrl.includes('mycdn.me') || targetUrl.includes('dramaboxdb.com')) {
       responseHeaders.set('content-type', 'video/mp4');
     } else if (targetUrl.includes('.vtt')) {
       responseHeaders.set('content-type', 'text/vtt; charset=utf-8');
@@ -538,6 +703,12 @@ export async function GET(req: NextRequest) {
       headers: responseHeaders,
     });
   } catch (err: any) {
+    if (err instanceof SsrfBlockedError) {
+      return NextResponse.json(
+        { error: 'Blocked host or protocol' },
+        { status: 403, headers: { 'Access-Control-Allow-Origin': '*' } }
+      );
+    }
     console.error('Stream proxy error:', err);
     return NextResponse.json(
       { error: 'Proxy request failed', details: err?.message || String(err) },
@@ -554,12 +725,18 @@ function rewritePlaylist(
 ): NextResponse {
   const host = req.headers.get('host') || 'localhost:3000';
   const proto = req.headers.get('x-forwarded-proto') || 'http';
-  const shzCookie = new URL(req.url).searchParams.get('shz_cookie') || '';
+  const reqParams = new URL(req.url).searchParams;
+  const shzCookie = reqParams.get('shz_cookie') || '';
+  const dtCookie = reqParams.get('dt_cookie') || '';
   const shzSuffix =
     shzCookie && /^[a-f0-9]+$/i.test(shzCookie)
       ? `&shz_cookie=${encodeURIComponent(shzCookie)}`
       : '';
-  const refSuffix = `${referer ? `&ref=${encodeURIComponent(referer)}` : ''}${shzSuffix}`;
+  const dtSuffix =
+    dtCookie && /^[a-zA-Z0-9_-]{8,128}$/.test(dtCookie)
+      ? `&dt_cookie=${encodeURIComponent(dtCookie)}`
+      : '';
+  const refSuffix = `${referer ? `&ref=${encodeURIComponent(referer)}` : ''}${shzSuffix}${dtSuffix}`;
   const proxyBase = `${proto}://${host}/api/stream-proxy?url=`;
 
   const lines = content.split('\n');
@@ -605,6 +782,7 @@ function rewritePlaylist(
       const isSubPlaylist =
         pathAndQuery.includes('.m3u8') ||
         pathAndQuery.includes('master.txt') ||
+        (hostLower.includes('dtpasn') && pathAndQuery.includes('/hls/')) ||
         pathAndQuery.includes('/m.php') ||
         pathAndQuery.includes('/l.php') ||
         pathAndQuery.includes('/ld.php') ||

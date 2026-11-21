@@ -21,7 +21,14 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-from scrapers.multisite import add_source
+from scrapers.multisite import (
+    SiteBlockedError,
+    add_source,
+    bind_stop_event,
+    get_step_stop_event,
+    is_blocked_response,
+    is_step_stopped,
+)
 from scrapers.shortdrama.common import (
     CHECKPOINT_DIR,
     clean_cover_image,
@@ -62,6 +69,11 @@ class DramaVadisiScraper:
 
         sitemap_url = f"{BASE_URL}/sitemap-diziler.xml"
         resp = safe_request(self._get_sess(), "GET", sitemap_url, delay=0.2, timeout=45)
+        if resp is not None:
+            blocked, reason = is_blocked_response(resp.status_code, resp.text)
+            if blocked:
+                print(f"[DRAMAVADISI_BLOCKED] {reason} on {sitemap_url}; fail-fast abort.", flush=True)
+                raise SiteBlockedError(reason)
         if not resp or resp.status_code != 200:
             return []
 
@@ -179,6 +191,9 @@ class DramaVadisiScraper:
         ep_count = len(episodes)
 
         for attempt in range(10):
+            batch_dramas_added = 0
+            batch_eps_added = 0
+            batch_sources_added = 0
             try:
                 conn = get_db_connection()
                 cur = conn.cursor()
@@ -255,6 +270,9 @@ class DramaVadisiScraper:
             return ingested_ids
 
         for attempt in range(10):
+            batch_dramas_added = 0
+            batch_eps_added = 0
+            batch_sources_added = 0
             try:
                 conn = get_db_connection()
                 cur = conn.cursor()
@@ -286,6 +304,7 @@ class DramaVadisiScraper:
                         country_name="Çin",
                     )
                     src_count = 0
+                    ep_before = cur.execute("SELECT COUNT(id) FROM episodes WHERE drama_id = ?", (did,)).fetchone()[0]
                     for ep_obj in episodes:
                         ep_no = ep_obj.get("no") or 1
                         season_no = ep_obj.get("season") or 1
@@ -312,14 +331,27 @@ class DramaVadisiScraper:
                             site="dramavadisi",
                         ):
                             src_count += 1
+                    ep_after = cur.execute("SELECT COUNT(id) FROM episodes WHERE drama_id = ?", (did,)).fetchone()[0]
+                    batch_eps_added += max(0, ep_after - ep_before)
+                    if is_new:
+                        batch_dramas_added += 1
+                    batch_sources_added += src_count
 
                     if src_count > 0:
                         ingested_ids.append(did)
 
                 conn.commit()
                 conn.close()
+                self._last_batch_stats = {
+                    "dramas_added": batch_dramas_added,
+                    "episodes_added": batch_eps_added,
+                    "sources_added": batch_sources_added,
+                }
                 break
             except sqlite3.OperationalError:
+                batch_dramas_added = 0
+                batch_eps_added = 0
+                batch_sources_added = 0
                 if attempt == 9:
                     raise
                 time.sleep(0.5)
@@ -339,13 +371,17 @@ class DramaVadisiScraper:
         res = self.write_batch_to_db([info], sync_cloud=sync_cloud)
         return res[0] if res else None
 
-    def run(self, limit: int = None, resume: bool = True, sync_cloud: bool = True):
+    def run(self, limit: int = None, resume: bool = True, sync_cloud: bool = True) -> dict:
         """Runs the DramaVadisi catalog ingestion in high-speed parallel batches."""
         print("[DRAMAVADISI_CATALOG] Fetching sitemap...")
-        catalog = self.get_catalog()
+        try:
+            catalog = self.get_catalog()
+        except SiteBlockedError as e:
+            print(f"[DRAMAVADISI_ABORT] Stopped cleanly due to block: {e}")
+            return {"processed": 0, "dramas_added": 0, "episodes_added": 0, "sources_added": 0, "blocked": True}
         print(f"[DRAMAVADISI_CATALOG] Found {len(catalog)} short drama URLs.")
         if not catalog:
-            return
+            return {"processed": 0, "dramas_added": 0, "episodes_added": 0, "sources_added": 0}
 
         done = load_checkpoint("dramavadisi") if resume else set()
         pending = [u for u in catalog if u.split("/")[-1] not in done]
@@ -357,19 +393,39 @@ class DramaVadisiScraper:
 
         batch_size = 24
         all_new_ids = set()
+        processed_count = 0
+        total_dramas_added = 0
+        total_eps_added = 0
+        total_sources_added = 0
+        step_ev = get_step_stop_event()
+
+        def _fetch_wrapped(u):
+            bind_stop_event(step_ev)
+            if is_step_stopped(step_ev):
+                return None
+            return self.fetch_drama_network_data(u)
+
         for i in range(0, len(pending), batch_size):
+            if is_step_stopped(step_ev):
+                print("[DRAMAVADISI_STOP] Cooperative stop event set; halting DramaVadisi cleanly.", flush=True)
+                break
             batch_urls = pending[i:i + batch_size]
             with ThreadPoolExecutor(max_workers=batch_size) as executor:
-                fetched_items = list(executor.map(self.fetch_drama_network_data, batch_urls))
+                fetched_items = list(executor.map(_fetch_wrapped, batch_urls))
 
             valid_items = [it for it in fetched_items if it]
             if valid_items:
+                self._last_batch_stats = {"dramas_added": 0, "episodes_added": 0, "sources_added": 0}
                 b_ids = self.write_batch_to_db(valid_items, sync_cloud=False)
                 all_new_ids.update(b_ids)
+                st = getattr(self, "_last_batch_stats", {})
+                total_dramas_added += st.get("dramas_added", 0)
+                total_eps_added += st.get("episodes_added", 0)
+                total_sources_added += st.get("sources_added", 0)
 
-            for url in batch_urls:
-                slug = url.split("/")[-1]
-                done.add(slug)
+            for idx_u, url in enumerate(batch_urls):
+                if idx_u < len(fetched_items) and fetched_items[idx_u] is not None:
+                    done.add(url.split("/")[-1])
 
             save_checkpoint("dramavadisi", done)
             processed_count = min(i + batch_size, len(pending))
@@ -378,10 +434,17 @@ class DramaVadisiScraper:
 
         print(f"[DRAMAVADISI_INGEST_COMPLETE] Finished network + DB ingest of {len(all_new_ids)} dramas.", flush=True)
 
-        if sync_cloud and all_new_ids:
+        if sync_cloud and all_new_ids and not is_step_stopped(step_ev):
             print(f"[DRAMAVADISI_CLOUD_SYNC] Starting bulk cloud sync for {len(all_new_ids)} dramas...", flush=True)
             from scrapers.shortdrama.common import bulk_sync_short_dramas_to_cloud
             bulk_sync_short_dramas_to_cloud(list(all_new_ids))
+
+        return {
+            "processed": processed_count,
+            "dramas_added": total_dramas_added,
+            "episodes_added": total_eps_added,
+            "sources_added": total_sources_added,
+        }
 
 
 if __name__ == "__main__":

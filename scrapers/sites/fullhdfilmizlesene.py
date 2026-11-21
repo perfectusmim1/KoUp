@@ -31,6 +31,7 @@ if _ROOT not in sys.path:
 
 from database import get_connection
 from scrapers.multisite import (
+    SiteBlockedError,
     norm_title,
     build_drama_index,
     find_in_index,
@@ -39,6 +40,10 @@ from scrapers.multisite import (
     tag_site,
     safe_commit,
     clean_scraped_slug,
+    is_blocked_response,
+    is_step_stopped,
+    bind_stop_event,
+    get_step_stop_event,
 )
 from scrapers.supabase_sync_helper import match_or_create_enriched_drama, sync_drama_bundle_and_counts
 
@@ -67,10 +72,18 @@ def _get_tls_session():
 def resolve_base_url(session=None):
     session = session or _get_session()
     for cand in [DEFAULT_BASE_URL, "https://www.fullhdfilmizlesene.de"]:
+        if is_step_stopped():
+            break
         try:
             r = session.get(cand, timeout=6, allow_redirects=True)
+            blocked, reason = is_blocked_response(r.status_code, r.text)
+            if blocked:
+                print(f"[FULLHDFILMIZLESENE_BLOCKED] {reason} on {cand}; fail-fast abort.", flush=True)
+                raise SiteBlockedError(reason)
             if r.status_code == 200:
                 return r.url.rstrip("/")
+        except SiteBlockedError:
+            raise
         except Exception:
             continue
     return DEFAULT_BASE_URL
@@ -153,8 +166,13 @@ def fetch_movie_data(session, movie_url):
     """Fetches movie HTML and extracts metadata + sources in memory."""
     try:
         r = session.get(movie_url, timeout=12)
+        blocked, reason = is_blocked_response(r.status_code, r.text)
+        if blocked:
+            raise SiteBlockedError(reason)
         if r.status_code != 200:
             return None
+    except SiteBlockedError:
+        raise
     except Exception:
         return None
 
@@ -324,16 +342,24 @@ def scrape_movies_batch(conn, cur, idx, session, movie_urls):
     return total_added
 
 
-def get_catalog_urls(session=None, base_url=None, max_pages=60):
+def get_catalog_urls(session=None, base_url=None, max_pages=60, target_limit=None, skip_urls=None):
     session = session or _get_session()
     base_url = base_url or resolve_base_url(session)
     movie_urls = []
+    skip = skip_urls or set()
+    unseen_count = 0
     consecutive_empty = 0
 
     for page in range(1, max_pages + 1):
+        if is_step_stopped():
+            break
         page_url = f"{base_url}/yeni-filmler/" if page == 1 else f"{base_url}/yeni-filmler/{page}"
         try:
             r = session.get(page_url, timeout=10)
+            blocked, reason = is_blocked_response(r.status_code, r.text)
+            if blocked:
+                print(f"[FULLHDFILMIZLESENE_BLOCKED] {reason} on {page_url}; fail-fast abort.", flush=True)
+                raise SiteBlockedError(reason)
             if r.status_code in (404, 410):
                 break
             if r.status_code != 200:
@@ -352,13 +378,19 @@ def get_catalog_urls(session=None, base_url=None, max_pages=60):
                     if href not in movie_urls:
                         movie_urls.append(href)
                         found_on_page += 1
+                        if href not in skip:
+                            unseen_count += 1
 
+            if target_limit and unseen_count >= target_limit:
+                break
             if found_on_page == 0:
                 consecutive_empty += 1
                 if consecutive_empty >= 3:
                     break
             else:
                 consecutive_empty = 0
+        except SiteBlockedError:
+            raise
         except Exception:
             consecutive_empty += 1
             if consecutive_empty >= 5:

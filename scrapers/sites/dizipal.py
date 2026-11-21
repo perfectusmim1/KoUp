@@ -31,6 +31,7 @@ if _ROOT not in sys.path:
 
 from database import get_connection
 from scrapers.multisite import (
+    SiteBlockedError,
     norm_title,
     build_drama_index,
     find_in_index,
@@ -40,6 +41,10 @@ from scrapers.multisite import (
     safe_commit,
     clean_scraped_slug,
     parse_season_and_episode,
+    is_blocked_response,
+    is_step_stopped,
+    bind_stop_event,
+    get_step_stop_event,
 )
 from scrapers.supabase_sync_helper import match_or_create_enriched_drama, sync_drama_bundle_and_counts
 
@@ -72,14 +77,22 @@ def resolve_current_domain(session=None, start_num=1592, max_tries=10):
         return base_override.rstrip("/")
 
     for num in range(start_num, start_num + max_tries):
+        if is_step_stopped():
+            break
         cand = f"https://dizipal{num}.com"
         try:
             r = session.get(cand, timeout=5, allow_redirects=True)
+            blocked, reason = is_blocked_response(r.status_code, r.text)
+            if blocked:
+                print(f"[DIZIPAL_BLOCKED] {reason} on {cand}; fail-fast abort.", flush=True)
+                raise SiteBlockedError(reason)
             if r.status_code == 200 and len(r.text) > 1000:
                 final_domain = r.url.rstrip("/")
                 if final_domain.endswith("/"):
                     final_domain = final_domain[:-1]
                 return final_domain
+        except SiteBlockedError:
+            raise
         except Exception:
             continue
     return DEFAULT_BASE_URL
@@ -304,21 +317,31 @@ def scrape_series(conn, cur, idx, session, series_url, base_url):
     return added_sources_count
 
 
-def get_catalog_items(session, base_url, max_pages=150):
+def get_catalog_items(session, base_url, max_pages=150, target_limit=None, skip_urls=None):
     """Gathers catalog items from /yeni-eklenen-dizi-bolumler, /yabanci-dizi-izle, /film-izle, deduplicated without query params."""
     unique_urls = []
     seen = set()
+    skip = skip_urls or set()
+    unseen_count = 0
     routes = [
         "/yeni-eklenen-dizi-bolumler",
         "/yabanci-dizi-izle",
         "/film-izle",
     ]
     for route in routes:
+        if is_step_stopped():
+            break
         empty_streak = 0
         for p in range(1, max_pages + 1):
+            if is_step_stopped():
+                break
             p_url = f"{base_url}{route}" if p == 1 else f"{base_url}{route}?page={p}"
             try:
                 r = session.get(p_url, timeout=10)
+                blocked, reason = is_blocked_response(r.status_code, r.text)
+                if blocked:
+                    print(f"[DIZIPAL_BLOCKED] {reason} on {p_url}; fail-fast abort.", flush=True)
+                    raise SiteBlockedError(reason)
                 if r.status_code == 200:
                     links = re.findall(r'href=["\'](/series/[^"\']+|/bolum/[^"\']+|/film/[^"\']+)["\']', r.text)
                     new_found = 0
@@ -327,7 +350,11 @@ def get_catalog_items(session, base_url, max_pages=150):
                         if full not in seen:
                             seen.add(full)
                             unique_urls.append(full)
+                            if full not in skip:
+                                unseen_count += 1
                             new_found += 1
+                    if target_limit and unseen_count >= target_limit:
+                        return unique_urls
                     if new_found == 0:
                         empty_streak += 1
                         if empty_streak >= 2:
@@ -336,6 +363,8 @@ def get_catalog_items(session, base_url, max_pages=150):
                         empty_streak = 0
                 else:
                     break
+            except SiteBlockedError:
+                raise
             except Exception:
                 continue
     return unique_urls
@@ -349,8 +378,13 @@ def fetch_dizipal_item_memory(url, base_url):
     if "/series/" in clean_u:
         try:
             r = sess.get(clean_u, timeout=12)
+            blocked, reason = is_blocked_response(r.status_code, r.text)
+            if blocked:
+                raise SiteBlockedError(reason)
             if r.status_code != 200 or not r.text:
                 return None
+        except SiteBlockedError:
+            raise
         except Exception:
             return None
 

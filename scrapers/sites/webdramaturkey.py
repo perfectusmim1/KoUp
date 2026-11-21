@@ -32,10 +32,13 @@ if _ROOT not in sys.path:
 
 from scrapers.domain_resolver import get_site_base_url
 from scrapers.multisite import (
+    SiteBlockedError,
     add_source,
     build_drama_index,
     clean_episode_title,
     clean_scraped_slug,
+    is_blocked_response,
+    is_step_stopped,
     match_or_create_episode,
 )
 from scrapers.supabase_sync_helper import (
@@ -111,10 +114,14 @@ def _rate_limited_fetch(
     cfr_s, req_s = _get_wdt_session()
 
     for attempt in range(max_retries):
+        if is_step_stopped():
+            return 0, ""
         target_delay = random.uniform(1.2, 1.8)
         elapsed = time.time() - _LAST_REQUEST_TIME
         if elapsed < target_delay:
             time.sleep(target_delay - elapsed)
+        if is_step_stopped():
+            return 0, ""
 
         _LAST_REQUEST_TIME = time.time()
         resp_status = 0
@@ -146,6 +153,12 @@ def _rate_limited_fetch(
             except Exception as e_req:
                 last_error = f"{last_error} | requests: {e_req}" if last_error else f"requests: {e_req}"
 
+        # Fail fast on Cloudflare Turnstile / WAF 403/451/525 without retrying or bypassing
+        blocked, reason = is_blocked_response(resp_status, resp_text)
+        if blocked:
+            print(f"[WDT Cloudflare Engeli] {reason} algılandı ({url}) — fail-fast durduruluyor.", flush=True)
+            raise SiteBlockedError(reason)
+
         # Network / Connection level failure
         if not resp_status and last_error:
             wait_net = 2.0 + attempt * 2.5
@@ -171,10 +184,6 @@ def _rate_limited_fetch(
             )
             time.sleep(backoff)
             continue
-
-        # Cloudflare Challenge Check
-        if resp_status == 403 or (resp_text and any(k in resp_text.lower() for k in ("just a moment...", "cf-turnstile", "challenge-running", "turnstile.render"))):
-            print(f"[WDT Cloudflare Engeli] HTTP {resp_status} Cloudflare Challenge/Turnstile algılandı: {url}", flush=True)
 
         return resp_status, resp_text
 
@@ -565,45 +574,53 @@ def crawl_webdramaturkey_recent(
     dizi_candidates = []
     seen = set()
 
-    # 1. New Movies (/filmler pages 1..max_pages)
-    if category in ("all", "film"):
-        for page in range(1, max_pages + 1):
-            page_url = f"{base_url}/filmler" if page == 1 else f"{base_url}/filmler?page={page}"
-            status, html = _rate_limited_fetch(page_url)
-            if status == 200 and html:
-                soup = BeautifulSoup(html, "html.parser")
-                found_count = 0
-                for a in soup.find_all("a", href=True):
-                    h = a["href"]
-                    if "/film/" in h and "/sezon" not in h and "/bolum" not in h:
-                        full_u = urljoin(base_url, h)
-                        if full_u not in seen:
-                            film_candidates.append((full_u, True))
-                            seen.add(full_u)
-                            found_count += 1
-                print(f"[WDT Keşif] /filmler Sayfa {page}/{max_pages}: +{found_count} film adayı bulundu.", flush=True)
-            elif status != 200:
-                print(f"[WDT Keşif Hatası] /filmler Sayfa {page} alınamadı (HTTP {status})", flush=True)
+    try:
+        # 1. New Movies (/filmler pages 1..max_pages)
+        if category in ("all", "film"):
+            for page in range(1, max_pages + 1):
+                if is_step_stopped():
+                    break
+                page_url = f"{base_url}/filmler" if page == 1 else f"{base_url}/filmler?page={page}"
+                status, html = _rate_limited_fetch(page_url)
+                if status == 200 and html:
+                    soup = BeautifulSoup(html, "html.parser")
+                    found_count = 0
+                    for a in soup.find_all("a", href=True):
+                        h = a["href"]
+                        if "/film/" in h and "/sezon" not in h and "/bolum" not in h:
+                            full_u = urljoin(base_url, h)
+                            if full_u not in seen:
+                                film_candidates.append((full_u, True))
+                                seen.add(full_u)
+                                found_count += 1
+                    print(f"[WDT Keşif] /filmler Sayfa {page}/{max_pages}: +{found_count} film adayı bulundu.", flush=True)
+                elif status != 200:
+                    print(f"[WDT Keşif Hatası] /filmler Sayfa {page} alınamadı (HTTP {status})", flush=True)
 
-    # 2. New Series (/diziler pages 1..max_pages)
-    if category in ("all", "dizi"):
-        for page in range(1, max_pages + 1):
-            page_url = f"{base_url}/diziler" if page == 1 else f"{base_url}/diziler?page={page}"
-            status, html = _rate_limited_fetch(page_url)
-            if status == 200 and html:
-                soup = BeautifulSoup(html, "html.parser")
-                found_count = 0
-                for a in soup.find_all("a", href=True):
-                    h = a["href"]
-                    if "/dizi/" in h and "/sezon" not in h and "/bolum" not in h:
-                        full_u = urljoin(base_url, h)
-                        if full_u not in seen:
-                            dizi_candidates.append((full_u, False))
-                            seen.add(full_u)
-                            found_count += 1
-                print(f"[WDT Keşif] /diziler Sayfa {page}/{max_pages}: +{found_count} dizi adayı bulundu.", flush=True)
-            elif status != 200:
-                print(f"[WDT Keşif Hatası] /diziler Sayfa {page} alınamadı (HTTP {status})", flush=True)
+        # 2. New Series (/diziler pages 1..max_pages)
+        if category in ("all", "dizi") and not is_step_stopped():
+            for page in range(1, max_pages + 1):
+                if is_step_stopped():
+                    break
+                page_url = f"{base_url}/diziler" if page == 1 else f"{base_url}/diziler?page={page}"
+                status, html = _rate_limited_fetch(page_url)
+                if status == 200 and html:
+                    soup = BeautifulSoup(html, "html.parser")
+                    found_count = 0
+                    for a in soup.find_all("a", href=True):
+                        h = a["href"]
+                        if "/dizi/" in h and "/sezon" not in h and "/bolum" not in h:
+                            full_u = urljoin(base_url, h)
+                            if full_u not in seen:
+                                dizi_candidates.append((full_u, False))
+                                seen.add(full_u)
+                                found_count += 1
+                    print(f"[WDT Keşif] /diziler Sayfa {page}/{max_pages}: +{found_count} dizi adayı bulundu.", flush=True)
+                elif status != 200:
+                    print(f"[WDT Keşif Hatası] /diziler Sayfa {page} alınamadı (HTTP {status})", flush=True)
+    except SiteBlockedError as e:
+        print(f"[WDT ABORT] Cloudflare Turnstile / WAF engeli ({e}); tarama ilk engelde temizce sonlandırıldı.", flush=True)
+        return []
 
     # Combine candidates fairly (interleaving so series aren't starved by films)
     if category == "all":
@@ -646,15 +663,22 @@ def crawl_webdramaturkey_recent(
 
     results = []
     for count_idx, (item_url, is_film) in enumerate(candidates[:limit], 1):
+        if is_step_stopped():
+            print("[WDT STOP] Kooperatif durdurma sinyali alındı, WDT sonlandırılıyor.", flush=True)
+            break
         print(f"[{count_idx}/{min(len(candidates), limit)}] Scraping {'Film' if is_film else 'Dizi'}: {item_url}...", flush=True)
-        res = scrape_wdt_series_or_film(
-            cur=cur,
-            conn=conn,
-            item_url=item_url,
-            idx=idx,
-            is_film=is_film,
-        )
-        results.append(res)
+        try:
+            res = scrape_wdt_series_or_film(
+                cur=cur,
+                conn=conn,
+                item_url=item_url,
+                idx=idx,
+                is_film=is_film,
+            )
+            results.append(res)
+        except SiteBlockedError as e:
+            print(f"[WDT ABORT] Yapım çekilirken engel algılandı ({e}); WDT sonlandırılıyor.", flush=True)
+            break
         time.sleep(0.5)
 
     total_episodes = sum(r.get("episodes_added", 0) for r in results)

@@ -29,8 +29,18 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from scrapers.multisite import add_source, clean_scraped_slug, norm_title, tag_site, unique_slug
+from scrapers.multisite import (
+    SiteBlockedError,
+    add_source,
+    clean_scraped_slug,
+    is_blocked_response,
+    is_step_stopped,
+    norm_title,
+    tag_site,
+    unique_slug,
+)
 from scrapers.supabase_sync_helper import sb_request, upload_to_r2
+from database import get_db_path, row_to_dict
 
 
 def load_env():
@@ -60,11 +70,14 @@ load_env()
 
 def get_db_connection(db_path: str = "webdrama_archive.db") -> sqlite3.Connection:
     """Creates a high-concurrency SQLite connection using WAL mode and 60s timeout."""
-    abs_path = ROOT_DIR / db_path if not os.path.isabs(db_path) else Path(db_path)
-    conn = sqlite3.connect(abs_path, timeout=60.0)
+    if db_path == "webdrama_archive.db":
+        abs_path = Path(get_db_path())
+    else:
+        abs_path = ROOT_DIR / db_path if not os.path.isabs(db_path) else Path(db_path)
+    conn = sqlite3.connect(abs_path, timeout=120.0)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
-    conn.execute("PRAGMA busy_timeout=60000;")
+    conn.execute("PRAGMA busy_timeout=120000;")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -96,60 +109,134 @@ def get_thread_session(impersonate: str = "chrome120"):
 
 
 def safe_request(session, method: str, url: str, max_retries: int = 4, delay: float = 0.5, **kwargs):
-    """Executes HTTP request with exponential backoff for 429 and 5xx errors."""
+    """Executes HTTP request with exponential backoff for 429 and 5xx errors and cooperative stop checks."""
     if session is None:
         session = get_thread_session()
+    req_timeout = kwargs.pop("timeout", 15)
     for attempt in range(max_retries):
+        if is_step_stopped():
+            return None
         try:
             if delay > 0:
                 time.sleep(delay)
-            resp = session.request(method, url, timeout=kwargs.pop("timeout", 20), **kwargs)
+            if is_step_stopped():
+                return None
+            resp = session.request(method, url, timeout=req_timeout, **kwargs)
             if resp.status_code in (429, 502, 503, 504):
+                if is_step_stopped():
+                    return resp
                 wait = (2 ** attempt) * 1.5
                 time.sleep(wait)
                 continue
             return resp
         except Exception:
-            if attempt == max_retries - 1:
+            if attempt == max_retries - 1 or is_step_stopped():
                 raise
             time.sleep(2 ** attempt)
     return None
 
 
 CHECKPOINT_DIR = ROOT_DIR / "data" / "checkpoints"
+_CHECKPOINT_LOCK = threading.Lock()
+
+
+def ensure_checkpoint_table(conn: sqlite3.Connection):
+    """Ensure SQLite-backed checkpoint persistence exists inside webdrama_archive.db."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS scraper_checkpoints (
+            site TEXT NOT NULL,
+            item_key TEXT NOT NULL,
+            episode_count INTEGER DEFAULT 0,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (site, item_key)
+        )
+    """)
+    conn.commit()
+
+
+def load_checkpoint_counts(site: str) -> dict[str, int]:
+    """Load persisted checkpoint items and known episode_count from SQLite (seeded by legacy JSON if any)."""
+    items: dict[str, int] = {}
+    with _CHECKPOINT_LOCK:
+        try:
+            conn = get_db_connection()
+            try:
+                ensure_checkpoint_table(conn)
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT item_key, episode_count FROM scraper_checkpoints WHERE site = ?",
+                    (site,),
+                )
+                for row in cur.fetchall():
+                    items[str(row[0])] = int(row[1] or 0)
+            finally:
+                conn.close()
+        except Exception as e:
+            print(f"[CHECKPOINT_LOAD_ERROR] {site} (SQLite): {e}", file=sys.stderr)
+
+        # Merge legacy local JSON file if present without failing when /data/ is absent on GH Actions
+        cp_file = CHECKPOINT_DIR / f"shortdrama_{site}.json"
+        if cp_file.exists():
+            try:
+                with open(cp_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    for k in data.get("processed", []):
+                        items.setdefault(str(k), 0)
+            except Exception:
+                pass
+    return items
 
 
 def load_checkpoint(site: str) -> set:
-    """Loads processed slug/id set from JSON checkpoint file."""
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-    cp_file = CHECKPOINT_DIR / f"shortdrama_{site}.json"
-    if cp_file.exists():
+    """Loads processed slug/id set from SQLite checkpoints (persisted via R2 DB sync)."""
+    return set(load_checkpoint_counts(site).keys())
+
+
+def save_checkpoint(site: str, processed_items: set, counts_map: dict[str, int] | None = None):
+    """Persists processed slug/id set into SQLite scraper_checkpoints table (and optional local JSON)."""
+    with _CHECKPOINT_LOCK:
+        if processed_items:
+            try:
+                conn = get_db_connection()
+                try:
+                    ensure_checkpoint_table(conn)
+                    cur = conn.cursor()
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    rows = []
+                    c_map = counts_map or {}
+                    for k in processed_items:
+                        ks = str(k)
+                        ep_c = int(c_map.get(ks, 0) or 0)
+                        rows.append((site, ks, ep_c, now_iso))
+                    cur.executemany("""
+                        INSERT INTO scraper_checkpoints (site, item_key, episode_count, updated_at)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(site, item_key) DO UPDATE SET
+                            episode_count = MAX(scraper_checkpoints.episode_count, excluded.episode_count),
+                            updated_at = excluded.updated_at
+                    """, rows)
+                    conn.commit()
+                finally:
+                    conn.close()
+            except Exception as e:
+                print(f"[CHECKPOINT_SAVE_ERROR] {site} (SQLite): {e}", file=sys.stderr)
+
+        # Keep optional local JSON mirror when filesystem permits
         try:
-            with open(cp_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return set(data.get("processed", []))
+            CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+            cp_file = CHECKPOINT_DIR / f"shortdrama_{site}.json"
+            tmp_file = CHECKPOINT_DIR / f"shortdrama_{site}.tmp"
+            with open(tmp_file, "w", encoding="utf-8") as f:
+                json.dump({
+                    "site": site,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "count": len(processed_items),
+                    "processed": sorted(list(processed_items)),
+                }, f, ensure_ascii=False, indent=2)
+            if tmp_file.exists():
+                tmp_file.replace(cp_file)
         except Exception:
-            return set()
-    return set()
-
-
-def save_checkpoint(site: str, processed_items: set):
-    """Saves processed slug/id set into JSON checkpoint file."""
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-    cp_file = CHECKPOINT_DIR / f"shortdrama_{site}.json"
-    tmp_file = CHECKPOINT_DIR / f"shortdrama_{site}.tmp"
-    try:
-        with open(tmp_file, "w", encoding="utf-8") as f:
-            json.dump({
-                "site": site,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-                "count": len(processed_items),
-                "processed": sorted(list(processed_items)),
-            }, f, ensure_ascii=False, indent=2)
-        if tmp_file.exists():
-            tmp_file.replace(cp_file)
-    except Exception as e:
-        print(f"[CHECKPOINT_SAVE_ERROR] {site}: {e}", file=sys.stderr)
+            pass
 
 
 def clean_drama_title(title: str) -> str:
@@ -248,11 +335,11 @@ def upsert_short_drama(
     target_norm = norm_title(clean_t)
     target_clean_slug = clean_scraped_slug(slug or clean_t)
 
-    # 1. Search existing short dramas for title match or slug match
+    # 1. Search ONLY existing short dramas for title match or slug match (never hijack regular dramas/anime)
     cur.execute("""
         SELECT id, slug, title, cover_image, backdrop_image, overview, episode_count, alt_sites, categories
         FROM dramas
-        WHERE content_type = 'kisa_drama' OR categories LIKE '%Kısa Drama%'
+        WHERE content_type = 'kisa_drama'
     """)
     candidates = cur.fetchall()
 
@@ -268,15 +355,6 @@ def upsert_short_drama(
             matched_slug = cand_slug
             matched_row = cand
             break
-
-    # If not matched among short dramas, check if slug or exact title already exists in full table
-    if not matched_id and target_clean_slug:
-        cur.execute("SELECT id, slug, title, cover_image, backdrop_image, overview, episode_count, alt_sites, categories FROM dramas WHERE slug = ?", (target_clean_slug,))
-        row = cur.fetchone()
-        if row:
-            matched_id = row["id"]
-            matched_slug = row["slug"]
-            matched_row = row
 
     yr = int(release_year) if str(release_year).isdigit() else datetime.now().year
     ep_cnt = int(episode_count) if episode_count and str(episode_count).isdigit() else 0
@@ -308,9 +386,6 @@ def upsert_short_drama(
         if ep_cnt > existing_cnt:
             updates.append("episode_count = ?")
             params.append(str(ep_cnt))
-
-        # Ensure content_type is kisa_drama
-        updates.append("content_type = 'kisa_drama'")
 
         if updates:
             params.append(matched_id)

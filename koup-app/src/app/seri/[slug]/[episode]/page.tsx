@@ -46,6 +46,7 @@ import { trackMediaView } from '@/lib/viewTracker';
 import { cachedQuery, getCache, setCache, getMediaFromCache, registerMediaItem, updateCachedMedia } from '@/lib/cache';
 import { recordTasteSignal } from '@/lib/tasteProfile';
 import { cleanSourceName } from '@/lib/cleanFansub';
+import { adminFetch } from '@/lib/adminClient';
 import dynamic from 'next/dynamic';
 import { useKoUpSelector } from '@/context/KoUpContext';
 import NetflixPlayer from '@/components/NetflixPlayer';
@@ -76,6 +77,23 @@ const RichCommentSection = dynamic(
 );
 
 const EMPTY_WATCHED_ARRAY: number[] = [];
+const ALLOWED_CUSTOM_SCHEMES = ['dramavadisi:', 'dramabox:', 'wdt:', 'pilavyer:'] as const;
+
+function isAllowedSourceUrl(rawUrl?: string | null): boolean {
+  const u = (rawUrl || '').trim().toLowerCase();
+  if (!u || u === 'dead') return false;
+  if (
+    u.startsWith('javascript:') ||
+    u.includes('void(0)') ||
+    u.startsWith('data:') ||
+    u.startsWith('vbscript:') ||
+    u.startsWith('pending://')
+  ) {
+    return false;
+  }
+  if (u.startsWith('http://') || u.startsWith('https://')) return true;
+  return ALLOWED_CUSTOM_SCHEMES.some((scheme) => u.startsWith(scheme) && u.length > scheme.length);
+}
 
 export default function EpisodeWatchPage({
   params,
@@ -114,6 +132,12 @@ export default function EpisodeWatchPage({
   const [selectedSourceIdx, setSelectedSourceIdx] = useState(0);
   const preferredSourceRef = useRef<{ provider?: string; source_name?: string }>({});
   const [liveEpisodeViews, setLiveEpisodeViews] = useState<Record<string, number>>({});
+  const [deadSourceUrls, setDeadSourceUrls] = useState<Set<string>>(() => new Set());
+  const reportedDeadUrlsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    setDeadSourceUrls(new Set());
+  }, [slug, currentSeason, activeEpNum]);
 
   const handleSelectSourceIdx = useCallback((idx: number) => {
     setSelectedSourceIdx(idx);
@@ -122,32 +146,38 @@ export default function EpisodeWatchPage({
   const handleSourceDead = useCallback(
     (deadUrl: string) => {
       if (!deadUrl) return;
-      setEpisodes((prevEpisodes) => {
-        const updated = prevEpisodes.map((ep) => {
-          if (
-            (ep.season_number || 1) === (currentSeason || 1) &&
-            ep.episode_number === activeEpNum
-          ) {
-            return {
-              ...ep,
-              sources: (ep.sources || []).filter((s) => s.direct_url !== deadUrl),
-            };
-          }
-          return ep;
-        });
-
-        if (media?.id) {
-          try {
-            setCache(`episodes_${media.id}`, updated, 300_000);
-          } catch {}
-        }
-
-        return updated;
+      setDeadSourceUrls((prev) => {
+        if (prev.has(deadUrl)) return prev;
+        const next = new Set(prev);
+        next.add(deadUrl);
+        return next;
       });
 
-      setSelectedSourceIdx(0);
+      const reportKey = `${media?.id || 0}:${currentSeason || 1}:${activeEpNum}:${deadUrl}`;
+      if (!media?.id || reportedDeadUrlsRef.current.has(reportKey)) return;
+      reportedDeadUrlsRef.current.add(reportKey);
+
+      const currentEp = episodes.find(
+        (ep) =>
+          (ep.season_number || 1) === (currentSeason || 1) &&
+          ep.episode_number === activeEpNum
+      );
+      const matchedSource = (currentEp?.sources || []).find((s) => s.direct_url === deadUrl);
+
+      void fetch('/api/report-dead-source', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          media_id: media.id,
+          season_number: currentSeason || 1,
+          episode_number: activeEpNum,
+          provider: matchedSource?.provider || 'unknown',
+          stream_url: deadUrl,
+          reason: 'player_failover',
+        }),
+      }).catch(() => {});
     },
-    [currentSeason, activeEpNum, media?.id]
+    [currentSeason, activeEpNum, media?.id, episodes]
   );
 
   // Ambient Lighting (persisted across episode changes and refreshes)
@@ -371,19 +401,12 @@ export default function EpisodeWatchPage({
       ...ep,
       sources: (ep.sources || []).filter(
         (s) =>
-          s?.direct_url &&
-          s.direct_url.startsWith('http') &&
-          !s.direct_url.includes('javascript:') &&
-          !s.direct_url.includes('void(0)') &&
+          isAllowedSourceUrl(s?.direct_url) &&
           !s.direct_url.includes('embed-7fm0wb9yzf4m.html') &&
-          !s.direct_url.includes('playerdkorea.xyz') &&
           !s.direct_url.includes('asyaanim.upns.one') &&
-          !s.direct_url.includes('/rplayer/') &&
-          s.provider !== 'rapidrame' &&
           s.provider !== 'dead' &&
           s.provider !== 'sibnet' &&
-          s.provider !== 'sendvid' &&
-          s.provider !== 'pixeldrain'
+          s.provider !== 'sendvid'
       ),
     }));
 
@@ -501,9 +524,7 @@ export default function EpisodeWatchPage({
         const payload = await episodesPromise;
         const rawEps: EpisodeData[] = (payload?.episodes || []).map((ep: EpisodeData) => ({
           ...ep,
-          sources: (ep.sources || []).filter(
-            (s) => s?.direct_url && s.direct_url.startsWith('http') && !s.direct_url.includes('javascript:') && !s.direct_url.includes('void(0)')
-          ),
+          sources: (ep.sources || []).filter((s) => isAllowedSourceUrl(s?.direct_url)),
         }));
         if (isCancelled) return;
 
@@ -742,11 +763,8 @@ export default function EpisodeWatchPage({
     new Set(episodes.map((e) => e.season_number || 1))
   ).sort((a, b) => a - b);
 
-  const rawSources: EpisodeSource[] = (currentEpObj?.sources || []).filter(
-    (s) =>
-      s?.direct_url &&
-      !s.direct_url.includes('/rplayer/') &&
-      s.provider !== 'rapidrame'
+  const rawSources: EpisodeSource[] = (currentEpObj?.sources || []).filter((s) =>
+    isAllowedSourceUrl(s?.direct_url)
   );
   const baseNames = rawSources.map((s) =>
     cleanSourceName(s.source_name || '').replace(/\s+\d+$/, '').trim() || 'Kaynak'
@@ -888,15 +906,20 @@ export default function EpisodeWatchPage({
     });
 
     try {
-      const { error } = await supabase.rpc('increment_episode_reaction', {
-        p_media_id: media.id,
-        p_season: currentSeason,
-        p_episode: activeEpNum,
-        p_reaction: type,
+      const res = await adminFetch('/api/episodes/reaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          media_id: media.id,
+          season: currentSeason,
+          episode: activeEpNum,
+          reaction: type,
+        }),
       });
+      const payload = await res.json().catch(() => null);
 
-      if (error) {
-        console.error('Failed to update episode reaction:', error);
+      if (!res.ok || !payload?.ok) {
+        console.error('Failed to update episode reaction:', payload?.error || res.status);
         // Revert on error
         setUserReaction(oldType);
         try {
@@ -912,24 +935,13 @@ export default function EpisodeWatchPage({
           if (oldType) reverted[oldType] = (reverted[oldType] || 0) + 1;
           return reverted;
         });
-      } else {
-        // Fetch authoritative aggregate counts from DB
-        const { data: epRow } = await supabase
-          .from('episodes')
-          .select('react_fire, react_cry, react_shock, react_angry')
-          .eq('media_id', media.id)
-          .eq('season_number', currentSeason)
-          .eq('episode_number', activeEpNum)
-          .maybeSingle();
-
-        if (epRow) {
-          setReactionCounts({
-            fire: epRow.react_fire || 0,
-            cry: epRow.react_cry || 0,
-            shock: epRow.react_shock || 0,
-            angry: epRow.react_angry || 0,
-          });
-        }
+      } else if (payload?.reactions) {
+        setReactionCounts({
+          fire: payload.reactions.fire || 0,
+          cry: payload.reactions.cry || 0,
+          shock: payload.reactions.shock || 0,
+          angry: payload.reactions.angry || 0,
+        });
       }
     } catch (err) {
       console.error('Failed to persist episode reaction in DB:', err);
@@ -1113,14 +1125,19 @@ export default function EpisodeWatchPage({
                       s.stream_type === 'hls' ||
                       s.stream_type === 'tau' ||
                       s.stream_type === 'mp4';
+                    const isDead = deadSourceUrls.has(s.direct_url);
                     const baseName = cleanSourceName(s.source_name || `Kaynak ${idx + 1}`);
                     return {
                       value: String(idx),
                       label: baseName,
+                      disabled: isDead,
+                      description: isDead ? 'Çalışmıyor' : undefined,
                       icon: (
                         <span
                           className={`w-2 h-2 rounded-full ${
-                            isNative
+                            isDead
+                              ? 'bg-rose-500/70'
+                              : isNative
                               ? 'bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]'
                               : 'bg-blue-400'
                           }`}

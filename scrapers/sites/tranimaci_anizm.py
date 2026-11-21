@@ -29,6 +29,7 @@ if _ROOT not in sys.path:
 
 from database import get_connection
 from scrapers.multisite import (
+    SiteBlockedError,
     norm_title,
     build_drama_index,
     find_in_index,
@@ -38,6 +39,10 @@ from scrapers.multisite import (
     safe_commit,
     clean_scraped_slug,
     parse_season_and_episode,
+    is_blocked_response,
+    is_step_stopped,
+    bind_stop_event,
+    get_step_stop_event,
 )
 from scrapers.supabase_sync_helper import match_or_create_enriched_drama, sync_drama_bundle_and_counts
 
@@ -75,8 +80,14 @@ def get_tranimaci_sitemap_urls(session=None):
     session = session or _get_session("tranimaci")
     try:
         r = session.get(f"{TRANIMACI_BASE}/sitemap.xml", timeout=15)
+        blocked, reason = is_blocked_response(r.status_code, r.text)
+        if blocked:
+            print(f"[TRANIMACI_BLOCKED] {reason} on /sitemap.xml; fail-fast abort.", flush=True)
+            raise SiteBlockedError(reason)
         if r.status_code == 200:
             return re.findall(r"<loc>(https?://tranimaci\.com/anime/[^<]+)</loc>", r.text)
+    except SiteBlockedError:
+        raise
     except Exception:
         pass
     return []
@@ -126,8 +137,13 @@ def _fetch_single_tranimaci_ep(session, ep_url, ep_text):
 def scrape_tranimaci_anime(conn, cur, idx, session, anime_url):
     try:
         r = session.get(anime_url, timeout=12)
+        blocked, reason = is_blocked_response(r.status_code, r.text)
+        if blocked:
+            raise SiteBlockedError(reason)
         if r.status_code != 200:
             return 0
+    except SiteBlockedError:
+        raise
     except Exception:
         return 0
 
@@ -237,20 +253,38 @@ def scrape_tranimaci_anime(conn, cur, idx, session, anime_url):
 # 2. ANIZM SCRAPER
 # =========================================================================
 
-def get_anizm_catalog_urls(session=None, max_pages=5):
+def get_anizm_catalog_urls(session=None, max_pages=5, target_limit=None, skip_urls=None):
     session = session or _get_session("anizm")
     urls = []
     seen = set()
+    skip = skip_urls or set()
+    unseen_count = 0
     for page in range(1, max_pages + 1):
+        if is_step_stopped():
+            break
         page_url = f"{ANIZM_BASE}/" if page == 1 else f"{ANIZM_BASE}/?page={page}"
         try:
             r = session.get(page_url, timeout=12)
+            blocked, reason = is_blocked_response(r.status_code, r.text)
+            if blocked:
+                print(f"[ANIZM_BLOCKED] {reason} on {page_url}; fail-fast abort.", flush=True)
+                raise SiteBlockedError(reason)
             if r.status_code == 200:
+                found_page = 0
                 for u in re.findall(r'href=["\'](https?://anizm\.net/[^"\']*-bolum-izle[^"\']*)["\']', r.text):
                     clean_u = u.split("#")[0]
                     if clean_u not in seen:
                         seen.add(clean_u)
                         urls.append(clean_u)
+                        found_page += 1
+                        if clean_u not in skip:
+                            unseen_count += 1
+                if target_limit and unseen_count >= target_limit:
+                    break
+                if found_page == 0:
+                    break
+        except SiteBlockedError:
+            raise
         except Exception:
             continue
     return urls
@@ -293,8 +327,13 @@ def _fetch_anizm_video_info(session, ep_url, anizm_ep_id, vid, v_name):
 def scrape_anizm_episode(conn, cur, idx, session, ep_url):
     try:
         r = session.get(ep_url, timeout=12)
+        blocked, reason = is_blocked_response(r.status_code, r.text)
+        if blocked:
+            raise SiteBlockedError(reason)
         if r.status_code != 200:
             return 0
+    except SiteBlockedError:
+        raise
     except Exception:
         return 0
 
