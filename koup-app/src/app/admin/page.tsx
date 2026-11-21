@@ -876,6 +876,45 @@ export default function AdminDashboardPage() {
     });
   }, []);
 
+  const callAdminRpc = useCallback(
+    async <T = unknown>(
+      rpc:
+        | 'admin_dashboard_stats'
+        | 'admin_log_action'
+        | 'admin_search_users'
+        | 'admin_send_broadcast'
+        | 'admin_triage_report',
+      params: Record<string, unknown> = {}
+    ): Promise<{ data: T | null; error: { message: string; status?: number } | null }> => {
+      try {
+        const resp = await adminFetch('/api/admin/rpc', {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: JSON.stringify({ rpc, params }),
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok || !json?.ok) {
+          return {
+            data: null,
+            error: {
+              message: json?.error || `RPC hatası (${resp.status})`,
+              status: resp.status,
+            },
+          };
+        }
+        return { data: (json.data as T) ?? null, error: null };
+      } catch (err: unknown) {
+        return {
+          data: null,
+          error: {
+            message: err instanceof Error ? err.message : 'Sunucu bağlantı hatası.',
+          },
+        };
+      }
+    },
+    [adminFetch]
+  );
+
   const refreshMaintenanceTelemetry = useCallback(async () => {
     if (!isAdmin) return;
     setLoadingMaintenance(true);
@@ -947,7 +986,7 @@ export default function AdminDashboardPage() {
     async function loadInitial() {
       try {
         const [dashRpcRes, sRes, rRes, fRes] = await Promise.all([
-          supabase.rpc('admin_dashboard_stats'),
+          callAdminRpc<Record<string, any>>('admin_dashboard_stats'),
           supabase.from('scraper_configs').select('*').order('id'),
           supabase.from('issue_reports').select('*').order('created_at', { ascending: false }).limit(80),
           supabase.from('media').select('*').eq('is_featured', true).order('featured_order', { ascending: true }).limit(16),
@@ -1002,7 +1041,7 @@ export default function AdminDashboardPage() {
     if (isAdmin) {
       refreshMaintenanceTelemetry();
     }
-  }, [hasAdminPanelAccess, isAdmin, refreshMaintenanceTelemetry]);
+  }, [hasAdminPanelAccess, isAdmin, refreshMaintenanceTelemetry, callAdminRpc]);
 
   // Load Users Tab via parameterized admin_search_users RPC (Fixes S11 & B2)
   useEffect(() => {
@@ -1013,7 +1052,10 @@ export default function AdminDashboardPage() {
         const PAGE_SIZE = 50;
         const from = (usersPage - 1) * PAGE_SIZE;
 
-        const { data: rpcRes, error: rpcErr } = await supabase.rpc('admin_search_users', {
+        const { data: rpcRes, error: rpcErr } = await callAdminRpc<{
+          total?: number;
+          users?: UserProfileRow[];
+        }>('admin_search_users', {
           p_query: debouncedUserSearch || '',
           p_role: userRoleFilter || 'ALL',
           p_sort: 'newest',
@@ -1067,7 +1109,7 @@ export default function AdminDashboardPage() {
       }
     }
     loadUsers();
-  }, [hasAdminPanelAccess, activeTab, usersPage, debouncedUserSearch, userRoleFilter, pushNotification]);
+  }, [hasAdminPanelAccess, activeTab, usersPage, debouncedUserSearch, userRoleFilter, pushNotification, callAdminRpc]);
 
   // Load Series Tab (Server-Side Paginated with 50 items/page)
   useEffect(() => {
@@ -1665,7 +1707,10 @@ export default function AdminDashboardPage() {
       const bLink = broadcastLinkUrl.trim() || '/';
 
       let sentCount = 0;
-      const { data: rpcRes, error: rpcErr } = await supabase.rpc('admin_send_broadcast', {
+      const { data: rpcRes, error: rpcErr } = await callAdminRpc<{
+        recipient_count?: number;
+        recipients_count?: number;
+      }>('admin_send_broadcast', {
         p_title: bTitle,
         p_message: bBody,
         p_link_url: bLink,
@@ -1674,16 +1719,12 @@ export default function AdminDashboardPage() {
         p_audience_value: targetMediaId ? String(targetMediaId) : null,
       });
 
-      if (!rpcErr && rpcRes) {
-        sentCount = Number((rpcRes as any).recipient_count || (rpcRes as any).recipients_count || 0);
-      } else {
-        // Fallback if RPC not reachable
-        await supabase.from('broadcast_events').insert({
-          target_type: broadcastTargetType === 'followers' ? 'followers' : 'global',
-          title: bTitle,
-          message: bBody,
-          link_url: bLink,
-        });
+      if (rpcErr) {
+        throw new Error(rpcErr.message || 'Toplu bildirim gönderilemedi.');
+      }
+
+      if (rpcRes) {
+        sentCount = Number(rpcRes.recipient_count || rpcRes.recipients_count || 0);
       }
 
       setBroadcastTitle('');
@@ -2797,10 +2838,10 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // Issue Reports (via admin_triage_report RPC with reporter notification & audit log — B4 & Faz 3.6)
+  // Issue Reports (via authenticated /api/admin/rpc -> admin_triage_report with reporter notification & audit log)
   const resolveIssue = async (reportId: number, status: 'resolved' | 'in_progress' | 'dismissed' = 'resolved') => {
     try {
-      const { error: rpcErr } = await supabase.rpc('admin_triage_report', {
+      const { error: rpcErr } = await callAdminRpc('admin_triage_report', {
         p_report_id: reportId,
         p_status: status,
         p_admin_note: status === 'resolved' ? 'Admin panelinden incelenip onarıldı.' : null,
@@ -2808,6 +2849,9 @@ export default function AdminDashboardPage() {
       });
 
       if (rpcErr) {
+        if (rpcErr.status === 401 || rpcErr.status === 403 || rpcErr.status === 429) {
+          throw new Error(rpcErr.message);
+        }
         const { error } = await supabase
           .from('issue_reports')
           .update({ status })

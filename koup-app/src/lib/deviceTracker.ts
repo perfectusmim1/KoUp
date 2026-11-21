@@ -262,6 +262,40 @@ export async function fetchUserDevices(userId: string, currentDeviceId?: string)
   }
 }
 
+async function getDeviceAuthHeaders(): Promise<Record<string, string>> {
+  let token: string | null = null;
+  try {
+    const { data } = await supabase.auth.getSession();
+    token = data?.session?.access_token || null;
+  } catch {
+    // Session retrieval fallback
+  }
+
+  if (!token && typeof window !== 'undefined') {
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.includes('-auth-token') || key.startsWith('sb-'))) {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            token = parsed?.access_token || parsed?.session?.access_token || parsed?.[0] || null;
+            if (token) break;
+          }
+        }
+      }
+    } catch {
+      // ignore storage parse error
+    }
+  }
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 /**
  * Terminate/Revoke a specific device session
  */
@@ -271,17 +305,19 @@ export async function terminateDeviceSession(deviceId: string, userId: string): 
   try {
     let updateSuccess = false;
 
-    // 1. Mark device as revoked in PostgreSQL
-    const { error: rpcErr } = await supabase.rpc('revoke_user_device', { p_device_id: deviceId });
-    if (!rpcErr) {
-      updateSuccess = true;
-    } else {
-      const { error: updateErr } = await supabase
-        .from('user_devices')
-        .update({ is_revoked: true, revoked_at: new Date().toISOString() })
-        .eq('user_id', userId)
-        .eq('device_id', deviceId);
-      updateSuccess = !updateErr;
+    // 1. Revoke device via authenticated server route (scoped strictly to verified session.userId)
+    const headers = await getDeviceAuthHeaders();
+    const res = await fetch('/api/devices/revoke', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers,
+      body: JSON.stringify({ action: 'revoke_one', device_id: deviceId }),
+    });
+    const json = await res.json().catch(() => ({}));
+    updateSuccess = Boolean(res.ok && json?.ok);
+
+    if (!updateSuccess) {
+      return false;
     }
 
     // 2. Broadcast realtime event so any active tab on that device terminates instantly
@@ -323,17 +359,19 @@ export async function terminateAllOtherDevices(userId: string, currentDeviceId: 
   try {
     let updateSuccess = false;
 
-    // 1. Mark all other devices as revoked in PostgreSQL
-    const { error: rpcErr } = await supabase.rpc('revoke_all_other_devices', { p_current_device_id: currentDeviceId });
-    if (!rpcErr) {
-      updateSuccess = true;
-    } else {
-      const { error: updateErr } = await supabase
-        .from('user_devices')
-        .update({ is_revoked: true, revoked_at: new Date().toISOString() })
-        .eq('user_id', userId)
-        .neq('device_id', currentDeviceId);
-      updateSuccess = !updateErr;
+    // 1. Revoke all other devices via authenticated server route (scoped strictly to verified session.userId)
+    const headers = await getDeviceAuthHeaders();
+    const res = await fetch('/api/devices/revoke', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers,
+      body: JSON.stringify({ action: 'revoke_all_others', current_device_id: currentDeviceId }),
+    });
+    const json = await res.json().catch(() => ({}));
+    updateSuccess = Boolean(res.ok && json?.ok);
+
+    if (!updateSuccess) {
+      return false;
     }
 
     // 2. Broadcast realtime event so other active devices terminate instantly

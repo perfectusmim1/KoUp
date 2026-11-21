@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect, memo, useCallback, useId } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useId } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Play, Heart, Bell, Star, ListPlus, Volume2, VolumeX, Eye } from 'lucide-react';
@@ -159,6 +159,7 @@ export function preloadImage(url?: string | null, onDecoded?: () => void) {
 export function preloadMediaImages(items?: (MediaItem | null | undefined)[]) {
   if (typeof window === 'undefined' || !items || items.length === 0) return;
   if (window.innerWidth < 768) return;
+  if ((navigator as { connection?: { saveData?: boolean } }).connection?.saveData) return;
   try {
     if (localStorage.getItem('koup_pref_card_hover_expand') === 'false') return;
   } catch {}
@@ -661,10 +662,10 @@ function AccordionMediaCardComponent({
                       ? 'right-0 left-auto'
                       : 'left-1/2 -translate-x-1/2'
                 }`
-              : 'w-full h-[250px] sm:h-[280px] md:h-[300px] relative z-10 border-white/10 hover:border-white/25 shadow-md'
+              : 'w-full h-[250px] sm:h-[280px] md:h-[300px] relative z-10 border-white/10 hover:border-white/25 shadow-sm md:shadow-md'
             : isAccordionExpanded
               ? 'w-[320px] sm:w-[370px] md:w-[420px] h-[250px] sm:h-[280px] md:h-[300px] shrink-0 z-30 border-white/40 shadow-[0_18px_40px_rgba(0,0,0,0.9)] relative'
-              : 'w-[165px] sm:w-[185px] md:w-[200px] h-[250px] sm:h-[280px] md:h-[300px] shrink-0 z-10 border-white/10 hover:border-white/25 shadow-md relative'
+              : 'w-[165px] sm:w-[185px] md:w-[200px] h-[250px] sm:h-[280px] md:h-[300px] shrink-0 z-10 border-white/10 hover:border-white/25 shadow-sm md:shadow-md relative'
       }`}
     >
       {/* Background Instant Navigation Link */}
@@ -697,7 +698,6 @@ function AccordionMediaCardComponent({
             height={300}
             draggable={false}
             loading={priority ? 'eager' : 'lazy'}
-            fetchPriority={priority ? 'high' : 'auto'}
             decoding="async"
             onError={(e) => {
               const target = e.currentTarget;
@@ -727,6 +727,7 @@ function AccordionMediaCardComponent({
           alt=""
           aria-hidden="true"
           draggable={false}
+          loading="lazy"
           decoding="async"
           onError={(e) => {
             const target = e.currentTarget;
@@ -784,8 +785,8 @@ function AccordionMediaCardComponent({
       <div className="absolute top-2.5 left-2.5 right-2.5 z-20 flex items-center justify-between gap-1.5 pointer-events-none">
         <div className="flex items-center gap-1.5">
           {countryCode ? (
-            <span className="inline-flex items-center justify-center filter drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)] drop-shadow-[0_1px_3px_rgba(0,0,0,1)] select-none">
-              <CountryFlag code={countryCode} size="md" className="rounded-[3px] drop-shadow-[0_2px_5px_rgba(0,0,0,0.95)]" />
+            <span className="inline-flex items-center justify-center md:drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] select-none">
+              <CountryFlag code={countryCode} size="md" className="rounded-[3px]" />
             </span>
           ) : null}
 
@@ -820,18 +821,18 @@ function AccordionMediaCardComponent({
           )}
 
           {ratingInfo && (
-            <div className="inline-flex items-center gap-1 filter drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)] drop-shadow-[0_1px_3px_rgba(0,0,0,1)] select-none">
+            <div className="inline-flex items-center gap-1 md:drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] select-none">
               {ratingInfo.isKoUp ? (
                 <>
                   <span className="text-[9px] font-black tracking-wider uppercase text-sky-400 bg-sky-500/20 px-1 py-0.5 rounded border border-sky-400/30">
                     KoUp
                   </span>
-                  <Star className="w-3.5 h-3.5 fill-sky-400 text-sky-400 shrink-0 drop-shadow-[0_0_6px_rgba(56,189,248,0.8)]" />
+                  <Star className="w-3.5 h-3.5 fill-sky-400 text-sky-400 shrink-0 md:drop-shadow-[0_0_6px_rgba(56,189,248,0.8)]" />
                 </>
               ) : (
-                <Star className="w-3.5 h-3.5 fill-[#f5c518] text-[#f5c518] shrink-0 drop-shadow-[0_1px_4px_rgba(0,0,0,0.95)]" />
+                <Star className="w-3.5 h-3.5 fill-[#f5c518] text-[#f5c518] shrink-0" />
               )}
-              <span className="font-extrabold text-[12px] sm:text-[13px] text-white tracking-tight drop-shadow-[0_2px_6px_rgba(0,0,0,1)] [text-shadow:0_2px_6px_rgba(0,0,0,1),0_1px_3px_rgba(0,0,0,0.95)] leading-none">
+              <span className="font-extrabold text-[12px] sm:text-[13px] text-white tracking-tight [text-shadow:0_1px_3px_rgba(0,0,0,0.95)] leading-none">
                 {ratingInfo.score}
               </span>
             </div>
@@ -1027,5 +1028,5 @@ function AccordionMediaCardComponent({
   );
 }
 
-export default memo(AccordionMediaCardComponent);
+export default React.memo(AccordionMediaCardComponent);
 
