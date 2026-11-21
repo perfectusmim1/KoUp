@@ -28,6 +28,7 @@ if _ROOT not in sys.path:
 
 from database import get_connection
 from scrapers.multisite import (
+    SiteBlockedError,
     norm_title,
     build_drama_index,
     find_in_index,
@@ -37,6 +38,8 @@ from scrapers.multisite import (
     safe_commit,
     clean_scraped_slug,
     parse_season_and_episode,
+    is_blocked_response,
+    is_step_stopped,
 )
 from scrapers.supabase_sync_helper import match_or_create_enriched_drama, sb_request, sync_drama_bundle_and_counts
 
@@ -64,13 +67,20 @@ def _get_tls_session():
 
 def fetch_with_retry(session, url, retries=3, timeout=12):
     for i in range(retries):
+        if is_step_stopped():
+            return None
         for candidate_url in [url, url.replace("https://", "http://")]:
             try:
                 resp = session.get(candidate_url, timeout=timeout)
+                blocked, reason = is_blocked_response(resp.status_code, resp.text)
+                if blocked:
+                    raise SiteBlockedError(reason)
                 if resp.status_code == 200:
                     return resp.text
                 if resp.status_code in (502, 503):
                     time.sleep(1.5 * (i + 1))
+            except SiteBlockedError:
+                raise
             except Exception:
                 time.sleep(1.0)
     return None
@@ -85,13 +95,21 @@ def get_animes_catalog(session=None):
         return _ANIMES_CACHE
     session = session or _get_session()
     for cand in [f"{BASE_URL}/animes.json", f"{BASE_URL}/data/animes.json"]:
+        if is_step_stopped():
+            break
         try:
             r = session.get(cand, timeout=18)
+            blocked, reason = is_blocked_response(r.status_code, r.text)
+            if blocked:
+                print(f"[ANIMELVL_BLOCKED] {reason} on {cand}; fail-fast abort.", flush=True)
+                raise SiteBlockedError(reason)
             if r.status_code == 200 and r.text:
                 data = r.json()
                 if isinstance(data, list) and len(data) > 0:
                     _ANIMES_CACHE = data
                     return _ANIMES_CACHE
+        except SiteBlockedError:
+            raise
         except Exception:
             continue
     return []

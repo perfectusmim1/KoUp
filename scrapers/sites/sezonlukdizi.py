@@ -30,6 +30,7 @@ if _ROOT not in sys.path:
 
 from database import get_connection
 from scrapers.multisite import (
+    SiteBlockedError,
     norm_title,
     build_drama_index,
     find_in_index,
@@ -39,6 +40,10 @@ from scrapers.multisite import (
     safe_commit,
     clean_scraped_slug,
     parse_season_and_episode,
+    is_blocked_response,
+    is_step_stopped,
+    bind_stop_event,
+    get_step_stop_event,
 )
 from scrapers.supabase_sync_helper import match_or_create_enriched_drama, sync_drama_bundle_and_counts
 
@@ -67,8 +72,14 @@ def _get_tls_session():
 def fetch_html(session, url, referer=None, timeout=12):
     headers = {"Referer": referer or f"{BASE_URL}/"}
     for attempt in range(3):
+        if is_step_stopped():
+            return None
         try:
             r = session.get(url, headers=headers, timeout=timeout)
+            blocked, reason = is_blocked_response(r.status_code, r.text)
+            if blocked:
+                print(f"[SEZONLUKDIZI_BLOCKED] {reason} on {url}; fail-fast abort.", flush=True)
+                raise SiteBlockedError(reason)
             if r.status_code == 200:
                 # SezonlukDizi uses windows-1254 in HTML meta, decode properly
                 text = r.text
@@ -80,6 +91,8 @@ def fetch_html(session, url, referer=None, timeout=12):
                 return text
             elif r.status_code in (502, 503):
                 time.sleep(1.0 * (attempt + 1))
+        except SiteBlockedError:
+            raise
         except Exception:
             time.sleep(0.8)
     return None
@@ -89,6 +102,8 @@ def get_series_sitemap_urls(session=None, max_pages=12):
     session = session or _get_session()
     series_urls = []
     for s_idx in range(1, max_pages + 1):
+        if is_step_stopped():
+            break
         sitemap_url = f"{BASE_URL}/sitemap/diziler.asp?s={s_idx}"
         text = fetch_html(session, sitemap_url, timeout=15)
         if not text:

@@ -20,7 +20,14 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-from scrapers.multisite import add_source
+from scrapers.multisite import (
+    SiteBlockedError,
+    add_source,
+    bind_stop_event,
+    get_step_stop_event,
+    is_blocked_response,
+    is_step_stopped,
+)
 from scrapers.shortdrama.common import (
     CHECKPOINT_DIR,
     clean_cover_image,
@@ -65,9 +72,18 @@ class ShortizleScraper:
         # Check title sitemaps 1..max_sitemaps with generation token
         gen_tokens = ["?generation=4025c34a-c191-4bbc-84f1-e59463b0e7a0", ""]
         for i in range(1, max_sitemaps + 1):
+            if is_step_stopped():
+                break
             for tok in gen_tokens:
+                if is_step_stopped():
+                    break
                 sitemap_url = f"{BASE_URL}/sitemap-titles-{i}.xml{tok}"
                 resp = safe_request(self._get_sess(), "GET", sitemap_url, delay=0.1)
+                if resp is not None:
+                    blocked, reason = is_blocked_response(resp.status_code, resp.text)
+                    if blocked:
+                        print(f"[SHORTIZLE_BLOCKED] {reason} on {sitemap_url}; fail-fast abort.", flush=True)
+                        raise SiteBlockedError(reason)
                 if resp and resp.status_code == 200 and "<loc>" in resp.text:
                     found = re.findall(r"<loc>(https://shortizle\.com/watch/[^<]+)</loc>", resp.text)
                     for u in found:
@@ -76,13 +92,25 @@ class ShortizleScraper:
                             drama_urls.append(u)
                     break
 
-        if not drama_urls:
+        if not drama_urls and not is_step_stopped():
             # Fallback to main sitemap index
             resp = safe_request(self._get_sess(), "GET", f"{BASE_URL}/sitemap.xml", delay=0.3)
+            if resp is not None:
+                blocked, reason = is_blocked_response(resp.status_code, resp.text)
+                if blocked:
+                    print(f"[SHORTIZLE_BLOCKED] {reason} on /sitemap.xml; fail-fast abort.", flush=True)
+                    raise SiteBlockedError(reason)
             if resp and resp.status_code == 200:
                 sitemaps = re.findall(r"<loc>(https://shortizle\.com/sitemap-titles-[^<]+)</loc>", resp.text)
                 for sm in sitemaps:
+                    if is_step_stopped():
+                        break
                     sm_resp = safe_request(self._get_sess(), "GET", sm, delay=0.3)
+                    if sm_resp is not None:
+                        blocked, reason = is_blocked_response(sm_resp.status_code, sm_resp.text)
+                        if blocked:
+                            print(f"[SHORTIZLE_BLOCKED] {reason} on {sm}; fail-fast abort.", flush=True)
+                            raise SiteBlockedError(reason)
                     if sm_resp and sm_resp.status_code == 200:
                         found = re.findall(r"<loc>(https://shortizle\.com/watch/[^<]+)</loc>", sm_resp.text)
                         for u in found:
@@ -292,6 +320,9 @@ class ShortizleScraper:
             return ingested_ids
 
         for attempt in range(10):
+            batch_dramas_added = 0
+            batch_eps_added = 0
+            batch_sources_added = 0
             try:
                 conn = get_db_connection()
                 cur = conn.cursor()
@@ -328,6 +359,7 @@ class ShortizleScraper:
                         country_name="Çin",
                     )
                     sources_added = 0
+                    ep_before = cur.execute("SELECT COUNT(id) FROM episodes WHERE drama_id = ?", (did,)).fetchone()[0]
                     for ep_num, ep_name, ep_url, ep_sources in episodes_data:
                         ep_db_id = get_or_create_episode(
                             cur=cur,
@@ -340,14 +372,27 @@ class ShortizleScraper:
                         for s_name, s_url, s_prov in ep_sources:
                             if add_source(cur, ep_db_id, s_name, s_url, s_prov, "shortizle"):
                                 sources_added += 1
+                    ep_after = cur.execute("SELECT COUNT(id) FROM episodes WHERE drama_id = ?", (did,)).fetchone()[0]
+                    batch_eps_added += max(0, ep_after - ep_before)
+                    if is_new:
+                        batch_dramas_added += 1
+                    batch_sources_added += sources_added
 
                     if sources_added > 0:
                         ingested_ids.append(did)
 
                 conn.commit()
                 conn.close()
+                self._last_batch_stats = {
+                    "dramas_added": batch_dramas_added,
+                    "episodes_added": batch_eps_added,
+                    "sources_added": batch_sources_added,
+                }
                 break
             except sqlite3.OperationalError:
+                batch_dramas_added = 0
+                batch_eps_added = 0
+                batch_sources_added = 0
                 if attempt == 9:
                     raise
                 time.sleep(0.5)
@@ -367,13 +412,17 @@ class ShortizleScraper:
         res = self.write_batch_to_db([info], sync_cloud=sync_cloud)
         return res[0] if res else None
 
-    def run(self, limit: int = None, resume: bool = True, sync_cloud: bool = True):
+    def run(self, limit: int = None, resume: bool = True, sync_cloud: bool = True) -> dict:
         """Runs the Shortİzle catalog ingestion with concurrent network batches and checkpointing."""
         print("[SHORTIZLE_CATALOG] Fetching sitemaps...")
-        catalog = self.get_catalog(max_sitemaps=5)
+        try:
+            catalog = self.get_catalog(max_sitemaps=5)
+        except SiteBlockedError as e:
+            print(f"[SHORTIZLE_ABORT] Stopped cleanly due to block: {e}")
+            return {"processed": 0, "dramas_added": 0, "episodes_added": 0, "sources_added": 0, "blocked": True}
         print(f"[SHORTIZLE_CATALOG] Found {len(catalog)} drama URLs.")
         if not catalog:
-            return
+            return {"processed": 0, "dramas_added": 0, "episodes_added": 0, "sources_added": 0}
 
         done = load_checkpoint("shortizle") if resume else set()
         pending = [u for u in catalog if u.split("/")[-1] not in done]
@@ -386,19 +435,39 @@ class ShortizleScraper:
 
         batch_size = 24
         all_new_ids = set()
+        processed_count = 0
+        total_dramas_added = 0
+        total_eps_added = 0
+        total_sources_added = 0
+        step_ev = get_step_stop_event()
+
+        def _fetch_wrapped(u):
+            bind_stop_event(step_ev)
+            if is_step_stopped(step_ev):
+                return None
+            return self.fetch_drama_network_data(u)
+
         for i in range(0, len(pending), batch_size):
+            if is_step_stopped(step_ev):
+                print("[SHORTIZLE_STOP] Cooperative stop event set; halting Shortİzle cleanly.", flush=True)
+                break
             batch_urls = pending[i:i + batch_size]
             with ThreadPoolExecutor(max_workers=batch_size) as executor:
-                fetched_items = list(executor.map(self.fetch_drama_network_data, batch_urls))
+                fetched_items = list(executor.map(_fetch_wrapped, batch_urls))
 
             valid_items = [it for it in fetched_items if it]
             if valid_items:
+                self._last_batch_stats = {"dramas_added": 0, "episodes_added": 0, "sources_added": 0}
                 b_ids = self.write_batch_to_db(valid_items, sync_cloud=False)
                 all_new_ids.update(b_ids)
+                st = getattr(self, "_last_batch_stats", {})
+                total_dramas_added += st.get("dramas_added", 0)
+                total_eps_added += st.get("episodes_added", 0)
+                total_sources_added += st.get("sources_added", 0)
 
-            for url in batch_urls:
-                slug = url.split("/")[-1]
-                done.add(slug)
+            for idx_u, url in enumerate(batch_urls):
+                if idx_u < len(fetched_items) and fetched_items[idx_u] is not None:
+                    done.add(url.split("/")[-1])
 
             save_checkpoint("shortizle", done)
             processed_count = min(i + batch_size, len(pending))
@@ -407,10 +476,17 @@ class ShortizleScraper:
 
         print(f"[SHORTIZLE_INGEST_COMPLETE] Finished network + DB ingest of {len(all_new_ids)} dramas.", flush=True)
 
-        if sync_cloud and all_new_ids:
+        if sync_cloud and all_new_ids and not is_step_stopped(step_ev):
             print(f"[SHORTIZLE_CLOUD_SYNC] Starting bulk cloud sync for {len(all_new_ids)} dramas...", flush=True)
             from scrapers.shortdrama.common import bulk_sync_short_dramas_to_cloud
             bulk_sync_short_dramas_to_cloud(list(all_new_ids))
+
+        return {
+            "processed": processed_count,
+            "dramas_added": total_dramas_added,
+            "episodes_added": total_eps_added,
+            "sources_added": total_sources_added,
+        }
 
 
 if __name__ == "__main__":

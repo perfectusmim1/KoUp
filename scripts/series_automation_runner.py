@@ -32,7 +32,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from database import get_connection
+from database import get_connection, row_to_dict
 from scrapers.live_scanner import (
     scan_asyawatch,
     scan_dizikorea,
@@ -45,6 +45,7 @@ from scrapers.live_scanner import (
     build_drama_index,
 )
 from scrapers.multisite import (
+    is_step_stopped,
     pop_recent_added_episodes,
     pop_recent_added_sources,
     norm_title,
@@ -186,7 +187,79 @@ def resolve_all_site_slugs(title: str, connected_sites=None) -> dict:
     }
 
 
-def sync_single_series(drama_id: int) -> dict:
+def prune_orphan_series_automations(conn, cur) -> list[int]:
+    """Delete orphan or Final series_automations rows whose media no longer exists in SQLite/Supabase."""
+    pruned_ids: list[int] = []
+    # 1. SQLite orphans (media_id not in dramas) or Final/Completed series
+    cur.execute("""
+        SELECT sa.media_id, sa.title, d.id AS drama_exists, d.status_broadcast
+        FROM series_automations sa
+        LEFT JOIN dramas d ON sa.media_id = d.id
+        WHERE d.id IS NULL OR d.status_broadcast IN ('Final', 'Tamamlandı', 'Canceled')
+    """)
+    local_dead = cur.fetchall()
+    for row in local_dead:
+        mid = row[0]
+        mtitle = row[1] or f"#{mid}"
+        reason = "medya kaydı silindiği (orphan)" if row[2] is None else f"Final ({row[3]}) yaptığı"
+        cur.execute("DELETE FROM series_automations WHERE media_id = ?", (mid,))
+        try:
+            sb_request("DELETE", f"/rest/v1/series_automations?media_id=eq.{mid}")
+        except Exception:
+            pass
+        pruned_ids.append(mid)
+        emit_log(f"🧹 #{mid} {mtitle} {reason} için Seri Otomasyonundan otomatik temizlendi.")
+    if local_dead:
+        conn.commit()
+
+    # 2. Supabase orphans (rows still in Supabase series_automations whose public.media was deleted)
+    try:
+        resp_sa = sb_request("GET", "/rest/v1/series_automations?select=media_id,title&limit=1000")
+        sb_sa_rows = resp_sa if isinstance(resp_sa, list) else []
+        sb_ids = [int(r["media_id"]) for r in sb_sa_rows if r.get("media_id") is not None]
+        if sb_ids:
+            valid_sb_media = set()
+            final_sb_media = set()
+            for i in range(0, len(sb_ids), 100):
+                chunk = sb_ids[i:i + 100]
+                id_csv = ",".join(str(x) for x in chunk)
+                m_rows = sb_request("GET", f"/rest/v1/media?select=id,status_broadcast&id=in.({id_csv})")
+                if isinstance(m_rows, list):
+                    for mr in m_rows:
+                        mid_val = int(mr["id"])
+                        valid_sb_media.add(mid_val)
+                        if str(mr.get("status_broadcast") or "") in ("Final", "Tamamlandı", "Canceled"):
+                            final_sb_media.add(mid_val)
+                else:
+                    # Skip remote orphan cleanup if media endpoint read failed
+                    valid_sb_media.update(chunk)
+
+            # Check local dramas existence for each Supabase series_automations row
+            placeholders = ",".join("?" for _ in sb_ids)
+            cur.execute(f"SELECT id FROM dramas WHERE id IN ({placeholders})", tuple(sb_ids))
+            local_present = {int(r[0]) for r in cur.fetchall()}
+
+            for r in sb_sa_rows:
+                mid = int(r["media_id"])
+                if mid in pruned_ids:
+                    continue
+                if mid not in valid_sb_media or mid not in local_present or mid in final_sb_media:
+                    cur.execute("DELETE FROM series_automations WHERE media_id = ?", (mid,))
+                    try:
+                        sb_request("DELETE", f"/rest/v1/series_automations?media_id=eq.{mid}")
+                    except Exception:
+                        pass
+                    pruned_ids.append(mid)
+                    emit_log(f"🧹 #{mid} {r.get('title') or ''} (Supabase/SQLite yetim veya Final kayıt) temizlendi.")
+            if pruned_ids:
+                conn.commit()
+    except Exception as e:
+        emit_log(f"[Orphan Temizleme] Supabase kontrol uyarısı: {e}")
+
+    return pruned_ids
+
+
+def sync_single_series(drama_id: int, backup_r2: bool = True) -> dict:
     conn = get_connection()
     cur = conn.cursor()
 
@@ -285,7 +358,7 @@ def sync_single_series(drama_id: int) -> dict:
         try:
             cur.execute("SELECT * FROM dramas WHERE id = ?", (drama_id,))
             d_current = cur.fetchone()
-            dr_dict = dict(d_current) if d_current else {}
+            dr_dict = row_to_dict(cur, d_current)
             manual_u = target_term if target_term and target_term.startswith('http') else None
 
             if site_id == "asyawatch":
@@ -373,7 +446,7 @@ def sync_single_series(drama_id: int) -> dict:
                 kd_scraper.login()
                 before_src = cur.execute("SELECT count(s.id) FROM episode_sources s JOIN episodes e ON s.episode_id=e.id WHERE e.drama_id=?", (drama_id,)).fetchone()[0]
                 t_slug = target_term or dr_dict.get("slug")
-                t_url = manual_u or f"https://koredizi.biz/dizi/{t_slug}"
+                t_url = manual_u or f"https://koredizi.com/dizi/{t_slug}"
                 kd_scraper.scrape_drama({"url": t_url, "slug": t_slug, "title": dr_dict.get("title")}, sync_cloud=False)
                 after_src = cur.execute("SELECT count(s.id) FROM episode_sources s JOIN episodes e ON s.episode_id=e.id WHERE e.drama_id=?", (drama_id,)).fetchone()[0]
                 site_delta = max(0, after_src - before_src)
@@ -486,27 +559,34 @@ def sync_single_series(drama_id: int) -> dict:
     cur.execute("PRAGMA wal_checkpoint(TRUNCATE);")
     conn.close()
 
-    # 4. Re-export R2 Bundle (Rule 11)
-    emit_log(f"[R2 Bundle] #{drama_id} için JSON paketi yeniden oluşturuluyor...")
-    export_all(drama_id=drama_id)
+    has_changes = (net_episodes_added > 0 or net_sources_added > 0 or total_added_streams > 0 or is_series_final)
 
-    bundle_path = os.path.join(_ROOT, "r2_bundles", "sources", f"{drama_id}.json")
-    if os.path.exists(bundle_path):
-        emit_log(f"[R2 Upload] sources/{drama_id}.json Cloudflare R2'ye yükleniyor...")
-        upload_to_r2(bundle_path, f"sources/{drama_id}.json")
+    # 4. Re-export R2 Bundle (Rule 11) — skip slow bundle upload if +0/+0 and not Final
+    if has_changes:
+        emit_log(f"[R2 Bundle] #{drama_id} için JSON paketi yeniden oluşturuluyor...")
+        export_all(drama_id=drama_id)
 
-    # 5. Backup SQLite to Cloudflare R2
-    emit_log("[R2 Backup] SQLite veritabanı yedeği Cloudflare R2'ye yükleniyor...")
-    backup_db_to_r2()
+        bundle_path = os.path.join(_ROOT, "r2_bundles", "sources", f"{drama_id}.json")
+        if os.path.exists(bundle_path):
+            emit_log(f"[R2 Upload] sources/{drama_id}.json Cloudflare R2'ye yükleniyor...")
+            upload_to_r2(bundle_path, f"sources/{drama_id}.json")
+
+        # 5. Backup SQLite to Cloudflare R2 (ONLY when changes occurred and caller permits)
+        if backup_r2:
+            emit_log("[R2 Backup] SQLite veritabanı yedeği Cloudflare R2'ye yükleniyor...")
+            backup_db_to_r2()
+    else:
+        emit_log(f"[R2 Atlandı] #{drama_id} için değişiklik (+0/+0) olmadığı için gereksiz R2/DB yedeği atlandı.")
 
     # 6. Supabase Sync (Rule 11)
     emit_log(f"[Supabase Sync] Supabase media, episodes ve series_automations eşitleniyor...")
     try:
-        from scrapers.supabase_sync_helper import sync_drama_bundle_and_counts
-        conn2 = get_connection()
-        c2 = conn2.cursor()
-        sync_drama_bundle_and_counts(conn2, c2, drama_id)
-        conn2.close()
+        if has_changes:
+            from scrapers.supabase_sync_helper import sync_drama_bundle_and_counts
+            conn2 = get_connection()
+            c2 = conn2.cursor()
+            sync_drama_bundle_and_counts(conn2, c2, drama_id)
+            conn2.close()
 
         if is_series_final:
             sb_request("DELETE", f"/rest/v1/series_automations?media_id=eq.{drama_id}")
@@ -548,23 +628,8 @@ def sync_all_active_series(limit: int = 10) -> int:
     conn = get_connection()
     cur = conn.cursor()
 
-    # Pre-clean: Otomasyon havuzundaki Final yapmış yapımları otomatik temizle
-    cur.execute("""
-        SELECT sa.media_id, sa.title 
-        FROM series_automations sa 
-        JOIN dramas d ON sa.media_id = d.id 
-        WHERE d.status_broadcast IN ('Final', 'Tamamlandı', 'Canceled')
-    """)
-    final_rows = cur.fetchall()
-    for f_id, f_title in final_rows:
-        cur.execute("DELETE FROM series_automations WHERE media_id = ?", (f_id,))
-        try:
-            sb_request("DELETE", f"/rest/v1/series_automations?media_id=eq.{f_id}")
-        except Exception:
-            pass
-        emit_log(f"🧹 #{f_id} {f_title} Final yaptığı için Seri Otomasyonundan temizlendi.")
-    if final_rows:
-        conn.commit()
+    # Pre-clean: Otomasyon havuzundaki yetim (orphan) ve Final yapmış yapımları otomatik temizle
+    pruned_ids = prune_orphan_series_automations(conn, cur)
 
     if limit and limit > 0:
         cur.execute("SELECT media_id, title FROM series_automations WHERE is_active = 1 ORDER BY last_synced_at ASC NULLS FIRST LIMIT ?", (limit,))
@@ -580,14 +645,27 @@ def sync_all_active_series(limit: int = 10) -> int:
     total_eps = 0
     total_srcs = 0
     for did, dtitle in rows:
+        if is_step_stopped():
+            emit_log("[Seri Otomasyonu] Kooperatif durdurma sinyali alındı, döngü sonlandırılıyor.")
+            break
         try:
-            res = sync_single_series(did)
+            res = sync_single_series(did, backup_r2=False)
             total_eps += res.get("episodesAdded", 0)
             total_srcs += res.get("sourcesAdded", 0)
         except Exception as e:
             emit_log(f"[HATA] #{did} {dtitle} taranırken hata: {e}")
 
-    emit_log(f"🎯 Tüm aktif seriler tamamlandı: Toplam +{total_eps} Bölüm | +{total_srcs} Kaynak.")
+    # Run R2 DB backup ONCE at the end ONLY if episodes, sources, or pruned rows changed
+    if total_eps > 0 or total_srcs > 0 or len(pruned_ids) > 0:
+        emit_log("[R2 Backup] Değişiklik tespit edildi; SQLite veritabanı yedeği Cloudflare R2'ye yükleniyor...")
+        try:
+            backup_db_to_r2()
+        except Exception as e:
+            emit_log(f"[R2 Backup] Uyarı: {e}")
+    else:
+        emit_log("[R2 Backup] Tüm aktif seriler +0/+0 döndü; gereksiz R2 veritabanı yedeği atlandı.")
+
+    emit_log(f"🎯 Tüm aktif seriler tamamlandı: Toplam +{total_eps} Bölüm | +{total_srcs} Kaynak | {len(pruned_ids)} Yetim/Final Temizlendi.")
     return len(rows)
 
 

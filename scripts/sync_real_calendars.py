@@ -115,7 +115,6 @@ def call_upsert_rpc(item: dict):
         "p_category": item.get("category", "Dizi"),
         "p_cover_image": item.get("cover_image", ""),
         "p_source_url": item.get("source_url", ""),
-        "p_sync_secret": "koup_sync_secure_token_2026",
         "p_next_episode_at": next_ep_at,
         "p_next_episode_number": next_ep_num,
     }

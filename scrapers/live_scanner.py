@@ -51,6 +51,7 @@ if hasattr(sys.stderr, 'reconfigure'):
 
 from database import get_connection
 from scrapers.multisite import (
+    SiteBlockedError,
     norm_title,
     build_drama_index,
     find_in_index,
@@ -63,6 +64,8 @@ from scrapers.multisite import (
     clean_episode_title,
     clean_scraped_slug,
     extract_date_and_clean_title,
+    is_blocked_response,
+    is_step_stopped,
 )
 from scrapers.clean_fansub import clean_fansub_name, clean_source_name
 from scrapers.sync_hdfilm_target import resolve_hdfilm_streams
@@ -174,6 +177,8 @@ def _decode_response_content(content: bytes, text: str, url: str = "") -> str:
 
 
 def fetch_url(url: str, headers: dict = None, timeout: int = 12) -> str:
+    if is_step_stopped():
+        raise InterruptedError("Cooperative step stop requested")
     h = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -184,14 +189,29 @@ def fetch_url(url: str, headers: dict = None, timeout: int = 12) -> str:
     if cffi_requests is not None:
         try:
             resp = cffi_requests.get(url, headers=h, impersonate="chrome", timeout=timeout)
-            if resp.status_code == 200 and 'Just a moment...' not in resp.text:
+            blocked, reason = is_blocked_response(resp.status_code, resp.text)
+            if blocked:
+                raise SiteBlockedError(f"{reason} ({url})")
+            if resp.status_code == 200:
                 return _decode_response_content(resp.content, resp.text, url)
+        except SiteBlockedError:
+            raise
         except Exception:
             pass
     req = urllib.request.Request(url, headers=h)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        raw_bytes = resp.read()
-        return _decode_response_content(raw_bytes, raw_bytes.decode('utf-8', errors='replace'), url)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw_bytes = resp.read()
+            decoded = _decode_response_content(raw_bytes, raw_bytes.decode('utf-8', errors='replace'), url)
+            blocked, reason = is_blocked_response(getattr(resp, 'status', 200), decoded)
+            if blocked:
+                raise SiteBlockedError(f"{reason} ({url})")
+            return decoded
+    except urllib.error.HTTPError as he:
+        blocked, reason = is_blocked_response(he.code, "")
+        if blocked:
+            raise SiteBlockedError(f"{reason} ({url})")
+        raise
 
 
 # =========================================================================
@@ -340,7 +360,12 @@ def scan_dizibox(conn, cur, idx, limit=30, target=None, stop_after_known: int = 
             if not target and consecutive_known >= stop_after_known and items_checked >= 15:
                 log("AKILLI DURDURMA", f"Art arda {consecutive_known} bilinen kayıt görüldü, tarama tamamlandı.")
                 break
+        except SiteBlockedError as blk:
+            log("ENGEL", f"DiziBox Cloudflare/WAF engeli ({blk}), tarama durduruluyor.")
+            break
         except Exception as err:
+            if is_step_stopped():
+                break
             log("HATA", f"{ep_url} çözümlenirken hata: {err}")
 
     for did in touched_dramas:
@@ -496,7 +521,12 @@ def scan_dizikorea(conn, cur, idx, limit=30, target=None, stop_after_known: int 
                     log("AKILLI DURDURMA", f"Art arda {consecutive_known} bilinen kayıt görüldü, tarama tamamlandı.")
                     stop_scan = True
                     break
+        except SiteBlockedError as blk:
+            log("ENGEL", f"DiziKorea Cloudflare/WAF engeli ({blk}), tarama durduruluyor.")
+            break
         except Exception as err:
+            if is_step_stopped():
+                break
             log("HATA", f"{s_url} işlenirken hata: {err}")
 
     for did in touched_dramas:
@@ -729,7 +759,12 @@ def scan_ddizi(conn, cur, idx, limit=30, target=None, stop_after_known: int = 5,
             if not target and consecutive_known >= stop_after_known and items_checked >= 15:
                 log("AKILLI DURDURMA", f"Art arda {consecutive_known} bilinen kayıt görüldü, tarama tamamlandı.")
                 break
+        except SiteBlockedError as blk:
+            log("ENGEL", f"DDizi Cloudflare/WAF engeli ({blk}), tarama durduruluyor.")
+            break
         except Exception as err:
+            if is_step_stopped():
+                break
             log("HATA", f"{ep_url} işlenirken hata: {err}")
 
     for did in touched_dramas:
@@ -1309,7 +1344,12 @@ def scan_hdfilm(conn, cur, idx, limit=30, target=None, stop_after_known: int = 5
                     if not target and consecutive_known >= stop_after_known and items_checked >= 15:
                         log("AKILLI DURDURMA", f"Art arda {consecutive_known} bilinen kayıt görüldü, tarama tamamlandı.")
                         break
+                except SiteBlockedError as blk:
+                    log("ENGEL", f"HDFilm Cloudflare/WAF engeli ({blk}), tarama durduruluyor.")
+                    break
                 except Exception as err:
+                    if is_step_stopped():
+                        break
                     log("HATA", f"{ep_url} çözümlenirken hata: {err}")
 
         except Exception as e:
@@ -1488,7 +1528,12 @@ def scan_asyawatch(conn, cur, idx, limit=30, target=None, stop_after_known: int 
                     if not target and consecutive_known >= stop_after_known and items_checked >= 15:
                         log("AKILLI DURDURMA", f"Art arda {consecutive_known} bilinen kayıt görüldü, tarama tamamlandı.")
                         break
+                except SiteBlockedError as blk:
+                    log("ENGEL", f"AsyaWatch Cloudflare/WAF engeli ({blk}), tarama durduruluyor.")
+                    break
                 except Exception:
+                    if is_step_stopped():
+                        break
                     continue
         except Exception as e:
             log("UYARI", f"AsyaWatch canlı akış tarama uyarısı: {e}")
@@ -1708,7 +1753,12 @@ def scan_dizilla(conn, cur, idx, limit=30, target=None, stop_after_known: int = 
                     if not target and consecutive_known >= stop_after_known and items_checked >= 15:
                         log("AKILLI DURDURMA", f"Art arda {consecutive_known} bilinen kayıt görüldü, tarama tamamlandı.")
                         break
+                except SiteBlockedError as blk:
+                    log("ENGEL", f"Dizilla Cloudflare/WAF engeli ({blk}), tarama durduruluyor.")
+                    break
                 except Exception:
+                    if is_step_stopped():
+                        break
                     continue
         except Exception as e:
             log("UYARI", f"Dizilla canlı akış tarama uyarısı: {e}")
@@ -2005,7 +2055,12 @@ def scan_dizifon(conn, cur, idx, limit=30, target=None, stop_after_known: int = 
                     if not target and consecutive_known >= stop_after_known and items_checked >= 15:
                         log("AKILLI DURDURMA", f"Art arda {consecutive_known} bilinen kayıt görüldü, tarama tamamlandı.")
                         break
+                except SiteBlockedError as blk:
+                    log("ENGEL", f"DiziFon Cloudflare/WAF engeli ({blk}), tarama durduruluyor.")
+                    break
                 except Exception as err:
+                    if is_step_stopped():
+                        break
                     log("UYARI", f"{ep_url} DiziFon hatası: {err}")
         except Exception as e:
             log("HATA", f"DiziFon ana sayfa tarama hatası: {e}")
