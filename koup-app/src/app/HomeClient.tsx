@@ -1562,23 +1562,17 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
         ===================================================================== */}
         {continueWatchingItems.length > 0 && (
           <section className="w-full px-4 sm:px-6 md:px-14 max-w-full">
-            <div className="flex flex-col gap-1 mb-4 sm:mb-6">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase text-white/40">
-                  Kişisel Arşiv
-                </span>
-                <Link
-                  href="/gecmis"
-                 
-                  className="text-[11px] sm:text-[12px] tracking-wider uppercase font-semibold text-white/50 hover:text-white flex items-center gap-1 transition-colors"
-                >
-                  <span>Tümünü Gör</span>
-                  <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </Link>
-              </div>
-              <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white mt-0.5">
+            <div className="flex items-center justify-between gap-3 mb-4 sm:mb-6">
+              <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white">
                 Kaldığın Yerden Devam Et
               </h2>
+              <Link
+                href="/gecmis"
+                className="text-[11px] sm:text-[12px] tracking-wider uppercase font-semibold text-white/50 hover:text-white flex items-center gap-1 transition-colors shrink-0"
+              >
+                <span>Tümünü Gör</span>
+                <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </Link>
             </div>
 
             <div className="flex md:grid md:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 overflow-x-auto md:overflow-visible pb-3 md:pb-0 no-scrollbar [-webkit-overflow-scrolling:touch] max-w-full">
@@ -1665,44 +1659,39 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
             order={recentEpisodesOrder}
             className="w-full px-4 sm:px-6 md:px-14 max-w-full"
             header={
-              <div className="flex flex-col gap-1 mb-4 sm:mb-6">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase text-white/40">
-                    Son Eklenenler
-                  </span>
-                  <div className="flex items-center gap-1.5 sm:gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        recentEpisodesScrollRef.current?.scrollBy({ left: -340, behavior: 'smooth' })
-                      }
-                      aria-label="Sola Kaydır"
-                      className="hidden sm:flex w-8 h-8 rounded-full glass-pill items-center justify-center text-white/70 hover:text-white cursor-pointer"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        recentEpisodesScrollRef.current?.scrollBy({ left: 340, behavior: 'smooth' })
-                      }
-                      aria-label="Sağa Kaydır"
-                      className="hidden sm:flex w-8 h-8 rounded-full glass-pill items-center justify-center text-white/70 hover:text-white cursor-pointer"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                    <Link
-                      href="/son-eklenenler"
-                      className="text-[11px] sm:text-[12px] tracking-wider uppercase font-semibold text-white/50 hover:text-white flex items-center gap-1 transition-colors cursor-pointer group"
-                    >
-                      <span className="group-hover:text-white">Tümünü Gör</span>
-                      <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 group-hover:translate-x-0.5 transition-transform" />
-                    </Link>
-                  </div>
-                </div>
-                <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white mt-0.5">
+              <div className="flex items-center justify-between gap-3 mb-4 sm:mb-6">
+                <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white">
                   Son Eklenen Bölümler
                 </h2>
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      recentEpisodesScrollRef.current?.scrollBy({ left: -340, behavior: 'smooth' })
+                    }
+                    aria-label="Sola Kaydır"
+                    className="hidden sm:flex w-8 h-8 rounded-full glass-pill items-center justify-center text-white/70 hover:text-white cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      recentEpisodesScrollRef.current?.scrollBy({ left: 340, behavior: 'smooth' })
+                    }
+                    aria-label="Sağa Kaydır"
+                    className="hidden sm:flex w-8 h-8 rounded-full glass-pill items-center justify-center text-white/70 hover:text-white cursor-pointer"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                  <Link
+                    href="/son-eklenenler"
+                    className="text-[11px] sm:text-[12px] tracking-wider uppercase font-semibold text-white/50 hover:text-white flex items-center gap-1 transition-colors cursor-pointer group"
+                  >
+                    <span className="group-hover:text-white">Tümünü Gör</span>
+                    <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 group-hover:translate-x-0.5 transition-transform" />
+                  </Link>
+                </div>
               </div>
             }
             placeholder={
@@ -1786,65 +1775,58 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
             order={recentMediaOrder}
             className="w-full px-4 sm:px-6 md:px-14 max-w-full"
             header={
-              <div className="flex flex-col gap-1 mb-4 sm:mb-6">
-                <div className="flex items-center justify-between min-h-[28px] gap-2">
-                  <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase text-emerald-400/90 flex items-center gap-1.5 shrink-0">
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Yeni Yapımlar</span>
-                  </span>
-
-                  <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                    {/* Country Filter Dropdown */}
-                    <div className="w-[145px] sm:w-[175px]">
-                      <CustomSelect
-                        value={selectedCountry}
-                        onChange={handleCountryChange}
-                        options={COUNTRY_OPTIONS}
-                        size="sm"
-                        variant="pill"
-                        aria-label="Ülke Filtresi"
-                        portal={true}
-                      />
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        recentMediaScrollRef.current?.scrollBy({ left: -340, behavior: 'smooth' })
-                      }
-                      aria-label="Sola Kaydır"
-                      className="hidden sm:flex w-8 h-8 rounded-full glass-pill items-center justify-center text-white/70 hover:text-white cursor-pointer"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        recentMediaScrollRef.current?.scrollBy({ left: 340, behavior: 'smooth' })
-                      }
-                      aria-label="Sağa Kaydır"
-                      className="hidden sm:flex w-8 h-8 rounded-full glass-pill items-center justify-center text-white/70 hover:text-white cursor-pointer"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-
-                    <Link
-                      href={
-                        selectedCountry === 'ALL'
-                          ? '/kesfet?sort=latest'
-                          : `/kesfet?country=${selectedCountry}&sort=latest`
-                      }
-                      className="text-[11px] sm:text-[12px] tracking-wider uppercase font-semibold text-white/50 hover:text-white flex items-center gap-1 transition-colors cursor-pointer group"
-                    >
-                      <span className="group-hover:text-white">Tümünü Gör</span>
-                      <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 group-hover:translate-x-0.5 transition-transform" />
-                    </Link>
-                  </div>
-                </div>
-
-                <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white mt-0.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 mb-4 sm:mb-6">
+                <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white">
                   Son Eklenen Yapımlar
                 </h2>
+
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 ml-auto">
+                  {/* Country Filter Dropdown */}
+                  <div className="w-[140px] sm:w-[175px]">
+                    <CustomSelect
+                      value={selectedCountry}
+                      onChange={handleCountryChange}
+                      options={COUNTRY_OPTIONS}
+                      size="sm"
+                      variant="pill"
+                      aria-label="Ülke Filtresi"
+                      portal={true}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      recentMediaScrollRef.current?.scrollBy({ left: -340, behavior: 'smooth' })
+                    }
+                    aria-label="Sola Kaydır"
+                    className="hidden sm:flex w-8 h-8 rounded-full glass-pill items-center justify-center text-white/70 hover:text-white cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      recentMediaScrollRef.current?.scrollBy({ left: 340, behavior: 'smooth' })
+                    }
+                    aria-label="Sağa Kaydır"
+                    className="hidden sm:flex w-8 h-8 rounded-full glass-pill items-center justify-center text-white/70 hover:text-white cursor-pointer"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+
+                  <Link
+                    href={
+                      selectedCountry === 'ALL'
+                        ? '/kesfet?sort=latest'
+                        : `/kesfet?country=${selectedCountry}&sort=latest`
+                    }
+                    className="text-[11px] sm:text-[12px] tracking-wider uppercase font-semibold text-white/50 hover:text-white flex items-center gap-1 transition-colors cursor-pointer group"
+                  >
+                    <span className="group-hover:text-white">Tümünü Gör</span>
+                    <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 group-hover:translate-x-0.5 transition-transform" />
+                  </Link>
+                </div>
               </div>
             }
             placeholder={
@@ -1887,35 +1869,30 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
             order={top10SeriesOrder}
             className="w-full px-4 sm:px-6 md:px-14 max-w-full"
             header={
-              <div className="flex flex-col gap-1 mb-6 sm:mb-8">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase text-sky-400/80">
-                    Trend Diziler
-                  </span>
-                  <div className="flex items-center gap-1.5 sm:gap-2">
-                    <button
-                      onClick={() =>
-                        top10SeriesScrollRef.current?.scrollBy({ left: -320, behavior: 'smooth' })
-                      }
-                      aria-label="Geri"
-                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
-                    >
-                      <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
-                    </button>
-                    <button
-                      onClick={() =>
-                        top10SeriesScrollRef.current?.scrollBy({ left: 320, behavior: 'smooth' })
-                      }
-                      aria-label="İleri"
-                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
-                    >
-                      <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
-                    </button>
-                  </div>
-                </div>
-                <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white mt-0.5">
+              <div className="flex items-center justify-between gap-3 mb-6 sm:mb-8">
+                <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white">
                   Bugün Türkiye&apos;de En Popüler 10 Dizi
                 </h2>
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                  <button
+                    onClick={() =>
+                      top10SeriesScrollRef.current?.scrollBy({ left: -320, behavior: 'smooth' })
+                    }
+                    aria-label="Geri"
+                    className="w-8 h-8 sm:w-10 sm:h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </button>
+                  <button
+                    onClick={() =>
+                      top10SeriesScrollRef.current?.scrollBy({ left: 320, behavior: 'smooth' })
+                    }
+                    aria-label="İleri"
+                    className="w-8 h-8 sm:w-10 sm:h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+                  >
+                    <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </button>
+                </div>
               </div>
             }
             placeholder={
@@ -1994,35 +1971,30 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
             order={top10MoviesOrder}
             className="w-full px-4 sm:px-6 md:px-14 max-w-full"
             header={
-              <div className="flex flex-col gap-1 mb-6 sm:mb-8">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase text-amber-400/80">
-                    Trend Filmler
-                  </span>
-                  <div className="flex items-center gap-1.5 sm:gap-2">
-                    <button
-                      onClick={() =>
-                        top10MoviesScrollRef.current?.scrollBy({ left: -320, behavior: 'smooth' })
-                      }
-                      aria-label="Geri"
-                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
-                    >
-                      <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
-                    </button>
-                    <button
-                      onClick={() =>
-                        top10MoviesScrollRef.current?.scrollBy({ left: 320, behavior: 'smooth' })
-                      }
-                      aria-label="İleri"
-                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
-                    >
-                      <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
-                    </button>
-                  </div>
-                </div>
-                <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white mt-0.5">
+              <div className="flex items-center justify-between gap-3 mb-6 sm:mb-8">
+                <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white">
                   Bugün Türkiye&apos;de En Popüler 10 Film
                 </h2>
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                  <button
+                    onClick={() =>
+                      top10MoviesScrollRef.current?.scrollBy({ left: -320, behavior: 'smooth' })
+                    }
+                    aria-label="Geri"
+                    className="w-8 h-8 sm:w-10 sm:h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </button>
+                  <button
+                    onClick={() =>
+                      top10MoviesScrollRef.current?.scrollBy({ left: 320, behavior: 'smooth' })
+                    }
+                    aria-label="İleri"
+                    className="w-8 h-8 sm:w-10 sm:h-10 rounded-full glass-pill flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
+                  >
+                    <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </button>
+                </div>
               </div>
             }
             placeholder={
@@ -2101,19 +2073,11 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
             order={shortDramasOrder}
             className="w-full px-4 sm:px-6 md:px-14 max-w-full my-6 sm:my-8"
             header={
-              <div className="flex items-center justify-between mb-4 sm:mb-6">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] sm:text-[11px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-500/90 via-orange-500/90 to-rose-500/90 text-white border border-white/20 shadow-[0_0_14px_rgba(245,158,11,0.35)]">
-                      <Sparkles className="w-3 h-3 text-amber-200 fill-amber-200" />
-                      <span>SHORTS</span>
-                    </span>
-                  </div>
-                  <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white mt-1.5">
-                    Kısa Dramalar
-                  </h2>
-                </div>
-                <div className="flex items-center gap-3">
+              <div className="flex items-center justify-between gap-3 mb-4 sm:mb-6">
+                <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white">
+                  Kısa Dramalar
+                </h2>
+                <div className="flex items-center gap-3 shrink-0">
                   <Link
                     href="/kesfet?type=kisa_drama"
                     className="text-xs sm:text-sm font-semibold text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1 cursor-pointer"
@@ -2277,37 +2241,30 @@ const PersonalizedRecommendationsSection = memo(function PersonalizedRecommendat
       }}
       className="w-full px-4 sm:px-6 md:px-14 max-w-full overflow-hidden cv-auto"
     >
-      <div className="flex flex-col gap-1 mb-4 sm:mb-6">
-        <div className="flex items-center justify-between min-h-[24px]">
-          <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] uppercase text-sky-400 flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">Sana Özel Seçki</span>
-          </span>
-
-          <div className="flex items-center gap-1.5 sm:gap-2 ml-auto shrink-0">
-            {onConfigureTaste && (
-              <button
-                type="button"
-                onClick={onConfigureTaste}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full glass-pill text-[11px] font-semibold text-sky-300 hover:text-white border border-sky-400/25 transition-colors cursor-pointer mr-1"
-              >
-                <Sparkles className="w-3 h-3" />
-                <span>Zevk Ayarları</span>
-              </button>
-            )}
-            <Link
-              href="/kesfet"
-              className="text-xs font-semibold text-white/55 hover:text-white flex items-center gap-1 transition-colors whitespace-nowrap"
-            >
-              <span>Tümünü Gör</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-        </div>
-
-        <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white mt-0.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 mb-4 sm:mb-6">
+        <h2 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white">
           Sana Özel Önerilen Yapımlar
         </h2>
+
+        <div className="flex items-center gap-1.5 sm:gap-2 ml-auto shrink-0">
+          {onConfigureTaste && (
+            <button
+              type="button"
+              onClick={onConfigureTaste}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full glass-pill text-[11px] font-semibold text-sky-300 hover:text-white border border-sky-400/25 transition-colors cursor-pointer mr-1"
+            >
+              <Sparkles className="w-3 h-3" />
+              <span>Zevk Ayarları</span>
+            </button>
+          )}
+          <Link
+            href="/kesfet"
+            className="text-xs font-semibold text-white/55 hover:text-white flex items-center gap-1 transition-colors whitespace-nowrap"
+          >
+            <span>Tümünü Gör</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
       </div>
 
       {!isMounted ? (

@@ -2693,27 +2693,10 @@ export default function SeriesDetailClient({
           if (filteredRelated.length === 0) return null;
           return (
           <section className="space-y-4 cv-auto">
-            <div className="flex items-end justify-between">
-              <div>
-                <div className="flex items-center gap-1.5 text-[11px] font-bold tracking-[0.18em] uppercase text-sky-400">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>
-                    {[
-                      COUNTRY_LABELS[((media.country_code || media.country) || '').toUpperCase()] ||
-                        media.country_name,
-                      Array.isArray(media.categories) && media.categories.length > 0
-                        ? media.categories.slice(0, 2).join(', ')
-                        : null,
-                      'Akıllı Eşleşme',
-                    ]
-                      .filter(Boolean)
-                      .join(' • ')}
-                  </span>
-                </div>
-                <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight mt-0.5">
-                  Benzer Yapımlar
-                </h2>
-              </div>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+                Benzer Yapımlar
+              </h2>
               {/* Arrow navigation buttons just like home page */}
               <div className="flex items-center gap-2">
                 <button
