@@ -101,10 +101,11 @@ import CustomSelect from '@/components/CustomSelect';
 
 ---
 
-### 2.2. Aşırı Metin (Text-Heavy) ve Görsel Karmaşa Yasağı
-- **Kural:** Arayüzde uzun paragraflar, açıklama metni yığınları, gereksiz bilgi etiketleri ve karmaşık görsel üst üste bindirmeler kesinlikle yasaktır.
-- **Neden Var (Somut Risk):** KoUp bir film/dizi izleme ve arşivleme platformudur (Apple TV+, Netflix ve MUBI estetiği hedeflenir). Aşırı metin kullanıcının odağını dağıtır, arayüzü amatör bir blog veya veritabanı paneli havasına sokar ve mobil cihazlarda dikey kaydırma yorgunluğu yaratır.
+### 2.2. Aşırı Metin (Text-Heavy), Başlık Üstü Etiket ve Görsel Karmaşa Yasağı
+- **Kural:** Arayüzde uzun paragraflar, açıklama metni yığınları, gereksiz bilgi etiketleri, **bölüm başlıklarının üstüne eklenen tekrarlı eyebrow/rozet etiketleri** (`YENİ YAPIMLAR`, `TREND DİZİLER`, `SHORTS`, `SANA ÖZEL SEÇKİ`, `KİŞİSEL ARŞİV`, `SON EKLENENLER`, `AKILLI EŞLEŞME` vb.) ve karmaşık görsel üst üste bindirmeler kesinlikle yasaktır.
+- **Neden Var (Somut Risk):** KoUp bir film/dizi izleme ve arşivleme platformudur (Apple TV+, Netflix ve MUBI estetiği hedeflenir). Başlık üstünde aynı anlamı tekrar eden etiketler ve aşırı metin kullanıcının odağını dağıtır, gereksiz dikey yer kaplar ve arayüzü kalabalık gösterir.
 - **Nasıl Uygulanır:**
+  - Bölüm başlıkları (`<h2>`) doğrudan kendi satırında, sağdaki filtre veya `Tümünü Gör` aksiyonlarıyla aynı hizada sade biçimde sunulur; üstüne ekstra eyebrow/rozet eklenmez.
   - Bilgiyi uzun metinle değil; temiz ikonografi (`lucide-react`), tipografik kontrast, dengeli boşluk (`padding`/`gap`), rozetler (`badge`) ve mikro-etkileşimlerle sunun.
   - Dizi açıklamalarını (sinopsis) mobilde maksimum 3 satırda (`line-clamp-3`) tutun, "Devamını Oku" ile genişletilebilir yapın.
 
