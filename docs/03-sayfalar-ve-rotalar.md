@@ -64,19 +64,19 @@ KoUp ön yüzü (`koup-app`), **Next.js 15 App Router** ve **React 19** mimarisi
 | # | URL Rotası | Dosya Yolu | Render Modu | Veri Kaynağı | Giriş Şartı? |
 |---|---|---|---|---|---|
 | 01 | `/` | `src/app/page.tsx` + `HomeClient.tsx` | SSR / ISR (`revalidate: 300`) | `getHomeDataServer()` (Supabase) | Hayır |
-| 02 | `/kesfet` | `src/app/kesfet/page.tsx` | Client Dynamic | Supabase Client + Client Cache | Hayır |
-| 03 | `/seri/[slug]` | `src/app/seri/[slug]/page.tsx` + `SeriesDetailClient.tsx` | SSR / ISR (`revalidate: 3600`) | `getSeriesDataServer()` | Hayır |
+| 02 | `/kesfet` | `src/app/kesfet/page.tsx` + `KesfetClient.tsx` | SSR / ISR (`revalidate: 300`) + Client Filter | `getInitialCatalogServer()` + Supabase Client | Hayır |
+| 03 | `/seri/[slug]` | `src/app/seri/[slug]/page.tsx` + `SeriesDetailClient.tsx` | SSR / ISR (`revalidate: 3600`) | `getSeriesDataServer()` (`React.cache`) | Hayır |
 | 04 | `/seri/[slug]/[episode]` | `src/app/seri/[slug]/[episode]/page.tsx` | Client Dynamic | Supabase + Stream Proxy API | Hayır (Misafir izleyebilir) |
 | 05 | `/kutuphane` | `src/app/kutuphane/page.tsx` | Client Dynamic | Supabase `user_media_progress` | Evet (Giriş modalı açar) |
 | 06 | `/gecmis` | `src/app/gecmis/page.tsx` | Client Dynamic | `KoUpContext.progressMap` | Hayır (Yerel/Bulut hibrit) |
 | 07 | `/favoriler` | `src/app/favoriler/page.tsx` | Client Dynamic | Supabase `user_favorites` | Evet (Giriş modalı açar) |
 | 08 | `/takip-edilenler` | `src/app/takip-edilenler/page.tsx` | Client Dynamic | Supabase `user_follows` | Evet (Giriş modalı açar) |
-| 09 | `/takvim` | `src/app/takvim/page.tsx` | Client Dynamic | `/api/takvim/live` + Supabase | Hayır |
-| 10 | `/son-eklenenler` | `src/app/son-eklenenler/page.tsx` | Client Dynamic | Supabase `episodes` tablosu | Hayır |
+| 09 | `/takvim` | `src/app/takvim/page.tsx` + `TakvimClient.tsx` | SSR / ISR (`revalidate: 300`) | `getWeeklyCalendarServer()` + `/api/takvim/live` | Hayır |
+| 10 | `/son-eklenenler` | `src/app/son-eklenenler/page.tsx` + `SonEklenenlerClient.tsx` | SSR / ISR (`revalidate: 180`) + Client Filter | `getInitialRecentEpisodesServer()` + Supabase | Hayır |
 | 11 | `/listeler` | `src/app/listeler/page.tsx` | Client Dynamic | Supabase `custom_lists` + `/api/lists` | Hayır |
 | 12 | `/listeler/[id]` | `src/app/listeler/[id]/page.tsx` | Client Dynamic | `/api/lists/[id]` + Supabase | Hayır (Düzenleme: Sahip) |
 | 13 | `/listelerim` | `src/app/listelerim/page.tsx` | Client Dynamic | `/api/lists` (Kullanıcı listeleri) | Evet |
-| 14 | `/oyuncular` | `src/app/oyuncular/page.tsx` | Client Dynamic | Supabase `people` tablosu | Hayır |
+| 14 | `/oyuncular` | `src/app/oyuncular/page.tsx` + `OyuncularClient.tsx` | SSR / ISR (`revalidate: 300`) + Client Filter | `getInitialPeopleServer()` + Supabase | Hayır |
 | 15 | `/oyuncu/[slug]` | `src/app/oyuncu/[slug]/page.tsx` | Client Dynamic | Supabase `people`, `media_cast` | Hayır |
 | 16 | `/magazin` | `src/app/magazin/page.tsx` | Client Dynamic | Supabase `magazine_posts` + Live API | Hayır |
 | 17 | `/magazin/[slug]` | `src/app/magazin/[slug]/page.tsx` | Client Dynamic | Supabase `magazine_posts` | Hayır |
@@ -191,7 +191,7 @@ flowchart TD
   3. `<Navbar>` (Üst menü ve arama çubuğu).
   4. `<main className="flex-1 w-full max-w-full"><PageTransition>{children}</PageTransition></main>`
   5. `<Footer>` (Site alt bilgisi, telif ve hızlı linkler).
-  6. `<CookieConsentBanner>` (Zevk profili ve çerez onay bildirim çubuğu).
+  6. `<DeferredCookieBanner>` (`CookieConsentBanner` bileşenini `runWhenIdle` / `next/dynamic` ile gecikmeli yükleyen hafif istemci sarmalayıcı).
 
 ### PageTransition & Template
 - **Dosyalar:** [`koup-app/src/app/template.tsx`](../koup-app/src/app/template.tsx) ve [`koup-app/src/components/PageTransition.tsx`](../koup-app/src/components/PageTransition.tsx)
@@ -233,7 +233,7 @@ KoUp, geleneksel yatay sinema formatının yanı sıra Çin/Kore dikey kısa dra
 - **Dikey Dizi Tespiti:** Bir yapımın dikey kısa drama olup olmadığı `isShortDrama(media)` yardımcı fonksiyonu ile anlaşılır (`content_type === 'kisa_drama' || total_episodes >= 40 && avg_duration <= 5`).
 - **Detay Sayfası (`/seri/[slug]`):**
   - Normal diziler için `SeriesDetailClient` render edilir.
-  - Dikey kısa dramalar için doğrudan dikey poster, bölüm rozetleri ve bölüm listesini içeren `ShortsDetailClient` devreye girer.
+  - Dikey kısa dramalar için yalnızca gerektiğinde `LazyShortsDetailClient` (`next/dynamic`) aracılığıyla `ShortsDetailClient` devreye girer; böylece normal dizi sayfaları dikey oynatıcı JS paketini indirmez.
 - **İzleme Sayfası (`/seri/[slug]/[episode]`):**
   - Eğer yapım dikey kısa drama ise `seri/[slug]/[episode]/page.tsx` dinamik olarak `ShortsWatchClient` bileşenini (`ssr: false`) yükler.
   - **Kullanıcı Deneyimi:** 9:16 oranında tam ekran mobil TikTok/Reels deneyimi; yukarı/aşağı kaydırmayla (swipe) bir sonraki bölüme anında geçiş, ses açma/kapama, hızlı bölüm atlama çekmecesi ve otomatik bölüm tamamlama senkronizasyonu sunar.

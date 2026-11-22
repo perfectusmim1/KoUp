@@ -180,22 +180,18 @@ export default function EpisodeWatchPage({
     [currentSeason, activeEpNum, media?.id, episodes]
   );
 
-  // Ambient Lighting (persisted across episode changes and refreshes)
-  const [ambientLightingEnabled, setAmbientLightingEnabled] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return true;
-    try {
-      const saved = localStorage.getItem('koup_ambient_lighting');
-      return saved === null ? true : saved === 'true';
-    } catch {
-      return true;
-    }
-  });
+  // Ambient Lighting (deterministic initial state prevents SSR/Client hydration mismatch)
+  const [ambientLightingEnabled, setAmbientLightingEnabled] = useState<boolean>(true);
 
   useEffect(() => {
     try {
       const savedAmbient = localStorage.getItem('koup_ambient_lighting');
       if (savedAmbient !== null) {
         setAmbientLightingEnabled(savedAmbient === 'true');
+      }
+      const savedAutoNext = localStorage.getItem('koup_auto_next');
+      if (savedAutoNext !== null) {
+        setAutoNextEnabled(savedAutoNext === 'true');
       }
     } catch {}
   }, []);
@@ -210,16 +206,8 @@ export default function EpisodeWatchPage({
     });
   };
 
-  // Otomatik Sonraki Bölüm (persisted in localStorage)
-  const [autoNextEnabled, setAutoNextEnabled] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return true;
-    try {
-      const saved = localStorage.getItem('koup_auto_next');
-      return saved === null ? true : saved === 'true';
-    } catch {
-      return true;
-    }
-  });
+  // Otomatik Sonraki Bölüm (persisted in localStorage, hydrated safely on mount)
+  const [autoNextEnabled, setAutoNextEnabled] = useState<boolean>(true);
 
   const handleToggleAutoNext = () => {
     setAutoNextEnabled((prev) => {

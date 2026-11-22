@@ -653,10 +653,10 @@ textarea.koup-input {
   box-shadow: 0 0 12px rgba(99, 102, 241, 0.2);
 }
 
-/* Performance: Skip offscreen subtree layout/paint while reserving intrinsic block height */
+/* Performance: Skip offscreen subtree layout/paint while preserving auto-remembered block height */
 .cv-auto {
   content-visibility: auto;
-  contain-intrinsic-size: 0 360px;
+  contain-intrinsic-block-size: auto 360px;
 }
 
 @supports not (content-visibility: auto) {

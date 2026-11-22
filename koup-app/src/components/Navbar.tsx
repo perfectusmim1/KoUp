@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
@@ -49,8 +50,11 @@ import {
 } from '@/lib/supabase';
 import { dedupeAndSortNotifications } from '@/lib/notifications';
 import { useKoUpSelector } from '@/context/KoUpContext';
-import AuthModal from '@/components/AuthModal';
 import { cachedQuery, registerMediaItems } from '@/lib/cache';
+
+const AuthModal = dynamic(() => import('@/components/AuthModal'), {
+  ssr: false,
+});
 import { normalizeSearchQuery } from '@/lib/search';
 import { rankSearchResults } from '@/lib/searchRanking';
 
@@ -202,6 +206,11 @@ export default function Navbar() {
   const soundEnabled = useKoUpSelector((s) => s.soundEnabled);
   const toggleSound = useKoUpSelector((s) => s.toggleSound);
   const setIsAuthModalOpen = useKoUpSelector((s) => s.setIsAuthModalOpen);
+  const isAuthModalOpen = useKoUpSelector((s) => s.isAuthModalOpen);
+  const [authModalMounted, setAuthModalMounted] = useState(false);
+  useEffect(() => {
+    if (isAuthModalOpen) setAuthModalMounted(true);
+  }, [isAuthModalOpen]);
   const logout = useKoUpSelector((s) => s.logout);
   const navbarBehavior = useKoUpSelector((s) => s.navbarBehavior);
   const floatingNavbarEnabled = useKoUpSelector((s) => s.floatingNavbarEnabled);
@@ -1721,8 +1730,8 @@ export default function Navbar() {
         )}
       </AnimatePresence>
 
-      {/* Global Glass Auth Modal (Portaled to document.body) */}
-      <AuthModal />
+      {/* Global Glass Auth Modal (Portaled to document.body — lazy loaded on demand) */}
+      {authModalMounted && <AuthModal />}
     </>
   );
 }

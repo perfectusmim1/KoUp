@@ -258,16 +258,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
   const [blockedByUserIds, setBlockedByUserIds] = useState<string[]>([]);
 
   // Site-wide Persistent Trailer Mute State (remembers user sound choice across all cards & hero)
-  const [isTrailerMuted, setIsTrailerMutedState] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return true;
-    try {
-      const saved = localStorage.getItem('koup_trailer_muted');
-      if (saved !== null) {
-        return saved === 'true';
-      }
-    } catch {}
-    return true;
-  });
+  const [isTrailerMuted, setIsTrailerMutedState] = useState<boolean>(true);
 
   const setTrailerMuted = useCallback((muted: boolean) => {
     setIsTrailerMutedState(muted);
@@ -341,6 +332,11 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       const savedHoverExpand = localStorage.getItem('koup_pref_card_hover_expand');
       if (savedHoverExpand !== null) {
         setCardHoverExpandEnabledState(savedHoverExpand === 'true');
+      }
+
+      const savedTrailerMuted = localStorage.getItem('koup_trailer_muted');
+      if (savedTrailerMuted !== null) {
+        setIsTrailerMutedState(savedTrailerMuted === 'true');
       }
     } catch {}
   }, []);

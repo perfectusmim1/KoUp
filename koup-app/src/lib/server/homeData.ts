@@ -116,13 +116,13 @@ export async function getHomeDataServer(): Promise<HomeDataBundle> {
         .limit(180),
       client
         .from('people')
-        .select('*')
+        .select('id, slug, name, native_name, image_url, tmdb_id, drama_count, favorites_count, person_type')
         .order('favorites_count', { ascending: false })
         .order('drama_count', { ascending: false })
         .limit(12),
       client
         .from('magazine_posts')
-        .select('*')
+        .select('id, slug, title, excerpt, cover_image, category, published_at, views_count, likes_count')
         .order('published_at', { ascending: false })
         .limit(6),
       client.rpc('get_weekly_top10', { p_content_type: 'series' }),
@@ -219,8 +219,8 @@ export async function getHomeDataServer(): Promise<HomeDataBundle> {
       gls: ((glRes?.data as unknown as MediaItem[]) || []).filter(isNotShort),
       episodes: uniqueEps,
       recentEpsProcessed,
-      people: (peopRes?.data as PersonItem[]) || [],
-      magPosts: (magRes?.data as MagazinePost[]) || [],
+      people: (peopRes?.data as unknown as PersonItem[]) || [],
+      magPosts: (magRes?.data as unknown as MagazinePost[]) || [],
       top10Series: top10Series.filter(isNotShort),
       top10Movies: top10Movies.filter(isNotShort),
       recentMedia: ((recentMediaRes?.data as unknown as MediaItem[]) || []).filter(isNotShort),

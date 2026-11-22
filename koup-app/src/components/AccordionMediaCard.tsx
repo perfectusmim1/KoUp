@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback, useId } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Play, Heart, Bell, Star, ListPlus, Volume2, VolumeX, Eye } from 'lucide-react';
@@ -17,8 +18,11 @@ import {
 import { useKoUpSelector, useKoUpStoreGet } from '@/context/KoUpContext';
 import CountryFlag from '@/components/CountryFlag';
 import Top10Numeral from '@/components/Top10Numeral';
-import AddToListModal from '@/components/AddToListModal';
 import { registerMediaItem, cachedQuery } from '@/lib/cache';
+
+const AddToListModal = dynamic(() => import('@/components/AddToListModal'), {
+  ssr: false,
+});
 import { recordTasteSignal } from '@/lib/tasteProfile';
 import { buildCleanTrailerEmbedUrl, watchYouTubeIframe, postYouTubeCommand } from '@/lib/youtubeTrailer';
 

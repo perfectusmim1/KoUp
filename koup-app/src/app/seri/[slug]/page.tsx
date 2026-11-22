@@ -3,7 +3,7 @@ import { Suspense } from 'react';
 import { notFound, permanentRedirect } from 'next/navigation';
 import { getSeriesDataServer } from '@/lib/server/seriesData';
 import SeriesDetailClient from './SeriesDetailClient';
-import { ShortsDetailClient } from '@/components/shorts/ShortsWatchClient';
+import LazyShortsDetailClient from '@/components/shorts/LazyShortsDetailClient';
 import {
   cleanMediaTitle,
   cleanOverviewText,
@@ -20,7 +20,8 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const { media } = await getSeriesDataServer(slug);
+  const decodedSlug = decodeURIComponent(slug || '').trim();
+  const { media } = await getSeriesDataServer(decodedSlug);
 
   if (!media) {
     return {
@@ -170,7 +171,7 @@ export default async function SeriesDetailPage({
       />
       {isShort ? (
         <Suspense fallback={null}>
-          <ShortsDetailClient
+          <LazyShortsDetailClient
             media={media}
             episodes={episodes}
           />

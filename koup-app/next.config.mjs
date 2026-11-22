@@ -4,6 +4,10 @@ const nextConfig = {
   compress: true,
   poweredByHeader: false,
 
+  experimental: {
+    optimizePackageImports: ['lucide-react', 'motion', 'motion/react', '@supabase/supabase-js'],
+  },
+
   images: {
     // Keep unoptimized: true to avoid CPU/RAM bottleneck on Next.js server for 17,000+ external images
     unoptimized: true,

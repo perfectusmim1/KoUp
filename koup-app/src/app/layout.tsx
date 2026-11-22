@@ -3,7 +3,7 @@ import { Plus_Jakarta_Sans, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import { KoUpProvider } from '@/context/KoUpContext';
 import Navbar from '@/components/Navbar';
-import CookieConsentBanner from '@/components/CookieConsentBanner';
+import DeferredCookieBanner from '@/components/DeferredCookieBanner';
 import ScrollRestoration from '@/components/ScrollRestoration';
 import PageTransition from '@/components/PageTransition';
 import Footer from '@/components/Footer';
@@ -105,7 +105,7 @@ export default function RootLayout({
             <PageTransition>{children}</PageTransition>
           </main>
           <Footer />
-          <CookieConsentBanner />
+          <DeferredCookieBanner />
         </KoUpProvider>
       </body>
     </html>

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { cache } from 'react';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import {
   supabase,
@@ -102,9 +103,12 @@ export function getFranchiseForMedia(mediaId: number): FranchiseData | null {
 
 /**
  * Fast server-side fetcher for Series Detail Page (SSR & ISR).
+ * Deduplicated per request via React cache() across generateMetadata & Page.
  * Reads local disk bundles (0.2ms latency) for episode data whenever available.
  */
-export async function getSeriesDataServer(rawSlug: string): Promise<ServerSeriesData> {
+export const getSeriesDataServer = cache(async function getSeriesDataServer(
+  rawSlug: string
+): Promise<ServerSeriesData> {
   const decodedSlug = decodeURIComponent(rawSlug || '').trim();
   if (!decodedSlug) {
     return { media: null, episodes: [], cast: [], franchise: null };
@@ -188,12 +192,14 @@ export async function getSeriesDataServer(rawSlug: string): Promise<ServerSeries
     try {
       const { data: castRows } = await client
         .from('media_cast')
-        .select('*, people(*)')
+        .select(
+          'id, media_id, person_id, role_type, character_name, billing_order, people(id, slug, name, native_name, image_url, tmdb_id, person_type)'
+        )
         .eq('media_id', mediaId)
         .order('billing_order', { ascending: true })
         .limit(24);
 
-      const rawCast = (castRows as CastMember[]) || [];
+      const rawCast = (castRows as unknown as CastMember[]) || [];
       return rawCast.sort((a, b) => {
         const aLead = a.role_type === 'lead' ? 0 : 1;
         const bLead = b.role_type === 'lead' ? 0 : 1;
@@ -297,4 +303,4 @@ export async function getSeriesDataServer(rawSlug: string): Promise<ServerSeries
     cast,
     franchise,
   };
-}
+});

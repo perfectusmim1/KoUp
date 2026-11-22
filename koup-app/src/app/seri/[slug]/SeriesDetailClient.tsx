@@ -62,6 +62,31 @@ import CustomSelect from '@/components/CustomSelect';
 import FranchiseWatchOrder from '@/components/FranchiseWatchOrder';
 import type { FranchiseData } from '@/lib/server/seriesData';
 import { extractYouTubeId, buildModalTrailerEmbedUrl } from '@/lib/youtubeTrailer';
+import { runWhenIdle } from '@/lib/yieldToMain';
+
+const SLIM_RELATED_MEDIA_COLUMNS = [
+  'id',
+  'slug',
+  'title',
+  'native_title',
+  'content_type',
+  'country_code',
+  'release_year',
+  'cover_image',
+  'poster_fallback_url',
+  'backdrop_image',
+  'mdl_rating',
+  'anilist_rating',
+  'imdb_rating',
+  'site_rating',
+  'site_rating_count',
+  'categories',
+  'episode_count',
+  'episodes_available',
+  'status_broadcast',
+  'views_total',
+  'tmdb_id',
+].join(', ');
 
 const RichCommentSection = dynamic(
   () => import('@/components/RichCommentSection'),
@@ -196,48 +221,31 @@ export default function SeriesDetailClient({
   const [showAllCast, setShowAllCast] = useState(false);
   const [showAllEpisodes, setShowAllEpisodes] = useState(false);
   const [extraSectionsReady, setExtraSectionsReady] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
   const castDrawerRef = useRef<HTMLDivElement>(null);
   const episodesDrawerRef = useRef<HTMLDivElement>(null);
+  const castPredecodedRef = useRef(false);
 
-  // Pre-mount extra Cast and Episode cards during idle time after initial render
-  // and pre-decode extra cast avatars in the background so clicking "Tümünü Gör" is 120fps.
-  useEffect(() => {
-    if (!media) return;
-    let cancelled = false;
-    const predecodeCastAvatars = () => {
-      if (cancelled) return;
-      setExtraSectionsReady(true);
-      cast.slice(6).forEach((c, idx) => {
-        const p = c.people;
-        if (!p?.image_url) return;
-        setTimeout(() => {
-          if (cancelled) return;
-          const img = new Image();
-          img.decoding = 'async';
-          img.src = getProxiedImageUrl(p.image_url, p.name, null, 'w500', 'person', p.tmdb_id, null, null, null, p.id || c.person_id);
-          if (typeof img.decode === 'function') {
-            img.decode().catch(() => {});
-          }
-        }, idx * 15);
-      });
-    };
-    const w = window as Window & {
-      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
-      cancelIdleCallback?: (id: number) => void;
-    };
-    if (typeof w.requestIdleCallback === 'function') {
-      const id = w.requestIdleCallback(predecodeCastAvatars, { timeout: 250 });
-      return () => {
-        cancelled = true;
-        if (typeof w.cancelIdleCallback === 'function') w.cancelIdleCallback(id);
-      };
-    }
-    const timer = setTimeout(predecodeCastAvatars, 120);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [media, cast]);
+  const predecodeExtraCast = useCallback(() => {
+    setExtraSectionsReady(true);
+    if (castPredecodedRef.current || typeof window === 'undefined') return;
+    castPredecodedRef.current = true;
+    cast.slice(6).forEach((c, idx) => {
+      const p = c.people;
+      if (!p?.image_url) return;
+      setTimeout(() => {
+        const img = new Image();
+        img.decoding = 'async';
+        img.src = getProxiedImageUrl(p.image_url, p.name, null, 'w185', 'person', p.tmdb_id, null, null, null, p.id || c.person_id);
+        if (typeof img.decode === 'function') {
+          img.decode().catch(() => {});
+        }
+      }, idx * 15);
+    });
+  }, [cast]);
   const [showAddToListModal, setShowAddToListModal] = useState(false);
   const [trailerYoutubeId, setTrailerYoutubeId] = useState<string | null>(null);
   const [isTrailerSearching, setIsTrailerSearching] = useState(false);
@@ -427,6 +435,11 @@ export default function SeriesDetailClient({
 
     const activeMedia = initialMedia || cachedMedia;
     const activeEpisodes = (initialEpisodes && initialEpisodes.length > 0) ? initialEpisodes : cachedEpisodes;
+    const hasSSRMediaMatch = Boolean(
+      initialMedia && (initialMedia.slug === decodedSlug || String(initialMedia.id) === decodedSlug)
+    );
+    const hasSSREpisodes = Boolean(initialEpisodes && initialEpisodes.length > 0);
+    let cancelIdleRelated: (() => void) | undefined;
 
     if (activeMedia) {
       registerMediaItem(activeMedia, true);
@@ -435,7 +448,9 @@ export default function SeriesDetailClient({
         const yt = extractYouTubeId(activeMedia.trailer_url);
         if (yt) setTrailerYoutubeId(yt);
       }
-      setIsLoading(false);
+      if (!hasSSRMediaMatch) {
+        setIsLoading(false);
+      }
 
       // Background cast enrichment if initial cast is empty
       if (!initialCast || initialCast.length === 0) {
@@ -451,12 +466,14 @@ export default function SeriesDetailClient({
           .catch(() => {});
       }
 
-      if (activeEpisodes.length > 0) {
-        setEpisodes(activeEpisodes);
-        setSelectedSeason(activeEpisodes[0].season_number || 1);
-        setIsEpisodesLoading(false);
-      } else {
-        setIsEpisodesLoading(true);
+      if (!hasSSREpisodes) {
+        if (activeEpisodes.length > 0) {
+          setEpisodes(activeEpisodes);
+          setSelectedSeason(activeEpisodes[0].season_number || 1);
+          setIsEpisodesLoading(false);
+        } else {
+          setIsEpisodesLoading(true);
+        }
       }
     } else {
       setIsLoading(true);
@@ -586,21 +603,23 @@ export default function SeriesDetailClient({
               }
             );
 
-        // Deliver episodes to UI immediately once fetched — completely independent of mediaWithCastPromise or related media!
-        episodesFetchPromise
-          .then((epsList) => {
-            if (isCancelled) return;
-            const finalEps = epsList || [];
-            setEpisodes(finalEps);
-            setIsEpisodesLoading(false);
-            if (finalEps.length > 0) {
-              setSelectedSeason(finalEps[0].season_number || 1);
-            }
-          })
-          .catch((err) => {
-            console.error('Error fetching episodes:', err);
-            if (!isCancelled) setIsEpisodesLoading(false);
-          });
+        // Deliver episodes to UI immediately when fetched dynamically — skipped if SSR already populated initialEpisodes!
+        if (!hasSSREpisodes) {
+          episodesFetchPromise
+            .then((epsList) => {
+              if (isCancelled) return;
+              const finalEps = epsList || [];
+              setEpisodes(finalEps);
+              setIsEpisodesLoading(false);
+              if (finalEps.length > 0) {
+                setSelectedSeason(finalEps[0].season_number || 1);
+              }
+            })
+            .catch((err) => {
+              console.error('Error fetching episodes:', err);
+              if (!isCancelled) setIsEpisodesLoading(false);
+            });
+        }
 
         const mediaWithCast = await mediaWithCastPromise;
         if (isCancelled) return;
@@ -612,31 +631,33 @@ export default function SeriesDetailClient({
         }
 
         const item = mediaWithCast.media;
-        if (typeof window !== 'undefined' && item.slug && item.slug !== decodedSlug) {
-          window.history.replaceState(null, '', `/seri/${item.slug}${window.location.search}`);
+        if (!hasSSRMediaMatch) {
+          if (typeof window !== 'undefined' && item.slug && item.slug !== decodedSlug) {
+            window.history.replaceState(null, '', `/seri/${item.slug}${window.location.search}`);
+          }
+          registerMediaItem(item, true);
+          recordTasteSignal(item, 'view');
+          setMedia(item);
+          if (item.trailer_url) {
+            const yt = extractYouTubeId(item.trailer_url);
+            if (yt) setTrailerYoutubeId(yt);
+          }
+          if (mediaWithCast.cast.length > 0) {
+            setCast(mediaWithCast.cast);
+          } else if (item.id) {
+            fetch(
+              `/api/media/cast?mediaId=${item.id}&tmdbId=${item.tmdb_id || ''}&anilistId=${item.anilist_id || ''}&type=${item.content_type || ''}&title=${encodeURIComponent(item.title || '')}`
+            )
+              .then((res) => (res.ok ? res.json() : null))
+              .then((castJson) => {
+                if (castJson?.cast && Array.isArray(castJson.cast) && castJson.cast.length > 0) {
+                  setCast(castJson.cast);
+                }
+              })
+              .catch(() => {});
+          }
+          setIsLoading(false);
         }
-        registerMediaItem(item, true);
-        recordTasteSignal(item, 'view');
-        setMedia(item);
-        if (item.trailer_url) {
-          const yt = extractYouTubeId(item.trailer_url);
-          if (yt) setTrailerYoutubeId(yt);
-        }
-        if (mediaWithCast.cast.length > 0) {
-          setCast(mediaWithCast.cast);
-        } else if (item.id) {
-          fetch(
-            `/api/media/cast?mediaId=${item.id}&tmdbId=${item.tmdb_id || ''}&anilistId=${item.anilist_id || ''}&type=${item.content_type || ''}&title=${encodeURIComponent(item.title || '')}`
-          )
-            .then((res) => (res.ok ? res.json() : null))
-            .then((castJson) => {
-              if (castJson?.cast && Array.isArray(castJson.cast) && castJson.cast.length > 0) {
-                setCast(castJson.cast);
-              }
-            })
-            .catch(() => {});
-        }
-        setIsLoading(false);
 
         // Also ensure episodes are cached under the resolved numeric ID
         episodesFetchPromise.then((eps) => {
@@ -672,54 +693,57 @@ export default function SeriesDetailClient({
           return;
         }
 
-        // Multi-signal related media fetched non-blockingly without delaying episodes or main content
-        cachedQuery<MediaItem[]>(
-          `smart_related_v2_${item.id}`,
-          300_000,
-          async () => {
-            const countryCode = (item.country_code || item.country || '').toUpperCase().trim();
-            const queries: Promise<any>[] = [];
+        // Multi-signal related media deferred post-LCP with slim columns
+        cancelIdleRelated = runWhenIdle(() => {
+          if (isCancelled) return;
+          cachedQuery<MediaItem[]>(
+            `smart_related_v2_${item.id}`,
+            300_000,
+            async () => {
+              const countryCode = (item.country_code || item.country || '').toUpperCase().trim();
+              const queries: Promise<any>[] = [];
 
-            // 1. Candidates from exact same country & content type (leverages new idx_media_type_country_mdl)
-            if (countryCode && countryCode !== 'GL') {
+              // 1. Candidates from exact same country & content type (leverages new idx_media_type_country_mdl)
+              if (countryCode && countryCode !== 'GL') {
+                queries.push(
+                  supabase
+                    .from('media')
+                    .select(SLIM_RELATED_MEDIA_COLUMNS)
+                    .eq('content_type', item.content_type)
+                    .eq('country_code', countryCode)
+                    .neq('id', item.id)
+                    .order('mdl_rating', { ascending: false, nullsFirst: false })
+                    .limit(45) as unknown as Promise<any>
+                );
+              }
+
+              // 2. Broader candidates of the same content type (leverages idx_media_type_views)
               queries.push(
                 supabase
                   .from('media')
-                  .select('*')
+                  .select(SLIM_RELATED_MEDIA_COLUMNS)
                   .eq('content_type', item.content_type)
-                  .eq('country_code', countryCode)
                   .neq('id', item.id)
-                  .order('mdl_rating', { ascending: false, nullsFirst: false })
+                  .order('views_total', { ascending: false, nullsFirst: false })
                   .limit(45) as unknown as Promise<any>
               );
-            }
 
-            // 2. Broader candidates of the same content type (leverages idx_media_type_views)
-            queries.push(
-              supabase
-                .from('media')
-                .select('*')
-                .eq('content_type', item.content_type)
-                .neq('id', item.id)
-                .order('views_total', { ascending: false, nullsFirst: false })
-                .limit(45) as unknown as Promise<any>
-            );
-
-            const results = await Promise.all(queries);
-            const candidatePool: MediaItem[] = [];
-            for (const r of results) {
-              if (Array.isArray(r?.data)) {
-                candidatePool.push(...(r.data as MediaItem[]));
+              const results = await Promise.all(queries);
+              const candidatePool: MediaItem[] = [];
+              for (const r of results) {
+                if (Array.isArray(r?.data)) {
+                  candidatePool.push(...(r.data as MediaItem[]));
+                }
               }
-            }
 
-            return rankRelatedMedia(item, candidatePool, 8);
-          }
-        ).then((relList) => {
-          if (!isCancelled && relList) {
-            setRelatedMedia(relList);
-          }
-        }).catch(() => {});
+              return rankRelatedMedia(item, candidatePool, 8);
+            }
+          ).then((relList) => {
+            if (!isCancelled && relList) {
+              setRelatedMedia(relList);
+            }
+          }).catch(() => {});
+        }, 1000);
       } catch (err) {
         console.error('Error loading series data:', err);
       } finally {
@@ -734,6 +758,7 @@ export default function SeriesDetailClient({
 
     return () => {
       isCancelled = true;
+      cancelIdleRelated?.();
     };
   }, [slug, searchParams, router]);
 
@@ -788,59 +813,81 @@ export default function SeriesDetailClient({
     const needsImdbRating = !(media.imdb_rating || (media as any).imdb_score || media.vote_average);
     const hasCorruptedImdb = !!media.imdb_id && !/^tt\d+$/.test(media.imdb_id);
 
-    // 1. Resolve official trailer & backdrop & live rating (never overwrite cover_image!)
-    setIsTrailerSearching(true);
-    const yrParam = media.release_year ? `&year=${media.release_year}` : '';
-    const ntParam = media.native_title ? `&nativeTitle=${encodeURIComponent(media.native_title)}` : '';
-    const ctParam = media.content_type ? `&contentType=${encodeURIComponent(media.content_type)}` : '';
-    fetch(
-      `/api/media/trailer?id=${media.id}&slug=${encodeURIComponent(media.slug)}&title=${encodeURIComponent(media.title)}${yrParam}${ntParam}${ctParam}`
-    )
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        setIsTrailerSearching(false);
-        if (d?.youtubeId) {
-          setTrailerYoutubeId(d.youtubeId);
-        }
-        if (d?.backdropUrl || d?.imdbRating || d?.imdbId) {
-          setMedia((prev) => {
-            if (!prev) return prev;
-            const updated = {
-              ...prev,
-              backdrop_image: d.backdropUrl || prev.backdrop_image,
-              imdb_id: d.imdbId && /^tt\d+$/.test(d.imdbId) ? d.imdbId : prev.imdb_id,
-              imdb_rating: d.imdbRating || prev.imdb_rating,
-            };
-            registerMediaItem(updated, true);
-            return updated;
-          });
-        }
-      })
-      .catch(() => {});
-
-    // 2. Enrich overview & ratings if needed (deduplicated: runs only once per media id)
-    if (
+    const needsTrailerOrMeta =
+      !media.trailer_url ||
+      !media.backdrop_image ||
+      !(media.imdb_rating || (media as any).imdb_score || media.vote_average);
+    const shouldEnrich =
       !hasAutoEnrichedRef.current.has(media.id) &&
-      (needsOverview || needsImages || needsMatching || needsImdbRating || hasCorruptedImdb)
-    ) {
-      hasAutoEnrichedRef.current.add(media.id);
-      fetch(`/api/media/auto-enrich?id=${media.id}&slug=${encodeURIComponent(media.slug)}`)
-        .then((r) => r.json())
-        .then((res) => {
-          const fresh = res?.updatedMedia || res?.media;
-          if (fresh) {
-            setMedia((prev) => {
-              if (!prev) return prev;
-              const updated = { ...prev, ...fresh };
-              registerMediaItem(updated, true);
-              const decodedSlug = decodeURIComponent(slug);
-              setCache(`media_detail_${decodedSlug}`, { media: updated, cast }, 300_000);
-              return updated;
-            });
-          }
-        })
-        .catch(() => {});
-    }
+      (needsOverview || needsImages || needsMatching || needsImdbRating || hasCorruptedImdb);
+
+    if (!needsTrailerOrMeta && !shouldEnrich) return;
+
+    let cancelled = false;
+    const cancelIdle = runWhenIdle(() => {
+      if (cancelled) return;
+
+      // 1. Resolve official trailer & backdrop & live rating only when missing
+      if (needsTrailerOrMeta) {
+        setIsTrailerSearching(true);
+        const yrParam = media.release_year ? `&year=${media.release_year}` : '';
+        const ntParam = media.native_title ? `&nativeTitle=${encodeURIComponent(media.native_title)}` : '';
+        const ctParam = media.content_type ? `&contentType=${encodeURIComponent(media.content_type)}` : '';
+        fetch(
+          `/api/media/trailer?id=${media.id}&slug=${encodeURIComponent(media.slug)}&title=${encodeURIComponent(media.title)}${yrParam}${ntParam}${ctParam}`
+        )
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => {
+            if (cancelled) return;
+            setIsTrailerSearching(false);
+            if (d?.youtubeId) {
+              setTrailerYoutubeId(d.youtubeId);
+            }
+            if (d?.backdropUrl || d?.imdbRating || d?.imdbId) {
+              setMedia((prev) => {
+                if (!prev) return prev;
+                const updated = {
+                  ...prev,
+                  backdrop_image: d.backdropUrl || prev.backdrop_image,
+                  imdb_id: d.imdbId && /^tt\d+$/.test(d.imdbId) ? d.imdbId : prev.imdb_id,
+                  imdb_rating: d.imdbRating || prev.imdb_rating,
+                };
+                registerMediaItem(updated, true);
+                return updated;
+              });
+            }
+          })
+          .catch(() => {
+            if (!cancelled) setIsTrailerSearching(false);
+          });
+      }
+
+      // 2. Enrich overview & ratings if needed (deduplicated: runs only once per media id)
+      if (shouldEnrich) {
+        hasAutoEnrichedRef.current.add(media.id);
+        fetch(`/api/media/auto-enrich?id=${media.id}&slug=${encodeURIComponent(media.slug)}`)
+          .then((r) => r.json())
+          .then((res) => {
+            if (cancelled) return;
+            const fresh = res?.updatedMedia || res?.media;
+            if (fresh) {
+              setMedia((prev) => {
+                if (!prev) return prev;
+                const updated = { ...prev, ...fresh };
+                registerMediaItem(updated, true);
+                const decodedSlug = decodeURIComponent(slug);
+                setCache(`media_detail_${decodedSlug}`, { media: updated, cast }, 300_000);
+                return updated;
+              });
+            }
+          })
+          .catch(() => {});
+      }
+    }, 1200);
+    return () => {
+      cancelled = true;
+      cancelIdle();
+    };
   }, [media?.id, media?.slug]);
 
   // Fetch live broadcast calendar schedule & countdown for supported series
@@ -1256,43 +1303,52 @@ export default function SeriesDetailClient({
     }
   }, [media?.id, pushNotification]);
 
-  // Supabase Realtime Listener: Instantly catch new episodes ingested by GitHub Actions or Scraper
+  // Supabase Realtime Listener (skipped for finished shows and deferred post-LCP for ongoing series)
   useEffect(() => {
     if (!media?.id) return;
+    const normStatus = (media.status_broadcast || '').trim();
+    if (normStatus === 'Final' || normStatus === 'Canceled' || normStatus === 'Tamamlandı') {
+      return;
+    }
 
-    const channel = supabase
-      .channel(`realtime_episodes_${media.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'episodes',
-          filter: `media_id=eq.${media.id}`,
-        },
-        (payload: any) => {
-          // Silently refresh the local page episodes so newly ingested episodes appear immediately
-          void handleAdminSyncComplete();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'episodes',
-          filter: `media_id=eq.${media.id}`,
-        },
-        () => {
-          void handleAdminSyncComplete();
-        }
-      )
-      .subscribe();
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    const timer = setTimeout(() => {
+      channel = supabase
+        .channel(`realtime_episodes_${media.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'episodes',
+            filter: `media_id=eq.${media.id}`,
+          },
+          () => {
+            void handleAdminSyncComplete();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'episodes',
+            filter: `media_id=eq.${media.id}`,
+          },
+          () => {
+            void handleAdminSyncComplete();
+          }
+        )
+        .subscribe();
+    }, 2500);
 
     return () => {
-      void supabase.removeChannel(channel);
+      clearTimeout(timer);
+      if (channel) {
+        void supabase.removeChannel(channel);
+      }
     };
-  }, [media?.id, handleAdminSyncComplete]);
+  }, [media?.id, media?.status_broadcast, handleAdminSyncComplete]);
 
   const backdropSrc = getProxiedImageUrl(
     media.backdrop_image || media.cover_image,
@@ -1309,7 +1365,18 @@ export default function SeriesDetailClient({
     media.cover_image,
     media.poster_fallback_url || null,
     media.title,
-    'original',
+    'w780',
+    'poster',
+    media.tmdb_id,
+    media.content_type === 'film' ? 'movie' : 'tv',
+    media.release_year,
+    media.native_title
+  );
+  const posterBlurSrc = getProxiedImageUrl(
+    media.cover_image,
+    media.poster_fallback_url || null,
+    media.title,
+    'w185',
     'poster',
     media.tmdb_id,
     media.content_type === 'film' ? 'movie' : 'tv',
@@ -1353,10 +1420,12 @@ export default function SeriesDetailClient({
           >
             {/* Ambient Blurred Fill for non-standard image aspect ratios */}
             <img
-              key={`blur-${posterSrc}`}
-              src={posterSrc}
+              key={`blur-${posterBlurSrc}`}
+              src={posterBlurSrc}
               alt=""
               aria-hidden="true"
+              loading="lazy"
+              decoding="async"
               className="absolute inset-0 w-full h-full object-cover scale-125 blur-lg opacity-40 brightness-75 pointer-events-none transition-opacity duration-300"
             />
             <img
@@ -1365,7 +1434,7 @@ export default function SeriesDetailClient({
               alt={media.title}
               loading="eager"
               fetchPriority="high"
-              decoding="async"
+              decoding="sync"
               onError={(e) => {
                 const target = e.currentTarget;
                 if (!target.dataset.triedFallback && media.poster_fallback_url && media.poster_fallback_url !== media.cover_image) {
@@ -2078,7 +2147,7 @@ export default function SeriesDetailClient({
                   >
                     <div className="w-20 h-20 rounded-full overflow-hidden border border-white/15 group-hover:border-white/30 transition-colors mb-3 shadow-md">
                       <img
-                        src={getProxiedImageUrl(p.image_url, p.name, null, 'w500', 'person', p.tmdb_id, null, null, null, p.id || c.person_id)}
+                        src={getProxiedImageUrl(p.image_url, p.name, null, 'w185', 'person', p.tmdb_id, null, null, null, p.id || c.person_id)}
                         alt={p.name}
                         loading="lazy"
                         decoding="async"
@@ -2122,8 +2191,9 @@ export default function SeriesDetailClient({
                         >
                           <div className="w-20 h-20 rounded-full overflow-hidden border border-white/15 group-hover:border-white/30 transition-colors mb-3 shadow-md">
                             <img
-                              src={getProxiedImageUrl(p.image_url, p.name, null, 'w500', 'person', p.tmdb_id, null, null, null, p.id || c.person_id)}
+                              src={getProxiedImageUrl(p.image_url, p.name, null, 'w185', 'person', p.tmdb_id, null, null, null, p.id || c.person_id)}
                               alt={p.name}
+                              loading="lazy"
                               decoding="async"
                               className="w-full h-full object-cover"
                             />
@@ -2152,9 +2222,11 @@ export default function SeriesDetailClient({
                 <button
                   type="button"
                   aria-expanded={showAllCast}
-                  onMouseEnter={() => setExtraSectionsReady(true)}
+                  onMouseEnter={predecodeExtraCast}
+                  onFocus={predecodeExtraCast}
                   onClick={() => {
                     const next = !showAllCast;
+                    predecodeExtraCast();
                     if (castDrawerRef.current) {
                       castDrawerRef.current.classList.toggle('is-expanded', next);
                       castDrawerRef.current.setAttribute('aria-hidden', String(!next));
@@ -2184,7 +2256,7 @@ export default function SeriesDetailClient({
 
         {/* 4. FULL EPISODES GRID (Series only, hidden for films) */}
         {!isFilm && (
-          <section className="p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08] relative z-20 overflow-visible">
+          <section className="p-6 sm:p-8 rounded-3xl bg-[#0f0f11] border border-white/[0.08] relative z-20 overflow-visible cv-auto">
           {/* Broadcast Calendar & Next Episode Countdown Banner */}
           {seriesSchedule?.supported && (
             <div className="mb-6 rounded-2xl bg-gradient-to-r from-sky-500/[0.10] via-white/[0.03] to-emerald-500/[0.08] border border-sky-400/25 p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-[0_10px_30px_rgba(0,0,0,0.45)]">
@@ -2487,7 +2559,7 @@ export default function SeriesDetailClient({
                           <span>{formatViewCount(ep.views_count || 0)}</span>
                         </span>
 
-                        {!epWatched && epProg.position > 15 && epProg.remainingMinutes > 0 && (
+                        {isHydrated && !epWatched && epProg.position > 15 && epProg.remainingMinutes > 0 && (
                           <div className="flex items-center gap-1.5 shrink-0">
                             <div className="w-12 h-1 bg-white/20 rounded-full overflow-hidden">
                               <div
@@ -2620,7 +2692,7 @@ export default function SeriesDetailClient({
           const filteredRelated = relatedMedia.filter((item) => !franchiseIdSet.has(item.id));
           if (filteredRelated.length === 0) return null;
           return (
-          <section className="space-y-4 [contain:layout_paint_style]">
+          <section className="space-y-4 cv-auto">
             <div className="flex items-end justify-between">
               <div>
                 <div className="flex items-center gap-1.5 text-[11px] font-bold tracking-[0.18em] uppercase text-sky-400">
@@ -2680,11 +2752,13 @@ export default function SeriesDetailClient({
         })()}
 
         {/* 6. GENERAL SERIES DISCUSSION & COMMENTS */}
-        <RichCommentSection
-          targetType="media"
-          mediaId={media.id}
-          targetTitle={media.title}
-        />
+        <div className="cv-auto">
+          <RichCommentSection
+            targetType="media"
+            mediaId={media.id}
+            targetTitle={media.title}
+          />
+        </div>
       </div>
 
       {/* Add To List Modal */}

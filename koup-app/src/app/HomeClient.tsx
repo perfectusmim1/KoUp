@@ -47,7 +47,8 @@ import AccordionMediaCard, { requestAccordionHover, preloadMediaImages } from '@
 import DirectMediaCard from '@/components/DirectMediaCard';
 import ShortsCard, { isShortDrama } from '@/components/shorts/ShortsCard';
 import Top10Numeral from '@/components/Top10Numeral';
-import { cachedQuery, getCache, registerMediaItems } from '@/lib/cache';
+import { cachedQuery, getCache, setCache, registerMediaItems } from '@/lib/cache';
+import { yieldToMain, runWhenIdle } from '@/lib/yieldToMain';
 import {
   buildPersonalizedFeed,
   getTasteProfile,
@@ -213,6 +214,7 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
   const heroPlayerRef = useRef<any>(null);
   const heroPlayerContainerRef = useRef<HTMLDivElement | null>(null);
   const heroTrailerTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isFirstHeroLoadRef = useRef(true);
   // Live mirrors for YouTube player callbacks (avoid stale closures)
   const heroRevealedRef = useRef(false);
   const heroPauseTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -317,7 +319,7 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
       }
     }
 
-    // Register items into synchronous memory cache for 0ms navigation without competing with Hero LCP bandwidth
+    // Register items into synchronous memory cache for 0ms navigation in idle chunks without blocking LCP
     if (typeof window !== 'undefined') {
       const allRowItems = [
         ...(kds || []),
@@ -330,19 +332,57 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
         ...(bundle.recentMedia || []),
         ...((bundle.recentEpsProcessed || []).map((e: any) => e.media).filter(Boolean)),
       ];
-      registerMediaItems(allRowItems);
+      runWhenIdle(() => {
+        void (async () => {
+          const CHUNK = 40;
+          for (let i = 0; i < allRowItems.length; i += CHUNK) {
+            registerMediaItems(allRowItems.slice(i, i + CHUNK));
+            if (i + CHUNK < allRowItems.length) {
+              await yieldToMain();
+            }
+          }
+        })();
+      }, 1500);
     }
   };
 
   useEffect(() => {
-    // 1. Instantly populate on client mount from SSR initialBundle, memory or localStorage cache for 0ms transition
-    if (initialBundle) {
-      applyBundle(initialBundle);
-    } else {
-      const cached = memoryHomeBundle || getCache<HomeDataBundle>('home_catalog_bundle_v11');
-      if (cached) {
-        applyBundle(cached);
-      }
+    const hasValidSSR = Boolean(
+      initialBundle &&
+        ((initialBundle.feats && initialBundle.feats.length > 0) ||
+          (initialBundle.kds && initialBundle.kds.length > 0))
+    );
+
+    if (hasValidSSR && initialBundle) {
+      memoryHomeBundle = initialBundle;
+      setCache('home_catalog_bundle_v11', initialBundle, 90_000);
+      const allRowItems = [
+        ...(initialBundle.kds || []),
+        ...(initialBundle.ans || []),
+        ...(initialBundle.cds || []),
+        ...(initialBundle.gls || []),
+        ...(initialBundle.feats || []),
+        ...(initialBundle.top10Series || []),
+        ...(initialBundle.top10Movies || []),
+        ...(initialBundle.recentMedia || []),
+        ...((initialBundle.recentEpsProcessed || []).map((e: any) => e.media).filter(Boolean)),
+      ];
+      return runWhenIdle(() => {
+        void (async () => {
+          const CHUNK = 40;
+          for (let i = 0; i < allRowItems.length; i += CHUNK) {
+            registerMediaItems(allRowItems.slice(i, i + CHUNK));
+            if (i + CHUNK < allRowItems.length) {
+              await yieldToMain();
+            }
+          }
+        })();
+      }, 1500);
+    }
+
+    const cached = memoryHomeBundle || getCache<HomeDataBundle>('home_catalog_bundle_v11');
+    if (cached) {
+      applyBundle(cached);
     }
 
     async function fetchHomeData() {
@@ -610,14 +650,14 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
 
   const activeHero = heroItems[heroIdx] || heroItems[0];
 
-  // Responsive Hero Images: PC gets widescreen landscape backdrop, mobile gets vertical portrait cover (Vitrinde orijinal cozunurluk)
+  // Responsive Hero Images: PC gets widescreen backdrop (w1280), mobile gets vertical portrait cover (w780)
   const desktopHeroImage = useMemo(() => {
     if (!activeHero) return '';
     return getProxiedImageUrl(
       activeHero.backdrop_image || activeHero.cover_image,
       activeHero.cover_image,
       activeHero.title,
-      'original'
+      'w1280'
     );
   }, [activeHero]);
 
@@ -627,11 +667,11 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
       activeHero.cover_image || activeHero.backdrop_image,
       activeHero.backdrop_image,
       activeHero.title,
-      'original'
+      'w780'
     );
   }, [activeHero]);
 
-  // Preload next hero slide image seamlessly
+  // Preload next hero slide image seamlessly AFTER initial LCP window
   useEffect(() => {
     if (!heroItems || heroItems.length <= 1) return;
     const nextIdx = (heroIdx + 1) % heroItems.length;
@@ -639,24 +679,31 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
     if (!nextItem) return;
 
     const imgToPreload = isDesktop
-      ? getProxiedImageUrl(nextItem.backdrop_image || nextItem.cover_image, nextItem.cover_image, nextItem.title, 'original')
-      : getProxiedImageUrl(nextItem.cover_image || nextItem.backdrop_image, nextItem.backdrop_image, nextItem.title, 'original');
+      ? getProxiedImageUrl(nextItem.backdrop_image || nextItem.cover_image, nextItem.cover_image, nextItem.title, 'w1280')
+      : getProxiedImageUrl(nextItem.cover_image || nextItem.backdrop_image, nextItem.backdrop_image, nextItem.title, 'w780');
 
-    if (imgToPreload) {
+    if (!imgToPreload) return;
+    let appendedLink: HTMLLinkElement | null = null;
+    const timer = setTimeout(() => {
       const link = document.createElement('link');
       link.rel = 'prefetch';
       link.as = 'image';
       link.href = imgToPreload;
       document.head.appendChild(link);
-      return () => {
+      appendedLink = link;
+    }, 3000);
+
+    return () => {
+      clearTimeout(timer);
+      if (appendedLink) {
         try {
-          document.head.removeChild(link);
+          document.head.removeChild(appendedLink);
         } catch {}
-      };
-    }
+      }
+    };
   }, [heroIdx, heroItems, isDesktop]);
 
-  // Fetch trailer for active Hero vitrin after a smooth 150ms stabilization delay (PC / Desktop Only)
+  // Fetch trailer for active Hero vitrin (initial load deferred post-LCP, manual slide switches fast)
   useEffect(() => {
     setHeroTrailerYtId(null);
     setIsHeroTrailerReady(false);
@@ -668,6 +715,9 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
     if (!isDesktop || !activeHero?.id) return;
 
     const currentHeroId = activeHero.id;
+    const delayMs = isFirstHeroLoadRef.current ? 1800 : 250;
+    isFirstHeroLoadRef.current = false;
+
     heroTrailerTimerRef.current = setTimeout(async () => {
       try {
         const r = await fetch(
@@ -680,7 +730,7 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
           setHeroTrailerYtId(d.youtubeId);
         }
       } catch {}
-    }, 150);
+    }, delayMs);
 
     return () => {
       if (heroTrailerTimerRef.current) {
@@ -689,19 +739,20 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
     };
   }, [activeHero?.id, activeHero?.slug, activeHero?.title, isDesktop]);
 
-  // Load YouTube IFrame API script once globally (PC / Desktop Only)
+  // Load YouTube IFrame API script lazily ONLY once an active desktop hero trailer ID exists
   useEffect(() => {
-    if (typeof window === 'undefined' || !isDesktop) return;
+    if (typeof window === 'undefined' || !isDesktop || !heroTrailerYtId) return;
     if (!window.YT) {
       const existingScript = document.getElementById('youtube-iframe-api');
       if (!existingScript) {
         const tag = document.createElement('script');
         tag.id = 'youtube-iframe-api';
         tag.src = 'https://www.youtube.com/iframe_api';
+        tag.async = true;
         document.body.appendChild(tag);
       }
     }
-  }, [isDesktop]);
+  }, [isDesktop, heroTrailerYtId]);
 
   // Initialize and manage YouTube IFrame Player instance for active Hero trailer (PC / Desktop Only)
   useEffect(() => {
@@ -1223,7 +1274,7 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
                       alt={activeHero.title}
                       loading="eager"
                       fetchPriority="high"
-                      decoding="async"
+                      decoding="sync"
                       onError={(e) => {
                         const target = e.currentTarget;
                         if (!target.dataset.triedFallback && activeHero.backdrop_image && activeHero.cover_image) {
@@ -1232,7 +1283,7 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
                             activeHero.backdrop_image,
                             null,
                             activeHero.title,
-                            'original'
+                            'w1280'
                           );
                         } else if (!target.dataset.triedProxy && activeHero.title) {
                           target.dataset.triedProxy = 'true';
@@ -1464,7 +1515,8 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
                           src={getProxiedImageUrl(
                             hItem.backdrop_image || hItem.cover_image,
                             hItem.cover_image,
-                            hItem.title
+                            hItem.title,
+                            'w300'
                           )}
                           alt={hItem.title}
                           loading="lazy"
@@ -1686,7 +1738,7 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
                         m.backdrop_image || m.cover_image,
                         m.title,
                         null,
-                        'w1280',
+                        'w780',
                         'banner',
                         m.tmdb_id,
                         m.content_type === 'film' ? 'movie' : 'tv'
@@ -1711,7 +1763,10 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
                             {episodeLabel}
                           </span>
                         </div>
-                        <span className="text-[10px] sm:text-[11px] font-mono text-white/80 shrink-0 px-2 py-0.5 rounded-lg bg-black/80 border border-white/15 shadow-sm">
+                        <span
+                          suppressHydrationWarning
+                          className="text-[10px] sm:text-[11px] font-mono text-white/80 shrink-0 px-2 py-0.5 rounded-lg bg-black/80 border border-white/15 shadow-sm"
+                        >
                           {timeLabel}
                         </span>
                       </div>
@@ -1889,7 +1944,7 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
                         item.cover_image,
                         item.poster_fallback_url || null,
                         item.title,
-                        'w500',
+                        'w342',
                         'poster',
                         item.tmdb_id,
                         item.content_type === 'film' ? 'movie' : 'tv',
@@ -1904,7 +1959,7 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
                         const target = e.currentTarget;
                         if (!target.dataset.triedFallback && item.poster_fallback_url && item.poster_fallback_url !== item.cover_image) {
                           target.dataset.triedFallback = 'true';
-                          target.src = getProxiedImageUrl(item.poster_fallback_url, null, item.title, 'w500', 'poster', item.tmdb_id);
+                          target.src = getProxiedImageUrl(item.poster_fallback_url, null, item.title, 'w342', 'poster', item.tmdb_id);
                         } else if (!target.dataset.triedProxy && item.title) {
                           target.dataset.triedProxy = 'true';
                           target.src = `/api/image-proxy?mediaId=${item.id}&tmdbId=${encodeURIComponent(String(item.tmdb_id || ''))}&title=${encodeURIComponent(item.title)}&mediaType=tv&type=poster`;
@@ -1996,7 +2051,7 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
                         item.cover_image,
                         item.poster_fallback_url || null,
                         item.title,
-                        'w500',
+                        'w342',
                         'poster',
                         item.tmdb_id,
                         item.content_type === 'film' ? 'movie' : 'tv',
@@ -2011,7 +2066,7 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
                         const target = e.currentTarget;
                         if (!target.dataset.triedFallback && item.poster_fallback_url && item.poster_fallback_url !== item.cover_image) {
                           target.dataset.triedFallback = 'true';
-                          target.src = getProxiedImageUrl(item.poster_fallback_url, null, item.title, 'w500', 'poster', item.tmdb_id);
+                          target.src = getProxiedImageUrl(item.poster_fallback_url, null, item.title, 'w342', 'poster', item.tmdb_id);
                         } else if (!target.dataset.triedProxy && item.title) {
                           target.dataset.triedProxy = 'true';
                           target.src = `/api/image-proxy?mediaId=${item.id}&tmdbId=${encodeURIComponent(String(item.tmdb_id || ''))}&title=${encodeURIComponent(item.title)}&mediaType=movie&type=poster`;
@@ -2144,7 +2199,10 @@ const DeferredSection = memo(function DeferredSection({
   const { isMounted, ref } = useDeferredMount(order);
 
   return (
-    <section ref={ref} className={`${className} [contain:layout_style]`}>
+    <section
+      ref={ref}
+      className={`${className} [contain:layout_style] ${order > 0 ? 'cv-auto' : ''}`}
+    >
       {typeof children === 'function' ? (
         children(isMounted)
       ) : (
@@ -2217,7 +2275,7 @@ const PersonalizedRecommendationsSection = memo(function PersonalizedRecommendat
         sectionRef.current = el;
         deferredRef(el);
       }}
-      className="w-full px-4 sm:px-6 md:px-14 max-w-full overflow-hidden"
+      className="w-full px-4 sm:px-6 md:px-14 max-w-full overflow-hidden cv-auto"
     >
       <div className="flex flex-col gap-1 mb-4 sm:mb-6">
         <div className="flex items-center justify-between min-h-[24px]">
