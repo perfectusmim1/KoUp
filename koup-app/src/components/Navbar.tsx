@@ -377,38 +377,42 @@ export default function Navbar() {
   }, []);
 
   const drawerRef = useRef<HTMLDialogElement>(null);
-  const drawerScrollerRef = useRef<HTMLDivElement>(null);
   const drawerSheetRef = useRef<HTMLElement>(null);
-  const drawerPhaseRef = useRef<'closed' | 'opening' | 'open' | 'closing'>('closed');
-  const drawerEnteredRef = useRef(false);
+  const drawerOpenRafRef = useRef<number | null>(null);
   const closeFallbackTimerRef = useRef<number | null>(null);
 
   const finalizeDrawerClosed = useCallback(() => {
+    if (drawerOpenRafRef.current !== null) {
+      window.cancelAnimationFrame(drawerOpenRafRef.current);
+      drawerOpenRafRef.current = null;
+    }
     if (closeFallbackTimerRef.current !== null) {
       window.clearTimeout(closeFallbackTimerRef.current);
       closeFallbackTimerRef.current = null;
     }
     const drawer = drawerRef.current;
-    drawerPhaseRef.current = 'closed';
-    drawerEnteredRef.current = false;
-    if (drawer?.open) {
-      drawer.close();
+    if (drawer) {
+      delete drawer.dataset.state;
+      if (drawer.open) {
+        drawer.close();
+      }
     }
     drawerTriggerRef.current?.setAttribute('aria-expanded', 'false');
   }, []);
 
-  const openDrawer = useCallback(async () => {
+  const openDrawer = useCallback(() => {
     const drawer = drawerRef.current;
-    const scroller = drawerScrollerRef.current;
-    if (!drawer || !scroller) return;
+    if (!drawer) return;
 
+    if (drawerOpenRafRef.current !== null) {
+      window.cancelAnimationFrame(drawerOpenRafRef.current);
+      drawerOpenRafRef.current = null;
+    }
     if (closeFallbackTimerRef.current !== null) {
       window.clearTimeout(closeFallbackTimerRef.current);
       closeFallbackTimerRef.current = null;
     }
 
-    drawerPhaseRef.current = 'opening';
-    drawerEnteredRef.current = false;
     // Avoid any React re-render of Navbar on drawer open unless another popover is actually open
     if (openMenusRef.current.notif) setNotifOpen(false);
     if (openMenusRef.current.profile) setProfileDropdownOpen(false);
@@ -416,82 +420,51 @@ export default function Navbar() {
     drawerTriggerRef.current?.setAttribute('aria-expanded', 'true');
 
     if (!drawer.open) {
+      delete drawer.dataset.state;
       drawer.showModal();
     }
 
-    const supportsInitialTarget =
-      typeof CSS !== 'undefined' &&
-      typeof CSS.supports === 'function' &&
-      CSS.supports('scroll-initial-target', 'nearest');
-
-    if (!supportsInitialTarget) {
-      scroller.scrollTo({ left: scroller.offsetWidth, behavior: 'instant' });
-      await new Promise<void>((r) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => r()))
-      );
-    }
-
-    if (drawer.open && drawerPhaseRef.current === 'opening') {
-      scroller.scrollTo({ left: 0, behavior: 'auto' });
-    }
+    // Trigger 200ms GPU compositor slide-in on the very next frame
+    drawerOpenRafRef.current = window.requestAnimationFrame(() => {
+      drawerOpenRafRef.current = null;
+      if (drawer.open) {
+        drawer.dataset.state = 'open';
+      }
+    });
   }, []);
 
   const closeDrawer = useCallback((immediate = false) => {
     const drawer = drawerRef.current;
-    const scroller = drawerScrollerRef.current;
     if (!drawer || !drawer.open) {
       drawerTriggerRef.current?.setAttribute('aria-expanded', 'false');
-      drawerPhaseRef.current = 'closed';
       return;
+    }
+    if (drawerOpenRafRef.current !== null) {
+      window.cancelAnimationFrame(drawerOpenRafRef.current);
+      drawerOpenRafRef.current = null;
     }
     if (immediate) {
       finalizeDrawerClosed();
       return;
     }
-    drawerPhaseRef.current = 'closing';
-    if (scroller) {
-      scroller.scrollTo({ left: scroller.offsetWidth, behavior: 'auto' });
-    }
+
+    drawerTriggerRef.current?.setAttribute('aria-expanded', 'false');
+    delete drawer.dataset.state;
+
     if (closeFallbackTimerRef.current !== null) {
       window.clearTimeout(closeFallbackTimerRef.current);
     }
     closeFallbackTimerRef.current = window.setTimeout(() => {
       finalizeDrawerClosed();
-    }, 420);
+    }, 185);
   }, [finalizeDrawerClosed]);
 
-  // Native top-layer <dialog> scroll-snap drawer observer, dismissal, and backdrop fallback
+  // Native top-layer <dialog> drawer dismissal & Escape handling
   useEffect(() => {
     const drawer = drawerRef.current;
-    const scroller = drawerScrollerRef.current;
     const sheet = drawerSheetRef.current;
-    if (!drawer || !scroller || !sheet) return;
+    if (!drawer || !sheet) return;
     drawerTriggerRef.current?.setAttribute('aria-expanded', drawer.open ? 'true' : 'false');
-
-    const visibleThreshold = 1 / Math.max(320, window.innerWidth);
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries.at(-1);
-        if (!entry || !drawer.open) return;
-
-        if (entry.intersectionRatio >= visibleThreshold) {
-          drawerEnteredRef.current = true;
-        }
-        if (entry.intersectionRatio >= 0.98) {
-          drawerPhaseRef.current = 'open';
-          drawerTriggerRef.current?.setAttribute('aria-expanded', 'true');
-        } else if (
-          entry.intersectionRatio < visibleThreshold &&
-          (drawerPhaseRef.current === 'closing' ||
-            drawerPhaseRef.current === 'open' ||
-            drawerEnteredRef.current)
-        ) {
-          finalizeDrawerClosed();
-        }
-      },
-      { root: drawer, threshold: [visibleThreshold, 0.99] }
-    );
-    observer.observe(sheet);
 
     // Light-dismiss when tapping dimmed area outside the sheet
     const handleDialogClick = (event: MouseEvent) => {
@@ -501,7 +474,7 @@ export default function Navbar() {
     };
     drawer.addEventListener('click', handleDialogClick);
 
-    // Escape key: animate slide-out instead of instant jump-close
+    // Escape key: animate 160ms slide-out instead of instant jump-close
     const handleDialogCancel = (event: Event) => {
       if (event.cancelable) {
         event.preventDefault();
@@ -512,26 +485,12 @@ export default function Navbar() {
     };
     drawer.addEventListener('cancel', handleDialogCancel);
 
-    // Fallback backdrop fade when scroll-driven animation-timeline is unsupported
-    const supportsTimeline =
-      typeof CSS !== 'undefined' &&
-      typeof CSS.supports === 'function' &&
-      CSS.supports('animation-timeline: scroll()');
-    const handleFallbackScroll = () => {
-      const sheetW = sheet.offsetWidth || 310;
-      const ratio = Math.max(0, Math.min(1, 1 - scroller.scrollLeft / sheetW));
-      drawer.style.setProperty('--drawer-backdrop', ratio.toFixed(3));
-    };
-    if (!supportsTimeline) {
-      scroller.addEventListener('scroll', handleFallbackScroll, { passive: true });
-    }
-
     return () => {
-      observer.disconnect();
       drawer.removeEventListener('click', handleDialogClick);
       drawer.removeEventListener('cancel', handleDialogCancel);
-      if (!supportsTimeline) {
-        scroller.removeEventListener('scroll', handleFallbackScroll);
+      if (drawerOpenRafRef.current !== null) {
+        window.cancelAnimationFrame(drawerOpenRafRef.current);
+        drawerOpenRafRef.current = null;
       }
       if (closeFallbackTimerRef.current !== null) {
         window.clearTimeout(closeFallbackTimerRef.current);
@@ -1399,18 +1358,17 @@ export default function Navbar() {
       </header>
       </div>
 
-      {/* Native Top-Layer Mobile Navigation Drawer (60fps Compositor Scroll-Snap) */}
+      {/* Native Top-Layer Mobile Navigation Drawer (Snappy 200ms 60fps Compositor) */}
       <dialog
         ref={drawerRef}
         id="mobile-nav-drawer"
         aria-label="Gezinme menüsü"
         className="koup-drawer lg:hidden"
       >
-        <div ref={drawerScrollerRef} className="koup-drawer-scroller">
-          <nav
-            ref={drawerSheetRef}
-            className="koup-drawer-sheet p-4 sm:p-5 no-scrollbar"
-          >
+        <nav
+          ref={drawerSheetRef}
+          className="koup-drawer-sheet p-4 sm:p-5 no-scrollbar"
+        >
             {/* Drawer Top Header + Navigation Links */}
             <div className="relative z-10 flex flex-col min-h-0 flex-1">
               {/* Brand Header */}
@@ -1694,7 +1652,6 @@ export default function Navbar() {
               )}
             </div>
           </nav>
-        </div>
       </dialog>
 
       {/* Mobile Fullscreen Search Overlay Modal */}
