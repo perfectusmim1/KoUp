@@ -10,6 +10,7 @@ KoUp yönetim paneli (`/admin`), platformun içerik otomasyonunu, katalog bakım
 - **Topluluk Seri İstekleri (`AdminSeriesRequests`):** Kullanıcıların AniList, TMDB, MyDramaList ve IMDb üzerinden talep ettiği serilerin incelenmesi, site içi katalogla eşleştirilip onaylanması veya reddedilmesi.
 - **Seri Eşleme Kuyruğu (`AdminMatchQueue`):** Sağlayıcılardan gelen ham içeriklerin ana katalogdaki serilerle otomatik ve manuel eşleştirilmesi.
 - **Seri Otomasyonu (`AdminSeriesAutomation`):** Hedef sitelerden otomatik bölüm takibi, cron periyotları ve yeni bölüm çekme görevleri.
+- **Performans & Benchmark Laboratuvarı (`AdminBenchmarkSuite` — Yalnızca Admin):** PC (`1x`), Yüksek Mobil (`2x`), Orta Mobil (`4x`) ve Düşük Mobil (`6x`) profillerinde tüm sayfaları canlı yükleyerek TTFB, FCP, LCP, CLS, TBT, FPS, canlı buton tıklama gecikmesi (INP), DOM boyutu, yatay taşma ve konsol hatalarını ölçen, `/api/admin/benchmark` üzerinden Supabase/R2/Edge API sürelerini sınayan ve darboğaz raporu (JSON/Markdown) üreten modül. Moderatörler veya standart kullanıcılar bu sekmeyi göremez ve API ucuna erişemez (`401`/`403`).
 - **Ayarlar, İnceleme & Bildirimler (`AdminSettingsAndAudit`):** Yayın duyuruları (Broadcast Notification), sistem sağlığı ve audit logları.
 
 ---

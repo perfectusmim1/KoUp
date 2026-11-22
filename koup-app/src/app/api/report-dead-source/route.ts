@@ -291,10 +291,19 @@ async function probeSourceDeadStatus(
         ? `https://shortizle.com${parsed.pathname}`
         : streamUrl;
       const { response: wRes } = await safeFetch(watchUrl, {
-        headers: { 'User-Agent': COMMON_UA, Referer: 'https://shortizle.com/' },
+        headers: {
+          'User-Agent': COMMON_UA,
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+          Referer: 'https://shortizle.com/',
+        },
         signal: AbortSignal.timeout(6000),
       });
       if (!wRes.ok) {
+        // HTTP 403/429/502/503 from Cloudflare/WAF on datacenter IPs does NOT mean the video is deleted
+        if (wRes.status === 403 || wRes.status === 429 || wRes.status >= 500) {
+          return { verifiedDead: false, httpStatus: wRes.status, probeReason: `shortizle_waf_${wRes.status}` };
+        }
         return { verifiedDead: true, httpStatus: wRes.status, probeReason: `shortizle_http_${wRes.status}` };
       }
       const wHtml = await wRes.text();

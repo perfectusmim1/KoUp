@@ -93,7 +93,7 @@ function DirectMediaCardComponent({
     <Link
       href={`/seri/${item.slug}`}
       aria-label={displayTitle}
-      className="cv-card group relative block w-full aspect-[2/3] rounded-xl sm:rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 hover:border-white/30 shadow-md sm:shadow-[0_12px_28px_rgba(0,0,0,0.6)] md:hover:shadow-[0_18px_36px_rgba(0,0,0,0.85)] md:hover:scale-[1.03] active:scale-[0.98] transition-[transform,border-color] duration-200 ease-out select-none cursor-pointer"
+      className="group relative block w-full aspect-[2/3] rounded-xl sm:rounded-2xl overflow-hidden bg-[#0f0f11] border border-white/10 hover:border-white/30 focus-visible:border-white/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 shadow-[0_12px_28px_rgba(0,0,0,0.6)] hover:shadow-[0_18px_36px_rgba(0,0,0,0.85)] focus-visible:shadow-[0_18px_36px_rgba(0,0,0,0.85)] hover:scale-[1.03] focus-visible:scale-[1.03] active:scale-[0.98] hover:z-20 focus-visible:z-20 transition-all duration-200 ease-out select-none cursor-pointer"
     >
       {/* Poster Image */}
       <img
@@ -128,7 +128,7 @@ function DirectMediaCardComponent({
             target.src = '/logo-dark.png';
           }
         }}
-        className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 ease-out md:group-hover:scale-105"
+        className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 ease-out group-hover:scale-105 group-focus-visible:scale-105"
       />
 
       {/* Top Gradient for badges */}
@@ -198,7 +198,7 @@ function DirectMediaCardComponent({
           </div>
         )}
 
-        <h3 className="text-xs sm:text-[14px] font-bold text-white leading-snug line-clamp-2 group-hover:text-sky-300 transition-colors">
+        <h3 className="text-xs sm:text-[14px] font-bold text-white leading-snug line-clamp-2 group-hover:text-sky-300 group-focus-visible:text-sky-300 transition-colors">
           {displayTitle}
         </h3>
 

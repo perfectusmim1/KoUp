@@ -62,12 +62,12 @@ function ShortsRailComponent({
 
       <div
         ref={scrollRef}
-        className="flex items-center gap-3.5 sm:gap-4.5 overflow-x-auto overflow-y-hidden overscroll-x-contain pb-4 no-scrollbar [-webkit-overflow-scrolling:touch] max-w-full"
+        className="flex items-center gap-3.5 sm:gap-4.5 overflow-x-auto overflow-y-hidden overscroll-x-contain py-5 -my-5 px-3 -mx-3 scroll-px-3 no-scrollbar [-webkit-overflow-scrolling:touch] max-w-[calc(100%+1.5rem)]"
       >
         {items.map((item, idx) => (
           <div
             key={`short-row-${item.id}`}
-            className="w-36 sm:w-44 md:w-48 shrink-0 snap-start"
+            className="w-36 sm:w-44 md:w-48 shrink-0 snap-start relative hover:z-20 focus-within:z-20"
           >
             <ShortsCard item={item} priority={idx < 4} />
           </div>

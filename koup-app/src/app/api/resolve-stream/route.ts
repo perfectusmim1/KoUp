@@ -1630,7 +1630,12 @@ export async function GET(req: NextRequest) {
           headers: {
             'User-Agent': commonUA,
             Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
             Referer: 'https://shortizle.com/',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'same-origin',
+            'Upgrade-Insecure-Requests': '1',
           },
           signal: AbortSignal.timeout(7000),
         });
@@ -1836,6 +1841,53 @@ export async function GET(req: NextRequest) {
           }
         }
       }
+
+      // Edge Worker Fallback: Vercel AWS IPs occasionally hit Cloudflare 403 on shortizle.com;
+      // route resolution through KoUp Cloudflare Edge Worker before giving up.
+      try {
+        const workerBase = (
+          process.env.NEXT_PUBLIC_CF_WORKER_URL ||
+          'https://koup-edge-worker.caganhuseyinerdil.workers.dev'
+        ).replace(/\/$/, '');
+        const edgeRes = await fetch(
+          `${workerBase}/shortizle?url=${encodeURIComponent(url)}`,
+          { signal: AbortSignal.timeout(9000) }
+        );
+        if (edgeRes.ok) {
+          const edgeJson = await edgeRes.json();
+          if (edgeJson?.ok && edgeJson?.streamUrl) {
+            const isHls = edgeJson.streamType !== 'mp4' && !String(edgeJson.streamUrl).includes('.mp4');
+            const cookieParam = edgeJson.shzCookie
+              ? `&shz_cookie=${encodeURIComponent(edgeJson.shzCookie)}`
+              : '';
+            const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(edgeJson.streamUrl)}&ref=${encodeURIComponent('https://shortizle.com/')}${cookieParam}`;
+            const subProxied = toShortizleSubUrl(edgeJson.subtitleUrl);
+            const subtitles = subProxied
+              ? [{ label: 'Türkçe', lang: 'tr', url: subProxied, default: true }]
+              : undefined;
+            const result = {
+              mode: isHls ? ('native_hls' as const) : ('native_mp4' as const),
+              streamType: isHls ? ('hls' as const) : ('mp4' as const),
+              streamUrl: proxiedStream,
+              directUrl: edgeJson.streamUrl,
+              qualities: [
+                {
+                  label: edgeJson.isDub
+                    ? '1080p Dublaj (Shortİzle)'
+                    : isHls
+                    ? '1080p Altyazı (Shortİzle)'
+                    : '1080p MP4',
+                  url: proxiedStream,
+                },
+              ],
+              subtitles,
+              fallbackIframe: edgeJson.watchUrl || watchUrl || url,
+            };
+            setCachedStream(url, result, 30 * 60 * 1000);
+            return NextResponse.json(result, { headers: CACHE_HEADERS });
+          }
+        }
+      } catch {}
 
       return NextResponse.json(
         { error: 'Shortİzle video kaynağı çözümlenemedi', isDead: true },

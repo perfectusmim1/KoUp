@@ -427,6 +427,209 @@ export default {
       }
     }
 
+    // 2.6 Shortİzle Edge Stream Resolver (bypasses Vercel AWS datacenter 403)
+    if (url.pathname === '/shortizle') {
+      const targetUrl = url.searchParams.get('url') || '';
+      const parsedTarget = isSafeHttpUrl(targetUrl);
+      if (!parsedTarget || !parsedTarget.hostname.toLowerCase().endsWith('shortizle.com')) {
+        return new Response(JSON.stringify({ ok: false, error: 'Forbidden shortizle target' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      try {
+        const ua =
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+        const watchParam = parsedTarget.searchParams.get('watch') || '';
+        const kindParam = (parsedTarget.searchParams.get('kind') || '').toLowerCase();
+        const mediaIdMatch = parsedTarget.pathname.match(/\/media\/[^/]+\/(\d+)/i);
+        const targetSourceId = mediaIdMatch?.[1] ? Number(mediaIdMatch[1]) : null;
+
+        let watchUrl = '';
+        if (watchParam) {
+          watchUrl = watchParam.startsWith('http')
+            ? watchParam
+            : `https://shortizle.com${watchParam.startsWith('/') ? '' : '/'}${watchParam}`;
+        } else if (parsedTarget.pathname.startsWith('/watch/')) {
+          watchUrl = `https://shortizle.com${parsedTarget.pathname}`;
+        } else if (parsedTarget.pathname.startsWith('/embed/')) {
+          watchUrl = `https://shortizle.com${parsedTarget.pathname.replace(/^\/embed\//i, '/watch/')}`;
+        }
+
+        if (!watchUrl || !isSafeHttpUrl(watchUrl)?.hostname.toLowerCase().endsWith('shortizle.com')) {
+          return new Response(JSON.stringify({ ok: false, error: 'Invalid shortizle watchUrl' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const watchResp = await fetch(watchUrl, {
+          headers: {
+            'User-Agent': ua,
+            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+            Referer: 'https://shortizle.com/',
+            'Upgrade-Insecure-Requests': '1',
+          },
+        });
+
+        if (!watchResp.ok) {
+          return new Response(
+            JSON.stringify({ ok: false, status: watchResp.status, error: `watch_http_${watchResp.status}` }),
+            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const rawCookies =
+          typeof watchResp.headers.getSetCookie === 'function'
+            ? watchResp.headers.getSetCookie()
+            : (watchResp.headers.get('set-cookie') || '').split(/,(?=\s*[a-zA-Z0-9_-]+=)/);
+        const cookiePairs = rawCookies
+          .map((c) => c.split(';')[0]?.trim())
+          .filter(Boolean)
+          .join('; ');
+
+        const watchHtml = await watchResp.text();
+        let inertiaProps = null;
+
+        const appScriptMatch = watchHtml.match(/<script[^>]*data-page=["']app["'][^>]*>([\s\S]*?)<\/script>/i);
+        if (appScriptMatch?.[1]) {
+          try {
+            inertiaProps = JSON.parse(appScriptMatch[1].trim())?.props;
+          } catch {}
+        }
+        if (!inertiaProps) {
+          const dpMatch = watchHtml.match(/data-page="([^"]+)"/i);
+          if (dpMatch?.[1] && dpMatch[1].trim().startsWith('{')) {
+            try {
+              const unescaped = dpMatch[1]
+                .replace(/&quot;/g, '"')
+                .replace(/&amp;/g, '&')
+                .replace(/&#039;/g, "'")
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>');
+              inertiaProps = JSON.parse(unescaped)?.props;
+            } catch {}
+          }
+        }
+
+        const extSources = inertiaProps?.externalSources || {};
+        const candidates = [];
+        const order = kindParam === 'dublaj' ? ['dublaj', 'altyazi'] : ['altyazi', 'dublaj'];
+        for (const k of order) {
+          if (Array.isArray(extSources[k])) candidates.push(...extSources[k]);
+        }
+
+        const matched = targetSourceId ? candidates.find((c) => Number(c?.id) === targetSourceId) : null;
+        const evalList = matched ? [matched, ...candidates.filter((c) => c !== matched)] : candidates;
+
+        for (const cand of evalList) {
+          if (!cand) continue;
+          if (cand.url && (cand.url.includes('.m3u8') || cand.url.includes('.mp4'))) {
+            return new Response(
+              JSON.stringify({
+                ok: true,
+                streamUrl: cand.url,
+                streamType: cand.url.includes('.m3u8') ? 'hls' : 'mp4',
+                subtitleUrl: cand.subtitle_url || null,
+                shzCookie: '',
+                watchUrl,
+                isDub: kindParam === 'dublaj',
+              }),
+              {
+                status: 200,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+              }
+            );
+          }
+
+          if (cand.resolve_url) {
+            const resolveFullUrl = cand.resolve_url.startsWith('http')
+              ? cand.resolve_url
+              : `https://shortizle.com${cand.resolve_url}`;
+            try {
+              const resResp = await fetch(resolveFullUrl, {
+                headers: {
+                  'User-Agent': ua,
+                  Accept: 'application/json, text/plain, */*',
+                  'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+                  Referer: watchUrl,
+                  Cookie: cookiePairs,
+                  'X-Requested-With': 'XMLHttpRequest',
+                },
+              });
+              if (!resResp.ok) continue;
+              const resJson = await resResp.json();
+              let finalM3u8 = null;
+              let shzMediaCookie = '';
+
+              if (resJson?.gateway_bootstrap?.url && resJson?.gateway_bootstrap?.token) {
+                const authResp = await fetch(resJson.gateway_bootstrap.url, {
+                  method: 'POST',
+                  headers: {
+                    'User-Agent': ua,
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    Origin: 'https://shortizle.com',
+                    Referer: 'https://shortizle.com/',
+                  },
+                  body: JSON.stringify({ token: resJson.gateway_bootstrap.token }),
+                });
+                if (authResp.ok) {
+                  const authCookies =
+                    typeof authResp.headers.getSetCookie === 'function'
+                      ? authResp.headers.getSetCookie()
+                      : [authResp.headers.get('set-cookie') || ''];
+                  for (const ac of authCookies) {
+                    const m = ac.match(/__Host-shortizle_media=([a-f0-9]+)/i);
+                    if (m?.[1]) {
+                      shzMediaCookie = m[1];
+                      break;
+                    }
+                  }
+                  const authJson = await authResp.json();
+                  if (authJson?.url) finalM3u8 = authJson.url;
+                }
+              } else if (resJson?.url) {
+                finalM3u8 = resJson.url.startsWith('/') ? `https://shortizle.com${resJson.url}` : resJson.url;
+              }
+
+              if (finalM3u8) {
+                return new Response(
+                  JSON.stringify({
+                    ok: true,
+                    streamUrl: finalM3u8,
+                    streamType: finalM3u8.includes('.mp4') ? 'mp4' : 'hls',
+                    subtitleUrl: cand.subtitle_url || resJson.subtitle_url || null,
+                    shzCookie: shzMediaCookie,
+                    watchUrl,
+                    isDub: (Boolean(cand.selection_key) && kindParam === 'dublaj') || finalM3u8.includes('cut=dub'),
+                  }),
+                  {
+                    status: 200,
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+                  }
+                );
+              }
+            } catch {
+              continue;
+            }
+          }
+        }
+
+        return new Response(JSON.stringify({ ok: false, error: 'shortizle_no_stream' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } catch (err) {
+        return new Response(JSON.stringify({ ok: false, error: String(err) }), {
+          status: 502,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     // 3. Universal Stream Resolver / Header Bypass (Vidmoly, Sibnet, Ok.ru)
     if (url.pathname === '/resolve') {
       const targetUrl = url.searchParams.get('url');

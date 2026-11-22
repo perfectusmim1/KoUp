@@ -2097,12 +2097,12 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
           >
             <div
               ref={shortDramasScrollRef}
-              className="flex items-center gap-3.5 sm:gap-4.5 overflow-x-auto overflow-y-hidden overscroll-x-contain pb-4 no-scrollbar [-webkit-overflow-scrolling:touch] max-w-full"
+              className="flex items-center gap-3.5 sm:gap-4.5 overflow-x-auto overflow-y-hidden overscroll-x-contain py-5 -my-5 px-3 -mx-3 scroll-px-3 no-scrollbar [-webkit-overflow-scrolling:touch] max-w-[calc(100%+1.5rem)]"
             >
               {shortDramaItems.map((item, idx) => (
                 <div
                   key={`short-row-${item.id}`}
-                  className="w-36 sm:w-44 md:w-48 shrink-0 snap-start"
+                  className="w-36 sm:w-44 md:w-48 shrink-0 snap-start relative hover:z-20 focus-within:z-20"
                 >
                   <ShortsCard item={item} priority={idx < 4} />
                 </div>
@@ -2144,7 +2144,7 @@ const DeferredSection = memo(function DeferredSection({
   const { isMounted, ref } = useDeferredMount(order);
 
   return (
-    <section ref={ref} className={`${className} [contain:layout_paint_style]`}>
+    <section ref={ref} className={`${className} [contain:layout_style]`}>
       {typeof children === 'function' ? (
         children(isMounted)
       ) : (
@@ -2257,7 +2257,7 @@ const PersonalizedRecommendationsSection = memo(function PersonalizedRecommendat
       ) : (
         <div className="w-full flex flex-col">
           {/* Initial Grid (Lightweight, Direct-Click Poster Cards) */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 w-full">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 w-full py-3 -my-3 px-2 -mx-2">
             {initialItems.map((item, idx) => (
               <DirectMediaCard
                 key={item.id}
@@ -2276,9 +2276,9 @@ const PersonalizedRecommendationsSection = memo(function PersonalizedRecommendat
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
                 transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-                className="overflow-hidden mt-3 sm:mt-4"
+                className="overflow-hidden mt-3 sm:mt-4 px-2 -mx-2"
               >
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 w-full py-1">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 w-full py-3">
                   {extraItems.map((item) => (
                     <DirectMediaCard
                       key={item.id}

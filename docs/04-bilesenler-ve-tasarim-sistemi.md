@@ -441,10 +441,10 @@ KoUp tasarım tutarlılığını korumak için buton, girdi, modal ve sayfalama 
 - **Dosyalar:** [`koup-app/src/components/home/ShortsRail.tsx`](../koup-app/src/components/home/ShortsRail.tsx) ve [`koup-app/src/components/shorts/ShortsCard.tsx`](../koup-app/src/components/shorts/ShortsCard.tsx)
 - **Amaç:** Dikey kısa drama yapımlarını 9:16 oranında sinematik afişlerle vitrinde ve arama sonuçlarında sergiler.
 - **Nerede Kullanılır:** `HomeClient.tsx`, `kesfet/page.tsx`.
-- **Önemli Davranış:** `ShortsCard` tıklandığında doğrudan ilgili kısa dramanın dikey oynatıcı rotasına (`/seri/[slug]/1`) atlar. `ShortsCard`, `ShortsRail` ve `ShortsWatchClient` Apple TV+ estetiğine uygun sade kart geçişleri ve `motion` / `prefers-reduced-motion` uyumuyla çalışır.
+- **Önemli Davranış:** `ShortsCard` tıklandığında doğrudan ilgili kısa dramanın dikey oynatıcı rotasına (`/seri/[slug]/1`) atlar. `ShortsRail` ve [`HomeClient.tsx`](../koup-app/src/app/HomeClient.tsx) yatay kaydırma şeritlerinde `py-5 -my-5 px-3 -mx-3` iç tamponu ve `[contain:layout_style]` kullanılarak `hover:scale-[1.03]` odak büyümesinin kart kenarlarından kesilmesi engellenir.
 
 ### 4 Kademeli Performans & Kart Optimizasyonları
-- **Kart Bileşenleri ([DirectMediaCard.tsx](../koup-app/src/components/DirectMediaCard.tsx), [AccordionMediaCard.tsx](../koup-app/src/components/AccordionMediaCard.tsx)):** `React.memo`, gecikmeli görsel çözme (`decoding="async"` / `loading="lazy"`) ve `.cv-auto` (`content-visibility: auto`) ile düşük/orta seviye mobil cihazlarda (`4x`/`6x` CPU profili) ana iş parçacığı yükü azaltılır.
+- **Kart Bileşenleri ([DirectMediaCard.tsx](../koup-app/src/components/DirectMediaCard.tsx), [AccordionMediaCard.tsx](../koup-app/src/components/AccordionMediaCard.tsx)):** `React.memo`, gecikmeli görsel çözme (`decoding="async"` / `loading="lazy"`) ve `.cv-auto` (`content-visibility: auto`) ile düşük/orta seviye mobil cihazlarda ana iş parçacığı yükü azaltılır. `DirectMediaCard` ("Sana Özel Önerilen Yapımlar") odak/hover geçişi `ShortsCard` ile birebir hizalanmıştır (`transition-all duration-200 ease-out`, `scale-[1.03]`, `group-hover:scale-105` 300ms iç görsel).
 - **Kök Yerleşim & CSS ([layout.tsx](../koup-app/src/app/layout.tsx), [globals.css](../koup-app/src/app/globals.css)):** Kırpılmış font ağırlıkları, `preconnect` / `dns-prefetch` kaynak ipuçları ve `@media (prefers-reduced-motion: reduce)` desteği bulunur.
 
 ---

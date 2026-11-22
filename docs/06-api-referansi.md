@@ -110,6 +110,7 @@ flowchart TD
 | 11 | `/api/admin/series-automation/search` | `GET` | Admin | 12 sn timeout | `force-dynamic`, `revalidate: 0` |
 | 12 | `/api/admin/series-automation/sync` | `POST` | Admin | 15 istek / dk | `force-dynamic`, NDJSON stream |
 | 13 | `/api/admin/sync-series` | `GET`, `POST` | Admin | Standart | `no-store`, NDJSON stream |
+| 13b | `/api/admin/benchmark` | `GET`, `POST` | Yalnızca Admin (`allowModerator: false`) | 30 GET / 15 POST / dk | `force-dynamic`, `revalidate: 0` |
 | 14 | `/api/media/auto-enrich` | `GET`, `POST` | Public | Standart | `force-dynamic`, `no-store` |
 | 15 | `/api/media/cast` | `GET` | Public | Standart | `public, s-maxage=86400, stale-while-revalidate=604800` |
 | 16 | `/api/media/trailer` | `GET` | Public | Standart (6 saat in-memory LRU) | `public, s-maxage=3600, stale-while-revalidate=86400` |

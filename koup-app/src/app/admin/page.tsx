@@ -51,6 +51,7 @@ import {
   ArrowUp,
   ArrowDown,
   Zap,
+  Gauge,
 } from 'lucide-react';
 import { supabase, MediaItem, formatContentTypeTR, getProxiedImageUrl } from '@/lib/supabase';
 import { invalidateCache } from '@/lib/cache';
@@ -67,6 +68,7 @@ import AdminMaintenanceHub, { SystemHealthData, AdminJobRow } from '@/components
 import AdminSettingsAndAudit, { AuditLogRow } from '@/components/admin/AdminSettingsAndAudit';
 import AdminSeriesRequests from '@/components/admin/AdminSeriesRequests';
 import AdminMatchQueue from '@/components/admin/AdminMatchQueue';
+import AdminBenchmarkSuite from '@/components/admin/AdminBenchmarkSuite';
 import { usePillDragTracking } from '@/hooks/usePillDragTracking';
 
 type AdminTab =
@@ -80,6 +82,7 @@ type AdminTab =
   | 'comments'
   | 'scrapers'
   | 'maintenance'
+  | 'benchmark'
   | 'reports'
   | 'broadcast'
   | 'settings'
@@ -656,6 +659,7 @@ export default function AdminDashboardPage() {
       'comments',
       'scrapers',
       'maintenance',
+      'benchmark',
       'reports',
       'broadcast',
       'settings',
@@ -3077,6 +3081,7 @@ export default function AdminDashboardPage() {
           { id: 'comments', label: 'Yorum Moderasyonu', icon: MessageSquare, badge: stats.totalComments, glow: 'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(160,185,129,0.45)] border border-emerald-400/40' },
           { id: 'scrapers', label: 'Scraper Botları & Cron', icon: Radio, adminOnly: true, glow: 'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_0_18px_rgba(16,185,129,0.45)] border border-emerald-400/40' },
           { id: 'maintenance', label: 'Bakım & Sağlık', icon: Wrench, adminOnly: true, glow: 'bg-gradient-to-r from-amber-500 to-orange-600 shadow-[0_0_18px_rgba(245,158,11,0.45)] border border-amber-400/40' },
+          { id: 'benchmark', label: 'Performans & Benchmark', icon: Gauge, adminOnly: true, glow: 'bg-gradient-to-r from-cyan-500 to-blue-600 shadow-[0_0_18px_rgba(6,182,212,0.45)] border border-cyan-400/40' },
           { id: 'reports', label: 'Sorun Bildirimleri', icon: AlertTriangle, badge: stats.openReports, adminOnly: true, glow: 'bg-gradient-to-r from-rose-500 to-red-600 shadow-[0_0_18px_rgba(244,63,94,0.45)] border border-rose-400/40' },
           { id: 'broadcast', label: 'Toplu Bildirim', icon: Send, adminOnly: true, glow: 'bg-gradient-to-r from-indigo-500 to-purple-600 shadow-[0_0_18px_rgba(99,102,241,0.45)] border border-indigo-400/40' },
           { id: 'settings', label: 'Site Ayarları', icon: Settings, adminOnly: true, glow: 'bg-gradient-to-r from-slate-500 to-zinc-600 shadow-[0_0_18px_rgba(148,163,184,0.45)] border border-slate-400/40' },
@@ -5522,6 +5527,9 @@ export default function AdminDashboardPage() {
         <AdminSeriesRequests onPendingCountChange={setPendingSeriesRequestsCount} />
       )}
 
+      {/* ================= TAB: PERFORMANS & BENCHMARK (ADMIN ONLY) ================= */}
+      {isAdmin && activeTab === 'benchmark' && <AdminBenchmarkSuite />}
+
       {/* ================= TAB: SİTE AYARLARI & DENETİM KAYDI ================= */}
       {(activeTab === 'settings' || activeTab === 'audit_log') && (
         <AdminSettingsAndAudit
@@ -6615,6 +6623,7 @@ export default function AdminDashboardPage() {
                   { id: 'match_queue', label: 'Eşleşme & Domain Yönetimi', desc: 'Onay bekleyen scraper eşleşmeleri ve dinamik domainler', tab: 'match_queue' as AdminTab, adminOnly: true },
                   { id: 'scrapers', label: 'Scraper Botları & Cron Merkezi', desc: 'Botları çalıştır, gerçek başarı oranlarını incele', tab: 'scrapers' as AdminTab, adminOnly: true },
                   { id: 'maintenance', label: 'Bakım & Tam Senkron Merkezi', desc: 'Auto-heal, mükerrer birleştirme, R2 & Supabase senkron', tab: 'maintenance' as AdminTab, adminOnly: true },
+                  { id: 'benchmark', label: 'Performans & Benchmark Laboratuvarı', desc: 'PC + 3 kademeli mobil (2x/4x/6x) sayfa ve etkileşim testi', tab: 'benchmark' as AdminTab, adminOnly: true },
                   { id: 'comments', label: 'Yorum Moderasyonu', desc: 'Kelime filtreli toplu yorum denetimi', tab: 'comments' as AdminTab, adminOnly: false },
                   { id: 'reports', label: 'Sorun Bildirimleri (Triage)', desc: 'Kırık bölüm bildirimlerini incele ve çöz', tab: 'reports' as AdminTab, adminOnly: true },
                   { id: 'broadcast', label: 'Toplu Bildirim Merkezi', desc: 'Tüm üyelere veya dizi takipçilerine RPC duyuru gönder', tab: 'broadcast' as AdminTab, adminOnly: true },

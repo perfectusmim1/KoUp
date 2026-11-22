@@ -50,5 +50,26 @@ r2_bundles/
 scrapers/ddizi_catalog.json
 scripts/reports/
 audit_reports/
+logs/
 *.log
 .agents/
+
+# AI Coding Agents, IDE Configs & Local Graph Caches
+.claude/
+.gemini/
+.gitnexus/
+.trail/
+.cursor/
+.windsurf/
+.vscode/
+.idea/
+AGENTS.md
+CLAUDE.md
+opencode.json
+.ignore
+*.bak
+*.tmp
+*.dump
+nul
+.vercel/
+**/.vercel/
