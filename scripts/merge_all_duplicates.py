@@ -117,13 +117,52 @@ def get_clean_title(t: str) -> str:
 
 def extract_markers(title: str) -> set[str]:
     t_clean = str(title or "").lower()
-    t_no_year = re.sub(r"\b(19\d\d|20\d\d)\b", "", t_clean)
+    t_clean = re.sub(r"\(\s*(?:ona|tv)\s*\)", " ", t_clean, flags=re.I)
+    t_no_year = re.sub(r"\b(?:19\d\d|20\d\d)\b", " ", t_clean)
     markers = set()
-    for p in SEQUEL_SPECIAL_PATTERNS:
+
+    # Normalize season expressions identically (Season 2 == 2. Sezon == 2nd Season == II -> s2; Season 1 omitted)
+    def _add_season(n_str: str):
+        n = int(n_str)
+        if 2 <= n <= 30:
+            markers.add(f"s{n}")
+
+    for m in re.finditer(
+        r"(?:season\s*0*(\d+)|0*(\d+)\.?\s*sezon|0*(\d+)(?:st|nd|rd|th)\s*(?:season|attack|stage)\b)",
+        t_no_year,
+        flags=re.I,
+    ):
+        _add_season(next(g for g in m.groups() if g is not None))
+    t_no_year = re.sub(
+        r"(?:season\s*0*\d+|\b0*\d+\.?\s*sezon\b|\b0*\d+(?:st|nd|rd|th)\s*(?:season|attack|stage)\b)",
+        " ",
+        t_no_year,
+        flags=re.I,
+    )
+
+    roman_map = {"ii": 2, "iii": 3, "iv": 4, "v": 5, "vi": 6, "vii": 7, "viii": 8, "ix": 9, "x": 10}
+    t_no_lupin = re.sub(r"\blupin\s+iii\b", "lupin", t_no_year)
+    for m in re.finditer(r"\b(ii|iii|iv|v|vi|vii|viii|ix|x)\b", t_no_lupin, flags=re.I):
+        markers.add(f"s{roman_map[m.group(1).lower()]}")
+    t_no_year = re.sub(r"\b(?:ii|iii|iv|v|vi|vii|viii|ix|x)\b", " ", t_no_year, flags=re.I)
+
+    for m in re.finditer(r"\b(?:part|kisim|cour)\s*0*(\d+)\b", t_no_year, flags=re.I):
+        n = int(m.group(1))
+        if n >= 2:
+            markers.add(f"p{n}")
+    t_no_year = re.sub(r"\b(?:part|kisim|cour)\s*0*\d+\b", " ", t_no_year, flags=re.I)
+
+    for p in (
+        r"\b(?:specials?|recap|prologue|epilogue|intermission|episode\s*0|extra\s*stage|side\s*[a-z]|final\s*series|final\s*season|kai)\b",
+        r"\b(?:ova|oav)\b",
+        r"\b(?:movie|\bfilm\b)\b",
+        r"\bfrance\b",
+    ):
         for f in re.findall(p, t_no_year, re.I):
             markers.add(f.strip().lower())
     for num in re.findall(r"\b\d{1,2}\b", t_no_year):
-        markers.add(num.strip())
+        if int(num) >= 2:
+            markers.add(num.strip())
     return markers
 
 
@@ -513,10 +552,10 @@ def dedupe_supabase_people_and_cast(dry_run: bool = False) -> dict:
 # PART B: SQLITE DRAMAS, EPISODES & EPISODE_SOURCES DEDUPLICATION
 # =====================================================================
 
-def _has_id_or_country_conflict(d1, d2) -> tuple[bool, str]:
+def _has_id_or_country_conflict(d1, d2, allow_scraper_country: bool = False) -> tuple[bool, str]:
     c1 = (d1[12] or "").strip().upper()
     c2 = (d2[12] or "").strip().upper()
-    if c1 and c2 and c1 != c2:
+    if c1 and c2 and c1 != c2 and not allow_scraper_country:
         return True, f"country_conflict:{c1}!={c2}"
 
     ct1, ct2 = (d1[3] or "").lower(), (d2[3] or "").lower()
@@ -544,20 +583,44 @@ def _has_id_or_country_conflict(d1, d2) -> tuple[bool, str]:
     return False, "ok"
 
 
-def _years_compatible(y1, y2) -> bool:
+_SCRAPER_PLACEHOLDER_YEARS = {1999, 2024, 2025, 2026}
+
+
+def _years_compatible(y1, y2, allow_placeholder: bool = False) -> bool:
     if not y1 or not y2:
         return True
     try:
         yi1, yi2 = int(str(y1)[:4]), int(str(y2)[:4])
         if yi1 > 1900 and yi2 > 1900:
-            return abs(yi1 - yi2) <= 1
+            if abs(yi1 - yi2) <= 1:
+                return True
+            if allow_placeholder and (yi1 in _SCRAPER_PLACEHOLDER_YEARS or yi2 in _SCRAPER_PLACEHOLDER_YEARS):
+                return True
+            return False
     except Exception:
         pass
     return True
 
 
+def _strip_season_words(s: str) -> str:
+    t = re.sub(r"\(\s*(?:ona|tv)\s*\)", " ", str(s or ""), flags=re.I)
+    t = re.sub(r"\s+(?:2?20\d\d\s+)?(?:kore|cin|japon|tayland|tayvan|filipinler)\b.*$", "", t, flags=re.I)
+    t = re.sub(r"\s+(?:\d+\.?\s*sezon|season\s*\d*|\d+(?:st|nd|rd|th)\s*(?:season|attack))\b", "", t, flags=re.I)
+    return t.strip()
+
+
 def _are_drama_duplicates(d1, d2) -> tuple[bool, str]:
-    conflict, reason = _has_id_or_country_conflict(d1, d2)
+    al1, al2 = str(d1[6] or "").strip(), str(d2[6] or "").strip()
+    im1, im2 = str(d1[7] or "").strip(), str(d2[7] or "").strip()
+    mdl1, mdl2 = extract_mdl_key(d1[15]), extract_mdl_key(d2[15])
+    tm1, tm2 = str(d1[8] or "").strip(), str(d2[8] or "").strip()
+
+    has_al_eq = bool(al1 and al1 not in ("0", "None", "") and al1 == al2)
+    has_im_eq = bool(im1.startswith("tt") and im1 == im2)
+    has_mdl_eq = bool(mdl1 and mdl1 == mdl2)
+    has_tm_eq = bool(tm1 and tm1 not in ("0", "None", "") and tm1 == tm2)
+
+    conflict, reason = _has_id_or_country_conflict(d1, d2, allow_scraper_country=(has_mdl_eq or has_al_eq))
     if conflict:
         return False, reason
 
@@ -567,44 +630,52 @@ def _are_drama_duplicates(d1, d2) -> tuple[bool, str]:
     if m1 != m2:
         return False, f"season_or_special_marker_mismatch:{m1}!={m2}"
 
-    if not _years_compatible(d1[4], d2[4]):
+    if not _years_compatible(d1[4], d2[4], allow_placeholder=(has_mdl_eq or has_al_eq or has_im_eq or has_tm_eq)):
         return False, "year_mismatch"
 
-    clean1 = normalize_title(get_clean_title(d1[1]))
-    clean2 = normalize_title(get_clean_title(d2[1]))
+    clean1 = normalize_title(get_clean_title(_strip_season_words(d1[1])))
+    clean2 = normalize_title(get_clean_title(_strip_season_words(d2[1])))
+    pref1 = normalize_title(_strip_season_words((d1[1] or "").split(":", 1)[0]))
+    pref2 = normalize_title(_strip_season_words((d2[1] or "").split(":", 1)[0]))
     ct_kind = (d1[3] or "").lower()
     has_colon_diff = (":" in (d1[1] or "") or ":" in (d2[1] or "")) and clean1 != clean2
+    title_sim = SequenceMatcher(None, clean1, clean2).ratio() if (clean1 and clean2) else 0.0
+    pref_sim = SequenceMatcher(None, pref1, pref2).ratio() if (pref1 and pref2) else 0.0
+
+    both_have_colon = (":" in (d1[1] or "")) and (":" in (d2[1] or ""))
+    has_ep_bonus_mismatch = min(d1[13] or 0, d2[13] or 0) == 1 and max(d1[13] or 0, d2[13] or 0) >= 8
+    has_sequel_subtitle = bool(
+        re.search(r"\b(?:ramoon|aramoon|red sox|resurrection|revenge|seiran\s*[23]|twinkle)\b", f"{d1[1]} {d2[1]}", flags=re.I)
+    )
 
     # Exact external ID match (same movie/tv/anime kind, same season markers)
-    al1, al2 = str(d1[6] or "").strip(), str(d2[6] or "").strip()
-    if al1 and al1 not in ("0", "None", "") and al1 == al2:
-        if ct_kind != "film" and has_colon_diff and SequenceMatcher(None, clean1, clean2).ratio() < 0.72:
-            return False, "anilist_colon_subtitle_diff"
+    if has_al_eq:
+        if ct_kind != "film" and has_colon_diff:
+            if both_have_colon or has_ep_bonus_mismatch or title_sim < 0.72 and pref_sim < 0.85:
+                if not (not both_have_colon and not has_ep_bonus_mismatch and pref_sim >= 0.90 and not has_sequel_subtitle):
+                    return False, "anilist_colon_subtitle_diff"
         return True, "anilist_match"
 
-    im1, im2 = str(d1[7] or "").strip(), str(d2[7] or "").strip()
-    if im1.startswith("tt") and im1 == im2:
-        if ct_kind != "film" and has_colon_diff:
+    if has_im_eq:
+        if ct_kind != "film" and has_colon_diff and not has_mdl_eq:
             return False, "imdb_colon_subtitle_diff"
-        return True, "imdb_match"
+        if title_sim >= 0.72 or (has_tm_eq and has_mdl_eq) or (has_mdl_eq and pref_sim >= 0.85 and not has_sequel_subtitle):
+            return True, "imdb_match"
 
-    mdl1, mdl2 = extract_mdl_key(d1[15]), extract_mdl_key(d2[15])
-    if mdl1 and mdl1 == mdl2:
-        if ct_kind != "film" and has_colon_diff:
+    if has_mdl_eq:
+        if ct_kind != "film" and has_colon_diff and (both_have_colon or has_sequel_subtitle or pref_sim < 0.85):
             return False, "mdl_colon_subtitle_diff"
-        return True, "mdl_match"
+        if max(title_sim, pref_sim) >= 0.72 or (clean1 in clean2 or clean2 in clean1) or (has_tm_eq and has_im_eq):
+            return True, "mdl_match"
 
-    tm1, tm2 = str(d1[8] or "").strip(), str(d2[8] or "").strip()
-    if tm1 and tm1 not in ("0", "None", "") and tm1 == tm2:
+    if has_tm_eq:
         # TMDB groups all seasons/OVAs of a TV show under one tv_id.
         # Do not merge distinct seasons/subtitled entries unless clean titles match closely!
         if ct_kind != "film" and has_colon_diff:
             return False, "tmdb_tv_colon_subtitle_diff"
-        if clean1 == clean2 or SequenceMatcher(None, clean1, clean2).ratio() >= 0.72:
+        if clean1 == clean2 or title_sim >= 0.72:
             return True, "tmdb_match"
 
-    clean1 = normalize_title(get_clean_title(d1[1]))
-    clean2 = normalize_title(get_clean_title(d2[1]))
     if (":" in (d1[1] or "")) != (":" in (d2[1] or "")) and clean1 != clean2:
         return False, "colon_subtitle_mismatch"
     if clean1 and clean1 == clean2 and len(clean1) >= 4:
@@ -613,8 +684,7 @@ def _are_drama_duplicates(d1, d2) -> tuple[bool, str]:
     base_s1 = re.sub(r"-\d+$", "", (d1[2] or "").lower())
     base_s2 = re.sub(r"-\d+$", "", (d2[2] or "").lower())
     if base_s1 and base_s1 == base_s2 and len(base_s1) >= 4:
-        sim = SequenceMatcher(None, clean1, clean2).ratio()
-        if sim >= 0.85:
+        if title_sim >= 0.85:
             return True, "base_slug_match"
 
     return False, "no_match"
@@ -789,7 +859,28 @@ def dedupe_sqlite_dramas(conn: sqlite3.Connection, cur: sqlite3.Cursor, dry_run:
             if sync_remote:
                 from scrapers.supabase_sync_helper import sb_request
 
+                # Reassign FK-constrained user/community records to winner before deleting duplicate
+                for tbl in ("comments", "custom_lists", "media_view_events", "issue_reports", "dead_source_reports", "series_requests", "calendar_schedules"):
+                    try:
+                        sb_request("PATCH", f"/rest/v1/{tbl}?media_id=eq.{d_id}", body={"media_id": p_id})
+                    except Exception:
+                        pass
+                for tbl in ("user_media_progress", "episode_reactions"):
+                    try:
+                        rows = sb_request("GET", f"/rest/v1/{tbl}?media_id=eq.{d_id}&select=user_id")
+                        if isinstance(rows, list) and rows:
+                            ex_u = sb_request("GET", f"/rest/v1/{tbl}?media_id=eq.{p_id}&select=user_id")
+                            ex_set = {x.get("user_id") for x in (ex_u if isinstance(ex_u, list) else [])}
+                            for r in rows:
+                                uid = r.get("user_id")
+                                if uid and uid not in ex_set:
+                                    sb_request("PATCH", f"/rest/v1/{tbl}?media_id=eq.{d_id}&user_id=eq.{uid}", body={"media_id": p_id})
+                            sb_request("DELETE", f"/rest/v1/{tbl}?media_id=eq.{d_id}")
+                    except Exception:
+                        pass
+
                 sb_request("DELETE", f"/rest/v1/series_automations?media_id=eq.{d_id}")
+                sb_request("DELETE", f"/rest/v1/media_cast?media_id=eq.{d_id}")
                 sb_request("DELETE", f"/rest/v1/episodes?media_id=eq.{d_id}")
                 sb_request("DELETE", f"/rest/v1/media?id=eq.{d_id}")
 

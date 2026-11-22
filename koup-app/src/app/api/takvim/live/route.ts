@@ -698,16 +698,21 @@ export async function GET(req: NextRequest) {
         .map((c) => c.id)
     );
 
-    // Fetch ALL calendar_schedules so we also know multi-day air_days for each series
+    // Fetch fresh calendar_schedules updated within the last 8 days (excludes stale unpurged dumps)
+    const eightDaysAgoIso = new Date(Date.now() - 8 * 86400_000).toISOString();
     let query = db
       .from('calendar_schedules')
-      .select('*, media(*)');
+      .select('*, media(*)')
+      .gte('updated_at', eightDaysAgoIso);
 
     if (source && source !== 'all') {
       query = query.eq('source_site', source);
     }
 
-    const { data: allSchedules, error } = await query.order('id', { ascending: true });
+    const { data: allSchedules, error } = await query
+      .order('updated_at', { ascending: false })
+      .order('id', { ascending: true })
+      .limit(2000);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });

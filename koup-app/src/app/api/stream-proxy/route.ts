@@ -227,8 +227,8 @@ export async function GET(req: NextRequest) {
       referer = 'https://dizikorea3.com/';
       origin = 'https://dizikorea3.com';
     } else if (targetUrl.includes('diziyou')) {
-      referer = 'https://diziyou.one/';
-      origin = 'https://diziyou.one';
+      referer = 'https://www.diziyou.love/';
+      origin = 'https://www.diziyou.love';
     } else if (
       targetUrl.includes('dizibox') ||
       targetUrl.includes('molystream') ||
@@ -354,6 +354,9 @@ export async function GET(req: NextRequest) {
         try {
           origin = new URL(customRef).origin;
         } catch {}
+      } else if (targetUrl.includes('pilavyerplay')) {
+        origin = `${parsedTarget.protocol}//${parsedTarget.host}`;
+        referer = `${origin}/`;
       } else {
         referer = 'https://diziizle.cafe/';
         origin = 'https://diziizle.cafe';
@@ -621,7 +624,8 @@ export async function GET(req: NextRequest) {
       (targetUrl.includes('dtpasn.asia') && targetUrl.includes('/hls/')) ||
       targetUrl.includes('/m.php') ||
       targetUrl.includes('/l.php') ||
-      targetUrl.includes('/ld.php');
+      targetUrl.includes('/ld.php') ||
+      targetUrl.includes('/api/stream.php');
 
     if (isPlaylist) {
       const text = await upstreamRes.text();

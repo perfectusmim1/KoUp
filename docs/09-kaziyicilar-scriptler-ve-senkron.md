@@ -620,16 +620,22 @@ Proje kökünde ve uygulama dizininde yer alan statik veri ve denetim klasörler
 
 ---
 
-### 2026-11 Kazıyıcı, Otomasyon & Kurtarma Güncellemeleri
+### 2026-11 Kazıyıcı, Otomasyon, Takvim & Faz-1 Arşiv Onarım Güncellemeleri
 
 - **Otomasyon ve Çekirdek Sertleştirme:**
   - [`database.py`](../database.py): `row_to_dict()` yardımcısıyla SQLite tuple/Row dönüşüm çökmeleri giderildi.
   - [`scrapers/multisite.py`](../scrapers/multisite.py): URL normalizasyonu, kaynak tekilleştirme, ön-kayıt HTTP sağlık önbelleği, işbirlikçi `threading.Event` durdurma sinyali ve Turnstile/CF/403 engellerinde anında `SiteBlockedError` hızlı duruşu eklendi.
   - [`scrapers/shortdrama/common.py`](../scrapers/shortdrama/common.py) & [`koredizi.py`](../scrapers/shortdrama/koredizi.py): `content_type='kisa_drama'` zorlaması ve KoreDizi yinelenen hash ayrıştırma hatası düzeltildi; kontrol noktaları SQLite `scraper_checkpoints` tablosuna taşındı.
-- **Bakım ve Tam Arşiv Onarım Scriptleri:**
+- **Takvim & GitHub Actions Sağlamlaştırması:**
+  - [`scrapers/sites/animelvl.py`](../scrapers/sites/animelvl.py), [`scripts/sync_real_calendars.py`](../scripts/sync_real_calendars.py), [`scripts/cron_sync_pipeline.py`](../scripts/cron_sync_pipeline.py) ve [`koup-app/src/app/api/takvim/live/route.ts`](../koup-app/src/app/api/takvim/live/route.ts): Eski 4.134 satırlık tüm katalog dökümüne neden olan konteyner seçicisi sıkılaştırıldı; `next_episode_at`/`updated_at` bazlı 8 günlük aktif pencere (`>8g` bayat temizliği) ve PostgREST 1.000 satır kesilmesine karşı azalan sıralama eklendi.
+  - [`.github/workflows/admin_job.yml`](../.github/workflows/admin_job.yml), [`scraper_cron.yml`](../.github/workflows/scraper_cron.yml), [`sync_single_series.yml`](../.github/workflows/sync_single_series.yml): UTF-8 Türkçe mesaj bozulmaları temizlendi, `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true` ve `scraper_cron.yml` için `concurrency` kilidi eklendi.
+- **Bakım, Kadro, Seri Evreni & Çeviri Motorları:**
   - [`scripts/audit_and_heal_catalog.py`](../scripts/audit_and_heal_catalog.py): Yanlış `kisa_drama` etiketleri, sahte slug türevli bölüm numaraları ve eski `pending://gap` kalıntılarını temizler.
   - [`scripts/purge_dead_sources_full.py`](../scripts/purge_dead_sources_full.py): Sağlayıcı bazlı asenkron canlılık taraması yapar; Vidmoly burst-404 ayna yeniden deneme koruması, Mail.ru/OK.ru 404 doğrulaması ve `%50 [SAFETY_GUARD]` sigortası içerir.
-  - [`scripts/sync_cast_hierarchy.py`](../scripts/sync_cast_hierarchy.py): `--rebalance-anomalies` ve `apply_cast_for_batch` ile eksik AniList/TMDB kadrolarını doldurur ve tüm başrol/yardımcı rol dengesizliklerini sıfırlar.
+  - [`scripts/merge_all_duplicates.py`](../scripts/merge_all_duplicates.py): Sezon/sıra ifadeleri (`2nd`/`2. sezon`, `V`/`5. sezon`) normalize edildi, kullanıcı etkileşimleri (`comments`, `custom_lists`, `user_media_progress` vb.) korunarak aktarıldı; anime↔live-action ayrımı güvenceye alındı.
+  - [`scripts/sync_cast_hierarchy.py`](../scripts/sync_cast_hierarchy.py): Diziler için TMDB `/tv/{id}/aggregate_credits` önceliklendirildi (en fazla 6 başrol, bölüm/sıra dengesi), romanizasyon çifti oluşturmayı önleyen koruma, `--refresh-tv-leads` ve `--rebalance-anomalies` eklendi.
+  - [`scripts/build_franchise_graph.py`](../scripts/build_franchise_graph.py): Anime ve live-action evrenlerinin karışması tamamen engellendi, aynı ülke + `:` ön-ekli live-action spin-off evrenleri (`Dexter` vb.) bağlandı ve Supabase `franchise_items` yeniden yazılmadan önce bayat kayıtlar temizlenir hale getirildi.
+  - [`scrapers/translator.py`](../scrapers/translator.py): `translate_to_turkish()` öncelikli olarak `clients5.google.com` `POST` çeviri uç noktasını kullanacak şekilde güncellendi.
   - [`scripts/recover_and_heal_sources.py`](../scripts/recover_and_heal_sources.py): Kategori bazlı eksik bölüm ve boşluk kurtarma motoru (35 sn kısa-drama daemon zaman aşımı, `--max-minutes` süre tavanı ve `unfillable_gaps` raporlaması; Cloudflare Turnstile sitelerini atlar).
 
 ---

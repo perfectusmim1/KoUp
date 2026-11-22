@@ -206,14 +206,36 @@ def translate_to_turkish(text: str, max_retries: int = 3) -> str:
     clean_text = re.sub(r"<[^>]+>", " ", clean_text)
     clean_text = re.sub(r"\s+", " ", clean_text).strip()
 
-    url = (
-        "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=tr&dt=t&q="
-        + urllib.parse.quote(clean_text)
-    )
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     }
 
+    # Primary: clients5 multi-text capable POST endpoint (high throughput, reliable)
+    c5_url = "https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=tr"
+    c5_body = urllib.parse.urlencode([("q", clean_text)]).encode("utf-8")
+    for att in range(max_retries):
+        try:
+            req = urllib.request.Request(
+                c5_url,
+                data=c5_body,
+                headers={**headers, "Content-Type": "application/x-www-form-urlencoded"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                if isinstance(data, list) and data:
+                    first = data[0]
+                    translated = (first[0] if isinstance(first, list) else first)
+                    if isinstance(translated, str) and translated.strip():
+                        return translated.strip()
+        except Exception:
+            time.sleep(0.4 * (att + 1))
+
+    # Fallback: classic translate.googleapis.com gtx GET endpoint
+    url = (
+        "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=tr&dt=t&q="
+        + urllib.parse.quote(clean_text)
+    )
     for _ in range(max_retries):
         try:
             req = urllib.request.Request(url, headers=headers)

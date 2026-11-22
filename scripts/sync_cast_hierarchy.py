@@ -28,6 +28,7 @@ import urllib.request
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from difflib import SequenceMatcher
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
@@ -201,6 +202,22 @@ def norm_name(text: str) -> str:
     return re.sub(r"[^a-z0-9]", "", s)
 
 
+def phonetic_cjk(text: str) -> str:
+    if not text:
+        return ""
+    s = unicodedata.normalize("NFKD", str(text).lower()).encode("ascii", "ignore").decode("ascii")
+    s = re.sub(r"[^a-z]", "", s)
+    for a, b in (
+        ("yeo", "yo"), ("eo", "o"), ("eu", "u"), ("oo", "u"), ("ee", "i"), ("ae", "e"),
+        ("oe", "o"), ("jae", "je"), ("jun", "cun"), ("joon", "cun"), ("sun", "sun"),
+        ("soon", "sun"), ("shin", "sin"), ("shi", "si"), ("ji", "ci"), ("ch", "c"),
+        ("ph", "p"), ("kh", "k"), ("th", "t"), ("k", "g"), ("t", "d"), ("p", "b"),
+        ("r", "l"), ("y", "i"), ("w", "u"),
+    ):
+        s = s.replace(a, b)
+    return re.sub(r"(.)\1+", r"\1", s)
+
+
 def fetch_tmdb_cast_single(tmdb_key: str, item: tuple) -> tuple[int, list[dict]]:
     mid, tid, ctype = item
     is_movie = ctype == "film"
@@ -208,18 +225,25 @@ def fetch_tmdb_cast_single(tmdb_key: str, item: tuple) -> tuple[int, list[dict]]
         [f"https://api.themoviedb.org/3/movie/{tid}/credits?api_key={tmdb_key}"]
         if is_movie
         else [
-            f"https://api.themoviedb.org/3/tv/{tid}/credits?api_key={tmdb_key}",
             f"https://api.themoviedb.org/3/tv/{tid}/aggregate_credits?api_key={tmdb_key}",
+            f"https://api.themoviedb.org/3/tv/{tid}/credits?api_key={tmdb_key}",
         ]
     )
     for url in urls:
+        is_aggregate = "/aggregate_credits" in url
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "KoUp/1.0"})
             with urllib.request.urlopen(req, timeout=8) as resp:
                 if resp.status == 200:
                     raw_cast = (json.loads(resp.read().decode("utf-8"))).get("cast") or []
                     if raw_cast:
-                        raw_cast.sort(key=lambda x: x.get("order", 999))
+                        if is_aggregate:
+                            raw_cast.sort(key=lambda x: (x.get("order", 999), -(x.get("total_episode_count") or 0)))
+                            max_eps = max((c.get("total_episode_count") or 0) for c in raw_cast[:10]) or 1
+                        else:
+                            raw_cast.sort(key=lambda x: x.get("order", 999))
+                            max_eps = 0
+
                         planned = []
                         for idx, c in enumerate(raw_cast[:20], 1):
                             name = c.get("name") or c.get("original_name") or ""
@@ -231,7 +255,13 @@ def fetch_tmdb_cast_single(tmdb_key: str, item: tuple) -> tuple[int, list[dict]]
                             prof = c.get("profile_path")
                             img = f"https://image.tmdb.org/t/p/w500{prof}" if prof else None
                             ord_val = c.get("order", idx - 1)
-                            role = "lead" if (ord_val < 4 and idx <= 4) else "support"
+                            if is_movie:
+                                role = "lead" if (ord_val < 5 and idx <= 5) else "support"
+                            elif is_aggregate:
+                                ep_cnt = c.get("total_episode_count") or 0
+                                role = "lead" if (idx <= 6 and (ord_val < 5 or (max_eps >= 4 and ep_cnt >= max_eps * 0.45))) else "support"
+                            else:
+                                role = "lead" if (ord_val < 5 and idx <= 5) else "support"
                             planned.append({
                                 "name": name,
                                 "slug": slugify(name),
@@ -358,8 +388,36 @@ def apply_cast_for_batch(
     people_by_norm = people_idx["norm"]
     people_by_tmdb = people_idx["tmdb"]
     people_by_anilist = people_idx["anilist"]
+    people_by_id = people_idx.get("by_id") or {}
+
+    def _find_existing_media_romanization_pid(mid_val: int, item_obj: dict) -> int | None:
+        if (item_obj.get("person_type") or "actor") == "character" or not item_obj.get("tmdb_id"):
+            return None
+        pn_new = phonetic_cjk(item_obj["name"])
+        if len(pn_new) < 5:
+            return None
+        toks_new = [norm_name(t) for t in re.split(r"[\s\-\.]+", item_obj["name"]) if len(norm_name(t)) >= 2]
+        if not toks_new:
+            return None
+        for ex_row in existing_cast_by_media.get(mid_val, []):
+            epid = ex_row.get("person_id")
+            pobj = people_by_id.get(epid)
+            if not pobj or pobj.get("tmdb_id") or pobj.get("person_type") == "character":
+                continue
+            pname = pobj.get("name") or ""
+            pn_old = phonetic_cjk(pname)
+            if not pn_old:
+                continue
+            toks_old = [norm_name(t) for t in re.split(r"[\s\-\.]+", pname) if len(norm_name(t)) >= 2]
+            if not toks_old or phonetic_cjk(toks_old[0]) != phonetic_cjk(toks_new[0]):
+                continue
+            if SequenceMatcher(None, pn_new, pn_old).ratio() >= 0.92:
+                return epid
+        return None
 
     new_people_map = {}
+    tmdb_backlink_patches = {}
+    matched_romanization_pids = {}
     for mid, items in planned_by_media.items():
         for item in items:
             pslug = item["slug"]
@@ -370,10 +428,18 @@ def apply_cast_for_batch(
             pid = (
                 (people_by_anilist.get(int(aid)) if aid else None)
                 or (people_by_tmdb.get(int(tid)) if tid else None)
+                or matched_romanization_pids.get((mid, tid))
                 or people_by_slug.get(pslug)
                 or people_by_clean.get(cslug)
                 or people_by_norm.get(nn)
             )
+            if not pid:
+                pid = _find_existing_media_romanization_pid(mid, item)
+                if pid:
+                    matched_romanization_pids[(mid, tid)] = pid
+                    if tid and pid not in tmdb_backlink_patches:
+                        tmdb_backlink_patches[pid] = int(tid)
+                        people_by_tmdb[int(tid)] = pid
             target_slug = cslug or pslug
             if not pid and target_slug not in new_people_map:
                 new_people_map[target_slug] = {
@@ -384,6 +450,10 @@ def apply_cast_for_batch(
                     "anilist_id": int(aid) if aid else None,
                     "person_type": item.get("person_type") or "actor",
                 }
+
+    if tmdb_backlink_patches and not dry_run:
+        for pid, tid_val in tmdb_backlink_patches.items():
+            sb_http(sb_url, sb_key, "PATCH", f"/rest/v1/people?id=eq.{pid}", {"tmdb_id": tid_val})
 
     if new_people_map and not dry_run:
         new_list = list(new_people_map.values())
@@ -435,6 +505,7 @@ def apply_cast_for_batch(
             pid = (
                 (people_by_anilist.get(int(aid)) if aid else None)
                 or (people_by_tmdb.get(int(tid)) if tid else None)
+                or matched_romanization_pids.get((mid, tid))
                 or people_by_slug.get(pslug)
                 or people_by_clean.get(cslug)
                 or people_by_norm.get(nn)
@@ -445,15 +516,16 @@ def apply_cast_for_batch(
 
             ex = ex_by_pid.get(pid)
             if ex:
-                if ex.get("role_type") != item["role_type"] or ex.get("billing_order") != item["billing_order"]:
+                needs_char_fill = bool(item["character_name"] and not ex.get("character_name"))
+                if ex.get("role_type") != item["role_type"] or ex.get("billing_order") != item["billing_order"] or needs_char_fill:
                     role_updates += 1
                     media_had_fix = True
                     if not dry_run:
-                        # PK includes role_type, so delete old row if role_type changed
+                        # PK includes role_type, so delete all rows for (media_id, person_id) when role_type changed
                         if ex.get("role_type") != item["role_type"]:
                             sb_http(
                                 sb_url, sb_key, "DELETE",
-                                f"/rest/v1/media_cast?media_id=eq.{mid}&person_id=eq.{pid}&role_type=eq.{ex['role_type']}",
+                                f"/rest/v1/media_cast?media_id=eq.{mid}&person_id=eq.{pid}",
                             )
                             upsert_rows.append({
                                 "media_id": mid,
@@ -466,10 +538,13 @@ def apply_cast_for_batch(
                                 "voice_actor_slug": item.get("voice_actor_slug"),
                             })
                         else:
+                            patch_body = {"billing_order": item["billing_order"]}
+                            if needs_char_fill:
+                                patch_body["character_name"] = item["character_name"]
                             sb_http(
                                 sb_url, sb_key, "PATCH",
                                 f"/rest/v1/media_cast?media_id=eq.{mid}&person_id=eq.{pid}&role_type=eq.{ex['role_type']}",
-                                {"billing_order": item["billing_order"]},
+                                patch_body,
                             )
             else:
                 upsert_rows.append({
@@ -582,11 +657,11 @@ def rebalance_cast_anomalies(sb_url: str, sb_key: str, dry_run: bool = False) ->
         has_lead_gt4 = any(r.get("role_type") == "lead" and (r.get("billing_order") or 999999) > 4 for r in rows)
 
         if ctype != "anime":
-            needs_fix = (leads > 4) or (leads == 0) or has_lead_gt4 or has_null or has_dup
-            recompute_roles = (leads > 4) or (leads == 0) or has_lead_gt4
+            needs_fix = (leads > 6) or (leads == 0)
+            recompute_roles = (leads > 6) or (leads == 0)
         else:
-            needs_fix = (leads == 0) or has_null or has_dup or (leads > 6)
-            recompute_roles = (leads == 0) or (leads > 6)
+            needs_fix = (leads == 0) or has_null or has_dup or (leads > 8)
+            recompute_roles = (leads == 0) or (leads > 8)
 
         if not needs_fix:
             continue
@@ -676,6 +751,7 @@ def main():
     parser.add_argument("--mode", choices=["all", "fix", "backfill"], default="all", help="Scope: all, fix existing cast, or backfill missing")
     parser.add_argument("--limit", type=int, default=0, help="Limit number of media per phase (0 = full archive)")
     parser.add_argument("--include-mdl", action="store_true", help="Also query MyDramaList /cast for Asian dramas lacking TMDB ID")
+    parser.add_argument("--refresh-tv-leads", type=int, default=0, help="Also refresh top N most-viewed TV series and under-leaded TV shows via aggregate_credits")
     parser.add_argument("--rebalance-anomalies", action="store_true", help="Rebalance remaining lead/support role ratios and billing_order across Supabase media_cast")
     args = parser.parse_args()
 
@@ -705,12 +781,13 @@ def main():
     for r in cast_rows:
         existing_cast_by_media[int(r["media_id"])].append(r)
 
-    people_rows = fetch_all_pages(sb_url, sb_key, "/rest/v1/people?select=id,slug,name,tmdb_id,anilist_id&order=id.asc")
-    people_idx = {"slug": {}, "clean": {}, "norm": {}, "tmdb": {}, "anilist": {}}
+    people_rows = fetch_all_pages(sb_url, sb_key, "/rest/v1/people?select=id,slug,name,tmdb_id,anilist_id,person_type&order=id.asc")
+    people_idx = {"slug": {}, "clean": {}, "norm": {}, "tmdb": {}, "anilist": {}, "by_id": {}}
     for p in people_rows:
         pid = p.get("id")
         if not pid:
             continue
+        people_idx["by_id"][pid] = p
         if p.get("slug"):
             people_idx["slug"][p["slug"]] = pid
             cs = clean_slug(p["slug"])
@@ -728,17 +805,42 @@ def main():
     sb_media = fetch_all_pages(sb_url, sb_key, "/rest/v1/media?select=id,title,content_type,tmdb_id,anilist_id,mydramalist_url&order=views_total.desc")
     print(f"Yüklendi -> media: {len(sb_media):,} | cast'li yapım: {len(existing_cast_by_media):,} | people: {len(people_rows):,}", flush=True)
 
+    ctype_by_mid = {int(m["id"]): (m.get("content_type") or "").lower() for m in sb_media}
+    top_dizi_refresh_ids = set()
+    if args.refresh_tv_leads > 0:
+        dizi_seen = 0
+        for m in sb_media:
+            if (m.get("content_type") or "").lower() == "dizi":
+                mid_i = int(m["id"])
+                tid_i = m.get("tmdb_id") or (sqlite_meta.get(mid_i, (None, None))[1])
+                if tid_i and int(tid_i) > 0:
+                    top_dizi_refresh_ids.add(mid_i)
+                    dizi_seen += 1
+                    if dizi_seen >= args.refresh_tv_leads:
+                        break
+
     # Identify hierarchy anomalies on already-populated media + missing-cast targets
     mismatched_media_ids = set()
     for mid, crows in existing_cast_by_media.items():
+        m_ctype = ctype_by_mid.get(mid, "")
+        max_leads = 6 if m_ctype != "film" else 5
         leads = sum(1 for c in crows if c.get("role_type") == "lead")
         supps = sum(1 for c in crows if c.get("role_type") == "support")
         has_bad_order = any(
-            (c.get("role_type") == "lead" and (c.get("billing_order") or 99) > 4 and len(crows) >= 5)
+            (c.get("role_type") == "lead" and (c.get("billing_order") or 99) > max_leads and len(crows) >= 6)
             or (c.get("role_type") == "support" and (c.get("billing_order") or 99) <= 2 and leads == 0)
             for c in crows
         )
-        if (len(crows) >= 5 and leads > 4) or (len(crows) >= 2 and leads == 0) or (len(crows) >= 6 and supps == 0) or has_bad_order:
+        under_leaded_tv = (m_ctype == "dizi" and args.refresh_tv_leads > 0 and len(crows) >= 5 and leads < 4)
+        in_top_tv_refresh = (mid in top_dizi_refresh_ids)
+        if (
+            (len(crows) >= (max_leads + 1) and leads > max_leads)
+            or (len(crows) >= 2 and leads == 0)
+            or (len(crows) >= 7 and supps == 0)
+            or has_bad_order
+            or under_leaded_tv
+            or in_top_tv_refresh
+        ):
             mismatched_media_ids.add(mid)
 
     print(f"Hiyerarşi anomalisi tespit edilen kadrolu yapım sayısı: {len(mismatched_media_ids):,}", flush=True)

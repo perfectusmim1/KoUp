@@ -963,7 +963,6 @@ def main():
                 sync_asyaanimeleri_calendar()
                 sync_anilist_airing_schedule()
                 sync_tmdb_ongoing_series()
-                cleanup_stale_calendar_entries()
                 try:
                     from scrapers.sites.diziizle import sync_diziizle_calendar
                     conn_cal = get_connection()
@@ -979,7 +978,8 @@ def main():
                     sync_animelvl_calendar()
                 except Exception as e_cal2:
                     record_log(f"[Takvim AnimeLVL] Hata: {e_cal2}")
-                record_log("[Takvim] Güncel yayın takvimi (DiziKorea, DiziBox, AnimeciX, AsyaAnimeleri, AniList, TMDB, Diziİzle, AnimeLVL) başarıyla eşitlendi.")
+                cleanup_stale_calendar_entries()
+                record_log("[Takvim] Güncel yayın takvimi (DiziKorea, DiziBox, AnimeciX, AsyaAnimeleri, AniList, TMDB, Diziİzle, AnimeLVL) ve bayat kayıt temizliği başarıyla eşitlendi.")
             except Exception as e:
                 record_log(f"[Takvim] Hata: {e}")
 
@@ -993,21 +993,9 @@ def main():
         except Exception as e:
             record_log(f"[Read-Back Doğrulama] Uyarı: {e}")
 
-        # Otomasyon sirasinda yeni seriler eklendiyse otomatik duplicate kontrolu ve birlestirme
+        # Her adımda (yeni bölüm/kaynak eklendiyse) anlık seri bazlı tam güncelleme yapabiliriz:
+        # Ancak seri bazlı eksik taramalar yerine global run_merge ve build_franchise_graph pipeline sonunda 1 kez çalıştırılır.
         if all_dramas:
-            try:
-                from scripts.merge_duplicates import run_merge
-                record_log(f"[Deduplication] {len(all_dramas)} yeni seri eklendi, duplicate kontrolu calistiriliyor...")
-                run_merge()
-            except Exception as e:
-                record_log(f"[Deduplication] Hata: {e}")
-
-            try:
-                from scripts.build_franchise_graph import build_graph as rebuild_franchise_graph
-                record_log(f"[Seri Evreni] {len(all_dramas)} yeni yapım için Seri Evreni & İzleme Sırası grafiği güncelleniyor...")
-                rebuild_franchise_graph()
-            except Exception as e:
-                record_log(f"[Seri Evreni] Güncelleme uyarısı: {e}")
 
             # Yeni eklenen devam eden serileri otomatik seri otomasyonuna bağla
             try:

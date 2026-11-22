@@ -50,10 +50,16 @@ on:
         default: '50'
         type: string
 
+concurrency:
+  group: koup-scraper-cron-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   scrape-and-resolve-pending:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 180
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout KoUp Repository

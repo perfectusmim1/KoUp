@@ -1233,8 +1233,34 @@ export async function GET(req: NextRequest) {
   ) {
     try {
       // Direct stream.php URL from DB
-      if (lowerUrl.includes('pilavyerplay.top/api/stream.php')) {
-        const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(url)}&ref=${encodeURIComponent('https://diziizle.cafe/')}`;
+      if (lowerUrl.includes('pilavyerplay.') && lowerUrl.includes('/api/stream.php')) {
+        let pvOrigin = 'https://pilavyerplay.top';
+        try {
+          pvOrigin = new URL(url).origin;
+        } catch {}
+        try {
+          const { response: probeRes } = await safeFetch(url, {
+            headers: {
+              Referer: `${pvOrigin}/`,
+              Origin: pvOrigin,
+              'User-Agent': commonUA,
+            },
+            signal: AbortSignal.timeout(5000),
+          });
+          const probeText = probeRes.ok ? await probeRes.text() : '';
+          if (!probeRes.ok || (!probeText.includes('#EXTM3U') && !probeText.includes('#EXTINF'))) {
+            return NextResponse.json(
+              { error: 'Pilavyer stream bağlantısı yanıt vermiyor', isDead: true },
+              { status: 410, headers: CACHE_HEADERS }
+            );
+          }
+        } catch {
+          return NextResponse.json(
+            { error: 'Pilavyer stream sunucusuna erişilemedi', isDead: true },
+            { status: 410, headers: CACHE_HEADERS }
+          );
+        }
+        const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(url)}&ref=${encodeURIComponent(`${pvOrigin}/`)}`;
         const result = {
           mode: 'native_hls' as const,
           streamType: 'hls' as const,
@@ -1248,6 +1274,14 @@ export async function GET(req: NextRequest) {
       }
 
       let pvSlug: string | null = null;
+      let incomingHost = '';
+      try {
+        const parsedPv = new URL(url);
+        if (parsedPv.hostname.includes('pilavyerplay.')) {
+          incomingHost = parsedPv.hostname;
+        }
+      } catch {}
+
       if (url.startsWith('pilavyer:')) {
         pvSlug = url.slice('pilavyer:'.length);
       } else if (lowerUrl.includes('pilavyerplay.') && lowerUrl.includes('s=')) {
@@ -1255,7 +1289,7 @@ export async function GET(req: NextRequest) {
           pvSlug = new URL(url).searchParams.get('s');
         } catch {}
       } else if (lowerUrl.includes('diziizle.wiki') || lowerUrl.includes('diziizle.cafe')) {
-        const resp = await fetch(url, {
+        const { response: resp } = await safeFetch(url, {
           headers: {
             'User-Agent': commonUA,
             Referer: 'https://diziizle.cafe/',
@@ -1274,75 +1308,109 @@ export async function GET(req: NextRequest) {
       }
 
       if (pvSlug) {
-        const sUrl = `https://play2.pilavyerplay.top/assets/js/s.php?s=${encodeURIComponent(pvSlug)}`;
-        const sResp = await fetch(sUrl, {
-          headers: {
-            Referer: 'https://diziizle.cafe/',
-            Origin: 'https://diziizle.cafe',
-            'User-Agent': commonUA,
-          },
-          signal: AbortSignal.timeout(6000),
-        });
+        const hostOrder =
+          incomingHost === 'play2.pilavyerplay.top'
+            ? ['play2.pilavyerplay.top', 'pilavyerplay.top']
+            : incomingHost
+            ? [incomingHost, 'pilavyerplay.top', 'play2.pilavyerplay.top']
+            : ['pilavyerplay.top', 'play2.pilavyerplay.top'];
+        const uniqueHosts = Array.from(new Set(hostOrder));
 
-        if (sResp.ok) {
-          const sText = await sResp.text();
-          let streamUrl: string | null = null;
-          let subtitles: Array<{
-            label: string;
-            lang: string;
-            url: string;
-            default?: boolean;
-          }> = [];
-          let audioTracks: any[] | undefined = undefined;
+        for (const host of uniqueHosts) {
+          const hostOrigin = `https://${host}`;
+          const sUrl = `${hostOrigin}/assets/js/s.php?s=${encodeURIComponent(pvSlug)}`;
+          try {
+            const { response: sResp } = await safeFetch(sUrl, {
+              headers: {
+                Referer: 'https://diziizle.cafe/',
+                Origin: 'https://diziizle.cafe',
+                'User-Agent': commonUA,
+              },
+              signal: AbortSignal.timeout(6000),
+            });
 
-          // Try window.__PLAYER__ JSON parsing
-          const playerMatch = sText.match(
-            /window\.__PLAYER__\s*=\s*(\{[\s\S]*?\});/
-          );
-          if (playerMatch?.[1]) {
-            try {
-              const pObj = JSON.parse(playerMatch[1]);
-              streamUrl =
-                pObj.file || pObj.stream || pObj.sources?.[0]?.file || null;
-              const rawTracks = pObj.subtitles || pObj.tracks || [];
-              if (Array.isArray(rawTracks)) {
-                subtitles = rawTracks
-                  .filter((t: any) => t?.file)
-                  .map((t: any) => ({
-                    label: t.label || t.title || 'Türkçe',
-                    lang: t.language || t.lang || 'tr',
-                    url: t.file.startsWith('http')
-                      ? t.file
-                      : `https://play2.pilavyerplay.top${t.file.startsWith('/') ? '' : '/'}${t.file}`,
-                    default: !!t.default,
-                  }));
-              }
-              if (Array.isArray(pObj.audios) && pObj.audios.length > 0) {
-                audioTracks = pObj.audios;
-              }
-            } catch {}
-          }
+            if (!sResp.ok) continue;
+            const sText = await sResp.text();
+            let streamUrl: string | null = null;
+            let subtitles: Array<{
+              label: string;
+              lang: string;
+              url: string;
+              default?: boolean;
+            }> = [];
+            let audioTracks: any[] | undefined = undefined;
 
-          // Fallback regex extraction if window.__PLAYER__ is not valid JSON
-          if (!streamUrl) {
-            const fileMatch =
-              sText.match(/"file"\s*:\s*"([^"]+)"/i) ||
-              sText.match(/(https?:\/\/[^"'\s]+\/api\/stream\.php\?[^"'\s]+)/i) ||
-              sText.match(/(\/api\/stream\.php\?[^"'\s]+)/i);
-            if (fileMatch?.[1]) {
-              streamUrl = fileMatch[1].replace(/\\/g, '');
+            const playerMatch = sText.match(/window\.__PLAYER__\s*=\s*(\{[\s\S]*?\});/);
+            if (playerMatch?.[1]) {
+              try {
+                const pObj = JSON.parse(playerMatch[1]);
+                streamUrl = pObj.stream || pObj.file || pObj.sources?.[0]?.file || null;
+                const rawTracks = pObj.subs || pObj.subtitles || pObj.tracks || [];
+                if (Array.isArray(rawTracks)) {
+                  subtitles = rawTracks
+                    .filter((t: any) => typeof (t?.file || t?.url || t?.src) === 'string')
+                    .map((t: any) => {
+                      const rawFile = String(t.file || t.url || t.src);
+                      const absSub = rawFile.startsWith('http')
+                        ? rawFile
+                        : `${hostOrigin}${rawFile.startsWith('/') ? '' : '/'}${rawFile}`;
+                      return {
+                        label: t.label || t.title || 'Türkçe',
+                        lang: t.language || t.lang || 'tr',
+                        url: absSub,
+                        default: !!t.default,
+                      };
+                    });
+                }
+                if (Array.isArray(pObj.audios) && pObj.audios.length > 0) {
+                  audioTracks = pObj.audios;
+                }
+              } catch {}
             }
-          }
 
-          if (streamUrl) {
+            if (!streamUrl) {
+              const fileMatch =
+                sText.match(/"stream"\s*:\s*"([^"]+)"/i) ||
+                sText.match(/"file"\s*:\s*"([^"]+)"/i) ||
+                sText.match(/(https?:\/\/[^"'\s]+\/api\/stream\.php\?[^"'\s]+)/i) ||
+                sText.match(/(\/api\/stream\.php\?[^"'\s]+)/i);
+              if (fileMatch?.[1]) {
+                streamUrl = fileMatch[1].replace(/\\u0026/gi, '&').replace(/\\/g, '');
+              }
+            }
+
+            if (!streamUrl) continue;
             if (streamUrl.startsWith('/')) {
-              streamUrl = `https://play2.pilavyerplay.top${streamUrl}`;
+              streamUrl = `${hostOrigin}${streamUrl}`;
             }
 
-            const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(streamUrl)}&ref=${encodeURIComponent('https://diziizle.cafe/')}`;
+            let streamOrigin = hostOrigin;
+            try {
+              streamOrigin = new URL(streamUrl).origin;
+            } catch {}
+
+            // Verify playlist is genuinely alive and contains #EXTM3U
+            try {
+              const { response: m3u8Resp } = await safeFetch(streamUrl, {
+                headers: {
+                  Referer: `${streamOrigin}/`,
+                  Origin: streamOrigin,
+                  'User-Agent': commonUA,
+                },
+                signal: AbortSignal.timeout(5000),
+              });
+              const m3u8Body = m3u8Resp.ok ? await m3u8Resp.text() : '';
+              if (!m3u8Resp.ok || (!m3u8Body.includes('#EXTM3U') && !m3u8Body.includes('#EXTINF'))) {
+                continue;
+              }
+            } catch {
+              continue;
+            }
+
+            const proxiedStream = `/api/stream-proxy?url=${encodeURIComponent(streamUrl)}&ref=${encodeURIComponent(`${streamOrigin}/`)}`;
             const proxiedSubs = subtitles.map((s) => ({
               ...s,
-              url: `/api/stream-proxy?url=${encodeURIComponent(s.url)}&ref=${encodeURIComponent('https://diziizle.cafe/')}`,
+              url: `/api/stream-proxy?url=${encodeURIComponent(s.url)}&ref=${encodeURIComponent(`${streamOrigin}/`)}`,
             }));
 
             const result = {
@@ -1352,12 +1420,13 @@ export async function GET(req: NextRequest) {
               directUrl: streamUrl,
               qualities: [{ label: '1080p (Full HD)', url: proxiedStream }],
               subtitles: proxiedSubs.length > 0 ? proxiedSubs : undefined,
-              audioTracks:
-                audioTracks && audioTracks.length > 0 ? audioTracks : undefined,
+              audioTracks: audioTracks && audioTracks.length > 0 ? audioTracks : undefined,
               fallbackIframe: null,
             };
             setCachedStream(url, result, 30 * 60 * 1000);
             return NextResponse.json(result, { headers: CACHE_HEADERS });
+          } catch {
+            continue;
           }
         }
       }
@@ -2709,32 +2778,79 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Diziyou direct HLS (storage.diziyou.one has access-control-allow-origin: * open CORS)
-  if (url.includes('storage.diziyou') || url.includes('diziyou.one') || provider === 'diziyou-hls') {
-    const epMatch = url.match(/\/episodes\/(\d+)\//);
+  // Diziyou direct HLS (storage.diziyou.love has access-control-allow-origin: * open CORS)
+  if (url.includes('storage.diziyou') || url.includes('diziyou.one') || url.includes('diziyou.love') || provider === 'diziyou-hls') {
+    const candidates: string[] = [];
+    if (url.includes('storage.diziyou.one')) {
+      candidates.push(url.replace('storage.diziyou.one', 'storage.diziyou.love'));
+    }
+    if (!candidates.includes(url)) {
+      candidates.push(url);
+    }
+    if (url.includes('storage.diziyou.') && !url.includes('storage.diziyou.love')) {
+      const loveVariant = url.replace(/storage\.diziyou\.[a-z]+/i, 'storage.diziyou.love');
+      if (!candidates.includes(loveVariant)) candidates.unshift(loveVariant);
+    }
+
+    let workingUrl: string | null = null;
+    for (const cand of candidates) {
+      try {
+        const { response: probeRes } = await safeFetch(cand, {
+          headers: {
+            'User-Agent': commonUA,
+            Referer: 'https://www.diziyou.love/',
+          },
+          signal: AbortSignal.timeout(4500),
+        });
+        if (probeRes.ok) {
+          const text = await probeRes.text();
+          if (text.includes('#EXTM3U') || text.includes('#EXTINF')) {
+            workingUrl = cand;
+            break;
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    if (!workingUrl) {
+      return NextResponse.json(
+        { error: 'Diziyou yayını bulunamadı veya silinmiş', isDead: true },
+        { status: 410, headers: CACHE_HEADERS }
+      );
+    }
+
+    let workingOrigin = 'https://storage.diziyou.love';
+    try {
+      workingOrigin = new URL(workingUrl).origin;
+    } catch {}
+
+    const epMatch = workingUrl.match(/\/episodes\/(\d+)\//);
     const subtitles: Array<{ label: string; lang: string; url: string; default?: boolean }> = [];
     if (epMatch?.[1]) {
       const epId = epMatch[1];
       subtitles.push({
         label: 'Türkçe',
         lang: 'tr',
-        url: `https://storage.diziyou.one/subtitles/${epId}/tr.vtt`,
+        url: `${workingOrigin}/subtitles/${epId}/tr.vtt`,
         default: true,
       });
       subtitles.push({
         label: 'English',
         lang: 'en',
-        url: `https://storage.diziyou.one/subtitles/${epId}/en.vtt`,
+        url: `${workingOrigin}/subtitles/${epId}/en.vtt`,
         default: false,
       });
     }
 
     const payload = {
       mode: 'native_hls' as const,
-      streamUrl: url,
-      qualities: [{ label: '1080p', url: url }],
+      streamUrl: workingUrl,
+      directUrl: workingUrl,
+      qualities: [{ label: '1080p', url: workingUrl }],
       subtitles: subtitles.length > 0 ? subtitles : undefined,
-      fallbackIframe: url,
+      fallbackIframe: null,
     };
     setCachedStream(url, payload);
     return NextResponse.json(payload, { headers: CACHE_HEADERS });
@@ -2761,21 +2877,42 @@ export async function GET(req: NextRequest) {
       customRef = 'https://animecix.net/';
     }
 
-    if (url.includes('dtpasn')) {
-      try {
-        const { response: probeRes } = await safeFetch(url, {
-          headers: { 'User-Agent': commonUA, Referer: 'https://dtpasn.asia/' },
-          signal: AbortSignal.timeout(5000),
-        });
-        const probeText = probeRes.ok ? await probeRes.text() : '';
+    // Verify direct HLS manifest liveness before returning 200 so dead playlists never spin infinitely
+    try {
+      const probeHeaders: Record<string, string> = { 'User-Agent': commonUA };
+      if (customRef) probeHeaders['Referer'] = customRef;
+      const { response: probeRes } = await safeFetch(url, {
+        headers: probeHeaders,
+        signal: AbortSignal.timeout(4500),
+      });
+      if (probeRes.status === 404 || probeRes.status === 410) {
+        return NextResponse.json(
+          { error: `HLS yayını bulunamadı (HTTP ${probeRes.status})`, isDead: true },
+          { status: 410, headers: CACHE_HEADERS }
+        );
+      }
+      if (probeRes.ok) {
+        const probeText = await probeRes.text();
         const lowProbe = probeText.trim().toLowerCase();
-        if (!probeRes.ok || lowProbe.includes('security error') || (!probeText.includes('#EXTM3U') && !probeText.includes('#EXTINF'))) {
+        if (
+          lowProbe.includes('security error') ||
+          lowProbe.startsWith('<!doctype') ||
+          lowProbe.startsWith('<html') ||
+          (!probeText.includes('#EXTM3U') && !probeText.includes('#EXTINF'))
+        ) {
           return NextResponse.json(
-            { error: 'DTPASN video akışı güvenlik doğrulamasından geçemedi', isDead: true },
+            { error: 'HLS yayını geçersiz yanıt döndürdü', isDead: true },
             { status: 410, headers: CACHE_HEADERS }
           );
         }
-      } catch {
+      } else if (url.includes('dtpasn')) {
+        return NextResponse.json(
+          { error: 'DTPASN video akışı güvenlik doğrulamasından geçemedi', isDead: true },
+          { status: 410, headers: CACHE_HEADERS }
+        );
+      }
+    } catch {
+      if (url.includes('dtpasn')) {
         return NextResponse.json(
           { error: 'DTPASN servisine erişilemedi', isDead: true },
           { status: 410, headers: CACHE_HEADERS }
@@ -4115,13 +4252,35 @@ export async function GET(req: NextRequest) {
       const refOrigin = isShortDrama
         ? 'https://shortizle.com/'
         : `${parsedU.protocol}//${parsedU.host}/`;
+      try {
+        const { response: probeRes } = await safeFetch(url, {
+          headers: { 'User-Agent': commonUA, Referer: refOrigin },
+          signal: AbortSignal.timeout(4000),
+        });
+        if (probeRes.status === 404 || probeRes.status === 410) {
+          return NextResponse.json(
+            { error: `HLS yayını bulunamadı (HTTP ${probeRes.status})`, isDead: true },
+            { status: 410, headers: CACHE_HEADERS }
+          );
+        }
+        if (probeRes.ok) {
+          const probeText = await probeRes.text();
+          const lowProbe = probeText.trim().toLowerCase();
+          if (lowProbe.startsWith('<!doctype') || lowProbe.startsWith('<html') || (!probeText.includes('#EXTM3U') && !probeText.includes('#EXTINF'))) {
+            return NextResponse.json(
+              { error: 'HLS yayını geçersiz yanıt döndürdü', isDead: true },
+              { status: 410, headers: CACHE_HEADERS }
+            );
+          }
+        }
+      } catch {}
       const proxiedUrl = `/api/stream-proxy?url=${encodeURIComponent(url)}&ref=${encodeURIComponent(refOrigin)}`;
       return NextResponse.json(
         {
           mode: 'native_hls',
           streamUrl: proxiedUrl,
           qualities: [{ label: '1080p', url: proxiedUrl }],
-          fallbackIframe: url,
+          fallbackIframe: null,
         },
         { headers: CACHE_HEADERS }
       );

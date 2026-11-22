@@ -256,15 +256,16 @@ def build_graph(sync_cloud: bool = True):
         }
         dramas[did] = d_obj
 
-        if al_id and al_id > 0:
+        # Layer A (AniList) MUST only group anime entries so live-action series never mix into anime universes
+        if al_id and al_id > 0 and (ctype or "").lower() == "anime":
             al_to_dramas[al_id].append(did)
-        if mdl_slug:
+        if mdl_slug and (ctype or "").lower() != "anime":
             mdl_to_dramas[mdl_slug].append(did)
         if tmdb_id and tmdb_id > 0:
             tmdb_to_dramas[(ctype, tmdb_id)].append(did)
             tmdb_to_dramas[("ANY", tmdb_id)].append(did)
         if imdb_id and len(str(imdb_id)) > 2:
-            imdb_to_dramas[str(imdb_id)].append(did)
+            imdb_to_dramas[(ctype, str(imdb_id))].append(did)
         nt = norm_title(title)
         if nt:
             title_country_to_dramas[(nt, (country or "").upper())].append(did)
@@ -436,26 +437,26 @@ def build_graph(sync_cloud: bool = True):
                 continue
             target_slug = rel_item.get("slug")
             target_title = norm_title(rel_item.get("title") or "")
-            dst_dids = list(mdl_to_dramas.get(target_slug, []))
-            if not dst_dids and target_title and len(target_title) >= 5:
-                dst_dids = list(title_country_to_dramas.get((target_title, "ANY"), []))
+            dst_dids = [d for d in mdl_to_dramas.get(target_slug, []) if dramas[d]["content_type"] != "anime"]
+            if not dst_dids and target_title and len(target_title) >= 8:
+                dst_dids = [d for d in title_country_to_dramas.get((target_title, "ANY"), []) if dramas[d]["content_type"] != "anime"]
 
             if src_slug in CROSSOVER_MDL_SLUGS or target_slug in CROSSOVER_MDL_SLUGS:
                 if src_slug in CROSSOVER_MDL_SLUGS:
                     for c_d in src_dids:
                         for p_d in dst_dids:
-                            if c_d != p_d:
+                            if c_d != p_d and dramas[c_d]["content_type"] != "anime" and dramas[p_d]["content_type"] != "anime":
                                 crossover_attachments[c_d].add(p_d)
                 else:
                     for c_d in dst_dids:
                         for p_d in src_dids:
-                            if c_d != p_d:
+                            if c_d != p_d and dramas[c_d]["content_type"] != "anime" and dramas[p_d]["content_type"] != "anime":
                                 crossover_attachments[c_d].add(p_d)
                 continue
 
             for s_d in src_dids:
                 for d_d in dst_dids:
-                    if s_d != d_d:
+                    if s_d != d_d and dramas[s_d]["content_type"] != "anime" and dramas[d_d]["content_type"] != "anime":
                         uf.union(s_d, d_d)
                         if "spinoff" in rel_txt or "spin-off" in rel_txt or "side story" in rel_txt:
                             drama_rel_hints[d_d].add("SPIN_OFF")
@@ -485,6 +486,9 @@ def build_graph(sync_cloud: bool = True):
         "flowers", "island", "islands", "hotel", "hospital", "prison", "lawyer",
         "prosecutor", "detective", "partner", "partners", "neighbors", "witch",
         "ghost", "vampire", "zombie", "dragon", "tiger", "wolf", "master",
+        "search", "countdown", "homicide", "breathe", "legacy", "origins",
+        "chronicles", "empire", "dynasty", "stories", "cold case", "kuzgun",
+        "goosebumps", "the hunters", "inside",
     }
 
     for did, d in dramas.items():
@@ -512,6 +516,18 @@ def build_graph(sync_cloud: bool = True):
                 for cid in cands:
                     if cid != did and dramas[cid]["content_type"] == "anime":
                         uf.union(did, cid)
+        elif d["content_type"] == "dizi" and ":" in raw_t and d["country"]:
+            prefix = raw_t.split(":", 1)[0].strip()
+            norm_pref = norm_title(prefix)
+            if len(norm_pref) >= 6 and norm_pref not in GENERIC_BASE_TITLES and not norm_pref.isdigit():
+                cands = title_country_to_dramas.get((norm_pref, d["country"]), [])
+                for cid in cands:
+                    if cid != did and dramas[cid]["content_type"] == "dizi":
+                        uf.union(did, cid)
+                        if dramas[did]["release_year"] > dramas[cid]["release_year"] and not any(
+                            k in (raw_t.lower()) for k in ("season", "sezon", "resurrection", "aramoon")
+                        ):
+                            drama_rel_hints[did].add("SPIN_OFF")
 
     # 4. Collect Connected Components with >= 2 Archive Items
     comp_members = defaultdict(set)
@@ -521,14 +537,32 @@ def build_graph(sync_cloud: bool = True):
         root = uf.find(did)
         comp_members[root].add(did)
 
-    # Add crossover attachments as leaves to each target component
+    # Add crossover attachments as leaves to each target component (strictly respecting anime vs live-action boundary)
     for cross_did, target_dids in crossover_attachments.items():
+        c_is_anime = (dramas[cross_did]["content_type"] or "").lower() == "anime"
         for td in target_dids:
+            if ((dramas[td]["content_type"] or "").lower() == "anime") != c_is_anime:
+                continue
             t_root = uf.find(td)
             if len(comp_members[t_root]) >= 1:
                 comp_members[t_root].add(cross_did)
 
-    multi_comps = {root: sorted(mems) for root, mems in comp_members.items() if len(mems) >= 2}
+    # Guard: split any accidental mixed anime + non-anime component cleanly into separate components
+    clean_multi_comps = {}
+    for root, mems in comp_members.items():
+        if len(mems) < 2:
+            continue
+        anime_mems = sorted(m for m in mems if (dramas[m]["content_type"] or "").lower() == "anime")
+        live_mems = sorted(m for m in mems if (dramas[m]["content_type"] or "").lower() != "anime")
+        if anime_mems and live_mems:
+            if len(anime_mems) >= 2:
+                clean_multi_comps[anime_mems[0]] = anime_mems
+            if len(live_mems) >= 2:
+                clean_multi_comps[live_mems[0]] = live_mems
+        else:
+            clean_multi_comps[root] = sorted(mems)
+
+    multi_comps = clean_multi_comps
     print(f"[Franchise Graph] Toplam {len(multi_comps)} seri ailesi (toplam {sum(len(v) for v in multi_comps.values())} bağlantılı yapım) oluşturuldu.", flush=True)
 
     # 5. Classify & Order Items Inside Each Franchise
@@ -783,7 +817,22 @@ def build_graph(sync_cloud: bool = True):
             print(f"  [{it['category'].upper()}] #{it['watch_order']:02d} ({it['release_year']}) [{it['role_label']}] {it['title']} (slug={it['slug']})", flush=True)
 
     if sync_cloud:
-        print("\n[Supabase] franchise_items tablosu (4700+ kayıt) senkronize ediliyor...", flush=True)
+        print("\n[Supabase] franchise_items tablosundaki eski kayıtlar temizleniyor ve güncel grafik senkronize ediliyor...", flush=True)
+        try:
+            # Purge stale rows first so obsolete franchise_ids (e.g. duplicate Fate/One Piece ids) never linger
+            sb_request("DELETE", "/rest/v1/franchise_items?media_id=gt.0", prefer="return=minimal")
+        except Exception as e:
+            print(f"  [Supabase Cleanup Warning] {e}", flush=True)
+        valid_sb_ids = set()
+        off = 0
+        while True:
+            chunk_ids = sb_request("GET", f"/rest/v1/media?select=id&limit=1000&offset={off}")
+            if not isinstance(chunk_ids, list) or not chunk_ids:
+                break
+            valid_sb_ids.update(int(x["id"]) for x in chunk_ids if x.get("id"))
+            if len(chunk_ids) < 1000:
+                break
+            off += 1000
         sb_payload = [
             {
                 "media_id": r[0],
@@ -796,6 +845,7 @@ def build_graph(sync_cloud: bool = True):
                 "release_year": r[7],
             }
             for r in sqlite_rows
+            if not valid_sb_ids or r[0] in valid_sb_ids
         ]
         for i in range(0, len(sb_payload), 500):
             chunk = sb_payload[i : i + 500]

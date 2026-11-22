@@ -89,10 +89,10 @@ def get_provider_priority(provider: str, direct_url: str, content_type: str = ""
     ):
         return 1.0
 
-    # Tier 2: hdfilm-close, dizikorea, dizibox, dbx, dizilla, asyawatch, mailru, vk, okru, dramabox
+    # Tier 2: dizikorea, dizibox, dbx, asyawatch, mailru, vk, okru, dramabox
     if (
-        p in ("hdfilm-close", "dizikorea", "dizibox", "dbx", "dizilla", "asyawatch", "mailru", "mail.ru", "mail", "vk", "okru", "ok.ru", "odnoklassniki", "dramabox")
-        or any(k in u for k in ("pichive", "dplayer", "molystream", "mail.ru", "vk.com", "ok.ru", "dramabox"))
+        p in ("dizikorea", "dizibox", "dbx", "asyawatch", "mailru", "mail.ru", "mail", "vk", "okru", "ok.ru", "odnoklassniki", "dramabox")
+        or any(k in u for k in ("pichive", "molystream", "mail.ru", "vk.com", "ok.ru", "dramabox"))
     ):
         return 2.0
 
@@ -103,9 +103,13 @@ def get_provider_priority(provider: str, direct_url: str, content_type: str = ""
     ):
         return 3.0
 
-    # Tier 9 (En düşük): turnstile_iframe, dplayer, pixel_turnstile, youtube
+    # Tier 8: Deprioritize dead hdfilm-close & PoW-gated dplayer/dizilla
+    if p in ("hdfilm-close", "close", "dizilla", "dizipal") or any(k in u for k in ("hdfilmcehennemi", "dplayer82", "dplayer")):
+        return 8.0
+
+    # Tier 9 (En düşük): turnstile_iframe, pixel_turnstile, youtube
     if (
-        p in ("turnstile_iframe", "dplayer", "pixel_turnstile", "youtube")
+        p in ("turnstile_iframe", "pixel_turnstile", "youtube")
         or any(k in u for k in ("youtube.com", "youtu.be", "turnstile", "pixel_turnstile"))
     ):
         return 9.0
@@ -122,7 +126,7 @@ def export_all(drama_id: int = None):
     c = conn.cursor()
 
     if drama_id:
-        print(f"Fetching drama #{drama_id}...")
+        print("Fetching dramas with episodes and sources..." if not drama_id else f"Fetching drama #{drama_id}...")
         dramas = c.execute("""
             SELECT DISTINCT d.id, d.title, d.content_type
             FROM dramas d

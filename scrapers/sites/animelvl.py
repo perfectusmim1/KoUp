@@ -320,12 +320,17 @@ def sync_animelvl_calendar(session=None):
         "pazartesi": 1, "salı": 2, "sali": 2, "çarşamba": 3, "carsamba": 3,
         "perşembe": 4, "persembe": 4, "cuma": 5, "cumartesi": 6, "pazar": 7
     }
+    tr_tz = timezone(timedelta(hours=3))
+    now_tr = datetime.now(tr_tz)
+    now_iso = datetime.now(timezone.utc).isoformat()
 
-    headers = soup.find_all(["h2", "h3", "h4", "div"], class_=re.compile(r"title|header|gun|day", re.I)) or soup.find_all(["h2", "h3"])
+    headers = soup.find_all(["h2", "h3", "h4"], class_=re.compile(r"title|header|gun|day", re.I)) or soup.find_all(["h2", "h3"])
     payloads = []
     seen_keys = set()
     for h in headers:
         day_text = h.get_text(strip=True).lower()
+        if len(day_text) > 35:
+            continue
         day_num = None
         for dk, dv in days_map.items():
             if dk in day_text:
@@ -334,15 +339,25 @@ def sync_animelvl_calendar(session=None):
         if not day_num:
             continue
 
-        nxt = h.find_next_sibling()
-        item_links = nxt.find_all("a", href=True) if nxt else []
-        if not item_links and h.parent:
-            item_links = h.parent.find_all("a", href=True)
+        # Only inspect strict direct sibling/container (never broad wrapper parent that spans the entire catalog)
+        container = h.find_next_sibling()
+        if not container:
+            continue
+        item_links = container.find_all("a", href=True)
+        if len(item_links) > 40:
+            continue
 
+        days_ahead = (day_num - now_tr.isoweekday()) % 7
+        target_d = (now_tr + timedelta(days=days_ahead)).date()
+        next_ep_iso = datetime(target_d.year, target_d.month, target_d.day, 20, 0, 0, tzinfo=tr_tz).isoformat()
+
+        per_day_count = 0
         for item_a in item_links:
+            if per_day_count >= 25:
+                break
             item_title = item_a.get_text(strip=True)
             item_href = item_a["href"]
-            if not item_title or len(item_title) < 2 or "/anime/" not in item_href:
+            if not item_title or len(item_title) < 2 or len(item_title) > 120 or "/anime/" not in item_href:
                 continue
 
             slug = clean_scraped_slug(item_href)
@@ -350,6 +365,7 @@ def sync_animelvl_calendar(session=None):
             if key in seen_keys:
                 continue
             seen_keys.add(key)
+            per_day_count += 1
 
             payloads.append({
                 "source_site": SITE_TAG,
@@ -361,10 +377,13 @@ def sync_animelvl_calendar(session=None):
                 "category": "Anime",
                 "cover_image": "",
                 "source_url": item_href if item_href.startswith("http") else f"{BASE_URL}{item_href}",
+                "next_episode_at": next_ep_iso,
+                "updated_at": now_iso,
             })
 
-    if payloads:
+    if 3 <= len(payloads) <= 150:
         try:
+            sb_request("DELETE", f"/rest/v1/calendar_schedules?source_site=eq.{SITE_TAG}")
             sb_request(
                 "POST",
                 "/rest/v1/calendar_schedules?on_conflict=source_site,slug,day_of_week",

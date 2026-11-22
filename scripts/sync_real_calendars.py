@@ -45,7 +45,7 @@ def _load_tmdb_key() -> str:
                         return line.split("=", 1)[1].strip().strip('"').strip("'")
         except Exception:
             pass
-    return os.environ.get("TMDB_API_KEY", "4c092d2cfd6d9c0e3aa3dab12c7d4756")
+    return os.environ.get("TMDB_API_KEY", "")
 
 
 TMDB_API_KEY = _load_tmdb_key()
@@ -578,16 +578,23 @@ def sync_anilist_airing_schedule() -> int:
         print("No AniList airing schedules returned.")
         return 0
 
-    # Load ongoing/active animes from public.media to match against
+    # Load ALL ongoing/active animes from public.media (paginated beyond 3000) to match against
+    catalog_animes = []
     try:
-        resp = requests.get(
-            f"{SUPABASE_URL}/rest/v1/media?content_type=eq.anime&select=id,slug,title,title_en,native_title,anilist_id,cover_image,episodes_available&limit=3000",
-            headers=HEADERS,
-            timeout=15,
-        )
-        catalog_animes = resp.json() if resp.status_code == 200 else []
+        off = 0
+        while True:
+            resp = requests.get(
+                f"{SUPABASE_URL}/rest/v1/media?content_type=eq.anime&select=id,slug,title,title_en,native_title,anilist_id,cover_image,episodes_available&order=id.asc&limit=1000&offset={off}",
+                headers=HEADERS,
+                timeout=15,
+            )
+            batch = resp.json() if resp.status_code == 200 and isinstance(resp.json(), list) else []
+            catalog_animes.extend(batch)
+            if len(batch) < 1000:
+                break
+            off += 1000
     except Exception:
-        catalog_animes = []
+        pass
 
     by_anilist_id = {}
     by_norm_title = {}
@@ -782,33 +789,71 @@ def sync_tmdb_ongoing_series() -> int:
 
 
 def cleanup_stale_calendar_entries():
-    """Removes calendar_schedules rows whose linked media is completed/canceled or unlinked stubs."""
+    """Removes completed, canceled, or stale (>8 days old / >3 days past next_episode_at) calendar_schedules rows."""
     print("--- Cleaning up completed/stale calendar entries ---")
     try:
-        resp = requests.get(
-            f"{SUPABASE_URL}/rest/v1/calendar_schedules?select=id,title,slug,source_site,day_of_week,media_id,media(id,slug,status_broadcast,release_year,episodes_available)",
-            headers=HEADERS,
-            timeout=15,
-        )
-        if resp.status_code != 200:
-            return
-        rows = resp.json()
+        now_utc = datetime.now(timezone.utc)
+        cutoff_upd = now_utc - timedelta(days=8)
+        cutoff_ep = now_utc - timedelta(days=3)
+
+        rows = []
+        off = 0
+        while True:
+            resp = requests.get(
+                f"{SUPABASE_URL}/rest/v1/calendar_schedules?select=id,title,slug,source_site,day_of_week,updated_at,next_episode_at,media_id,media(id,slug,status_broadcast,release_year,episodes_available)&order=id.asc&limit=1000&offset={off}",
+                headers=HEADERS,
+                timeout=15,
+            )
+            if resp.status_code != 200 or not isinstance(resp.json(), list):
+                break
+            batch = resp.json()
+            rows.extend(batch)
+            if len(batch) < 1000:
+                break
+            off += 1000
+
         to_delete = []
         for r in rows:
+            is_stale = False
+            upd_s = r.get("updated_at")
+            if upd_s:
+                try:
+                    dt_u = datetime.fromisoformat(str(upd_s).replace("Z", "+00:00"))
+                    if dt_u < cutoff_upd:
+                        is_stale = True
+                except Exception:
+                    pass
+            nep_s = r.get("next_episode_at")
+            if nep_s:
+                try:
+                    dt_n = datetime.fromisoformat(str(nep_s).replace("Z", "+00:00"))
+                    if dt_n < cutoff_ep:
+                        is_stale = True
+                except Exception:
+                    pass
+            elif r.get("source_site") == "animelvl":
+                is_stale = True
+
             m = r.get("media")
             if m:
-                st = m.get("status_broadcast") or ""
-                yr = m.get("release_year") or 2026
+                st = (m.get("status_broadcast") or "").strip()
+                yr = int(m.get("release_year") or 2026)
                 if st in ("Final", "Canceled") or (st == "Tamamlandı" and yr < 2026):
-                    to_delete.append(r["id"])
-        if to_delete:
-            ids_csv = ",".join(str(x) for x in to_delete)
+                    is_stale = True
+
+            if is_stale:
+                to_delete.append(r["id"])
+
+        for i in range(0, len(to_delete), 200):
+            chunk = to_delete[i : i + 200]
+            ids_csv = ",".join(str(x) for x in chunk)
             requests.delete(
                 f"{SUPABASE_URL}/rest/v1/calendar_schedules?id=in.({ids_csv})",
                 headers=HEADERS,
-                timeout=10,
+                timeout=12,
             )
-            print(f"Removed {len(to_delete)} completed/ended series from calendar_schedules.")
+        if to_delete:
+            print(f"Removed {len(to_delete)} stale/completed entries from calendar_schedules.")
     except Exception as e:
         print(f"Cleanup warning: {e}")
 

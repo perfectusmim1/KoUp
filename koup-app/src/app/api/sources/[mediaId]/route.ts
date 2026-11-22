@@ -441,14 +441,11 @@ function getProviderPriority(provider: string, directUrl: string, contentType: s
     return 1;
   }
 
-  // Tier 2: hdfilm-close, dizikorea, dizibox, dbx, dizilla, asyawatch, mailru, vk, okru, dramabox
+  // Tier 2: dizikorea, dizibox, dbx, asyawatch, mailru, vk, okru, dramabox
   if (
-    p === 'hdfilm-close' ||
-    p === 'close' ||
     p === 'dizikorea' ||
     p === 'dizibox' ||
     p === 'dbx' ||
-    p === 'dizilla' ||
     p === 'asyawatch' ||
     p === 'mailru' ||
     p === 'mail.ru' ||
@@ -458,11 +455,9 @@ function getProviderPriority(provider: string, directUrl: string, contentType: s
     p === 'ok.ru' ||
     p === 'odnoklassniki' ||
     p === 'dramabox' ||
-    u.includes('hdfilmcehennemi') ||
     u.includes('playerdkorea') ||
     u.includes('pichive') ||
     u.includes('molystream') ||
-    u.includes('dplayer') ||
     u.includes('mail.ru') ||
     u.includes('vk.com') ||
     u.includes('ok.ru') ||
@@ -488,7 +483,20 @@ function getProviderPriority(provider: string, directUrl: string, contentType: s
     return 3;
   }
 
-  // Tier 9 (En düşük): turnstile_iframe, dplayer, pixel_turnstile, youtube
+  // Tier 8: Deprioritize dead hdfilm-close 404 embeds & PoW-gated dplayer82 iframes
+  if (
+    p === 'hdfilm-close' ||
+    p === 'close' ||
+    p === 'dizilla' ||
+    p === 'dizipal' ||
+    u.includes('hdfilmcehennemi') ||
+    u.includes('dplayer82') ||
+    u.includes('dplayer')
+  ) {
+    return 8;
+  }
+
+  // Tier 9 (En düşük): turnstile_iframe, pixel_turnstile, youtube
   if (
     p === 'turnstile_iframe' ||
     p === 'pixel_turnstile' ||

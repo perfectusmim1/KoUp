@@ -169,9 +169,10 @@ Bir bölüme ait kaynaklar listelenirken kullanıcıya en yüksek hız, en iyi k
 |---|---|---|---|
 | **Tier 0 (En Yüksek)** | `0` | `pilavyer`, `diziizle`, `tau-video`, `morencius`, `ev` | 1080p saf HLS, ultra hızlı yükleme, sıfır reklam, stabil bant genişliği. |
 | **Tier 1** | `1` | `wdt`, `dtpasn`, `dramavadisi`, `shortizle`, `rapidrame`, `diziyou-hls`, `animelvl` | Yüksek hızlı yerel/bölgesel HLS akışları, Türkçe altyazı entegrasyonu. |
-| **Tier 2** | `2` | `hdfilm-close`, `dizikorea`, `dizibox`, `dbx`, `dizilla`, `asyawatch`, `mail.ru`, `vk`, `ok.ru`, `dramabox` | Büyük platform kaynakları, stabil ancak ara proxy gerektirebilen akışlar. |
+| **Tier 2** | `2` | `dizikorea`, `dizibox`, `dbx`, `asyawatch`, `mail.ru`, `vk`, `ok.ru`, `dramabox` | Büyük platform kaynakları, stabil ancak ara proxy gerektirebilen akışlar. |
 | **Tier 3** | `3` | `vidmoly`, `filemoon`, `byse`, `uqload`, genel `.m3u8` | Standart video barındırıcıları; JS unpacker veya özel referer gerektirebilir. |
 | **Tier 5 (Varsayılan)** | `5` | Diğer tanımlanamayan harici kaynaklar | İkincil yedek akışlar. |
+| **Tier 8 (Düşük Öncelik)** | `8` | `hdfilm-close` (`hdfilmcehennemi.mobi`), `dplayer82` / `dizilla` | Kırılgan/`404` eğilimli veya Proof-of-Work (`NP_GATE`) kapılı kaynaklar; yalnızca çalışan yedek bulunmadığında son çarelerde sunulur. |
 | **Tier 9 (En Düşük)** | `9` | `turnstile_iframe`, `pixel_turnstile`, `youtube` | Cloudflare Turnstile korumalı veya harici webview gerektiren son çare kaynaklar. |
 
 > **YouTube Filtresi (`filterYoutubeIfAlternativesExist`):** Eğer bir bölümde oynatılabilir herhangi bir yerel veya üçüncü taraf alternatif kaynak varsa YouTube linkleri otomatik olarak elenir. Yalnızca hiçbir alternatif kaynak kalmadığında YouTube linki son çare olarak bırakılır.
@@ -577,7 +578,8 @@ async function isBlockedAfterDnsLookup(hostname: string): Promise<boolean> {
 
 Upstream video sunucuları istekleri `Referer` ve `Origin` başlıklarına göre doğrular. `stream-proxy`, hedef alan adına göre doğru başlığı otomatik olarak enjekte eder:
 - `dizikorea` → `Referer: https://dizikorea3.com/`
-- `diziyou` → `Referer: https://diziyou.one/`
+- `diziyou` → `Referer: https://www.diziyou.love/` (`storage.diziyou.one` adresleri çözümleyicide otomatik `.love` alanına geçirilir)
+- `pilavyerplay` → Kaynağın kendi hostu baz alınır (`https://pilavyerplay.top/` veya `https://play2.pilavyerplay.top/`)
 - `molystream` / `dbx` → `Referer: https://dbx.molystream.org/`
 - `morencius` → `Referer: https://morencius.com/`
 - `pichive` / `hotlinger` → `Referer: https://sn.hotlinger.com/` veya `https://four.pichive.online/`
@@ -695,6 +697,10 @@ Bu sayede TLS Client Hello el sıkışması, cipher suite sırası ve HTTP/2 fra
 - **Çoklu Kısa Drama Çözümleyici Şemaları & SSRF Sertleştirmesi ([`resolve-stream`](../koup-app/src/app/api/resolve-stream/route.ts), [`stream-proxy`](../koup-app/src/app/api/stream-proxy/route.ts), [`stream_resolver.py`](../scrapers/stream_resolver.py)):**
   - `dramavadisi:`, `dramabox:`, `wdt:` ve `pilavyer:` özel akış şemaları tam desteklenir (DramaVadisi göreli `src`, DramaBox `c.id`, Shortİzle Inertia v1/v2 + `gateway_bootstrap` + `mbdp` + rekürsif `vidmoly`, `dtpasn.asia` `fireplayer_player` çerez oturumu, `b-cdn.net` Referer tünelleme).
   - DNS, CIDR ve IPv6 dahil yönlendirme-sonrası SSRF yeniden doğrulaması ve HTTP 502 HTML/güvenlik-hatası yanıtlarını reddetme kuralı uygulanır.
+- **Diziyou.love Migrasyonu, Pilavyer Çoklu Host & Canlılık Doğrulaması (2026-11 Phase 1):**
+  - Eski `storage.diziyou.one` URL'leri çözümleyicide (`diziyou-hls`) ve arşivde `storage.diziyou.love` alan adına geçirildi; `#EXTM3U` canlılık kontrolü (`410 Gone` + `isDead: true`) sayesinde sonsuz yükleme dönmesi engellendi ve `tr.vtt`/`en.vtt` altyazıları eşlendi.
+  - `pilavyer` çözümleyicisi (`resolve-stream` ve `stream_resolver.py`) sabit `play2` yerine kaynağın kendi hostunu (`pilavyerplay.top` / `play2.pilavyerplay.top`) önceleyecek, `window.__PLAYER__.subs` altyazılarını ayrıştıracak ve canlı `#EXTM3U` doğrulamasından sonra `/api/stream-proxy` (`/api/stream.php` dahil) üzerinden tünellenecek şekilde güncellendi.
+  - Doğrudan `.m3u8` geçişleri 4 saniyelik canlılık kontrolüne bağlandı; `hdfilm-close` ve `dplayer82`/`dizilla` (`NP_GATE`) Tier `8` önceliğine düşürülerek çalışan yerli kaynakların önü açıldı.
 
 ---
 

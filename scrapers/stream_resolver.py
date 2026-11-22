@@ -90,42 +90,53 @@ def resolve_pilavyer(url: str, session: Optional[cfr.Session] = None) -> Optiona
             pass
 
     if pv_slug:
-        s_url = f"https://play2.pilavyerplay.top/assets/js/s.php?s={pv_slug}"
-        try:
-            r = session.get(s_url, headers={"User-Agent": COMMON_UA, "Referer": "https://diziizle.cafe/", "Origin": "https://diziizle.cafe"}, timeout=8)
-            if r.status_code == 200:
-                stream_url = None
-                subtitles = []
-                m_player = re.search(r"window\.__PLAYER__\s*=\s*(\{[\s\S]*?\});", r.text)
-                if m_player:
-                    try:
-                        p_obj = json.loads(m_player.group(1))
-                        stream_url = p_obj.get("file") or p_obj.get("stream")
-                        for t in p_obj.get("subtitles") or []:
-                            if t.get("file"):
-                                f_sub = t["file"]
-                                sub_url = f_sub if f_sub.startswith("http") else f"https://play2.pilavyerplay.top{f_sub}"
-                                subtitles.append({"label": t.get("label", "Türkçe"), "lang": "tr", "url": sub_url})
-                    except Exception:
-                        pass
-                if not stream_url:
-                    m_f = re.search(r'"file"\s*:\s*"([^"]+)"', r.text) or re.search(r'(/api/stream\.php\?[^"\']*)', r.text)
-                    if m_f:
-                        stream_url = m_f.group(1).replace(r"\/", "/")
+        incoming_host = ""
+        m_host = re.search(r"https?://([^/]+)", url)
+        if m_host and "pilavyerplay." in m_host.group(1).lower():
+            incoming_host = m_host.group(1).lower()
+        hosts = [incoming_host] if incoming_host else []
+        for h in ("pilavyerplay.top", "play2.pilavyerplay.top"):
+            if h not in hosts:
+                hosts.append(h)
 
-                if stream_url:
-                    if stream_url.startswith("/"):
-                        stream_url = f"https://play2.pilavyerplay.top{stream_url}"
-                    return {
-                        "mode": "native_hls",
-                        "stream_url": stream_url,
-                        "type": "hls",
-                        "provider": "pilavyer",
-                        "headers": {"Referer": "https://diziizle.cafe/", "Origin": "https://diziizle.cafe"},
-                        "subtitles": subtitles,
-                    }
-        except Exception:
-            pass
+        for host in hosts:
+            host_origin = f"https://{host}"
+            s_url = f"{host_origin}/assets/js/s.php?s={pv_slug}"
+            try:
+                r = session.get(s_url, headers={"User-Agent": COMMON_UA, "Referer": "https://diziizle.cafe/", "Origin": "https://diziizle.cafe"}, timeout=8)
+                if r.status_code == 200:
+                    stream_url = None
+                    subtitles = []
+                    m_player = re.search(r"window\.__PLAYER__\s*=\s*(\{[\s\S]*?\});", r.text)
+                    if m_player:
+                        try:
+                            p_obj = json.loads(m_player.group(1))
+                            stream_url = p_obj.get("stream") or p_obj.get("file")
+                            for t in (p_obj.get("subs") or p_obj.get("subtitles") or []):
+                                f_sub = t.get("file") or t.get("url") or t.get("src")
+                                if f_sub:
+                                    sub_url = f_sub if f_sub.startswith("http") else f"{host_origin}{f_sub}"
+                                    subtitles.append({"label": t.get("label", "Türkçe"), "lang": t.get("lang", "tr"), "url": sub_url})
+                        except Exception:
+                            pass
+                    if not stream_url:
+                        m_f = re.search(r'"stream"\s*:\s*"([^"]+)"', r.text) or re.search(r'"file"\s*:\s*"([^"]+)"', r.text) or re.search(r'(/api/stream\.php\?[^"\']*)', r.text)
+                        if m_f:
+                            stream_url = m_f.group(1).replace(r"\/", "/").replace("\\u0026", "&")
+
+                    if stream_url:
+                        if stream_url.startswith("/"):
+                            stream_url = f"{host_origin}{stream_url}"
+                        return {
+                            "mode": "native_hls",
+                            "stream_url": stream_url,
+                            "type": "hls",
+                            "provider": "pilavyer",
+                            "headers": {"Referer": f"{host_origin}/", "Origin": host_origin},
+                            "subtitles": subtitles,
+                        }
+            except Exception:
+                continue
     return None
 
 
