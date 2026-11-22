@@ -3,7 +3,7 @@
 import React, { useState, useEffect, use, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import {
   Heart,
   Bell,
@@ -158,7 +158,6 @@ export default function SeriesDetailClient({
   initialFranchise,
 }: SeriesDetailClientProps) {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const user = useKoUpSelector((s) => s.user);
   const authLoading = useKoUpSelector((s) => s.authLoading);
@@ -678,16 +677,20 @@ export default function SeriesDetailClient({
           }
         });
 
-        // Handle direct ?play=1 redirect
-        if (searchParams.get('play')) {
+        // Handle direct ?play=1 redirect (read window.location.search on client so ISR SSR HTML is never bailed out)
+        const urlParams =
+          typeof window !== 'undefined'
+            ? new URLSearchParams(window.location.search)
+            : null;
+        if (urlParams?.get('play')) {
           const userProgForRedirect = progressMap[item.id];
           const computedNextEp = getNextEpisodeNumber(
             userProgForRedirect,
             item.episode_count || 1
           );
-          const epToPlay = searchParams.get('ep') || String(computedNextEp);
+          const epToPlay = urlParams.get('ep') || String(computedNextEp);
           const seasonToPlay =
-            searchParams.get('season') ||
+            urlParams.get('season') ||
             String(userProgForRedirect?.last_season_num || 1);
           router.replace(`/seri/${item.slug}/${epToPlay}?season=${seasonToPlay}`);
           return;
@@ -760,7 +763,7 @@ export default function SeriesDetailClient({
       isCancelled = true;
       cancelIdleRelated?.();
     };
-  }, [slug, searchParams, router]);
+  }, [slug, router]);
 
   // Dynamic document title
   useEffect(() => {
@@ -1405,7 +1408,7 @@ export default function SeriesDetailClient({
                 target.src = `/api/image-proxy?tmdbId=${encodeURIComponent(String(media.tmdb_id || ''))}&title=${encodeURIComponent(media.title)}&type=banner&size=w300`;
               }
             }}
-            className="w-full h-full object-cover filter blur-2xl scale-110 opacity-75"
+            className="w-full h-full object-cover filter blur-xl md:blur-2xl scale-105 md:scale-110 opacity-70 md:opacity-75"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-[#080808]/50 to-black/20" />
           <div className="absolute inset-0 bg-gradient-to-r from-[#080808]/75 via-transparent to-transparent hidden md:block" />

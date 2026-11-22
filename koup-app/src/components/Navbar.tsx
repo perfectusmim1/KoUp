@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -49,7 +49,7 @@ import {
   cleanMediaTitle,
 } from '@/lib/supabase';
 import { dedupeAndSortNotifications } from '@/lib/notifications';
-import { useKoUpSelector } from '@/context/KoUpContext';
+import { useKoUpSelector, useKoUpStoreGet } from '@/context/KoUpContext';
 import { cachedQuery, registerMediaItems } from '@/lib/cache';
 
 const AuthModal = dynamic(() => import('@/components/AuthModal'), {
@@ -195,25 +195,23 @@ function NavbarNotificationThumbnail({
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
+  const getStore = useKoUpStoreGet();
   const user = useKoUpSelector((s) => s.user);
-  const profile = useKoUpSelector((s) => s.profile);
   const notifications = useKoUpSelector((s) => s.notifications);
   const unreadCount = useKoUpSelector((s) => s.unreadCount);
-  const markNotificationsRead = useKoUpSelector((s) => s.markNotificationsRead);
-  const markAllNotificationsRead = useKoUpSelector((s) => s.markAllNotificationsRead);
-  const markNotificationRead = useKoUpSelector((s) => s.markNotificationRead);
-  const triggerSound = useKoUpSelector((s) => s.triggerSound);
-  const soundEnabled = useKoUpSelector((s) => s.soundEnabled);
-  const toggleSound = useKoUpSelector((s) => s.toggleSound);
-  const setIsAuthModalOpen = useKoUpSelector((s) => s.setIsAuthModalOpen);
   const isAuthModalOpen = useKoUpSelector((s) => s.isAuthModalOpen);
+  const navbarBehavior = useKoUpSelector((s) => s.navbarBehavior);
+
+  const markAllNotificationsRead = useCallback(() => getStore().markAllNotificationsRead(), [getStore]);
+  const markNotificationRead = useCallback((id: string) => getStore().markNotificationRead(id), [getStore]);
+  const triggerSound = useCallback((kind?: string) => getStore().triggerSound(kind), [getStore]);
+  const setIsAuthModalOpen = useCallback((v: boolean) => getStore().setIsAuthModalOpen(v), [getStore]);
+  const logout = useCallback(() => getStore().logout(), [getStore]);
+
   const [authModalMounted, setAuthModalMounted] = useState(false);
   useEffect(() => {
     if (isAuthModalOpen) setAuthModalMounted(true);
   }, [isAuthModalOpen]);
-  const logout = useKoUpSelector((s) => s.logout);
-  const navbarBehavior = useKoUpSelector((s) => s.navbarBehavior);
-  const floatingNavbarEnabled = useKoUpSelector((s) => s.floatingNavbarEnabled);
 
   const dedupedNotifications = React.useMemo(() => {
     return dedupeAndSortNotifications(notifications);
@@ -227,7 +225,6 @@ export default function Navbar() {
   const [personResults, setPersonResults] = useState<PersonItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
 
   const [isScrolled, setIsScrolled] = useState(false);
@@ -236,6 +233,11 @@ export default function Navbar() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const notifContainerRef = useRef<HTMLDivElement>(null);
   const profileContainerRef = useRef<HTMLDivElement>(null);
+  const drawerTriggerRef = useRef<HTMLButtonElement>(null);
+  const openMenusRef = useRef({ notif: false, profile: false, search: false });
+  openMenusRef.current.notif = notifOpen;
+  openMenusRef.current.profile = profileDropdownOpen;
+  openMenusRef.current.search = searchOpen;
 
   const isScrolledRef = useRef(false);
 
@@ -374,6 +376,177 @@ export default function Navbar() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const drawerRef = useRef<HTMLDialogElement>(null);
+  const drawerScrollerRef = useRef<HTMLDivElement>(null);
+  const drawerSheetRef = useRef<HTMLElement>(null);
+  const drawerPhaseRef = useRef<'closed' | 'opening' | 'open' | 'closing'>('closed');
+  const drawerEnteredRef = useRef(false);
+  const closeFallbackTimerRef = useRef<number | null>(null);
+
+  const finalizeDrawerClosed = useCallback(() => {
+    if (closeFallbackTimerRef.current !== null) {
+      window.clearTimeout(closeFallbackTimerRef.current);
+      closeFallbackTimerRef.current = null;
+    }
+    const drawer = drawerRef.current;
+    drawerPhaseRef.current = 'closed';
+    drawerEnteredRef.current = false;
+    if (drawer?.open) {
+      drawer.close();
+    }
+    drawerTriggerRef.current?.setAttribute('aria-expanded', 'false');
+  }, []);
+
+  const openDrawer = useCallback(async () => {
+    const drawer = drawerRef.current;
+    const scroller = drawerScrollerRef.current;
+    if (!drawer || !scroller) return;
+
+    if (closeFallbackTimerRef.current !== null) {
+      window.clearTimeout(closeFallbackTimerRef.current);
+      closeFallbackTimerRef.current = null;
+    }
+
+    drawerPhaseRef.current = 'opening';
+    drawerEnteredRef.current = false;
+    // Avoid any React re-render of Navbar on drawer open unless another popover is actually open
+    if (openMenusRef.current.notif) setNotifOpen(false);
+    if (openMenusRef.current.profile) setProfileDropdownOpen(false);
+    if (openMenusRef.current.search) setSearchOpen(false);
+    drawerTriggerRef.current?.setAttribute('aria-expanded', 'true');
+
+    if (!drawer.open) {
+      drawer.showModal();
+    }
+
+    const supportsInitialTarget =
+      typeof CSS !== 'undefined' &&
+      typeof CSS.supports === 'function' &&
+      CSS.supports('scroll-initial-target', 'nearest');
+
+    if (!supportsInitialTarget) {
+      scroller.scrollTo({ left: scroller.offsetWidth, behavior: 'instant' });
+      await new Promise<void>((r) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => r()))
+      );
+    }
+
+    if (drawer.open && drawerPhaseRef.current === 'opening') {
+      scroller.scrollTo({ left: 0, behavior: 'auto' });
+    }
+  }, []);
+
+  const closeDrawer = useCallback((immediate = false) => {
+    const drawer = drawerRef.current;
+    const scroller = drawerScrollerRef.current;
+    if (!drawer || !drawer.open) {
+      drawerTriggerRef.current?.setAttribute('aria-expanded', 'false');
+      drawerPhaseRef.current = 'closed';
+      return;
+    }
+    if (immediate) {
+      finalizeDrawerClosed();
+      return;
+    }
+    drawerPhaseRef.current = 'closing';
+    if (scroller) {
+      scroller.scrollTo({ left: scroller.offsetWidth, behavior: 'auto' });
+    }
+    if (closeFallbackTimerRef.current !== null) {
+      window.clearTimeout(closeFallbackTimerRef.current);
+    }
+    closeFallbackTimerRef.current = window.setTimeout(() => {
+      finalizeDrawerClosed();
+    }, 420);
+  }, [finalizeDrawerClosed]);
+
+  // Native top-layer <dialog> scroll-snap drawer observer, dismissal, and backdrop fallback
+  useEffect(() => {
+    const drawer = drawerRef.current;
+    const scroller = drawerScrollerRef.current;
+    const sheet = drawerSheetRef.current;
+    if (!drawer || !scroller || !sheet) return;
+    drawerTriggerRef.current?.setAttribute('aria-expanded', drawer.open ? 'true' : 'false');
+
+    const visibleThreshold = 1 / Math.max(320, window.innerWidth);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries.at(-1);
+        if (!entry || !drawer.open) return;
+
+        if (entry.intersectionRatio >= visibleThreshold) {
+          drawerEnteredRef.current = true;
+        }
+        if (entry.intersectionRatio >= 0.98) {
+          drawerPhaseRef.current = 'open';
+          drawerTriggerRef.current?.setAttribute('aria-expanded', 'true');
+        } else if (
+          entry.intersectionRatio < visibleThreshold &&
+          (drawerPhaseRef.current === 'closing' ||
+            drawerPhaseRef.current === 'open' ||
+            drawerEnteredRef.current)
+        ) {
+          finalizeDrawerClosed();
+        }
+      },
+      { root: drawer, threshold: [visibleThreshold, 0.99] }
+    );
+    observer.observe(sheet);
+
+    // Light-dismiss when tapping dimmed area outside the sheet
+    const handleDialogClick = (event: MouseEvent) => {
+      if (!sheet.contains(event.target as Node)) {
+        closeDrawer();
+      }
+    };
+    drawer.addEventListener('click', handleDialogClick);
+
+    // Escape key: animate slide-out instead of instant jump-close
+    const handleDialogCancel = (event: Event) => {
+      if (event.cancelable) {
+        event.preventDefault();
+        closeDrawer();
+      } else {
+        finalizeDrawerClosed();
+      }
+    };
+    drawer.addEventListener('cancel', handleDialogCancel);
+
+    // Fallback backdrop fade when scroll-driven animation-timeline is unsupported
+    const supportsTimeline =
+      typeof CSS !== 'undefined' &&
+      typeof CSS.supports === 'function' &&
+      CSS.supports('animation-timeline: scroll()');
+    const handleFallbackScroll = () => {
+      const sheetW = sheet.offsetWidth || 310;
+      const ratio = Math.max(0, Math.min(1, 1 - scroller.scrollLeft / sheetW));
+      drawer.style.setProperty('--drawer-backdrop', ratio.toFixed(3));
+    };
+    if (!supportsTimeline) {
+      scroller.addEventListener('scroll', handleFallbackScroll, { passive: true });
+    }
+
+    return () => {
+      observer.disconnect();
+      drawer.removeEventListener('click', handleDialogClick);
+      drawer.removeEventListener('cancel', handleDialogCancel);
+      if (!supportsTimeline) {
+        scroller.removeEventListener('scroll', handleFallbackScroll);
+      }
+      if (closeFallbackTimerRef.current !== null) {
+        window.clearTimeout(closeFallbackTimerRef.current);
+        closeFallbackTimerRef.current = null;
+      }
+    };
+  }, [closeDrawer, finalizeDrawerClosed]);
+
+  // Ensure mobile drawer closes cleanly on route change
+  useEffect(() => {
+    if (drawerRef.current?.open) {
+      finalizeDrawerClosed();
+    }
+  }, [pathname, finalizeDrawerClosed]);
+
   // Keyboard shortcut Ctrl+K / Cmd+K
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -385,33 +558,15 @@ export default function Navbar() {
         setSearchOpen(false);
         setMobileSearchOpen(false);
         setNotifOpen(false);
-        setMobileMenuOpen(false);
         setProfileDropdownOpen(false);
+        if (drawerRef.current?.open) {
+          closeDrawer();
+        }
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
-
-  // Lock body scroll and dynamic viewport rubber-banding with rAF to prevent animation hitching on mobile
-  useEffect(() => {
-    if (!mobileMenuOpen) return;
-
-    const originalOverflow = document.body.style.overflow;
-    const originalTouchAction = document.body.style.touchAction;
-
-    // Microtask/rAF prevents synchronous forced layout reflow during drawer slide-in transition
-    const timer = setTimeout(() => {
-      document.body.style.overflow = 'hidden';
-      document.body.style.touchAction = 'none';
-    }, 16);
-
-    return () => {
-      clearTimeout(timer);
-      document.body.style.overflow = originalOverflow;
-      document.body.style.touchAction = originalTouchAction;
-    };
-  }, [mobileMenuOpen]);
+  }, [closeDrawer]);
 
   const [optimisticPath, setOptimisticPath] = useState<string | null>(null);
   const navLinkRefs = useRef<Record<string, HTMLAnchorElement | null>>({});
@@ -485,11 +640,11 @@ export default function Navbar() {
           className={`pointer-events-auto flex items-center justify-between gap-2 lg:gap-3 xl:gap-5 outline-none transition-[width,max-width,margin-top,padding,border-radius,background-color,box-shadow,border-color] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)] ${
             navbarBehavior === 'floating'
               ? isScrolled
-                ? 'mt-2 sm:mt-3 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-[28px] bg-[#0a0b10]/95 backdrop-blur-xl border-0 shadow-[0_20px_50px_rgba(0,0,0,0.85)] py-2 sm:py-2.5 px-3 sm:px-5 lg:px-6'
+                ? 'mt-2 sm:mt-3 max-w-[1620px] w-[95%] sm:w-[92%] xl:w-[90%] rounded-2xl sm:rounded-[28px] bg-[#0a0b10]/[0.97] lg:bg-[#0a0b10]/95 lg:backdrop-blur-xl border-0 shadow-[0_14px_36px_rgba(0,0,0,0.85)] py-2 sm:py-2.5 px-3 sm:px-5 lg:px-6'
                 : 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-0 shadow-none py-3.5 sm:py-5 px-3.5 sm:px-6 lg:px-6 xl:px-10 2xl:px-14'
               : navbarBehavior === 'sticky'
               ? isScrolled
-                ? 'mt-0 w-full max-w-[2560px] rounded-none bg-[#0a0b10]/95 backdrop-blur-xl border-0 shadow-[0_12px_32px_rgba(0,0,0,0.85)] py-3 sm:py-4 px-3.5 sm:px-6 lg:px-6 xl:px-10 2xl:px-14'
+                ? 'mt-0 w-full max-w-[2560px] rounded-none bg-[#0a0b10]/[0.97] lg:bg-[#0a0b10]/95 lg:backdrop-blur-xl border-0 shadow-[0_12px_32px_rgba(0,0,0,0.85)] py-3 sm:py-4 px-3.5 sm:px-6 lg:px-6 xl:px-10 2xl:px-14'
                 : 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-0 shadow-none py-3.5 sm:py-5 px-3.5 sm:px-6 lg:px-6 xl:px-10 2xl:px-14'
               : /* static: sitenin üstünde kalır, sayfa kayınca bizle gelmez */
                 'mt-0 w-full max-w-[2560px] rounded-none bg-gradient-to-b from-black/60 via-black/25 to-transparent border-0 shadow-none py-3.5 sm:py-5 px-3.5 sm:px-6 lg:px-6 xl:px-10 2xl:px-14'
@@ -498,9 +653,17 @@ export default function Navbar() {
       {/* LEFT: Brand Mark (Original KU Logo — No Circle or Box Wrapper) */}
       <div className="pointer-events-auto flex items-center gap-2 sm:gap-3 shrink-0">
         <button
+          ref={drawerTriggerRef}
           type="button"
-          onClick={() => setMobileMenuOpen((v) => !v)}
-          className="lg:hidden w-10 h-10 rounded-full bg-black/40 hover:bg-white/12 border border-white/[0.10] hover:border-white/[0.18] backdrop-blur-md flex items-center justify-center text-white/80 hover:text-white cursor-pointer select-none focus:outline-none focus-visible:outline-none transition-all duration-200"
+          onClick={() => {
+            if (drawerRef.current?.open) {
+              closeDrawer();
+            } else {
+              void openDrawer();
+            }
+          }}
+          aria-controls="mobile-nav-drawer"
+          className="lg:hidden w-11 h-11 rounded-full bg-[#121318]/90 hover:bg-white/12 border border-white/[0.12] hover:border-white/[0.18] flex items-center justify-center text-white/85 hover:text-white cursor-pointer select-none focus:outline-none focus-visible:outline-none transition-colors duration-150"
           aria-label="Menü"
         >
           <Menu className="w-5 h-5" />
@@ -508,7 +671,7 @@ export default function Navbar() {
 
         <Link
           href="/"
-          prefetch={true}
+          prefetch={false}
           onClick={() => triggerSound('click')}
           className="hidden sm:flex items-center gap-2 sm:gap-3 group select-none shrink-0"
         >
@@ -555,7 +718,7 @@ export default function Navbar() {
                 navLinkRefs.current[item.href] = node;
               }}
               href={item.href}
-              prefetch={true}
+              prefetch={false}
               onMouseDown={(e) => {
                 if (e.button === 0) {
                   setOptimisticPath(item.href);
@@ -590,7 +753,7 @@ export default function Navbar() {
             triggerSound('click');
             setMobileSearchOpen(true);
           }}
-          className="md:hidden w-10 h-10 rounded-full bg-black/40 hover:bg-white/12 border border-white/[0.10] hover:border-white/[0.18] backdrop-blur-md flex items-center justify-center text-white/80 hover:text-white cursor-pointer transition-all duration-200"
+          className="md:hidden w-11 h-11 rounded-full bg-[#121318]/90 hover:bg-white/12 border border-white/[0.12] hover:border-white/[0.18] flex items-center justify-center text-white/85 hover:text-white cursor-pointer transition-colors duration-150"
           aria-label="Arama Yap"
         >
           <Search className="w-4 h-4" />
@@ -657,7 +820,7 @@ export default function Navbar() {
                   </span>
                   <Link
                     href={`/kesfet?q=${encodeURIComponent(query)}`}
-                    prefetch={true}
+                    prefetch={false}
                     onClick={() => setSearchOpen(false)}
                     className="text-xs text-white/80 hover:text-white flex items-center gap-1 font-medium transition-colors"
                   >
@@ -810,10 +973,10 @@ export default function Navbar() {
               setProfileDropdownOpen(false);
               setSearchOpen(false);
             }}
-            className={`w-10 h-10 rounded-full flex items-center justify-center relative cursor-pointer backdrop-blur-md transition-all duration-200 focus:outline-none ${
+            className={`w-11 h-11 md:w-10 md:h-10 rounded-full flex items-center justify-center relative cursor-pointer md:backdrop-blur-md transition-colors duration-150 focus:outline-none ${
               notifOpen
                 ? 'bg-white/20 border border-white/30 text-white'
-                : 'bg-black/40 hover:bg-white/12 border border-white/[0.10] hover:border-white/[0.18] text-white/80 hover:text-white'
+                : 'bg-[#121318]/90 md:bg-black/40 hover:bg-white/12 border border-white/[0.12] md:border-white/[0.10] hover:border-white/[0.18] text-white/85 hover:text-white'
             }`}
             aria-label="Bildirimler"
           >
@@ -832,7 +995,7 @@ export default function Navbar() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 6, scale: 0.96 }}
                 transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="fixed left-3 right-3 top-20 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-3 sm:w-[410px] sm:max-w-[410px] rounded-3xl bg-[#0e0f14]/96 backdrop-blur-xl p-4 shadow-[0_28px_64px_rgba(0,0,0,0.95)] border border-white/[0.10] z-50 flex flex-col gap-3"
+                className="fixed left-3 right-3 top-20 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-3 sm:w-[410px] sm:max-w-[410px] rounded-3xl bg-[#0e0f14]/[0.98] sm:bg-[#0e0f14]/96 sm:backdrop-blur-xl p-4 shadow-[0_24px_56px_rgba(0,0,0,0.95)] border border-white/[0.10] z-50 flex flex-col gap-3"
               >
                 {/* Header */}
                 <div className="flex items-center justify-between pb-2.5 border-b border-white/10">
@@ -941,7 +1104,7 @@ export default function Navbar() {
                           <Link
                             key={n.id}
                             href={href}
-                            prefetch={true}
+                            prefetch={false}
                             onClick={() => {
                               markNotificationRead(n.id);
                               setNotifOpen(false);
@@ -978,7 +1141,7 @@ export default function Navbar() {
                 <div className="pt-2 border-t border-white/10">
                   <Link
                     href="/bildirimler"
-                    prefetch={true}
+                    prefetch={false}
                     onClick={() => setNotifOpen(false)}
                     className="w-full py-2.5 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                   >
@@ -995,7 +1158,7 @@ export default function Navbar() {
         {user?.role === 'admin' && (
           <Link
             href="/admin"
-            prefetch={true}
+            prefetch={false}
             aria-label="Admin Kontrol Merkezi"
             className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-400/25 hover:border-amber-400/40 text-xs font-medium text-amber-300 backdrop-blur-md transition-all duration-200 shadow-[0_0_12px_rgba(245,158,11,0.15)]"
           >
@@ -1014,10 +1177,10 @@ export default function Navbar() {
                 setNotifOpen(false);
                 setSearchOpen(false);
               }}
-              className={`group flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 rounded-full backdrop-blur-md transition-all duration-200 cursor-pointer select-none relative focus:outline-none ${
+              className={`group flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 rounded-full md:backdrop-blur-md transition-colors duration-150 cursor-pointer select-none relative focus:outline-none ${
                 profileDropdownOpen
                   ? 'bg-white/20 border border-white/30 text-white'
-                  : 'bg-black/40 hover:bg-white/12 border border-white/[0.10] hover:border-white/[0.18] text-white/90 hover:text-white'
+                  : 'bg-[#121318]/90 md:bg-black/40 hover:bg-white/12 border border-white/[0.12] md:border-white/[0.10] hover:border-white/[0.18] text-white/90 hover:text-white'
               }`}
               aria-label="Kullanıcı Menüsü"
               aria-expanded={profileDropdownOpen}
@@ -1046,7 +1209,7 @@ export default function Navbar() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 6, scale: 0.96 }}
                   transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                  className="fixed right-3 top-20 sm:absolute sm:right-0 sm:top-full sm:mt-3 w-64 rounded-3xl bg-[#0e0f14]/96 backdrop-blur-xl p-3 shadow-[0_28px_64px_rgba(0,0,0,0.95)] border border-white/[0.10] z-50 flex flex-col gap-1"
+                  className="fixed right-3 top-20 sm:absolute sm:right-0 sm:top-full sm:mt-3 w-64 rounded-3xl bg-[#0e0f14]/[0.98] sm:bg-[#0e0f14]/96 sm:backdrop-blur-xl p-3 shadow-[0_24px_56px_rgba(0,0,0,0.95)] border border-white/[0.10] z-50 flex flex-col gap-1"
                 >
                   {/* User Header */}
                   <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/[0.06] flex items-center gap-3 mb-1">
@@ -1083,7 +1246,7 @@ export default function Navbar() {
                   {/* Navigation Options */}
                   <Link
                     href={`/profil/${encodeURIComponent(user.username)}`}
-                    prefetch={true}
+                    prefetch={false}
                     onClick={() => {
                       triggerSound('click');
                       setProfileDropdownOpen(false);
@@ -1096,7 +1259,7 @@ export default function Navbar() {
 
                   <Link
                     href="/kutuphane"
-                    prefetch={true}
+                    prefetch={false}
                     onClick={() => {
                       triggerSound('click');
                       setProfileDropdownOpen(false);
@@ -1109,7 +1272,7 @@ export default function Navbar() {
 
                   <Link
                     href="/favoriler"
-                    prefetch={true}
+                    prefetch={false}
                     onClick={() => {
                       triggerSound('click');
                       setProfileDropdownOpen(false);
@@ -1122,7 +1285,7 @@ export default function Navbar() {
 
                   <Link
                     href="/gecmis"
-                    prefetch={true}
+                    prefetch={false}
                     onClick={() => {
                       triggerSound('click');
                       setProfileDropdownOpen(false);
@@ -1135,7 +1298,7 @@ export default function Navbar() {
 
                   <Link
                     href="/listelerim"
-                    prefetch={true}
+                    prefetch={false}
                     onClick={() => {
                       triggerSound('click');
                       setProfileDropdownOpen(false);
@@ -1148,7 +1311,7 @@ export default function Navbar() {
 
                   <Link
                     href="/takip-edilenler"
-                    prefetch={true}
+                    prefetch={false}
                     onClick={() => {
                       triggerSound('click');
                       setProfileDropdownOpen(false);
@@ -1161,7 +1324,7 @@ export default function Navbar() {
 
                   <Link
                     href="/seri-istek"
-                    prefetch={true}
+                    prefetch={false}
                     onClick={() => {
                       triggerSound('click');
                       setProfileDropdownOpen(false);
@@ -1174,7 +1337,7 @@ export default function Navbar() {
 
                   <Link
                     href="/ayarlar"
-                    prefetch={true}
+                    prefetch={false}
                     onClick={() => {
                       triggerSound('click');
                       setProfileDropdownOpen(false);
@@ -1188,7 +1351,7 @@ export default function Navbar() {
                   {user.role === 'admin' && (
                     <Link
                       href="/admin"
-                      prefetch={true}
+                      prefetch={false}
                       onClick={() => {
                         triggerSound('click');
                         setProfileDropdownOpen(false);
@@ -1225,7 +1388,7 @@ export default function Navbar() {
               triggerSound('click');
               setIsAuthModalOpen(true);
             }}
-            className="group flex items-center gap-2 px-4 py-2 rounded-full bg-black/40 hover:bg-white/12 border border-white/[0.10] hover:border-white/[0.18] backdrop-blur-md text-xs font-semibold text-white/90 hover:text-white transition-all duration-200 cursor-pointer select-none"
+            className="group flex items-center gap-2 px-4 py-2 rounded-full bg-[#121318]/90 md:bg-black/40 hover:bg-white/12 border border-white/[0.12] md:border-white/[0.10] hover:border-white/[0.18] md:backdrop-blur-md text-xs font-semibold text-white/90 hover:text-white transition-colors duration-150 cursor-pointer select-none min-h-[40px]"
             aria-label="Giriş Yap"
           >
             <LogIn className="w-3.5 h-3.5 text-white/70 group-hover:text-white group-hover:translate-x-0.5 transition-all duration-300" />
@@ -1236,320 +1399,313 @@ export default function Navbar() {
       </header>
       </div>
 
-      {/* Mobile Navigation Drawer with Smoked Frosted Glass & Quick Discovery */}
-      <AnimatePresence>
-        {mobileMenuOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              onClick={() => setMobileMenuOpen(false)}
-              className="pointer-events-auto fixed inset-0 z-40 bg-black/75 backdrop-blur-sm touch-none overscroll-none lg:hidden transform-gpu will-change-[opacity]"
-            />
-            <motion.div
-              initial={{ x: '-100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '-100%' }}
-              transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-              className="pointer-events-auto lg:hidden fixed inset-y-0 left-0 w-[310px] sm:w-[350px] max-w-[86vw] h-full h-dvh bg-[#0a0b10]/95 backdrop-blur-2xl p-4 sm:p-5 border-r border-white/[0.08] shadow-[24px_0_60px_rgba(0,0,0,0.95)] z-50 flex flex-col justify-between overflow-y-auto overscroll-contain touch-pan-y transform-gpu will-change-transform no-scrollbar"
-            >
-              {/* Subtle Ambient Specular Sheen */}
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute -top-24 -left-16 w-80 h-80 rounded-full bg-gradient-to-br from-white/[0.08] via-indigo-500/[0.03] to-transparent blur-3xl"
-              />
-
-              {/* Drawer Top Header + Search + Quick Categories */}
-              <div className="relative z-10 flex flex-col min-h-0 flex-1">
-                {/* Brand Header */}
-                <div className="flex items-center justify-between pb-3.5 border-b border-white/[0.08]">
-                  <Link
-                    href="/"
-                    prefetch={true}
-                    onClick={() => {
-                      triggerSound('click');
-                      setMobileMenuOpen(false);
-                    }}
-                    className="flex items-center gap-2.5 group"
-                  >
-                    <img
-                      src="/logo-dark.png"
-                      alt="KoUp"
-                      className="h-8 w-auto object-contain drop-shadow-[0_4px_14px_rgba(255,255,255,0.22)]"
-                    />
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[15px] font-bold text-white tracking-wider leading-none">
-                          KoUp
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-white/10 border border-white/15 text-white/90">
-                          TV+
-                        </span>
-                      </div>
-                      <span className="text-[8.5px] tracking-[0.22em] font-medium uppercase text-white/40 mt-1">
-                        Cinema Studio
+      {/* Native Top-Layer Mobile Navigation Drawer (60fps Compositor Scroll-Snap) */}
+      <dialog
+        ref={drawerRef}
+        id="mobile-nav-drawer"
+        aria-label="Gezinme menüsü"
+        className="koup-drawer lg:hidden"
+      >
+        <div ref={drawerScrollerRef} className="koup-drawer-scroller">
+          <nav
+            ref={drawerSheetRef}
+            className="koup-drawer-sheet p-4 sm:p-5 no-scrollbar"
+          >
+            {/* Drawer Top Header + Navigation Links */}
+            <div className="relative z-10 flex flex-col min-h-0 flex-1">
+              {/* Brand Header */}
+              <div className="flex items-center justify-between pb-3.5 border-b border-white/[0.08]">
+                <Link
+                  href="/"
+                  prefetch={false}
+                  onClick={() => {
+                    triggerSound('click');
+                    closeDrawer();
+                  }}
+                  className="flex items-center gap-2.5 group"
+                >
+                  <img
+                    src="/logo-dark.png"
+                    alt="KoUp"
+                    loading="lazy"
+                    decoding="async"
+                    className="h-8 w-auto object-contain"
+                  />
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[15px] font-bold text-white tracking-wider leading-none">
+                        KoUp
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-white/10 border border-white/15 text-white/90">
+                        TV+
                       </span>
                     </div>
-                  </Link>
-                  <button
+                    <span className="text-[8.5px] tracking-[0.22em] font-medium uppercase text-white/40 mt-1">
+                      Cinema Studio
+                    </span>
+                  </div>
+                </Link>
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={() => {
+                    triggerSound('click');
+                    closeDrawer();
+                  }}
+                  className="w-11 h-11 rounded-full bg-white/[0.06] hover:bg-white/[0.12] active:scale-95 border border-white/[0.10] flex items-center justify-center text-white/75 hover:text-white transition-colors cursor-pointer"
+                  aria-label="Kapat"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Primary Navigation Links */}
+              <div className="pt-3 space-y-1.5 overflow-y-auto flex-1 no-scrollbar pr-0.5">
+                {NAV_LINKS.map((item) => {
+                  const Icon = item.icon;
+                  const active = isNavActive(item.href);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      prefetch={false}
+                      onClick={() => {
+                        triggerSound('click');
+                        closeDrawer();
+                      }}
+                      className={`group flex items-center justify-between px-3 min-h-[44px] py-2.5 rounded-xl text-[13px] font-semibold transition-colors duration-150 ${
+                        active
+                          ? 'bg-white/[0.12] text-white border border-white/[0.16]'
+                          : 'text-white/75 hover:text-white hover:bg-white/[0.05] border border-transparent hover:border-white/[0.07]'
+                      }`}
+                    >
+                      <span className="flex items-center gap-3">
+                        <span
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+                            active
+                              ? 'bg-white/20 border border-white/25 text-white'
+                              : 'bg-white/[0.04] border border-white/[0.07] text-white/60 group-hover:text-white group-hover:bg-white/[0.08]'
+                          }`}
+                        >
+                          <Icon className="w-3.5 h-3.5 shrink-0" />
+                        </span>
+                        <span>{item.label}</span>
+                      </span>
+                      {active ? (
+                        <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                      ) : (
+                        <ArrowRight className="w-3.5 h-3.5 text-white/25 group-hover:text-white/60 transition-colors" />
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Drawer Bottom Profile Dock */}
+            <div className="relative z-10 pt-3 border-t border-white/[0.08]">
+              {user ? (
+                <div className="p-2.5 rounded-2xl bg-white/[0.04] border border-white/[0.08] space-y-2">
+                  <Link
+                    href={`/profil/${encodeURIComponent(user.username)}`}
+                    prefetch={false}
                     onClick={() => {
                       triggerSound('click');
-                      setMobileMenuOpen(false);
+                      closeDrawer();
                     }}
-                    className="w-9 h-9 rounded-full bg-white/[0.06] hover:bg-white/[0.12] active:scale-95 border border-white/[0.10] flex items-center justify-center text-white/70 hover:text-white transition-all cursor-pointer"
-                    aria-label="Kapat"
+                    className="flex items-center justify-between gap-2.5 p-1 rounded-xl hover:bg-white/[0.06] transition-colors"
                   >
-                    <X className="w-4 h-4" />
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-full overflow-hidden bg-white/12 border border-white/20 shrink-0 flex items-center justify-center">
+                        {user.avatar_url ? (
+                          <img
+                            src={getProxiedImageUrl(
+                              user.avatar_url,
+                              user.display_name || user.username,
+                              null,
+                              'w185',
+                              'person'
+                            )}
+                            alt={user.display_name || user.username}
+                            loading="lazy"
+                            decoding="async"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <User className="w-4 h-4 text-white/85" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-white truncate">
+                          {user.display_name || user.username}
+                        </div>
+                        <div className="text-[10px] font-mono text-white/50 truncate">
+                          @{user.username}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-semibold bg-white/[0.10] border border-white/[0.16] text-white/80 shrink-0">
+                      {user.role === 'admin' ? 'Yönetici' : 'Profil'}
+                    </span>
+                  </Link>
+
+                  {/* Quick Profile Navigation for Mobile */}
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <Link
+                      href="/kutuphane"
+                      prefetch={false}
+                      onClick={() => {
+                        triggerSound('click');
+                        closeDrawer();
+                      }}
+                      className="flex items-center gap-2 px-2.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
+                    >
+                      <Library className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                      <span className="truncate">Kütüphanem</span>
+                    </Link>
+                    <Link
+                      href="/gecmis"
+                      prefetch={false}
+                      onClick={() => {
+                        triggerSound('click');
+                        closeDrawer();
+                      }}
+                      className="flex items-center gap-2 px-2.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
+                    >
+                      <Clock className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      <span className="truncate">Geçmişim</span>
+                    </Link>
+                    <Link
+                      href="/listelerim"
+                      prefetch={false}
+                      onClick={() => {
+                        triggerSound('click');
+                        closeDrawer();
+                      }}
+                      className="flex items-center gap-2 px-2.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
+                    >
+                      <FolderHeart className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span className="truncate">Listelerim</span>
+                    </Link>
+                    <Link
+                      href="/takip-edilenler"
+                      prefetch={false}
+                      onClick={() => {
+                        triggerSound('click');
+                        closeDrawer();
+                      }}
+                      className="flex items-center gap-2 px-2.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
+                    >
+                      <UserCheck className="w-3.5 h-3.5 text-fuchsia-400 shrink-0" />
+                      <span className="truncate">Takip Edilenler</span>
+                    </Link>
+                    <Link
+                      href="/favoriler"
+                      prefetch={false}
+                      onClick={() => {
+                        triggerSound('click');
+                        closeDrawer();
+                      }}
+                      className="flex items-center gap-2 px-2.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
+                    >
+                      <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500/20 shrink-0" />
+                      <span className="truncate">Favorilerim</span>
+                    </Link>
+                    <Link
+                      href="/seri-istek"
+                      prefetch={false}
+                      onClick={() => {
+                        triggerSound('click');
+                        closeDrawer();
+                      }}
+                      className="flex items-center gap-2 px-2.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                      <span className="truncate">Seri İstek</span>
+                    </Link>
+                    <Link
+                      href="/ayarlar"
+                      prefetch={false}
+                      onClick={() => {
+                        triggerSound('click');
+                        closeDrawer();
+                      }}
+                      className="flex items-center gap-2 px-2.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
+                    >
+                      <Settings className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                      <span className="truncate">Ayarlar</span>
+                    </Link>
+                  </div>
+
+                  {user.role === 'admin' && (
+                    <Link
+                      href="/admin"
+                      prefetch={false}
+                      onClick={() => {
+                        triggerSound('click');
+                        closeDrawer();
+                      }}
+                      className="flex items-center justify-center gap-2 w-full py-2 rounded-xl bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/20 text-[11px] font-medium text-amber-300 hover:text-amber-200 transition-colors"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Admin Paneli</span>
+                    </Link>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerSound('click');
+                      closeDrawer(true);
+                      logout();
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-[11px] font-medium text-rose-300 hover:text-rose-200 transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Çıkış Yap</span>
                   </button>
                 </div>
-
-                {/* Primary Navigation Links */}
-                <div className="pt-3 space-y-1.5 overflow-y-auto flex-1 no-scrollbar pr-0.5">
-                  {NAV_LINKS.map((item) => {
-                    const Icon = item.icon;
-                    const active = isNavActive(item.href);
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        prefetch={true}
-                        onClick={() => {
-                          triggerSound('click');
-                          setMobileMenuOpen(false);
-                        }}
-                        className={`group flex items-center justify-between px-3 py-2.5 rounded-xl text-[13px] font-semibold transition-all duration-150 ${
-                          active
-                            ? 'bg-white/[0.12] text-white border border-white/[0.16] shadow-xs'
-                            : 'text-white/70 hover:text-white hover:bg-white/[0.05] border border-transparent hover:border-white/[0.07]'
-                        }`}
-                      >
-                        <span className="flex items-center gap-3">
-                          <span
-                            className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
-                              active
-                                ? 'bg-white/20 border border-white/25 text-white'
-                                : 'bg-white/[0.04] border border-white/[0.07] text-white/60 group-hover:text-white group-hover:bg-white/[0.08]'
-                            }`}
-                          >
-                            <Icon className="w-3.5 h-3.5 shrink-0" />
-                          </span>
-                          <span>{item.label}</span>
-                        </span>
-                        {active ? (
-                          <span className="w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.9)]" />
-                        ) : (
-                          <ArrowRight className="w-3.5 h-3.5 text-white/20 group-hover:text-white/60 transition-colors" />
-                        )}
-                      </Link>
-                    );
-                  })}
+              ) : (
+                <div className="p-3 rounded-2xl bg-gradient-to-b from-white/[0.07] to-white/[0.02] border border-white/[0.08] space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-md bg-amber-400/20 flex items-center justify-center">
+                      <Sparkles className="w-3 h-3 text-amber-300" />
+                    </span>
+                    <span className="text-xs font-bold text-white tracking-wide">
+                      KoUp Dünyasına Katıl
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-white/55 leading-relaxed">
+                    Kişisel listenizi oluşturun, kaldığınız yeri senkronize edin ve yeni bölümlerden haberdar olun.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerSound('click');
+                      closeDrawer(true);
+                      setIsAuthModalOpen(true);
+                    }}
+                    className="w-full min-h-[44px] rounded-xl bg-white text-black font-bold text-xs flex items-center justify-center gap-2 cursor-pointer hover:bg-white/90 active:scale-[0.98] transition-colors"
+                  >
+                    <LogIn className="w-4 h-4" />
+                    <span>Giriş Yap / Kayıt Ol</span>
+                  </button>
                 </div>
-              </div>
-
-              {/* Drawer Bottom Profile Dock */}
-              <div className="relative z-10 pt-3 border-t border-white/[0.08]">
-
-                {user ? (
-                  <div className="p-2.5 rounded-2xl bg-white/[0.04] border border-white/[0.08] space-y-2">
-                    <Link
-                      href={`/profil/${encodeURIComponent(user.username)}`}
-                      prefetch={true}
-                      onClick={() => {
-                        triggerSound('click');
-                        setMobileMenuOpen(false);
-                      }}
-                      className="flex items-center justify-between gap-2.5 p-1 rounded-xl hover:bg-white/[0.06] transition-colors"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-8 h-8 rounded-full overflow-hidden bg-white/12 border border-white/20 shrink-0 flex items-center justify-center shadow-xs">
-                          {user.avatar_url ? (
-                            <img
-                              src={getProxiedImageUrl(
-                                user.avatar_url,
-                                user.display_name || user.username,
-                                null,
-                                'w185',
-                                'person'
-                              )}
-                              alt={user.display_name || user.username}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <User className="w-4 h-4 text-white/85" />
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-xs font-bold text-white truncate">
-                            {user.display_name || user.username}
-                          </div>
-                          <div className="text-[10px] font-mono text-white/50 truncate">
-                            @{user.username}
-                          </div>
-                        </div>
-                      </div>
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-semibold bg-white/[0.10] border border-white/[0.16] text-white/80 shrink-0">
-                        {user.role === 'admin' ? 'Yönetici' : 'Profil'}
-                      </span>
-                    </Link>
-
-                    {/* Quick Profile Navigation for Mobile */}
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <Link
-                        href="/kutuphane"
-                        prefetch={true}
-                        onClick={() => {
-                          triggerSound('click');
-                          setMobileMenuOpen(false);
-                        }}
-                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
-                      >
-                        <Library className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                        <span className="truncate">Kütüphanem</span>
-                      </Link>
-                      <Link
-                        href="/gecmis"
-                        prefetch={true}
-                        onClick={() => {
-                          triggerSound('click');
-                          setMobileMenuOpen(false);
-                        }}
-                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
-                      >
-                        <Clock className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                        <span className="truncate">Geçmişim</span>
-                      </Link>
-                      <Link
-                        href="/listelerim"
-                        prefetch={true}
-                        onClick={() => {
-                          triggerSound('click');
-                          setMobileMenuOpen(false);
-                        }}
-                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
-                      >
-                        <FolderHeart className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                        <span className="truncate">Listelerim</span>
-                      </Link>
-                      <Link
-                        href="/takip-edilenler"
-                        prefetch={true}
-                        onClick={() => {
-                          triggerSound('click');
-                          setMobileMenuOpen(false);
-                        }}
-                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
-                      >
-                        <UserCheck className="w-3.5 h-3.5 text-fuchsia-400 shrink-0" />
-                        <span className="truncate">Takip Edilenler</span>
-                      </Link>
-                      <Link
-                        href="/favoriler"
-                        prefetch={true}
-                        onClick={() => {
-                          triggerSound('click');
-                          setMobileMenuOpen(false);
-                        }}
-                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
-                      >
-                        <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500/20 shrink-0" />
-                        <span className="truncate">Favorilerim</span>
-                      </Link>
-                      <Link
-                        href="/seri-istek"
-                        prefetch={true}
-                        onClick={() => {
-                          triggerSound('click');
-                          setMobileMenuOpen(false);
-                        }}
-                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
-                      >
-                        <Sparkles className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                        <span className="truncate">Seri İstek</span>
-                      </Link>
-                      <Link
-                        href="/ayarlar"
-                        prefetch={true}
-                        onClick={() => {
-                          triggerSound('click');
-                          setMobileMenuOpen(false);
-                        }}
-                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.07] text-[11px] font-medium text-white/85 hover:text-white transition-colors"
-                      >
-                        <Settings className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                        <span className="truncate">Ayarlar</span>
-                      </Link>
-                    </div>
-
-                    {user.role === 'admin' && (
-                      <Link
-                        href="/admin"
-                        prefetch={true}
-                        onClick={() => {
-                          triggerSound('click');
-                          setMobileMenuOpen(false);
-                        }}
-                        className="flex items-center justify-center gap-2 w-full py-1.5 rounded-xl bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/20 text-[11px] font-medium text-amber-300 hover:text-amber-200 transition-colors"
-                      >
-                        <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Admin Paneli</span>
-                      </Link>
-                    )}
-
-                    <button
-                      onClick={() => {
-                        triggerSound('click');
-                        setMobileMenuOpen(false);
-                        logout();
-                      }}
-                      className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-[11px] font-medium text-rose-300 hover:text-rose-200 transition-colors cursor-pointer"
-                    >
-                      <LogOut className="w-3.5 h-3.5 text-rose-400" />
-                      <span>Çıkış Yap</span>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="p-3 rounded-2xl bg-gradient-to-b from-white/[0.07] to-white/[0.02] border border-white/[0.08] space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-md bg-amber-400/20 flex items-center justify-center">
-                        <Sparkles className="w-3 h-3 text-amber-300" />
-                      </span>
-                      <span className="text-xs font-bold text-white tracking-wide">
-                        KoUp Dünyasına Katıl
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-white/55 leading-relaxed">
-                      Kişisel listenizi oluşturun, kaldığınız yeri senkronize edin ve yeni bölümlerden haberdar olun.
-                    </p>
-                    <button
-                      onClick={() => {
-                        triggerSound('click');
-                        setMobileMenuOpen(false);
-                        setIsAuthModalOpen(true);
-                      }}
-                      className="w-full min-h-[42px] rounded-xl bg-white text-black font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-[0_4px_16px_rgba(255,255,255,0.18)] hover:bg-white/90 active:scale-[0.98] transition-all"
-                    >
-                      <LogIn className="w-4 h-4" />
-                      <span>Giriş Yap / Kayıt Ol</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+              )}
+            </div>
+          </nav>
+        </div>
+      </dialog>
 
       {/* Mobile Fullscreen Search Overlay Modal */}
       <AnimatePresence>
         {mobileSearchOpen && (
           <motion.div
-            initial={{ opacity: 0, y: -20 }}
+            initial={{ opacity: 0, y: -12 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="pointer-events-auto md:hidden fixed inset-0 z-50 bg-[#0b0c12]/96 backdrop-blur-2xl p-4 flex flex-col"
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            className="pointer-events-auto md:hidden fixed inset-0 z-50 bg-[#0a0b10]/[0.98] p-4 flex flex-col"
           >
             {/* Top Search Input Bar */}
             <div className="flex items-center gap-2.5 pb-3 border-b border-white/10">
@@ -1601,7 +1757,7 @@ export default function Navbar() {
                     </span>
                     <Link
                       href={`/kesfet?q=${encodeURIComponent(query)}`}
-                      prefetch={true}
+                      prefetch={false}
                       onClick={() => setMobileSearchOpen(false)}
                       className="text-xs text-sky-400 hover:text-sky-300 flex items-center gap-1 font-medium"
                     >

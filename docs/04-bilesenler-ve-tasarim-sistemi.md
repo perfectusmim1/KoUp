@@ -274,7 +274,7 @@ KoUp tasarım tutarlılığını korumak için buton, girdi, modal ve sayfalama 
 
 ### Girdi Alanları: `KoupInput` & `KoupTextarea`
 - **Dosya:** [`koup-app/src/components/KoupInput.tsx`](../koup-app/src/components/KoupInput.tsx)
-- **Tasarım:** `#0e0e12/80` tabanı, `backdrop-blur-2xl`, `border-white/12`, yuvarlatılmış hap form (`rounded-2xl`).
+- **Tasarım:** `#0e0e12/95` (mobil) / `#0e0e12/80` + `md:backdrop-blur-md` (masaüstü), `border-white/12`, yuvarlatılmış hap form (`rounded-2xl`).
 - **Özellikler:**
   - Sol ikon yuvası (`leftIcon`) ve sağ aksiyon/durum yuvası (`rightSlot`, `rightAction`).
   - Dahili tek tıkla temizleme butonu (`clearable`, `onClear`).
@@ -355,7 +355,7 @@ KoUp tasarım tutarlılığını korumak için buton, girdi, modal ve sayfalama 
 - **Önemli Davranış:**
   - **O(1) Koordineli Hover:** Sayfada yüzlerce kart olsa bile `broadcastAccordionHover()` mimarisi sayesinde yalnızca o anda kapanan kart ile yeni açılan kart tetiklenir; sıfır bellek sızıntısı ve sıfır yeniden render maliyeti sağlanır.
   - **Drag Lock Koruması:** Kullanıcı yatay rayı fareyle veya dokunarak sürüklerken (`useDragScroll`) kartların yanlışlıkla hover açılması `isDragLocked` bayrağı ile kilitlenir.
-  - **Dahili Aksiyonlar:** "İzle" (en son kalınan bölüme veya 1. bölüme tek tıkla geçiş), "Favori", "Takip", "Listeye Ekle" (`AddToListModal`).
+  - **Dahili Aksiyonlar & Mobil Sıfır Yük:** "İzle" (en son kalınan bölüme veya 1. bölüme tek tıkla geçiş), "Favori", "Takip", "Listeye Ekle" (`AddToListModal`) aksiyonları ve genişletilmiş detay DOM düğümleri yalnızca masaüstü ilk hover anında tembel olarak yüklenir (`AccordionCardQuickActions`, `AccordionCardTrailerMuteControl`); mobilde ve hover edilmemiş kartlarda sıfır `KoUpContext` aboneliği ve `w342` afiş boyutu ile minimum DOM/RAM tüketimi sağlanır.
 
 ### DirectMediaCard
 - **Dosya:** [`koup-app/src/components/DirectMediaCard.tsx`](../koup-app/src/components/DirectMediaCard.tsx)
@@ -372,7 +372,7 @@ KoUp tasarım tutarlılığını korumak için buton, girdi, modal ve sayfalama 
   - **Anlık Canlı Arama:** Arama kutusuna odaklanıldığında çubuk genişler (`.navbar-search-bar:focus-within`), yazılan sorguyu Türkçe karakter duyarsızlaştırarak anında Supabase önbelleğinde arar ve açılır pencerede sonuçları listeler.
   - **Bildirim Rozeti ve Çekmecesi:** Okunmamış bildirim sayısını gösterir, tıklandığında son bildirimleri ses efektiyle listeler.
   - **Kullanıcı Menüsü:** Giriş yapılmamışsa "Giriş Yap" butonu (`AuthModal`), giriş yapılmışsa avatar, kütüphane kısayolları ve çıkış yap seçeneği sunar.
-  - **Mobil Çekmece & Duyarlı Kırılımlar:** Mobilde hamburger menü ve ekranın altına oturan dokunmatik gezinme barı açar. Masaüstü `lg`/`xl` ara genişliklerinde (`1024px–1279px`) marka alt metni ve kullanıcı adı gizlenip kompakt bağlantı/arama boşlukları kullanılır; `ResizeObserver` ile kayan aktif hap konumu her yeniden boyutlandırmada güncellenir.
+  - **Mobil Çekmece & Duyarlı Kırılımlar:** Mobilde 44x44px hamburger tetikleyici ile üst katman (`top-layer`) doğal `<dialog id="mobile-nav-drawer">` + CSS `scroll-snap-type: x mandatory` sol gezinme çekmecesi açılır (`.koup-drawer` / `.koup-drawer-scroller` / `.koup-drawer-sheet`, `::backdrop` opaklığı `@supports (animation-timeline: scroll())` ile senkronize edilir, `backdrop-blur` ve `body.style.overflow` mutasyonu olmadan 60fps kompozitör kaydırması ve sıfır React re-render sunar; tüm bağlantılar `prefetch={false}` kullanır). Masaüstü `lg`/`xl` ara genişliklerinde (`1024px–1279px`) marka alt metni ve kullanıcı adı gizlenip kompakt bağlantı/arama boşlukları kullanılır; `ResizeObserver` ile kayan aktif hap konumu her yeniden boyutlandırmada güncellenir.
 
 ### Footer
 - **Dosya:** [`koup-app/src/components/Footer.tsx`](../koup-app/src/components/Footer.tsx)

@@ -212,6 +212,181 @@ const clientTrailerCache = new Map<
   { youtubeId: string | null; posterUrl: string | null; backdropUrl: string | null; rating: number | null }
 >();
 
+// Hover-only sub-component: subscribes to user progress/favorites/follows ONLY after desktop hover
+// so mobile & unhovered poster grids carry ZERO store subscriptions and ZERO hidden action DOM nodes.
+const AccordionCardQuickActions = React.memo(function AccordionCardQuickActions({
+  item,
+  displayTitle,
+  isFilm,
+  isHovered,
+  isAccordionExpanded,
+  onOpenAddToList,
+}: {
+  item: MediaItem;
+  displayTitle: string;
+  isFilm: boolean;
+  isHovered: boolean;
+  isAccordionExpanded: boolean;
+  onOpenAddToList: () => void;
+}) {
+  const getStore = useKoUpStoreGet();
+  const isUserActive = useKoUpSelector((s) => Boolean(s.user || s.authLoading));
+  const userProg = useKoUpSelector((s) => (s.user || s.authLoading ? s.progressMap[item.id] : undefined));
+  const isFollowed = useKoUpSelector((s) => Boolean((s.user || s.authLoading) && s.followedMediaIds.includes(item.id)));
+
+  const isFavorited = Boolean(isUserActive && (userProg?.is_favorite || userProg?.is_favorited));
+  const nextEpNum = isUserActive
+    ? getNextEpisodeNumber(userProg, item.episode_count || 1)
+    : 1;
+  const nextSeasonNum = (isUserActive && userProg?.last_season_num) || 1;
+  const hasProgress = Boolean(
+    isUserActive &&
+      ((userProg?.watched_episodes && userProg.watched_episodes.length > 0) ||
+        (userProg?.last_episode_num && userProg.last_episode_num > 1))
+  );
+
+  return (
+    <div
+      className={`overflow-hidden pointer-events-auto transition-[max-height,opacity,transform] duration-200 ease-out ${
+        isHovered
+          ? 'max-h-[44px] opacity-100 translate-y-0'
+          : 'max-h-0 opacity-0 translate-y-1'
+      }`}
+    >
+      <div className="flex items-center gap-1.5 pt-2">
+        <Link
+          href={`/seri/${item.slug}/${nextEpNum}?season=${nextSeasonNum}`}
+          prefetch={false}
+          onClick={(e) => {
+            e.stopPropagation();
+            getStore().triggerSound?.('click');
+          }}
+          aria-label={`${displayTitle} hemen izle`}
+          className="flex-1 min-w-0 py-1.5 px-2.5 rounded-full bg-white text-black font-bold text-[11px] flex items-center justify-center gap-1 whitespace-nowrap overflow-hidden hover:bg-white/90 active:scale-[0.98] transition-transform cursor-pointer"
+        >
+          <Play className="w-3 h-3 fill-black shrink-0" />
+          <span className="truncate">
+            {isFilm
+              ? hasProgress
+                ? isAccordionExpanded
+                  ? 'Filme Devam Et'
+                  : 'Devam'
+                : isAccordionExpanded
+                ? 'Filmi İzle'
+                : 'İzle'
+              : hasProgress
+              ? isAccordionExpanded
+                ? `${nextEpNum}. Bölümden Devam`
+                : `${nextEpNum}. B`
+              : isAccordionExpanded
+              ? 'Hemen İzle'
+              : 'İzle'}
+          </span>
+        </Link>
+
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            const st = getStore();
+            st.triggerSound?.('click');
+            st.toggleMediaFavorite(item);
+          }}
+          aria-label="Favorilere Ekle"
+          className={`w-7 h-7 rounded-full bg-white/12 border border-white/15 hover:bg-white/25 flex items-center justify-center transition-colors cursor-pointer ${
+            isFavorited ? 'text-rose-400' : 'text-white/85 hover:text-white'
+          }`}
+        >
+          <Heart className={`w-3.5 h-3.5 ${isFavorited ? 'fill-rose-400' : ''}`} />
+        </button>
+
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            const st = getStore();
+            st.triggerSound?.('click');
+            st.toggleMediaFollow(item);
+          }}
+          aria-label={isFilm ? 'Filmi Takip Et' : 'Yeni Bölümleri Takip Et'}
+          className={`w-7 h-7 rounded-full bg-white/12 border border-white/15 hover:bg-white/25 flex items-center justify-center transition-colors cursor-pointer ${
+            isFollowed ? 'text-amber-300' : 'text-white/85 hover:text-white'
+          }`}
+        >
+          <Bell className={`w-3.5 h-3.5 ${isFollowed ? 'fill-amber-300' : ''}`} />
+        </button>
+
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            getStore().triggerSound?.('click');
+            onOpenAddToList();
+          }}
+          aria-label="Özel Listeye Ekle"
+          title="Özel Listeye Ekle"
+          className="w-7 h-7 rounded-full bg-white/12 border border-white/15 hover:bg-white/25 flex items-center justify-center text-white/85 hover:text-white transition-colors cursor-pointer"
+        >
+          <ListPlus className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+});
+
+const AccordionCardTrailerMuteControl = React.memo(function AccordionCardTrailerMuteControl({
+  iframeRef,
+  isTrailerReady,
+}: {
+  iframeRef: React.RefObject<HTMLIFrameElement | null>;
+  isTrailerReady: boolean;
+}) {
+  const getStore = useKoUpStoreGet();
+  const isTrailerMuted = useKoUpSelector((s) => s.isTrailerMuted);
+
+  useEffect(() => {
+    if (isTrailerReady && iframeRef.current?.contentWindow) {
+      if (isTrailerMuted) {
+        postYouTubeCommand(iframeRef.current, 'mute');
+      } else {
+        postYouTubeCommand(iframeRef.current, 'unMute');
+        postYouTubeCommand(iframeRef.current, 'setVolume', [85]);
+      }
+    }
+  }, [isTrailerMuted, isTrailerReady, iframeRef]);
+
+  const toggleTrailerMute = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const st = getStore();
+      st.triggerSound?.('click');
+      st.toggleTrailerMuted();
+    },
+    [getStore]
+  );
+
+  return (
+    <button
+      type="button"
+      onClick={toggleTrailerMute}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      aria-label={isTrailerMuted ? 'Fragman Sesini Aç' : 'Fragman Sesini Kapat'}
+      className="pointer-events-auto p-1 text-white/95 hover:text-white hover:scale-125 active:scale-90 transition-transform cursor-pointer drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]"
+    >
+      {isTrailerMuted ? (
+        <VolumeX className="w-4.5 h-4.5 drop-shadow-[0_2px_6px_rgba(0,0,0,0.9)]" />
+      ) : (
+        <Volume2 className="w-4.5 h-4.5 text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.9)]" />
+      )}
+    </button>
+  );
+});
+
 function AccordionMediaCardComponent({
   item,
   rank,
@@ -221,14 +396,10 @@ function AccordionMediaCardComponent({
 }: AccordionMediaCardProps) {
   const router = useRouter();
   const getStore = useKoUpStoreGet();
-  const isUserActive = useKoUpSelector((s) => Boolean(s.user || s.authLoading));
-  const userProg = useKoUpSelector((s) => (s.user || s.authLoading ? s.progressMap[item.id] : undefined));
-  const isFollowed = useKoUpSelector((s) => Boolean((s.user || s.authLoading) && s.followedMediaIds.includes(item.id)));
-  const isTrailerMuted = useKoUpSelector((s) => s.isTrailerMuted);
-  const autoCardTrailerEnabled = useKoUpSelector((s) => s.autoCardTrailerEnabled);
-  const cardHoverExpandEnabled = useKoUpSelector((s) => s.cardHoverExpandEnabled);
 
   const [isHovered, setIsHovered] = useState(false);
+  const [hasHovered, setHasHovered] = useState(false);
+  const [cardHoverExpandEnabled, setCardHoverExpandEnabled] = useState(true);
   const [isAddToListOpen, setIsAddToListOpen] = useState(false);
   const [mountBackdrop, setMountBackdrop] = useState(false);
   const hasRealCover = Boolean(
@@ -261,7 +432,6 @@ function AccordionMediaCardComponent({
   // Unique per-card-instance ID so the same MediaItem rendered in "Sana Özel" AND "K-Drama" rows never collides!
   const cardKey = useId();
 
-  const isFavorited = Boolean(isUserActive && (userProg?.is_favorite || userProg?.is_favorited));
   const displayTitle = cleanMediaTitle(item.title);
 
   // Always retain authentic scraped cover if present, never overwrite with TMDB fuzzy matches
@@ -278,14 +448,13 @@ function AccordionMediaCardComponent({
     const count = availEps || totalEps;
     return count > 0 ? `${count} Bölüm` : null;
   })();
-  const effectiveEpCount = availEps || totalEps;
 
-  // 720p standard: w500 (500x750) for vertical posters, w1280 for widescreen backdrops
+  // Optimal poster density: w342 (342x513) is crisp at 2x Retina on 165-200px cards while halving mobile image RAM/bytes
   const posterSrc = getProxiedImageUrl(
     effectiveCover,
     item.poster_fallback_url || null,
     item.title,
-    'w500',
+    'w342',
     'poster',
     item.tmdb_id,
     mediaType,
@@ -368,10 +537,6 @@ function AccordionMediaCardComponent({
     return null;
   })();
 
-  useEffect(() => {
-    registerMediaItem(item, false);
-  }, [item]);
-
   const fetchTrailerAndUpgradeImages = useCallback(async () => {
     if (!item.id) return null;
     const cached = clientTrailerCache.get(item.id);
@@ -441,7 +606,14 @@ function AccordionMediaCardComponent({
       return;
     }
 
-    if (!cardHoverExpandEnabled) {
+    registerMediaItem(item, false);
+    setHasHovered(true);
+    const store = getStore();
+    const expandEnabled = store.cardHoverExpandEnabled;
+    const autoTrailer = store.autoCardTrailerEnabled;
+    setCardHoverExpandEnabled(expandEnabled);
+
+    if (!expandEnabled) {
       setIsHovered(true);
       if (!prefetchRef.current) {
         prefetchRef.current = true;
@@ -496,7 +668,7 @@ function AccordionMediaCardComponent({
     }, 420);
 
     // Start trailer playback 380ms after hover (once card width expansion animation is 100% finished)
-    if (!fluidWidth && autoCardTrailerEnabled) {
+    if (!fluidWidth && autoTrailer) {
       if (trailerTimerRef.current) clearTimeout(trailerTimerRef.current);
       trailerTimerRef.current = setTimeout(async () => {
         const cached = clientTrailerCache.get(item.id);
@@ -517,20 +689,16 @@ function AccordionMediaCardComponent({
   }, [
     cardKey,
     fluidWidth,
-    autoCardTrailerEnabled,
+    getStore,
     hasDistinctBackdrop,
     mountBackdrop,
     backdropSrc,
-    item.id,
-    item.slug,
+    item,
     router,
+    upgradedRating,
+    ratingInfo,
     fetchTrailerAndUpgradeImages,
   ]);
-
-  const isTrailerMutedRef = useRef(isTrailerMuted);
-  useEffect(() => {
-    isTrailerMutedRef.current = isTrailerMuted;
-  }, [isTrailerMuted]);
 
   const handleMouseLeave = useCallback(() => {
     if (prefetchTimerRef.current) {
@@ -552,29 +720,6 @@ function AccordionMediaCardComponent({
     }
   }, [cardKey, fluidWidth, cardHoverExpandEnabled]);
 
-  const toggleTrailerMute = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const st = getStore();
-      st.triggerSound?.('click');
-      st.toggleTrailerMuted();
-    },
-    [getStore]
-  );
-
-  // Synchronize YouTube iframe volume & mute state whenever global isTrailerMuted changes
-  useEffect(() => {
-    if (showTrailerVideo && isTrailerReady && trailerIframeRef.current?.contentWindow) {
-      if (isTrailerMuted) {
-        postYouTubeCommand(trailerIframeRef.current, 'mute');
-      } else {
-        postYouTubeCommand(trailerIframeRef.current, 'unMute');
-        postYouTubeCommand(trailerIframeRef.current, 'setVolume', [85]);
-      }
-    }
-  }, [isTrailerMuted, showTrailerVideo, isTrailerReady]);
-
   // Clean reveal: trailer starts immediately in the background strictly muted.
   // The moment the play button overlay disappears, it becomes visible;
   // if sound is unmuted, audio kicks in right at that moment!
@@ -589,7 +734,7 @@ function AccordionMediaCardComponent({
       onVisibleChange: (visible) => {
         setIsTrailerReady(visible);
         if (visible) {
-          if (!isTrailerMutedRef.current) {
+          if (!getStore().isTrailerMuted) {
             postYouTubeCommand(iframe, 'unMute');
             postYouTubeCommand(iframe, 'setVolume', [85]);
           } else {
@@ -600,7 +745,7 @@ function AccordionMediaCardComponent({
         }
       },
     });
-  }, []);
+  }, [getStore]);
 
   useEffect(() => {
     if (showTrailerVideo) return;
@@ -648,6 +793,7 @@ function AccordionMediaCardComponent({
       onDragStart={(e) => e.preventDefault()}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest('button, a')) return;
+        registerMediaItem(item, false);
         router.push(`/seri/${item.slug}`);
       }}
       style={{
@@ -707,7 +853,7 @@ function AccordionMediaCardComponent({
               const target = e.currentTarget;
               if (!target.dataset.triedFallback && item.poster_fallback_url && item.poster_fallback_url !== effectiveCover) {
                 target.dataset.triedFallback = 'true';
-                target.src = getProxiedImageUrl(item.poster_fallback_url, null, item.title, 'w500', 'poster', item.tmdb_id, mediaType);
+                target.src = getProxiedImageUrl(item.poster_fallback_url, null, item.title, 'w342', 'poster', item.tmdb_id, mediaType);
               } else if (!target.dataset.triedProxy && item.title) {
                 target.dataset.triedProxy = 'true';
                 target.src = `/api/image-proxy?mediaId=${item.id}&tmdbId=${encodeURIComponent(String(item.tmdb_id || ''))}&title=${encodeURIComponent(item.title)}&mediaType=${mediaType}&type=poster`;
@@ -804,24 +950,12 @@ function AccordionMediaCardComponent({
         </div>
 
         <div className="flex items-center gap-1.5">
-          {/* Top-Right Netflix-Style White Mute / Unmute Button (Pure icon with drop-shadow, no circular container) */}
+          {/* Top-Right Netflix-Style White Mute / Unmute Button (Mounted only during active trailer preview) */}
           {isAccordionExpanded && showTrailerVideo && trailerYoutubeId && (
-            <button
-              type="button"
-              onClick={toggleTrailerMute}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              aria-label={isTrailerMuted ? 'Fragman Sesini Aç' : 'Fragman Sesini Kapat'}
-              className="pointer-events-auto p-1 text-white/95 hover:text-white hover:scale-125 active:scale-90 transition-transform cursor-pointer drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]"
-            >
-              {isTrailerMuted ? (
-                <VolumeX className="w-4.5 h-4.5 drop-shadow-[0_2px_6px_rgba(0,0,0,0.9)]" />
-              ) : (
-                <Volume2 className="w-4.5 h-4.5 text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.9)]" />
-              )}
-            </button>
+            <AccordionCardTrailerMuteControl
+              iframeRef={trailerIframeRef}
+              isTrailerReady={isTrailerReady}
+            />
           )}
 
           {ratingInfo && (
@@ -886,8 +1020,8 @@ function AccordionMediaCardComponent({
           {displayTitle}
         </h3>
 
-        {/* Expanded Widescreen Details: Fixed target width so text/genres never re-wrap across 30 frames during card width expansion */}
-        {!fluidWidth && (
+        {/* Expanded Widescreen Details: Lazily mounted on first desktop hover (saves ~20 hidden DOM nodes per card on mobile!) */}
+        {!fluidWidth && hasHovered && (
           <div
             className={`w-[296px] sm:w-[342px] md:w-[392px] overflow-hidden transition-[max-height,opacity,transform] duration-300 ease-out ${
               isAccordionExpanded && !isTrailerActive
@@ -915,109 +1049,17 @@ function AccordionMediaCardComponent({
           </div>
         )}
 
-        {/* Quick Action Drawer on Hover */}
-        <div
-          className={`overflow-hidden pointer-events-auto transition-[max-height,opacity,transform] duration-200 ease-out ${
-            isHovered
-              ? 'max-h-[44px] opacity-100 translate-y-0'
-              : 'max-h-0 opacity-0 translate-y-1'
-          }`}
-        >
-          <div className="flex items-center gap-1.5 pt-2">
-            {(() => {
-              const nextEpNum = isUserActive
-                ? getNextEpisodeNumber(userProg, item.episode_count || 1)
-                : 1;
-              const nextSeasonNum = (isUserActive && userProg?.last_season_num) || 1;
-              const hasProgress = Boolean(
-                isUserActive &&
-                  ((userProg?.watched_episodes && userProg.watched_episodes.length > 0) ||
-                    (userProg?.last_episode_num && userProg.last_episode_num > 1))
-              );
-
-              const isFilm = item.content_type === 'film' || item.content_type === 'movie';
-
-              return (
-                <Link
-                  href={`/seri/${item.slug}/${nextEpNum}?season=${nextSeasonNum}`}
-                  prefetch={false}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    getStore().triggerSound?.('click');
-                  }}
-                  aria-label={`${displayTitle} hemen izle`}
-                  className="flex-1 min-w-0 py-1.5 px-2.5 rounded-full bg-white text-black font-bold text-[11px] flex items-center justify-center gap-1 whitespace-nowrap overflow-hidden hover:bg-white/90 active:scale-[0.98] transition-transform cursor-pointer"
-                >
-                  <Play className="w-3 h-3 fill-black shrink-0" />
-                  <span className="truncate">
-                    {isFilm
-                      ? hasProgress
-                        ? isAccordionExpanded
-                          ? 'Filme Devam Et'
-                          : 'Devam'
-                        : isAccordionExpanded
-                        ? 'Filmi İzle'
-                        : 'İzle'
-                      : hasProgress
-                      ? isAccordionExpanded
-                        ? `${nextEpNum}. Bölümden Devam`
-                        : `${nextEpNum}. B`
-                      : isAccordionExpanded
-                      ? 'Hemen İzle'
-                      : 'İzle'}
-                  </span>
-                </Link>
-              );
-            })()}
-
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                const st = getStore();
-                st.triggerSound?.('click');
-                st.toggleMediaFavorite(item);
-              }}
-              aria-label="Favorilere Ekle"
-              className={`w-7 h-7 rounded-full bg-white/12 border border-white/15 hover:bg-white/25 flex items-center justify-center transition-colors cursor-pointer ${
-                isFavorited ? 'text-rose-400' : 'text-white/85 hover:text-white'
-              }`}
-            >
-              <Heart className={`w-3.5 h-3.5 ${isFavorited ? 'fill-rose-400' : ''}`} />
-            </button>
-
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                const st = getStore();
-                st.triggerSound?.('click');
-                st.toggleMediaFollow(item);
-              }}
-              aria-label={isFilm ? 'Filmi Takip Et' : 'Yeni Bölümleri Takip Et'}
-              className={`w-7 h-7 rounded-full bg-white/12 border border-white/15 hover:bg-white/25 flex items-center justify-center transition-colors cursor-pointer ${
-                isFollowed ? 'text-amber-300' : 'text-white/85 hover:text-white'
-              }`}
-            >
-              <Bell className={`w-3.5 h-3.5 ${isFollowed ? 'fill-amber-300' : ''}`} />
-            </button>
-
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                getStore().triggerSound?.('click');
-                setIsAddToListOpen(true);
-              }}
-              aria-label="Özel Listeye Ekle"
-              title="Özel Listeye Ekle"
-              className="w-7 h-7 rounded-full bg-white/12 border border-white/15 hover:bg-white/25 flex items-center justify-center text-white/85 hover:text-white transition-colors cursor-pointer"
-            >
-              <ListPlus className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
+        {/* Quick Action Drawer on Hover (Lazily mounted on first desktop hover -> 0 store subscriptions on mobile) */}
+        {hasHovered && (
+          <AccordionCardQuickActions
+            item={item}
+            displayTitle={displayTitle}
+            isFilm={isFilm}
+            isHovered={isHovered}
+            isAccordionExpanded={isAccordionExpanded}
+            onOpenAddToList={() => setIsAddToListOpen(true)}
+          />
+        )}
       </div>
 
       {/* Conditionally rendered AddToListModal (zero performance impact when closed) */}

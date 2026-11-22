@@ -55,7 +55,7 @@ export const KoupInput = forwardRef<HTMLInputElement, KoupInputProps>(
 
     const inputBox = (
       <div
-        className={`flex items-center gap-2.5 ${sizeClasses} bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 transition-all duration-300 shadow-sm ${glowClasses} ${containerClassName}`}
+        className={`flex items-center gap-2.5 ${sizeClasses} bg-[#0e0e12]/95 md:bg-[#0e0e12]/80 md:backdrop-blur-md border border-white/12 hover:border-white/25 transition-colors duration-200 shadow-sm ${glowClasses} ${containerClassName}`}
       >
         {leftIcon && <div className="shrink-0 text-white/55 flex items-center">{leftIcon}</div>}
         <input
@@ -133,7 +133,7 @@ export const KoupTextarea = forwardRef<HTMLTextAreaElement, KoupTextareaProps>(
 
     const box = (
       <div
-        className={`px-3.5 py-2.5 rounded-2xl bg-[#0e0e12]/80 backdrop-blur-2xl border border-white/12 hover:border-white/25 transition-all duration-300 shadow-sm ${glowClasses} ${containerClassName}`}
+        className={`px-3.5 py-2.5 rounded-2xl bg-[#0e0e12]/95 md:bg-[#0e0e12]/80 md:backdrop-blur-md border border-white/12 hover:border-white/25 transition-colors duration-200 shadow-sm ${glowClasses} ${containerClassName}`}
       >
         <textarea
           ref={ref}

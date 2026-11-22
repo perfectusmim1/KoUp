@@ -11,6 +11,17 @@ Bu dosya, KoUp platformunda yapılan tüm önemli geliştirmeleri, mimari kararl
 
 ---
 
+## [2026-11-22] — Phase 3 Mobil Sol Panel (60fps Doğal `<dialog>` Drawer), SSR/CLS Onarımı & Derin Mobil Kaynak Optimizasyonu
+
+### Performance
+- **Mobil Sol Çekmece (`Navbar.tsx` + `globals.css`) 60fps Kompozitör Yeniden Mimarisi:** Kasma oluşturan `backdrop-blur-2xl` (çekmece), `backdrop-blur-sm` (arka plan), `blur-3xl` (parlama küresi), animasyon ortasında layout reflow tetikleyen `document.body.style.overflow` mutasyonu, açılışta 12 eşzamanlı RSC isteği başlatan `prefetch={true}` bağlantıları ve Framer Motion mount/unmount döngüsü kaldırıldı. Yerine tarayıcının üst katman (`top-layer`) doğal `<dialog id="mobile-nav-drawer">` + CSS `scroll-snap-type: x mandatory` (doğal parmakla kaydırma) + `@supports (animation-timeline: scroll())` ile senkronize `::backdrop` karartması (ve eski tarayıcılar için JS scroll/`scroll-initial-target` yedeği) + sıfır React re-render imperatif `aria-expanded` kontrolü uygulandı. Mobil sol panel `6x` düşük mobilde `11 FPS (283 ms max kare, 367 ms LT, 12 ağ isteği) → 35–49 FPS (0 ağ isteği)`, `4x` orta mobilde `49 → 55–60 FPS`, `2x` yüksek mobilde `58 → 60 FPS / 17 ms / 0 jank` seviyesine çıktı.
+- **Seri Detay SSR Kurtarma & CLS Onarımı (`SeriesDetailClient.tsx` + `seri/[slug]/page.tsx`):** `SeriesDetailClient` içindeki `useSearchParams()` çağrısı `useEffect` içinde `window.location.search` okumasına çevrilerek `<Suspense fallback={null}>` kaynaklı SSR iptali giderildi; `/seri/dexter` `6x` mobil **CLS `0.8679 → 0.0005`**, `2x` mobil **LCP `2.020 ms → 400 ms` (`-80%`)** oldu.
+- **Çift Sayfa Geçişi & Hero SSR İlk Boyama (`template.tsx` + `HomeClient.tsx`):** `layout.tsx` içindeki `<PageTransition>` ile çakışan ve ilk boyamayı `opacity: 0` ile bekleten yinelenen `template.tsx` `<motion.div>` sarmalayıcısı kaldırıldı; `HomeClient.tsx` Hero `<AnimatePresence initial={false}>` ile LCP görselinin 0. karede boyanması sağlandı. `/` `6x` mobil **LCP `1.628 ms → 364 ms` (`-78%`)**, `4x` mobil **LCP `852 ms → 248 ms` (`-71%`)**, PC **LCP `276 ms → 132 ms` (`-52%`)** oldu.
+- **Akıllı Ekran Altı Yükleme & Hafif Kart Mimarisi (`useDeferredMount.ts` + `AccordionMediaCard.tsx` + `Footer.tsx` + `KoUpContext.tsx`):** `useDeferredMount` her 16ms `rAF`'ta tüm şeritleri yüklemek yerine `IntersectionObserver` (`600px` ön bakış) + nazik boşta doldurma akışına geçirildi (`/` mobil DOM `2.114 → 954`, `-55%`; aktarım `-25%`). `AccordionMediaCard` üzerinde poster boyutu `w342` yapıldı, 6 kart-başına store aboneliği ve ~20 gizli hover DOM düğümü yalnızca masaüstü ilk hover anında yüklenecek şekilde ayrıldı (`/kesfet` DOM `-34%`, JS Heap `-21%` ila `-34%`). `KoUpContext` cihaz parmak izi/ban kontrolü `runWhenIdle` içine alındı ve `ConfirmModal` yalnızca açıkken mount edilir hale getirildi.
+- **İzleme Sayfaları & Mobil GPU Blur Azaltımı (`[episode]/page.tsx`, `EpisodeRail.tsx`, `ShortsWatchClient.tsx`, `KoupInput.tsx`, `Navbar.tsx`):** Video oynatıcı arkasındaki tam ekran `blur-[100px]` / `blur(70px)` ve mobildeki çok katmanlı `backdrop-blur-xl/2xl` katmanları masaüstünde `w92 + blur-lg/24px`, mobilde sıfır blur maliyetli OLED mat/radyal yüzeylere dönüştürüldü (`/seri/dexter/1?season=1` mobil kaydırma FPS: `2x` `28 → 55 FPS`, `4x` `25 → 43 FPS`, `6x` `25 → 47 FPS`).
+
+---
+
 ## [2026-11-22] — Phase 2 Benchmark Odaklı 4 Kademeli Performans Optimizasyonu (Sıfır Görsel Değişiklik)
 
 ### Changed

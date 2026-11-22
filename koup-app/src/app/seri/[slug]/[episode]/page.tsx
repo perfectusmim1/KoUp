@@ -1055,17 +1055,20 @@ export default function EpisodeWatchPage({
 
   return (
     <div className="min-h-screen pb-32 text-white relative overflow-hidden bg-[#060608] pt-24 sm:pt-28 transition-[padding,background-color] duration-300">
-      {/* Dynamic Ambient Lighting Diffused Across Site Background (GPU Layer Promoted) */}
+      {/* Dynamic Ambient Lighting Diffused Across Site Background (GPU-Optimized: w92 + blur-2xl on desktop, zero-cost radial ambient on mobile) */}
       <div
-        style={{ transform: 'translateZ(0)', backfaceVisibility: 'hidden' }}
         className="fixed inset-0 pointer-events-none -z-10 overflow-hidden"
       >
+        <div
+          aria-hidden="true"
+          className="md:hidden absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(41,151,255,0.12),rgba(6,6,8,0.96)_60%)]"
+        />
         <img
           src={getProxiedImageUrl(
             media.backdrop_image || media.cover_image,
             media.cover_image,
             media.title,
-            'w300',
+            'w92',
             'banner',
             media.tmdb_id,
             media.content_type === 'film' ? 'movie' : 'tv',
@@ -1074,18 +1077,19 @@ export default function EpisodeWatchPage({
           )}
           alt=""
           aria-hidden="true"
+          loading="lazy"
+          decoding="async"
           onError={(e) => {
             const target = e.currentTarget;
             if (!target.dataset.triedPoster && media.cover_image) {
               target.dataset.triedPoster = 'true';
-              target.src = getProxiedImageUrl(media.cover_image, null, media.title, 'w300', 'poster', media.tmdb_id);
+              target.src = getProxiedImageUrl(media.cover_image, null, media.title, 'w92', 'poster', media.tmdb_id);
             } else if (!target.dataset.triedProxy && media.title) {
               target.dataset.triedProxy = 'true';
               target.src = `/api/image-proxy?tmdbId=${encodeURIComponent(String(media.tmdb_id || ''))}&title=${encodeURIComponent(media.title)}&type=banner`;
             }
           }}
-          style={{ transform: 'translateZ(0)', backfaceVisibility: 'hidden', willChange: 'opacity' }}
-          className="w-full h-full object-cover filter blur-[100px] scale-110 transition-opacity duration-700 opacity-35 brightness-105 saturate-140 pointer-events-none"
+          className="hidden md:block w-full h-full object-cover filter blur-lg scale-105 transition-opacity duration-500 opacity-30 brightness-105 saturate-130 pointer-events-none"
         />
         <div className="absolute inset-0 bg-gradient-to-b from-[#060608]/50 via-[#060608]/85 to-[#060608] transition-colors duration-700 pointer-events-none" />
       </div>
@@ -1099,7 +1103,7 @@ export default function EpisodeWatchPage({
       >
         <div className={`flex flex-wrap items-center justify-between gap-2.5 rounded-2xl sm:rounded-3xl border transition-[background-color,border-color,box-shadow] duration-300 p-3 sm:px-5 sm:py-3 ${
           ambientLightingEnabled
-            ? 'bg-[#0a0a0f]/45 backdrop-blur-xl border-white/12 shadow-[0_8px_32px_rgba(0,0,0,0.36),inset_0_1px_1px_rgba(255,255,255,0.08)]'
+            ? 'bg-[#0a0a0f]/92 md:bg-[#0a0a0f]/55 md:backdrop-blur-lg border-white/12 shadow-[0_8px_28px_rgba(0,0,0,0.36),inset_0_1px_1px_rgba(255,255,255,0.08)]'
             : 'bg-[#0e0e12] border-white/10 shadow-xl'
         }`}>
           {/* Left: Back to series or film detail */}
@@ -1286,7 +1290,7 @@ export default function EpisodeWatchPage({
             {/* Quick Navigation, Reactions & Report Under Player */}
             <div className={`relative z-20 rounded-2xl sm:rounded-3xl border flex flex-wrap items-center justify-between gap-2 p-3 sm:p-4 transition-[background-color,border-color,box-shadow] duration-300 ${
               ambientLightingEnabled
-                ? 'bg-[#0a0a0f]/45 backdrop-blur-xl border-white/12 shadow-[0_8px_32px_rgba(0,0,0,0.36),inset_0_1px_1px_rgba(255,255,255,0.08)]'
+                ? 'bg-[#0a0a0f]/92 md:bg-[#0a0a0f]/55 md:backdrop-blur-lg border-white/12 shadow-[0_8px_28px_rgba(0,0,0,0.36),inset_0_1px_1px_rgba(255,255,255,0.08)]'
                 : 'bg-[#0e0e12] border-white/10 shadow-xl'
             }`}>
               {/* Previous / Next / Mark Watched buttons */}

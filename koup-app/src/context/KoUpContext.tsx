@@ -33,6 +33,7 @@ import {
 import { playNotificationChime, SoundTone } from '@/lib/sound';
 import { invalidateCache, invalidateMediaCache, updateCachedMedia } from '@/lib/cache';
 import { getClientFingerprint } from '@/lib/fingerprint';
+import { runWhenIdle } from '@/lib/yieldToMain';
 import { registerOrHeartbeatDevice } from '@/lib/deviceTracker';
 import ConfirmModal from '@/components/ConfirmModal';
 import { adminFetch } from '@/lib/adminClient';
@@ -831,30 +832,34 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
       isHydratedRef.current = true;
     }
 
-    // Initialize device fingerprint and enforce Hard Ban check
-    getClientFingerprint().then(async (fp) => {
+    // Initialize device fingerprint and enforce Hard Ban check during browser idle time
+    // (avoids synchronous canvas PNG encoding + DB roundtrip during initial mobile hydration)
+    const cancelIdleFp = runWhenIdle(() => {
       if (!isMounted) return;
-      setDeviceFingerprint(fp);
+      getClientFingerprint().then(async (fp) => {
+        if (!isMounted) return;
+        setDeviceFingerprint(fp);
 
-      try {
-        const { data: bannedRows, error } = await supabase
-          .from('banned_fingerprints')
-          .select('id, reason, is_active')
-          .eq('fingerprint_hash', fp)
-          .eq('is_active', true)
-          .limit(1);
+        try {
+          const { data: bannedRows, error } = await supabase
+            .from('banned_fingerprints')
+            .select('id, reason, is_active')
+            .eq('fingerprint_hash', fp)
+            .eq('is_active', true)
+            .limit(1);
 
-        if (!error && bannedRows && bannedRows.length > 0) {
-          setIsHardBanned(true);
-          setHardBanReason(
-            bannedRows[0].reason ||
-              'Cihazınız topluluk kurallarının ağır ihlali nedeniyle KoUp platformundan kalıcı olarak yasaklanmıştır.'
-          );
+          if (!error && bannedRows && bannedRows.length > 0) {
+            setIsHardBanned(true);
+            setHardBanReason(
+              bannedRows[0].reason ||
+                'Cihazınız topluluk kurallarının ağır ihlali nedeniyle KoUp platformundan kalıcı olarak yasaklanmıştır.'
+            );
+          }
+        } catch {
+          // ignore
         }
-      } catch {
-        // ignore
-      }
-    });
+      });
+    }, 2500);
 
     // Check real Supabase session & sync verified profile fresh from DB
     supabase.auth.getSession().then(async ({ data }) => {
@@ -932,6 +937,7 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       isMounted = false;
+      cancelIdleFp();
       authSub.subscription.unsubscribe();
       window.removeEventListener('keydown', onKeyDown);
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -3036,17 +3042,19 @@ export function KoUpProvider({ children }: { children: React.ReactNode }) {
             </div>
           )}
           {children}
-          <ConfirmModal
-            isOpen={confirmState.isOpen}
-            onClose={handleConfirmClose}
-            onConfirm={handleConfirmAccept}
-            title={confirmState.options.title}
-            message={confirmState.options.message}
-            confirmText={confirmState.options.confirmText}
-            cancelText={confirmState.options.cancelText}
-            isDestructive={confirmState.options.isDestructive}
-            icon={confirmState.options.icon}
-          />
+          {confirmState.isOpen && (
+            <ConfirmModal
+              isOpen={confirmState.isOpen}
+              onClose={handleConfirmClose}
+              onConfirm={handleConfirmAccept}
+              title={confirmState.options.title}
+              message={confirmState.options.message}
+              confirmText={confirmState.options.confirmText}
+              cancelText={confirmState.options.cancelText}
+              isDestructive={confirmState.options.isDestructive}
+              icon={confirmState.options.icon}
+            />
+          )}
         </>
       )}
     </KoUpContext.Provider>

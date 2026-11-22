@@ -1261,6 +1261,119 @@ input[type="range"].netflix-volume-slider:focus-visible {
   outline: none !important;
 }
 
+/* ============================================================================
+   NATIVE TOP-LAYER MOBILE NAVIGATION DRAWER (60fps Compositor Scroll-Snap)
+   Uses <dialog> top-layer + CSS scroll-snap + scroll-driven ::backdrop fade
+   with zero backdrop-blur GPU overdraw and zero body overflow layout reflow.
+   ============================================================================ */
+@property --drawer-backdrop {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+
+.koup-drawer {
+  --drawer-width: min(310px, 84dvw, 100dvw - 24px);
+  --drawer-backdrop: 0;
+  inset: 0;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  overflow: visible;
+  color: #ffffff;
+}
+
+@media (min-width: 640px) {
+  .koup-drawer {
+    --drawer-width: min(350px, 84dvw, 100dvw - 24px);
+  }
+}
+
+.koup-drawer:not([open]) {
+  display: none;
+}
+
+.koup-drawer::backdrop {
+  background: #000000;
+  opacity: calc(var(--drawer-backdrop) * 0.78);
+}
+
+.koup-drawer-scroller {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--drawer-width) 100%;
+  width: 100%;
+  height: 100svh;
+  overflow-x: scroll;
+  overflow-y: hidden;
+  overscroll-behavior: none;
+  scrollbar-width: none;
+  scroll-snap-type: x mandatory;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .koup-drawer-scroller {
+    scroll-behavior: smooth;
+  }
+}
+
+.koup-drawer-scroller::after {
+  content: '';
+  scroll-snap-align: end;
+  scroll-initial-target: nearest;
+}
+
+.koup-drawer-sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: var(--drawer-width);
+  height: 100svh;
+  background-color: #0a0b10;
+  background-image: radial-gradient(
+    circle at 0% 0%,
+    rgba(255, 255, 255, 0.06),
+    rgba(99, 102, 241, 0.025) 42%,
+    transparent 72%
+  );
+  color: #ffffff;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 16px 0 36px rgba(0, 0, 0, 0.65);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-snap-align: start;
+  scrollbar-width: none;
+  contain: layout paint style;
+}
+
+@supports (animation-timeline: scroll()) {
+  .koup-drawer {
+    timeline-scope: --koup-drawer-fade;
+    animation: koup-fade-drawer-backdrop linear both;
+    animation-timeline: --koup-drawer-fade;
+  }
+
+  .koup-drawer-scroller {
+    scroll-timeline: --koup-drawer-fade x;
+  }
+
+  @keyframes koup-fade-drawer-backdrop {
+    0% {
+      --drawer-backdrop: 1;
+    }
+    100% {
+      --drawer-backdrop: 0;
+    }
+  }
+}
+
+
 
 
 

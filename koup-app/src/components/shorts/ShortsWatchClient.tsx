@@ -273,7 +273,7 @@ export default function ShortsWatchClient({
     media.backdrop_image || media.cover_image,
     media.cover_image,
     media.title,
-    'w1280',
+    'w92',
     'banner'
   );
   const posterUrl = getProxiedImageUrl(
@@ -304,16 +304,16 @@ export default function ShortsWatchClient({
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Cinematic Ambient Backdrop Blur */}
+      {/* Cinematic Ambient Backdrop Blur (Desktop only — zero mobile GPU blur overdraw) */}
       {backdropUrl && (
         <div
-          className="fixed inset-0 pointer-events-none z-0 overflow-hidden opacity-35"
+          className="hidden md:block fixed inset-0 pointer-events-none z-0 overflow-hidden opacity-35"
           style={{
             backgroundImage: `url(${backdropUrl})`,
             backgroundPosition: 'center',
             backgroundSize: 'cover',
-            filter: 'blur(60px) saturate(160%)',
-            transform: 'scale(1.15)',
+            filter: 'blur(24px) saturate(150%)',
+            transform: 'scale(1.12)',
           }}
         />
       )}
@@ -928,22 +928,22 @@ export function ShortsDetailClient({
     media.backdrop_image || media.cover_image,
     media.cover_image,
     media.title,
-    'w1280',
+    'w92',
     'banner'
   );
 
   return (
     <div className="relative min-h-screen bg-[#070709] text-white pt-24 sm:pt-28 pb-16 overflow-x-hidden">
-      {/* Blurred Cinematic Backdrop */}
+      {/* Blurred Cinematic Backdrop (Desktop only — zero mobile GPU blur overdraw) */}
       {backdropUrl && (
         <div
-          className="fixed inset-0 pointer-events-none z-0 overflow-hidden opacity-30"
+          className="hidden md:block fixed inset-0 pointer-events-none z-0 overflow-hidden opacity-30"
           style={{
             backgroundImage: `url(${backdropUrl})`,
             backgroundPosition: 'center',
             backgroundSize: 'cover',
-            filter: 'blur(70px) saturate(160%)',
-            transform: 'scale(1.2)',
+            filter: 'blur(24px) saturate(150%)',
+            transform: 'scale(1.12)',
           }}
         />
       )}

@@ -12,7 +12,7 @@ function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 lg:gap-8">
           {/* Brand Col */}
           <div className="lg:col-span-2 space-y-4">
-            <Link href="/" className="inline-flex items-center gap-3 group">
+            <Link href="/" prefetch={false} className="inline-flex items-center gap-3 group">
               <img
                 src="/logo-dark.png"
                 alt="KoUp Cinema"
@@ -30,7 +30,7 @@ function Footer() {
               MyDramaList, AniList, TMDb ve AsyaMag entegrasyonuyla kişiselleştirilmiş izleme deneyimi.
             </p>
             <div className="flex items-center gap-2 pt-1 text-[11px] text-white/40">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
               <span>24.700+ Master Yapım: Dizi, Anime ve Film İndeksi</span>
             </div>
           </div>
@@ -40,27 +40,27 @@ function Footer() {
             <h4 className="text-xs font-bold text-white uppercase tracking-wider">Keşfet & İzle</h4>
             <ul className="space-y-2 text-white/60">
               <li>
-                <Link href="/kesfet?type=dizi" className="hover:text-white transition-colors">
+                <Link href="/kesfet?type=dizi" prefetch={false} className="hover:text-white transition-colors">
                   K-Drama & Asya Dizileri
                 </Link>
               </li>
               <li>
-                <Link href="/kesfet?type=anime" className="hover:text-white transition-colors">
+                <Link href="/kesfet?type=anime" prefetch={false} className="hover:text-white transition-colors">
                   Animeler & Donghualar
                 </Link>
               </li>
               <li>
-                <Link href="/kesfet?type=film" className="hover:text-white transition-colors">
+                <Link href="/kesfet?type=film" prefetch={false} className="hover:text-white transition-colors">
                   Filmler & Sinema
                 </Link>
               </li>
               <li>
-                <Link href="/oyuncular" className="hover:text-white transition-colors">
+                <Link href="/oyuncular" prefetch={false} className="hover:text-white transition-colors">
                   Oyuncular & Karakterler
                 </Link>
               </li>
               <li>
-                <Link href="/takvim" className="hover:text-white transition-colors">
+                <Link href="/takvim" prefetch={false} className="hover:text-white transition-colors">
                   Günlük Yayın Takvimi
                 </Link>
               </li>
@@ -72,22 +72,22 @@ function Footer() {
             <h4 className="text-xs font-bold text-white uppercase tracking-wider">Topluluk & Haber</h4>
             <ul className="space-y-2 text-white/60">
               <li>
-                <Link href="/magazin" className="hover:text-white transition-colors">
+                <Link href="/magazin" prefetch={false} className="hover:text-white transition-colors">
                   Magazin & Gündem (KoreZin)
                 </Link>
               </li>
               <li>
-                <Link href="/listeler" className="hover:text-white transition-colors">
+                <Link href="/listeler" prefetch={false} className="hover:text-white transition-colors">
                   Kullanıcı Özel Listeleri
                 </Link>
               </li>
               <li>
-                <Link href="/kesfet?sort=rating" className="hover:text-white transition-colors">
+                <Link href="/kesfet?sort=rating" prefetch={false} className="hover:text-white transition-colors">
                   Başyapıtlar & Ödüllüler
                 </Link>
               </li>
               <li>
-                <Link href="/kesfet?sort=trending" className="hover:text-white transition-colors">
+                <Link href="/kesfet?sort=trending" prefetch={false} className="hover:text-white transition-colors">
                   Haftalık Trend Yapımlar
                 </Link>
               </li>
@@ -99,17 +99,17 @@ function Footer() {
             <h4 className="text-xs font-bold text-white uppercase tracking-wider">Kurumsal & Yasal</h4>
             <ul className="space-y-2 text-white/60">
               <li>
-                <Link href="/hakkimizda" className="hover:text-white transition-colors flex items-center gap-1.5">
+                <Link href="/hakkimizda" prefetch={false} className="hover:text-white transition-colors flex items-center gap-1.5">
                   <span>Hakkımızda</span>
                 </Link>
               </li>
               <li>
-                <Link href="/gizlilik-politikasi" className="hover:text-white transition-colors flex items-center gap-1.5">
+                <Link href="/gizlilik-politikasi" prefetch={false} className="hover:text-white transition-colors flex items-center gap-1.5">
                   <span>Gizlilik ve Çerez Politikası</span>
                 </Link>
               </li>
               <li>
-                <Link href="/telif-hakki" className="hover:text-amber-400 transition-colors flex items-center gap-1.5 font-medium">
+                <Link href="/telif-hakki" prefetch={false} className="hover:text-amber-400 transition-colors flex items-center gap-1.5 font-medium">
                   <Scale className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                   <span>Telif Hakkı & DMCA Bildirimi</span>
                 </Link>
@@ -148,9 +148,9 @@ function Footer() {
         <div className="pt-6 border-t border-white/[0.04] flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-white/40">
           <p>© {new Date().getFullYear()} KoUp Cinema Studio. Tüm hakları saklıdır.</p>
           <div className="flex items-center gap-6">
-            <Link href="/hakkimizda" className="hover:text-white transition-colors">Hakkımızda</Link>
-            <Link href="/gizlilik-politikasi" className="hover:text-white transition-colors">Gizlilik Sözleşmesi</Link>
-            <Link href="/telif-hakki" className="hover:text-amber-400 transition-colors">Telif Hakkı & DMCA</Link>
+            <Link href="/hakkimizda" prefetch={false} className="hover:text-white transition-colors">Hakkımızda</Link>
+            <Link href="/gizlilik-politikasi" prefetch={false} className="hover:text-white transition-colors">Gizlilik Sözleşmesi</Link>
+            <Link href="/telif-hakki" prefetch={false} className="hover:text-amber-400 transition-colors">Telif Hakkı & DMCA</Link>
           </div>
         </div>
       </div>

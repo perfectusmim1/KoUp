@@ -1253,7 +1253,7 @@ export default function HomeClient({ initialBundle }: HomeClientProps = {}) {
           <>
             {/* Crossfading Responsive Backdrop / Poster (PC: Landscape Backdrop, Mobile: Portrait Poster) */}
             <div className="absolute inset-0 w-full h-full overflow-hidden">
-              <AnimatePresence mode="sync">
+              <AnimatePresence initial={false} mode="sync">
                 <motion.div
                   key={activeHero.id}
                   initial={{ opacity: 0 }}

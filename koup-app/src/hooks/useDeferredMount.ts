@@ -17,12 +17,17 @@ interface ScheduledTask {
 
 class IdleQueueScheduler {
   private queue: ScheduledTask[] = [];
+  private delayId: number | null = null;
   private idleId: number | null = null;
   private rafId: number | null = null;
   private isRunning = false;
 
   private cancelPendingTimers() {
     if (typeof window === 'undefined') return;
+    if (this.delayId !== null) {
+      window.clearTimeout(this.delayId);
+      this.delayId = null;
+    }
     if (this.idleId !== null) {
       if (typeof window.cancelIdleCallback === 'function') {
         window.cancelIdleCallback(this.idleId);
@@ -45,7 +50,10 @@ class IdleQueueScheduler {
     }
     this.isRunning = true;
 
+    const hasUrgent = this.queue.some((t) => t.urgent);
+
     const runTask = () => {
+      this.delayId = null;
       this.idleId = null;
       this.rafId = null;
       // Clean up any tasks that were already mounted
@@ -76,8 +84,29 @@ class IdleQueueScheduler {
     };
 
     if (typeof window !== 'undefined') {
-      // Mount 1 section per animation frame so below-the-fold rails populate invisibly before the user ever sees a placeholder
-      this.rafId = window.requestAnimationFrame(runTask);
+      if (hasUrgent) {
+        // Urgent (nearing viewport via IntersectionObserver): mount on next frame with zero visible pop-in
+        this.rafId = window.requestAnimationFrame(runTask);
+      } else {
+        // Far below the fold: drip-mount gently during idle time so initial LCP, TBT, memory & mobile taps stay 60fps
+        const isNarrowMobile = window.innerWidth < 768;
+        if (isNarrowMobile) {
+          // On mobile, only eagerly idle-warm rail order <= 1; deeper rails mount on-demand via IntersectionObserver (600px rootMargin)
+          const nextNonUrgent = this.queue.reduce((min, t) => Math.min(min, t.order), Infinity);
+          if (nextNonUrgent > 1) {
+            this.isRunning = false;
+            return;
+          }
+        }
+        this.delayId = window.setTimeout(() => {
+          this.delayId = null;
+          if (typeof window.requestIdleCallback === 'function') {
+            this.idleId = window.requestIdleCallback(runTask, { timeout: 2200 });
+          } else {
+            this.idleId = window.setTimeout(runTask, 280);
+          }
+        }, isNarrowMobile ? 900 : 350);
+      }
     }
   }
 
@@ -163,9 +192,9 @@ export interface DeferredMountResult {
  * 1-per-frame urgent rAF queue.
  */
 export function useDeferredMount(order: number): DeferredMountResult {
-  // Mount the first 3 sections (order <= 2) immediately so the entire viewport is 100% populated on frame 1 with zero skeleton pop-in.
-  const [isMounted, setIsMounted] = useState(() => order <= 2);
-  const isMountedRef = useRef(order <= 2);
+  // Mount only the first below-hero section (order <= 0) immediately; deeper rails mount on-demand via IntersectionObserver (600px lookahead) or gentle idle trickle.
+  const [isMounted, setIsMounted] = useState(() => order <= 0);
+  const isMountedRef = useRef(order <= 0);
   const domNodeRef = useRef<HTMLElement | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const taskRef = useRef<ScheduledTask | null>(null);
@@ -196,7 +225,7 @@ export function useDeferredMount(order: number): DeferredMountResult {
   const setRef = useCallback(
     (node: HTMLElement | null) => {
       domNodeRef.current = node;
-      if (order <= 2 || isMountedRef.current) return;
+      if (order <= 0 || isMountedRef.current) return;
 
       if (node && typeof IntersectionObserver !== 'undefined') {
         if (!observerRef.current) {
@@ -217,7 +246,7 @@ export function useDeferredMount(order: number): DeferredMountResult {
                 }
               }
             },
-            { rootMargin: '400px 0px' }
+            { rootMargin: '600px 0px' }
           );
         }
         observerRef.current.observe(node);
@@ -227,7 +256,7 @@ export function useDeferredMount(order: number): DeferredMountResult {
   );
 
   useEffect(() => {
-    if (order <= 2 || isMounted) return;
+    if (order <= 0 || isMounted) return;
 
     // Fast-path: Back navigation / saved scroll position restores everything immediately
     if (isScrollRestorationActive()) {

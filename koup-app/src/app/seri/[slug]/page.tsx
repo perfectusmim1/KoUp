@@ -177,15 +177,13 @@ export default async function SeriesDetailPage({
           />
         </Suspense>
       ) : (
-        <Suspense fallback={null}>
-          <SeriesDetailClient
-            slug={slug}
-            initialMedia={media}
-            initialEpisodes={episodes}
-            initialCast={cast}
-            initialFranchise={franchise}
-          />
-        </Suspense>
+        <SeriesDetailClient
+          slug={slug}
+          initialMedia={media}
+          initialEpisodes={episodes}
+          initialCast={cast}
+          initialFranchise={franchise}
+        />
       )}
     </>
   );
